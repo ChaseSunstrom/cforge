@@ -866,73 +866,86 @@ fn create_header_only_config() -> ProjectConfig {
 }
 
 fn create_default_config() -> ProjectConfig {
+    // First, detect the system and compiler, though we won't directly
+    // use it to pick slash/dash flags here. Instead, we store universal
+    // tokens in the config; the actual slash/dash logic occurs later.
     let system_info = detect_system_info();
-    // Check if we have MSVC or clang-cl
-    let is_msvc_style = system_info.compiler == "msvc" || system_info.compiler == "clang-cl";
 
-    // We’ll build up the config settings with slash-based flags if is_msvc_style,
-    // otherwise dash-based for gcc/clang (GNU style).
+    // We’ll build up the config settings using universal tokens.
+    // Then, at build time, your code calls map_token() / parse_universal_flags().
     let mut configs = HashMap::new();
 
-    // ------------------
+    //
     // 1) Debug
-    // ------------------
-    let debug_flags = if is_msvc_style {
-        vec!["/Od".to_string(), "/Zi".to_string(), "/RTC1".to_string()]
-    } else {
-        vec!["-O0".to_string(), "-g".to_string()]
-    };
+    //
+    // Example universal tokens for a debug config:
+    //  - NO_OPT => /Od or -O0
+    //  - DEBUG_INFO => /Zi or -g
+    //  - RTC1 => /RTC1 or (nothing) on GNU
     configs.insert("Debug".to_string(), ConfigSettings {
         defines: Some(vec!["DEBUG".to_string(), "_DEBUG".to_string()]),
-        flags: Some(debug_flags),
+        flags: Some(vec![
+            "NO_OPT".to_string(),
+            "DEBUG_INFO".to_string(),
+            "RTC1".to_string(),
+        ]),
         link_flags: None,
         output_dir_suffix: None,
         cmake_options: None,
     });
 
-    // ------------------
+    //
     // 2) Release
-    // ------------------
-    let release_flags = if is_msvc_style {
-        vec!["/O2".to_string(), "/Ob2".to_string(), "/DNDEBUG".to_string()]
-    } else {
-        vec!["-O3".to_string(), "-DNDEBUG".to_string()]
-    };
+    //
+    // Example tokens for a release config:
+    //  - OPTIMIZE => /O2 or -O2
+    //  - OB2 => /Ob2 or -finline-functions
+    //  - DNDEBUG => /DNDEBUG or -DNDEBUG
     configs.insert("Release".to_string(), ConfigSettings {
         defines: Some(vec!["NDEBUG".to_string()]),
-        flags: Some(release_flags),
+        flags: Some(vec![
+            "OPTIMIZE".to_string(),
+            "OB2".to_string(),
+            "DNDEBUG".to_string(),
+        ]),
         link_flags: None,
         output_dir_suffix: None,
         cmake_options: None,
     });
 
-    // ------------------
+    //
     // 3) RelWithDebInfo
-    // ------------------
-    let relwithdebinfo_flags = if is_msvc_style {
-        vec!["/O2".to_string(), "/Ob1".to_string(), "/DNDEBUG".to_string(), "/Zi".to_string()]
-    } else {
-        vec!["-O2".to_string(), "-g".to_string(), "-DNDEBUG".to_string()]
-    };
+    //
+    // Example tokens:
+    //  - OPTIMIZE => /O2 or -O2
+    //  - OB1 => /Ob1 (MSVC) or skip on GNU
+    //  - DNDEBUG => /DNDEBUG or -DNDEBUG
+    //  - DEBUG_INFO => /Zi or -g
     configs.insert("RelWithDebInfo".to_string(), ConfigSettings {
         defines: Some(vec!["NDEBUG".to_string()]),
-        flags: Some(relwithdebinfo_flags),
+        flags: Some(vec![
+            "OPTIMIZE".to_string(),
+            "OB1".to_string(),
+            "DNDEBUG".to_string(),
+            "DEBUG_INFO".to_string(),
+        ]),
         link_flags: None,
         output_dir_suffix: None,
         cmake_options: None,
     });
 
-    // ------------------
+    //
     // 4) MinSizeRel
-    // ------------------
-    let minsizerel_flags = if is_msvc_style {
-        vec!["/O1".to_string(), "/Ob1".to_string(), "/DNDEBUG".to_string()]
-    } else {
-        vec!["-Os".to_string(), "-DNDEBUG".to_string()]
-    };
+    //
+    // Example tokens:
+    //  - MIN_SIZE => /O1 or -Os
+    //  - DNDEBUG => /DNDEBUG or -DNDEBUG
     configs.insert("MinSizeRel".to_string(), ConfigSettings {
         defines: Some(vec!["NDEBUG".to_string()]),
-        flags: Some(minsizerel_flags),
+        flags: Some(vec![
+            "MIN_SIZE".to_string(),
+            "DNDEBUG".to_string(),
+        ]),
         link_flags: None,
         output_dir_suffix: None,
         cmake_options: None,
@@ -962,7 +975,7 @@ fn create_default_config() -> ProjectConfig {
     variants.insert("standard".to_string(), VariantSettings {
         description: Some("Standard build with default settings".to_string()),
         defines: None,
-        flags: None,
+        flags: None,  // No special tokens here
         dependencies: None,
         features: None,
         platforms: None,
@@ -970,14 +983,13 @@ fn create_default_config() -> ProjectConfig {
     });
 
     // Memory safety variant
+    // Store "MEMSAFE" as a token so the build can apply, e.g. /sdl /GS or -fsanitize=...
     variants.insert("memory_safety".to_string(), VariantSettings {
         description: Some("Build with memory safety checks".to_string()),
         defines: Some(vec!["ENABLE_MEMORY_SAFETY=1".to_string()]),
-        flags: Some(if cfg!(target_os = "windows") {
-            vec!["/sdl".to_string(), "/GS".to_string()]
-        } else {
-            vec!["-fsanitize=address".to_string(), "-fsanitize=undefined".to_string()]
-        }),
+        flags: Some(vec![
+            "MEMSAFE".to_string(),
+        ]),
         dependencies: None,
         features: None,
         platforms: None,
@@ -985,14 +997,15 @@ fn create_default_config() -> ProjectConfig {
     });
 
     // Performance variant
+    // We store "OPTIMIZE", "LTO", "PARALLEL" so that for MSVC we get /O2 /GL /Qpar,
     variants.insert("performance".to_string(), VariantSettings {
         description: Some("Optimized for maximum performance".to_string()),
         defines: Some(vec!["OPTIMIZE_PERFORMANCE=1".to_string()]),
-        flags: Some(if cfg!(target_os = "windows") {
-            vec!["/GL".to_string(), "/Qpar".to_string(), "/O2".to_string()]
-        } else {
-            vec!["-O3".to_string(), "-march=native".to_string(), "-flto".to_string()]
-        }),
+        flags: Some(vec![
+            "OPTIMIZE".to_string(),
+            "LTO".to_string(),
+            "PARALLEL".to_string(),
+        ]),
         dependencies: None,
         features: None,
         platforms: None,
@@ -1023,24 +1036,21 @@ fn create_default_config() -> ProjectConfig {
 
     // Create default scripts
     let mut scripts = HashMap::new();
-
     scripts.insert(
         "format".to_string(),
-        "find src include -name '*.cpp' -o -name '*.h' | xargs clang-format -i".to_string()
+        "find src include -name '*.cpp' -o -name '*.h' | xargs clang-format -i".to_string(),
     );
-
     scripts.insert(
         "count_lines".to_string(),
-        "find src include -name '*.cpp' -o -name '*.h' | xargs wc -l".to_string()
+        "find src include -name '*.cpp' -o -name '*.h' | xargs wc -l".to_string(),
     );
-
     scripts.insert(
         "clean_all".to_string(),
         if cfg!(target_os = "windows") {
             "rmdir /s /q build bin".to_string()
         } else {
             "rm -rf build bin".to_string()
-        }
+        },
     );
 
     // Create default conan config
@@ -1054,6 +1064,7 @@ fn create_default_config() -> ProjectConfig {
         ]),
     };
 
+    // Finally, build and return the entire ProjectConfig
     ProjectConfig {
         project: ProjectInfo {
             name: env::current_dir()
@@ -1095,7 +1106,8 @@ fn create_default_config() -> ProjectConfig {
             lib_dir: Some(DEFAULT_LIB_DIR.to_string()),
             obj_dir: Some(DEFAULT_OBJ_DIR.to_string()),
         },
-        hooks: None,
+        // If you want to retain the default hooks object, set it here:
+        hooks: Some(hooks),
         scripts: Some(ScriptDefinitions { scripts }),
         variants: Some(BuildVariants {
             default: Some("standard".to_string()),
@@ -1104,6 +1116,7 @@ fn create_default_config() -> ProjectConfig {
         cross_compile: None,
     }
 }
+
 
 fn save_project_config(config: &ProjectConfig, path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let config_path = path.join(CBUILD_FILE);
@@ -1947,59 +1960,88 @@ fn get_build_type(config: &ProjectConfig, requested_config: Option<&str>) -> Str
 fn get_config_specific_options(config: &ProjectConfig, build_type: &str) -> Vec<String> {
     let mut options = Vec::new();
 
-    // Add configuration-specific options if available
     if let Some(configs) = &config.build.configs {
-        if let Some(config_settings) = configs.get(build_type) {
-            // Add configuration-specific defines - use =1 format
-            if let Some(defines) = &config_settings.defines {
+        if let Some(cfg_settings) = configs.get(build_type) {
+            // 1) Add config-specific defines as normal
+            if let Some(defines) = &cfg_settings.defines {
                 for define in defines {
                     options.push(format!("-D{}=1", define));
                 }
             }
 
-            // Add configuration-specific flags - handle Windows specially
-            if let Some(flags) = &config_settings.flags {
-                if !flags.is_empty() {
-                    if cfg!(windows) {
-                        // On Windows, join flags and specify STRING type to avoid quoting issues
-                        let flags_str = flags.join(" ");
-                        options.push(format!("-DCMAKE_CXX_FLAGS_{}:STRING={}",
-                                             build_type.to_uppercase(), flags_str));
-                        options.push(format!("-DCMAKE_C_FLAGS_{}:STRING={}",
-                                             build_type.to_uppercase(), flags_str));
+            // 2) parse universal tokens for flags
+            let system_info = detect_system_info();
+            let is_msvc_style = system_info.compiler == "msvc"
+                || system_info.compiler == "clang-cl";
+
+            if let Some(token_list) = &cfg_settings.flags {
+                let real_flags = parse_universal_flags(token_list, is_msvc_style);
+                if !real_flags.is_empty() {
+                    let joined = real_flags.join(" ");
+                    // We set them in the config-specific variables
+                    if is_msvc_style {
+                        options.push(format!(
+                            "-DCMAKE_CXX_FLAGS_{}:STRING={}",
+                            build_type.to_uppercase(),
+                            joined
+                        ));
+                        options.push(format!(
+                            "-DCMAKE_C_FLAGS_{}:STRING={}",
+                            build_type.to_uppercase(),
+                            joined
+                        ));
                     } else {
-                        // On Unix, we can join with spaces and use single quotes
-                        let flags_str = flags.join(" ");
-                        options.push(format!("-DCMAKE_CXX_FLAGS_{}='{}'",
-                                             build_type.to_uppercase(), flags_str));
-                        options.push(format!("-DCMAKE_C_FLAGS_{}='{}'",
-                                             build_type.to_uppercase(), flags_str));
+                        options.push(format!(
+                            "-DCMAKE_CXX_FLAGS_{}='{}'",
+                            build_type.to_uppercase(),
+                            joined
+                        ));
+                        options.push(format!(
+                            "-DCMAKE_C_FLAGS_{}='{}'",
+                            build_type.to_uppercase(),
+                            joined
+                        ));
                     }
                 }
             }
 
-            if let Some(link_flags) = &config_settings.link_flags {
+            // 3) handle link_flags, cmake_options, etc. as before
+            if let Some(link_flags) = &cfg_settings.link_flags {
                 if !link_flags.is_empty() {
-                    let link_flags_str = link_flags.join(" ");
-                    if cfg!(target_os = "windows") {
-                        options.push(format!("-DCMAKE_EXE_LINKER_FLAGS_{}=\"{}\"", build_type.to_uppercase(), link_flags_str));
-                        options.push(format!("-DCMAKE_SHARED_LINKER_FLAGS_{}=\"{}\"", build_type.to_uppercase(), link_flags_str));
+                    let link_str = link_flags.join(" ");
+                    if cfg!(windows) {
+                        options.push(format!(
+                            "-DCMAKE_EXE_LINKER_FLAGS_{}=\"{}\"",
+                            build_type.to_uppercase(),
+                            link_str
+                        ));
+                        options.push(format!(
+                            "-DCMAKE_SHARED_LINKER_FLAGS_{}=\"{}\"",
+                            build_type.to_uppercase(),
+                            link_str
+                        ));
                     } else {
-                        options.push(format!("-DCMAKE_EXE_LINKER_FLAGS_{}='{}'", build_type.to_uppercase(), link_flags_str));
-                        options.push(format!("-DCMAKE_SHARED_LINKER_FLAGS_{}='{}'", build_type.to_uppercase(), link_flags_str));
+                        options.push(format!(
+                            "-DCMAKE_EXE_LINKER_FLAGS_{}='{}'",
+                            build_type.to_uppercase(),
+                            link_str
+                        ));
+                        options.push(format!(
+                            "-DCMAKE_SHARED_LINKER_FLAGS_{}='{}'",
+                            build_type.to_uppercase(),
+                            link_str
+                        ));
                     }
                 }
             }
-
-            // Add configuration-specific CMake options
-            if let Some(cmake_options) = &config_settings.cmake_options {
-                options.extend(cmake_options.clone());
+            if let Some(cmake_opts) = &cfg_settings.cmake_options {
+                options.extend(cmake_opts.clone());
             }
         }
     }
-
     options
 }
+
 // Functions to handle build variants
 fn get_active_variant<'a>(config: &'a ProjectConfig, requested_variant: Option<&str>) -> Option<&'a VariantSettings> {
     if let Some(variants) = &config.variants {
@@ -2018,51 +2060,43 @@ fn get_active_variant<'a>(config: &'a ProjectConfig, requested_variant: Option<&
 }
 
 fn apply_variant_settings(cmd: &mut Vec<String>, variant: &VariantSettings) {
-    // We need to know if we are on MSVC or clang-cl, so let’s detect again (or store a global).
+    // 1) detect if the compiler is MSVC/clang-cl or GCC/clang(gnu)
     let system_info = detect_system_info();
     let is_msvc_style = system_info.compiler == "msvc" || system_info.compiler == "clang-cl";
 
-    // 1) add variant-specific defines
+    // 2) add variant-specific defines
     if let Some(defines) = &variant.defines {
         for define in defines {
+            // We use -DXYZ=1 style for CMake
             cmd.push(format!("-D{}=1", define));
         }
     }
 
-    // 2) add variant-specific flags with proper quoting
-    if let Some(flags) = &variant.flags {
-        if flags.is_empty() {
-            return;
-        }
-
-        if is_msvc_style {
-            // If we are in MSVC style, just join them as-is.
-            let joined = flags.join(" ");
-            // e.g. -DCMAKE_CXX_FLAGS:STRING=/GL /Qpar /O2
-            cmd.push(format!("-DCMAKE_CXX_FLAGS:STRING={}", joined));
-            cmd.push(format!("-DCMAKE_C_FLAGS:STRING={}", joined));
-        } else {
-            // We are in gcc/clang (GNU style). Convert slash-based flags to dash-based.
-            let converted: Vec<String> = flags.iter().map(|f| {
-                f.replace("/O2", "-O2")
-                    .replace("/GL", "-flto")
-                    .replace("/Qpar", "")  // No direct clang/gcc equivalent, skip
-                    .replace("/Zi", "-g")
-                    .replace("/Od", "-O0")
-                    .replace("/sdl", "")   // or some -fsanitize= ?
-                    .replace("/GS", "")    // no direct eq. in clang/gcc
-            }).collect();
-            let joined = converted.join(" ");
-            cmd.push(format!("-DCMAKE_CXX_FLAGS='{}'", joined));
-            cmd.push(format!("-DCMAKE_C_FLAGS='{}'", joined));
+    // 3) handle the variant-specific flags: parse them from tokens
+    if let Some(token_list) = &variant.flags {
+        let real_flags = parse_universal_flags(token_list, is_msvc_style);
+        if !real_flags.is_empty() {
+            let joined = real_flags.join(" ");
+            if is_msvc_style {
+                // For MSVC, use /D for defines etc., but for flags, we do:
+                // e.g. -DCMAKE_CXX_FLAGS:STRING="/O2 /GL ..."
+                // We skip quotes if you want, or if you have spaces, you might do quotes
+                cmd.push(format!("-DCMAKE_CXX_FLAGS:STRING={}", joined));
+                cmd.push(format!("-DCMAKE_C_FLAGS:STRING={}", joined));
+            } else {
+                // For GNU compilers, we might single-quote them
+                cmd.push(format!("-DCMAKE_CXX_FLAGS='{}'", joined));
+                cmd.push(format!("-DCMAKE_C_FLAGS='{}'", joined));
+            }
         }
     }
 
-    // 3) apply any variant-level cmake_options
+    // 4) apply any variant-level cmake_options
     if let Some(cmake_options) = &variant.cmake_options {
         cmd.extend(cmake_options.clone());
     }
 }
+
 
 // Function to run build hooks
 fn run_hooks(hooks: &Option<Vec<String>>, project_path: &Path, env_vars: Option<HashMap<String, String>>) -> Result<(), Box<dyn std::error::Error>> {
@@ -3522,4 +3556,133 @@ fn is_executable(path: &Path) -> bool {
         // On Windows and other platforms, we consider all files executable if they exist
         path.exists()
     }
+}
+
+/// Map a single "universal" token to either MSVC/clang-cl flags (slash-based)
+/// or GCC/Clang (GNU driver) flags (dash-based). Returns a Vec of strings
+/// because one token might expand to multiple real flags.
+fn map_token(token: &str, msvc_style: bool) -> Vec<String> {
+    match token {
+        // --- Common optimization levels ---
+        "NO_OPT" => {
+            // /Od vs -O0
+            if msvc_style {
+                vec!["/Od".to_string()]
+            } else {
+                vec!["-O0".to_string()]
+            }
+        }
+        "OPTIMIZE" => {
+            // /O2 vs -O2
+            if msvc_style {
+                vec!["/O2".to_string()]
+            } else {
+                vec!["-O2".to_string()]
+            }
+        }
+        "MIN_SIZE" => {
+            // /O1 vs -Os
+            if msvc_style {
+                vec!["/O1".to_string()]
+            } else {
+                vec!["-Os".to_string()]
+            }
+        }
+        "OB1" => {
+            // /Ob1 vs maybe -finline-limit=... or we skip
+            if msvc_style {
+                vec!["/Ob1".to_string()]
+            } else {
+                // There's no direct single GCC/Clang equivalent to /Ob1
+                // so either skip or guess
+                vec![]
+            }
+        }
+        "OB2" => {
+            // /Ob2 vs maybe -finline-functions
+            if msvc_style {
+                vec!["/Ob2".to_string()]
+            } else {
+                vec!["-finline-functions".to_string()]
+            }
+        }
+
+        // --- Debug info ---
+        "DEBUG_INFO" => {
+            // /Zi vs -g
+            if msvc_style {
+                vec!["/Zi".to_string()]
+            } else {
+                vec!["-g".to_string()]
+            }
+        }
+        "RTC1" => {
+            // /RTC1 is a run-time check in MSVC, not in GCC/Clang.
+            // There's no perfect equivalent. We can skip or do -fstack-protector
+            if msvc_style {
+                vec!["/RTC1".to_string()]
+            } else {
+                vec![]
+            }
+        }
+
+        // --- Link-time optimization ---
+        "LTO" => {
+            // /GL vs -flto
+            if msvc_style {
+                vec!["/GL".to_string()]
+            } else {
+                vec!["-flto".to_string()]
+            }
+        }
+
+        // --- Parallel or auto-parallel ---
+        "PARALLEL" => {
+            // /Qpar vs maybe -fopenmp
+            if msvc_style {
+                vec!["/Qpar".to_string()]
+            } else {
+                // Up to you if you want -fopenmp or skip
+                vec!["-fopenmp".to_string()]
+            }
+        }
+
+        // --- Memory safety checks ---
+        "MEMSAFE" => {
+            // /sdl and /GS vs e.g. -fsanitize=address etc.
+            if msvc_style {
+                vec!["/sdl".to_string(), "/GS".to_string()]
+            } else {
+                vec!["-fsanitize=address".to_string(), "-fno-omit-frame-pointer".to_string()]
+            }
+        }
+
+        // If user wrote DNDEBUG or some define as a "flag," we can handle it here:
+        "DNDEBUG" => {
+            // Typically you'd do -DNDEBUG as a define in your code, but here's how if you want it in flags
+            if msvc_style {
+                // Actually MSVC style doesn't do /D NDEBUG? We might do /DNDEBUG
+                vec!["/DNDEBUG".to_string()]
+            } else {
+                vec!["-DNDEBUG".to_string()]
+            }
+        }
+
+        // If there's some leftover or unknown token
+        _ => {
+            println!("Warning: unrecognized token `{}`, passing unchanged.", token);
+            vec![token.to_string()]
+        }
+    }
+}
+
+/// Convert a list of universal tokens into real slash-based or dash-based flags
+/// depending on `is_msvc_style`.
+fn parse_universal_flags(tokens: &[String], is_msvc_style: bool) -> Vec<String> {
+    let mut result = Vec::new();
+    for t in tokens {
+        let expanded = map_token(t, is_msvc_style);
+        result.extend(expanded);
+    }
+    result
 }
