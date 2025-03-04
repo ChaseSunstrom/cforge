@@ -250,6 +250,7 @@ struct BuildConfig {
     debug: Option<bool>,             // Legacy option, kept for backwards compatibility
     cmake_options: Option<Vec<String>>,
     configs: Option<HashMap<String, ConfigSettings>>,  // Configuration-specific settings
+    compiler: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
@@ -875,6 +876,15 @@ fn create_default_config() -> ProjectConfig {
     // Then, at build time, your code calls map_token() / parse_universal_flags().
     let mut configs = HashMap::new();
 
+    let default_compiler = if system_info.os == "windows" {
+        // Typically you'd do "msvc" or "clang-cl"
+        "clang-cl"
+    } else if system_info.os == "darwin" {
+        "clang"
+    } else {
+        "gcc"
+    };
+
     //
     // 1) Debug
     //
@@ -1086,6 +1096,7 @@ fn create_default_config() -> ProjectConfig {
             debug: Some(true), // Legacy option, kept for backwards compatibility
             cmake_options: Some(vec![]),
             configs: Some(configs),
+            compiler: Some(default_compiler.to_string()),
         },
         dependencies: DependenciesConfig {
             vcpkg: VcpkgConfig {
@@ -2508,9 +2519,35 @@ fn configure_project(
     variant_name: Option<&str>,
     cross_target: Option<&str>
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let build_dir = config.build.build_dir.as_deref().unwrap_or(DEFAULT_BUILD_DIR);
+    let build_dir = config.build.build_dir.as_deref().unwrap_or("build");
     let build_path = project_path.join(build_dir);
+    fs::create_dir_all(&build_path)?;
 
+    // Build up the CMake command
+    let mut cmd = vec![
+        "cmake".to_string(),
+        "..".to_string(),
+    ];
+
+    // Add generator, build type, etc.:
+    let generator = get_cmake_generator(config)?;
+    cmd.push("-G".to_string());
+    cmd.push(generator);
+
+    let build_type = get_build_type(config, config_type);
+    cmd.push(format!("-DCMAKE_BUILD_TYPE={}", build_type));
+
+    // -----------------------------------------
+    //  Map the user-specified compiler label
+    if let Some(compiler_label) = &config.build.compiler {
+        // We'll do a small helper to map "gcc", "clang", "clang-cl", "msvc", etc.
+        if let Some((c_comp, cxx_comp)) = map_compiler_label(compiler_label) {
+            cmd.push(format!("-DCMAKE_C_COMPILER={}", c_comp));
+            cmd.push(format!("-DCMAKE_CXX_COMPILER={}", cxx_comp));
+        } else {
+            println!("Warning: unrecognized compiler label '{}'", compiler_label);
+        }
+    }
     // Create a set of environment variables for hooks
     let mut hook_env = HashMap::new();
     hook_env.insert("PROJECT_PATH".to_string(), project_path.to_string_lossy().to_string());
@@ -2749,6 +2786,29 @@ fn clean_project(
 
     Ok(())
 }
+
+/// Map a user-friendly compiler label (e.g. "gcc", "clang", "clang-cl", "msvc")
+/// to a real pair of C/C++ compiler executables.
+fn map_compiler_label(label: &str) -> Option<(String, String)> {
+    match label.to_lowercase().as_str() {
+        "gcc" => Some(("gcc".to_string(), "g++".to_string())),
+        "clang" => Some(("clang".to_string(), "clang++".to_string())),
+        "clang-cl" => {
+            // On Windows, if clang-cl.exe is in PATH, you might just specify "clang-cl"
+            Some(("clang-cl".to_string(), "clang-cl".to_string()))
+        }
+        "msvc" | "cl" => {
+            // Usually you let CMake detect the correct "cl.exe" for Visual Studio
+            // or provide the full path. But if you want to do it explicitly:
+            Some((
+                "cl.exe".to_string(),
+                "cl.exe".to_string()
+            ))
+        }
+        _ => None,
+    }
+}
+
 
 fn run_project(
     config: &ProjectConfig,
