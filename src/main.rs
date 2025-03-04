@@ -867,57 +867,72 @@ fn create_header_only_config() -> ProjectConfig {
 
 fn create_default_config() -> ProjectConfig {
     let system_info = detect_system_info();
+    // Check if we have MSVC or clang-cl
+    let is_msvc_style = system_info.compiler == "msvc" || system_info.compiler == "clang-cl";
 
-    // Create default configurations
+    // We’ll build up the config settings with slash-based flags if is_msvc_style,
+    // otherwise dash-based for gcc/clang (GNU style).
     let mut configs = HashMap::new();
 
-    // Debug configuration
+    // ------------------
+    // 1) Debug
+    // ------------------
+    let debug_flags = if is_msvc_style {
+        vec!["/Od".to_string(), "/Zi".to_string(), "/RTC1".to_string()]
+    } else {
+        vec!["-O0".to_string(), "-g".to_string()]
+    };
     configs.insert("Debug".to_string(), ConfigSettings {
         defines: Some(vec!["DEBUG".to_string(), "_DEBUG".to_string()]),
-        flags: Some(if cfg!(target_os = "windows") {
-            vec!["/Od".to_string(), "/Zi".to_string(), "/RTC1".to_string()]
-        } else {
-            vec!["-O0".to_string(), "-g".to_string()]
-        }),
+        flags: Some(debug_flags),
         link_flags: None,
         output_dir_suffix: None,
         cmake_options: None,
     });
 
-    // Release configuration
+    // ------------------
+    // 2) Release
+    // ------------------
+    let release_flags = if is_msvc_style {
+        vec!["/O2".to_string(), "/Ob2".to_string(), "/DNDEBUG".to_string()]
+    } else {
+        vec!["-O3".to_string(), "-DNDEBUG".to_string()]
+    };
     configs.insert("Release".to_string(), ConfigSettings {
         defines: Some(vec!["NDEBUG".to_string()]),
-        flags: Some(if cfg!(target_os = "windows") {
-            vec!["/O2".to_string(), "/Ob2".to_string(), "/DNDEBUG".to_string()]
-        } else {
-            vec!["-O3".to_string(), "-DNDEBUG".to_string()]
-        }),
+        flags: Some(release_flags),
         link_flags: None,
         output_dir_suffix: None,
         cmake_options: None,
     });
 
-    // RelWithDebInfo configuration
+    // ------------------
+    // 3) RelWithDebInfo
+    // ------------------
+    let relwithdebinfo_flags = if is_msvc_style {
+        vec!["/O2".to_string(), "/Ob1".to_string(), "/DNDEBUG".to_string(), "/Zi".to_string()]
+    } else {
+        vec!["-O2".to_string(), "-g".to_string(), "-DNDEBUG".to_string()]
+    };
     configs.insert("RelWithDebInfo".to_string(), ConfigSettings {
         defines: Some(vec!["NDEBUG".to_string()]),
-        flags: Some(if cfg!(target_os = "windows") {
-            vec!["/O2".to_string(), "/Ob1".to_string(), "/DNDEBUG".to_string(), "/Zi".to_string()]
-        } else {
-            vec!["-O2".to_string(), "-g".to_string(), "-DNDEBUG".to_string()]
-        }),
+        flags: Some(relwithdebinfo_flags),
         link_flags: None,
         output_dir_suffix: None,
         cmake_options: None,
     });
 
-    // MinSizeRel configuration
+    // ------------------
+    // 4) MinSizeRel
+    // ------------------
+    let minsizerel_flags = if is_msvc_style {
+        vec!["/O1".to_string(), "/Ob1".to_string(), "/DNDEBUG".to_string()]
+    } else {
+        vec!["-Os".to_string(), "-DNDEBUG".to_string()]
+    };
     configs.insert("MinSizeRel".to_string(), ConfigSettings {
         defines: Some(vec!["NDEBUG".to_string()]),
-        flags: Some(if cfg!(target_os = "windows") {
-            vec!["/O1".to_string(), "/Ob1".to_string(), "/DNDEBUG".to_string()]
-        } else {
-            vec!["-Os".to_string(), "-DNDEBUG".to_string()]
-        }),
+        flags: Some(minsizerel_flags),
         link_flags: None,
         output_dir_suffix: None,
         cmake_options: None,
@@ -1131,29 +1146,50 @@ fn detect_system_info() -> SystemInfo {
         "unknown".to_string()
     };
 
-    // Detect compiler based on platform
-    let compiler = if cfg!(target_os = "windows") {
-        // Try to find MSVC
-        if Command::new("cl").arg("/?").stdout(Stdio::null()).stderr(Stdio::null()).status().is_ok() {
-            "msvc".to_string()
-        } else if Command::new("gcc").arg("--version").stdout(Stdio::null()).stderr(Stdio::null()).status().is_ok() {
-            "gcc".to_string()
-        } else {
-            "default".to_string()
-        }
-    } else {
-        // Unix-like OS - check for clang first, then gcc
-        if Command::new("clang").arg("--version").stdout(Stdio::null()).stderr(Stdio::null()).status().is_ok() {
-            "clang".to_string()
-        } else if Command::new("gcc").arg("--version").stdout(Stdio::null()).stderr(Stdio::null()).status().is_ok() {
-            "gcc".to_string()
-        } else {
-            "default".to_string()
-        }
-    };
+    // Helper to see if a command is available
+    fn has_command(cmd: &str) -> bool {
+        Command::new(cmd)
+            .arg("--version")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .is_ok()
+    }
 
-    SystemInfo { os, arch, compiler }
+    // Windows logic:
+    if cfg!(target_os = "windows") {
+        // Check for cl.exe
+        if has_command("cl") {
+            return SystemInfo { os, arch, compiler: "msvc".to_string() };
+        }
+        // Check for clang-cl
+        if has_command("clang-cl") {
+            return SystemInfo { os, arch, compiler: "clang-cl".to_string() };
+        }
+        // Check for clang (GNU-style)
+        if has_command("clang") {
+            return SystemInfo { os, arch, compiler: "clang".to_string() };
+        }
+        // Check for gcc
+        if has_command("gcc") {
+            return SystemInfo { os, arch, compiler: "gcc".to_string() };
+        }
+        // Fallback
+        return SystemInfo { os, arch, compiler: "default".to_string() };
+    }
+
+    // Non-Windows (macOS, Linux):
+    if has_command("clang") {
+        return SystemInfo { os, arch, compiler: "clang".to_string() };
+    }
+    if has_command("gcc") {
+        return SystemInfo { os, arch, compiler: "gcc".to_string() };
+    }
+
+    // Fallback
+    SystemInfo { os, arch, compiler: "default".to_string() }
 }
+
 
 fn setup_vcpkg(config: &ProjectConfig, project_path: &Path) -> Result<String, Box<dyn std::error::Error>> {
     let vcpkg_config = &config.dependencies.vcpkg;
@@ -1982,35 +2018,52 @@ fn get_active_variant<'a>(config: &'a ProjectConfig, requested_variant: Option<&
 }
 
 fn apply_variant_settings(cmd: &mut Vec<String>, variant: &VariantSettings) {
-    // Add variant-specific defines with =1 format
+    // We need to know if we are on MSVC or clang-cl, so let’s detect again (or store a global).
+    let system_info = detect_system_info();
+    let is_msvc_style = system_info.compiler == "msvc" || system_info.compiler == "clang-cl";
+
+    // 1) add variant-specific defines
     if let Some(defines) = &variant.defines {
         for define in defines {
             cmd.push(format!("-D{}=1", define));
         }
     }
 
-    // Add variant-specific flags with proper quoting
+    // 2) add variant-specific flags with proper quoting
     if let Some(flags) = &variant.flags {
-        if !flags.is_empty() {
-            if cfg!(windows) {
-                // On Windows, join flags and use STRING type
-                let flags_str = flags.join(" ");
-                cmd.push(format!("-DCMAKE_CXX_FLAGS:STRING={}", flags_str));
-                cmd.push(format!("-DCMAKE_C_FLAGS:STRING={}", flags_str));
-            } else {
-                // On Unix, use single quotes
-                let flags_str = flags.join(" ");
-                cmd.push(format!("-DCMAKE_CXX_FLAGS='{}'", flags_str));
-                cmd.push(format!("-DCMAKE_C_FLAGS='{}'", flags_str));
-            }
+        if flags.is_empty() {
+            return;
+        }
+
+        if is_msvc_style {
+            // If we are in MSVC style, just join them as-is.
+            let joined = flags.join(" ");
+            // e.g. -DCMAKE_CXX_FLAGS:STRING=/GL /Qpar /O2
+            cmd.push(format!("-DCMAKE_CXX_FLAGS:STRING={}", joined));
+            cmd.push(format!("-DCMAKE_C_FLAGS:STRING={}", joined));
+        } else {
+            // We are in gcc/clang (GNU style). Convert slash-based flags to dash-based.
+            let converted: Vec<String> = flags.iter().map(|f| {
+                f.replace("/O2", "-O2")
+                    .replace("/GL", "-flto")
+                    .replace("/Qpar", "")  // No direct clang/gcc equivalent, skip
+                    .replace("/Zi", "-g")
+                    .replace("/Od", "-O0")
+                    .replace("/sdl", "")   // or some -fsanitize= ?
+                    .replace("/GS", "")    // no direct eq. in clang/gcc
+            }).collect();
+            let joined = converted.join(" ");
+            cmd.push(format!("-DCMAKE_CXX_FLAGS='{}'", joined));
+            cmd.push(format!("-DCMAKE_C_FLAGS='{}'", joined));
         }
     }
 
-    // Add variant-specific CMake options
+    // 3) apply any variant-level cmake_options
     if let Some(cmake_options) = &variant.cmake_options {
         cmd.extend(cmake_options.clone());
     }
 }
+
 // Function to run build hooks
 fn run_hooks(hooks: &Option<Vec<String>>, project_path: &Path, env_vars: Option<HashMap<String, String>>) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(commands) = hooks {
