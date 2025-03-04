@@ -7,14 +7,14 @@ A TOML-based build system for C/C++ projects with seamless CMake and vcpkg integ
 
 ## Features
 
-- 📋 **Simple TOML Configuration** - Straightforward project configuration without complex CMake syntax
-- 🔄 **Multi-platform Support** - Works on Windows, macOS, and Linux
-- 📦 **Integrated Dependency Management** - Native support for vcpkg, Conan, Git, and custom dependencies
-- 🏗️ **Workspace Management** - Build and manage multiple projects in a single workspace
-- 🎯 **Cross-compilation** - Built-in support for Android, iOS, Raspberry Pi, and WebAssembly
-- 🧰 **IDE Integration** - Generate project files for VS Code, CLion, Xcode, and Visual Studio
-- 🧪 **Testing Support** - Run tests with CTest integration
-- 📝 **Custom Scripts** - Define and run project-specific scripts
+- 📋 **Simple TOML Configuration** - Straightforward project configuration without complex CMake syntax  
+- 🔄 **Multi-platform Support** - Works on Windows, macOS, and Linux  
+- 📦 **Integrated Dependency Management** - Native support for vcpkg, Conan, Git, and custom dependencies  
+- 🏗️ **Workspace Management** - Build and manage multiple projects in a single workspace  
+- 🎯 **Cross-compilation** - Built-in support for Android, iOS, Raspberry Pi, and WebAssembly  
+- 🧰 **IDE Integration** - Generate project files for VS Code, CLion, Xcode, and Visual Studio  
+- 🧪 **Testing Support** - Run tests with CTest integration  
+- 📝 **Custom Scripts** - Define and run project-specific scripts  
 
 ## Installation
 
@@ -30,16 +30,22 @@ cargo build --release
 cargo install --path .
 ```
 
-From Cargo
-bashCopycargo install cbuild
-Prerequisites
+### From Cargo
 
-Rust (for building from source)
-CMake (3.15 or higher)
-A C/C++ compiler (GCC, Clang, or MSVC)
+```bash
+cargo install cbuild
+```
 
-Quick Start
-bashCopy# Create a new executable project
+#### Prerequisites
+
+- Rust (for building from source)  
+- CMake (3.15 or higher)  
+- A C/C++ compiler (GCC, Clang, or MSVC)  
+
+## Quick Start
+
+```bash
+# Create a new executable project
 cbuild init
 
 # Build the project
@@ -47,12 +53,32 @@ cbuild build
 
 # Run the executable
 cbuild run
-Command Reference
-Project Management
-CommandDescriptionExampleinitInitialize a new project or workspacecbuild init --template libbuildBuild the projectcbuild build --config ReleasecleanClean build artifactscbuild cleanrunRun the built executablecbuild run -- arg1 arg2testRun testscbuild test --filter MyTestinstallInstall the projectcbuild install --prefix /usr/localscriptRun a custom scriptcbuild script formatideGenerate IDE project filescbuild ide vscodepackagePackage the projectcbuild package --type ziplistList available configurations and optionscbuild list variantsdepsInstall project dependenciescbuild deps --update
-Workspace-specific Commands
+```
+
+## Command Reference
+
+### Project Management
+
+| Command               | Description                               | Example                             |
+|-----------------------|-------------------------------------------|-------------------------------------|
+| `init`               | Initialize a new project or workspace      | `cbuild init --template lib`        |
+| `build`              | Build the project                          | `cbuild build --config Release`     |
+| `clean`              | Clean build artifacts                      | `cbuild clean`                      |
+| `run`                | Run the built executable                   | `cbuild run -- arg1 arg2`           |
+| `test`               | Run tests                                  | `cbuild test --filter MyTest`       |
+| `install`            | Install the project                        | `cbuild install --prefix /usr/local`|
+| `script`             | Run a custom script                        | `cbuild script format`              |
+| `ide`                | Generate IDE project files                 | `cbuild ide vscode`                 |
+| `package`            | Package the project                        | `cbuild package --type zip`         |
+| `list`               | List available configurations and options  | `cbuild list variants`              |
+| `deps`               | Install project dependencies               | `cbuild deps --update`             |
+
+### Workspace-specific Commands
+
 When working with a multi-project workspace:
-bashCopy# Initialize a workspace
+
+```bash
+# Initialize a workspace
 cbuild init --workspace
 
 # Build a specific project in the workspace
@@ -60,9 +86,14 @@ cbuild build project_name
 
 # Run a specific project in the workspace
 cbuild run project_name
-Configuration Guide
-CBuild uses TOML for project configuration. Here's an example cbuild.toml file:
-tomlCopy[project]
+```
+
+## Configuration Guide
+
+CBuild uses TOML for project configuration. Here's an example `cbuild.toml` file:
+
+```toml
+[project]
 name = "my_project"
 version = "0.1.0"
 description = "A C/C++ project built with CBuild"
@@ -123,9 +154,14 @@ description = "Standard build with default settings"
 description = "Optimized for maximum performance"
 defines = ["OPTIMIZE_PERFORMANCE=1"]
 flags = ["-O3", "-march=native", "-flto"]
-Workspace Configuration
-For multi-project workspaces, create a cbuild-workspace.toml file:
-tomlCopy[workspace]
+```
+
+### Workspace Configuration
+
+For multi-project workspaces, create a `cbuild-workspace.toml` file:
+
+```toml
+[workspace]
 name = "my_workspace"
 
 projects = [
@@ -133,36 +169,54 @@ projects = [
     "projects/app2",
     "projects/common_lib"
 ]
-Project Templates
+```
+
+## Project Templates
+
 CBuild offers several project templates to help you get started:
 
-app (default): Creates an executable application
-lib: Creates a shared library
-header-only: Creates a header-only library
+- **app (default)**: Creates an executable application  
+- **lib**: Creates a shared library  
+- **header-only**: Creates a header-only library  
 
-bashCopy# Create a new library project
+```bash
+# Create a new library project
 cbuild init --template lib
-Build Variants
+```
+
+## Build Variants
+
 Build variants allow you to maintain different build settings:
-bashCopy# List available variants
+
+```bash
+# List available variants
 cbuild list variants
 
 # Build with a specific variant
 cbuild build --variant performance
-Cross-compilation
+```
+
+## Cross-compilation
+
 CBuild supports several predefined cross-compilation targets:
 
-android-arm64: Android ARM64 platform (requires NDK)
-android-arm: Android ARM platform (requires NDK)
-ios: iOS ARM64 platform (requires Xcode)
-raspberry-pi: Raspberry Pi ARM platform (requires toolchain)
-wasm: WebAssembly via Emscripten
+- `android-arm64`: Android ARM64 platform (requires NDK)  
+- `android-arm`: Android ARM platform (requires NDK)  
+- `ios`: iOS ARM64 platform (requires Xcode)  
+- `raspberry-pi`: Raspberry Pi ARM platform (requires toolchain)  
+- `wasm`: WebAssembly via Emscripten  
 
-bashCopy# Cross-compile for Android ARM64
+```bash
+# Cross-compile for Android ARM64
 cbuild build --target android-arm64
-IDE Integration
+```
+
+## IDE Integration
+
 Generate project files for your favorite IDE:
-bashCopy# Generate VS Code project files
+
+```bash
+# Generate VS Code project files
 cbuild ide vscode
 
 # Generate CLion project files
@@ -173,8 +227,12 @@ cbuild ide xcode
 
 # Generate Visual Studio project files (Windows only)
 cbuild ide vs
-Example: Creating and Building a Project
-bashCopy# Create a new project
+```
+
+## Example: Creating and Building a Project
+
+```bash
+# Create a new project
 mkdir my_project
 cd my_project
 cbuild init
@@ -190,9 +248,14 @@ int main() {
 # Build and run
 cbuild build
 cbuild run
-Example: Using External Dependencies
+```
+
+## Example: Using External Dependencies
+
 This example shows how to use the fmt library with vcpkg:
-bashCopy# Initialize project
+
+```bash
+# Initialize project
 cbuild init
 
 # Edit cbuild.toml to add the dependency
@@ -217,29 +280,50 @@ int main() {
 # Build and run
 cbuild build
 cbuild run
-Troubleshooting
-Common Issues
-CMake Not Found
+```
+
+## Troubleshooting
+
+### Common Issues
+
+#### CMake Not Found
+
 Ensure CMake is installed and available in your PATH.
-bashCopycmake --version
-Dependency Installation Fails
+
+```bash
+cmake --version
+```
+
+#### Dependency Installation Fails
+
 Make sure you have Git installed for vcpkg and other dependencies.
-bashCopygit --version
-Cross-compilation Issues
+
+```bash
+git --version
+```
+
+#### Cross-compilation Issues
+
 For cross-compilation, ensure you have the required tools:
 
-Android: Install Android NDK
-iOS: Install Xcode (macOS only)
-WASM: Install Emscripten
+- **Android**: Install Android NDK  
+- **iOS**: Install Xcode (macOS only)  
+- **WASM**: Install Emscripten  
 
-# Contributing
+---
+
+## Contributing
+
 Contributions are welcome! Please feel free to submit a Pull Request.
 
-# Fork the repository
-Create your feature branch (git checkout -b feature/amazing-feature)
-Commit your changes (git commit -m 'Add some amazing feature')
-Push to the branch (git push origin feature/amazing-feature)
-Open a Pull Request
+1. **Fork** the repository  
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)  
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)  
+4. Push to the branch (`git push origin feature/amazing-feature`)  
+5. Open a Pull Request  
 
-# License
-This project is licensed under the MIT License - see the LICENSE file for details.
+---
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
