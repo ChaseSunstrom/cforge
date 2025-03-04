@@ -2123,10 +2123,38 @@ fn generate_cmake_lists(config: &ProjectConfig, project_path: &Path, variant_nam
         cmake_content.push(String::new());
     }
 
-    // Add dependencies
+    // Add common preprocessor definitions
+    cmake_content.push("# Add preprocessor definitions from build configuration".to_string());
+    if let Some(configs) = &config.build.configs {
+        if let Some(config_settings) = configs.get(&get_build_type(config, None)) {
+            if let Some(defines) = &config_settings.defines {
+                for define in defines {
+                    cmake_content.push(format!("add_compile_definitions({})", define));
+                }
+            }
+        }
+    }
+    cmake_content.push(String::new());
+
+    // Add vcpkg dependencies - find all packages from vcpkg
+    let vcpkg_config = &config.dependencies.vcpkg;
+    if vcpkg_config.enabled && !vcpkg_config.packages.is_empty() {
+        cmake_content.push("# vcpkg dependencies".to_string());
+        for package in &vcpkg_config.packages {
+            // Extract base package name without version or platform
+            let base_package = package.split(':').next().unwrap_or(package);
+            cmake_content.push(format!("find_package({} CONFIG REQUIRED)", base_package));
+        }
+        cmake_content.push(String::new());
+    }
+
+    // Add other dependencies
     if let Some(cmake_deps) = &config.dependencies.cmake {
         for dep in cmake_deps {
             cmake_content.push(format!("find_package({} REQUIRED)", dep));
+        }
+        if !cmake_deps.is_empty() {
+            cmake_content.push(String::new());
         }
     }
 
@@ -2147,7 +2175,7 @@ fn generate_cmake_lists(config: &ProjectConfig, project_path: &Path, variant_nam
             cmake_content.push(String::new());
             cmake_content.push(format!("# Build variant: {}", variant_name.unwrap_or("default")).to_string());
             for define in defines {
-                cmake_content.push(format!("add_definitions(-D{})", define));
+                cmake_content.push(format!("add_compile_definitions({})", define));
             }
             cmake_content.push(String::new());
         }
@@ -2212,9 +2240,13 @@ fn generate_cmake_lists(config: &ProjectConfig, project_path: &Path, variant_nam
             }
         }
 
-        // Add defines
+        // Add target-specific defines (as target_compile_definitions)
         if !defines.is_empty() {
-            let defines_str = defines.iter().map(|d| format!("\"{}\"", d)).collect::<Vec<_>>().join(" ");
+            let defines_str = defines.iter()
+                .map(|d| format!("\"{}\"", d))
+                .collect::<Vec<_>>()
+                .join(" ");
+
             if target_type == "header-only" {
                 cmake_content.push(format!("target_compile_definitions({} INTERFACE {})", target_name, defines_str));
             } else {
@@ -2223,8 +2255,36 @@ fn generate_cmake_lists(config: &ProjectConfig, project_path: &Path, variant_nam
         }
 
         // Link libraries
+        let mut all_links = Vec::new();
+
+        // Add manually specified link libraries
         if !links.is_empty() {
-            let links_str = links.join(" ");
+            all_links.extend(links.clone());
+        }
+
+        // Add vcpkg package links if they match our link targets
+        if vcpkg_config.enabled && !vcpkg_config.packages.is_empty() {
+            // Only add vcpkg link targets that match our explicit links
+            for link in links {
+                // Check if this is a naked package name without namespace
+                if !link.contains("::") {
+                    // For each vcpkg package, check if we should add its namespaced target
+                    for package in &vcpkg_config.packages {
+                        let base_package = package.split(':').next().unwrap_or(package);
+                        if base_package.to_lowercase() == link.to_lowercase() {
+                            // Add the namespaced target instead of the bare name
+                            all_links.push(format!("{}::{}", base_package, base_package));
+                            // Remove the naked package name
+                            all_links.retain(|l| l != link);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Link all libraries
+        if !all_links.is_empty() {
+            let links_str = all_links.join(" ");
             if target_type == "header-only" {
                 cmake_content.push(format!("target_link_libraries({} INTERFACE {})", target_name, links_str));
             } else {
