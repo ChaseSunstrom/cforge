@@ -407,10 +407,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if is_workspace() {
                 build_workspace(project, config.as_deref(), variant.as_deref(), target.as_deref())?;
             } else {
-                let proj_config = load_project_config(None)?;
+                let mut proj_config = load_project_config(None)?;
+
+                // Auto-adjust configuration based on available tools
+                auto_adjust_config(&mut proj_config)?;
+
                 build_project(&proj_config, &PathBuf::from("."), config.as_deref(), variant.as_deref(), target.as_deref())?;
             }
-        }
+        },
         Commands::Clean { project, config, target } => {
             if is_workspace() {
                 clean_workspace(project, config.as_deref(), target.as_deref())?;
@@ -2418,9 +2422,179 @@ fn generate_cmake_lists(config: &ProjectConfig, project_path: &Path, variant_nam
     Ok(())
 }
 
+// Helper function to check if a command is available in PATH
+fn has_command(cmd: &str) -> bool {
+    Command::new(cmd)
+        .arg("--version")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok()
+}
+
+// Ensure at least one generator is installed
+fn ensure_generator_available() -> Result<String, Box<dyn std::error::Error>> {
+    // Try to find an available generator in order of preference
+    if has_command("ninja") {
+        return Ok("Ninja".to_string());
+    } else if has_command("mingw32-make") || has_command("make") {
+        return Ok("MinGW Makefiles".to_string());
+    } else if has_command("nmake") {
+        return Ok("NMake Makefiles".to_string());
+    }
+
+    // No generator found, try to install one
+    println!("{}", "No build generator found. Attempting to install one...".yellow());
+
+    // Try to install Ninja (fastest and cross-platform)
+    if ensure_compiler_available("ninja").is_ok() && has_command("ninja") {
+        return Ok("Ninja".to_string());
+    }
+
+    // If on Windows, try to install MinGW
+    if cfg!(target_os = "windows") && ensure_compiler_available("gcc").is_ok() && has_command("mingw32-make") {
+        return Ok("MinGW Makefiles".to_string());
+    }
+
+    // As a last resort, if on Windows and Visual Studio tools are available
+    if cfg!(target_os = "windows") && ensure_compiler_available("msvc").is_ok() && has_command("nmake") {
+        return Ok("NMake Makefiles".to_string());
+    }
+
+    // If we got here, we couldn't install any generator
+    Err("Could not find or install any build generator. Please install Ninja, MinGW, or Visual Studio Build Tools.".into())
+}
+
+// Simplified function to create a minimal template
+fn create_simple_config() -> ProjectConfig {
+    // Detect best available tools
+    let system_info = detect_system_info();
+
+    // Find best available generator
+    let generator = if has_command("ninja") {
+        "Ninja".to_string()
+    } else if cfg!(target_os = "windows") && has_command("mingw32-make") {
+        "MinGW Makefiles".to_string()
+    } else if cfg!(target_os = "windows") && has_command("nmake") {
+        "NMake Makefiles".to_string()
+    } else {
+        "Unix Makefiles".to_string()
+    };
+
+    // Project name from current directory
+    let project_name = env::current_dir()
+        .unwrap_or_else(|_| PathBuf::from("my_project"))
+        .file_name()
+        .unwrap_or_else(|| std::ffi::OsStr::new("my_project"))
+        .to_string_lossy()
+        .to_string();
+
+    // Create minimal configs - just Debug and Release
+    let mut configs = HashMap::new();
+    configs.insert("Debug".to_string(), ConfigSettings {
+        defines: Some(vec!["DEBUG".to_string()]),
+        flags: Some(vec!["NO_OPT".to_string(), "DEBUG_INFO".to_string()]),
+        link_flags: None,
+        output_dir_suffix: None,
+        cmake_options: None,
+    });
+
+    configs.insert("Release".to_string(), ConfigSettings {
+        defines: Some(vec!["NDEBUG".to_string()]),
+        flags: Some(vec!["OPTIMIZE".to_string()]),
+        link_flags: None,
+        output_dir_suffix: None,
+        cmake_options: None,
+    });
+
+    // Create minimal platforms config
+    let mut platforms = HashMap::new();
+    platforms.insert(system_info.os.clone(), PlatformConfig {
+        compiler: Some(system_info.compiler.clone()),
+        defines: None,
+        flags: None,
+    });
+
+    // Create minimal targets
+    let mut targets = HashMap::new();
+    targets.insert("default".to_string(), TargetConfig {
+        sources: vec!["src/**/*.cpp".to_string(), "src/**/*.c".to_string()],
+        include_dirs: Some(vec!["include".to_string()]),
+        defines: None,
+        links: None,
+    });
+
+    // Use the most basic vcpkg config
+    let vcpkg_config = VcpkgConfig {
+        enabled: false,  // Disabled by default for simplicity
+        path: None,
+        packages: vec![],
+    };
+
+    // Build the minimal ProjectConfig
+    ProjectConfig {
+        project: ProjectInfo {
+            name: project_name,
+            version: "0.1.0".to_string(),
+            description: "A simple C++ project".to_string(),
+            project_type: "executable".to_string(),
+            language: "c++".to_string(),
+            standard: "c++17".to_string(),
+        },
+        build: BuildConfig {
+            build_dir: Some("build".to_string()),
+            generator: Some(generator),
+            default_config: Some("Debug".to_string()),
+            debug: Some(true),
+            cmake_options: None,
+            configs: Some(configs),
+            compiler: Some(system_info.compiler),
+        },
+        dependencies: DependenciesConfig {
+            vcpkg: vcpkg_config,
+            system: None,
+            cmake: None,
+            conan: ConanConfig::default(),
+            custom: vec![],
+            git: vec![],
+        },
+        targets,
+        platforms: Some(platforms),
+        output: OutputConfig::default(), // Use defaults
+        hooks: None,          // No hooks
+        scripts: None,        // No scripts
+        variants: None,       // No variants
+        cross_compile: None,  // No cross-compilation
+    }
+}
+
 fn get_cmake_generator(config: &ProjectConfig) -> Result<String, Box<dyn std::error::Error>> {
     let generator = config.build.generator.as_deref().unwrap_or("default");
     if generator != "default" {
+        // If a specific generator is requested, try to ensure its tools are available
+
+
+
+        match generator {
+
+
+            "Ninja" => {
+                if !has_command("ninja") {
+                    ensure_compiler_available("ninja")?;
+                }
+            },
+            "NMake Makefiles" => {
+                if !has_command("nmake") {
+                    ensure_compiler_available("msvc")?;
+                }
+            },
+            "MinGW Makefiles" => {
+                if !has_command("mingw32-make") && !has_command("make") {
+                    ensure_compiler_available("gcc")?;
+                }
+            },
+            _ => {} // Other generators we don't try to auto-install
+        }
         return Ok(generator.to_string());
     }
 
@@ -2524,6 +2698,56 @@ fn configure_project(
     variant_name: Option<&str>,
     cross_target: Option<&str>
 ) -> Result<(), Box<dyn std::error::Error>> {
+    if !has_command("cmake") {
+        ensure_compiler_available("cmake")?;
+        if !has_command("cmake") {
+            return Err("CMake is required but could not be installed. Please install CMake manually.".into());
+        }
+    }
+
+    let compiler_label = get_effective_compiler_label(config);
+
+    // Ensure the compiler is available
+    if !has_command(&compiler_label) {
+        ensure_compiler_available(&compiler_label)?;
+        // Verify installation was successful
+        if !has_command(&compiler_label) {
+            println!("{}", format!("Warning: Compiler '{}' is not available. Build may fail.", compiler_label).yellow());
+        }
+    }
+
+    if config.build.generator.as_deref().unwrap_or("default") == "default" {
+        ensure_generator_available()?
+    } else {
+        let requested_generator = config.build.generator.as_deref().unwrap();
+        // Check if the requested generator is available
+        let generator_available = match requested_generator {
+            "Ninja" => has_command("ninja"),
+            "MinGW Makefiles" => has_command("mingw32-make") || has_command("make"),
+            "NMake Makefiles" => has_command("nmake"),
+            _ => true // Assume other generators are available
+        };
+
+        if !generator_available {
+            println!("{}", format!("Requested generator '{}' is not available. Attempting to install...", requested_generator).yellow());
+            match requested_generator {
+                "Ninja" => ensure_compiler_available("ninja")?,
+                "MinGW Makefiles" => ensure_compiler_available("gcc")?,
+                "NMake Makefiles" => ensure_compiler_available("msvc")?,
+                _ => false,
+            };
+
+            // If still not available, fall back to what we can find
+            if !generator_available {
+                ensure_generator_available()?
+            } else {
+                requested_generator.to_string()
+            }
+        } else {
+            requested_generator.to_string()
+        }
+    };
+
     let build_dir = config.build.build_dir.as_deref().unwrap_or("build");
     let build_path = project_path.join(build_dir);
     fs::create_dir_all(&build_path)?;
@@ -3027,6 +3251,505 @@ fn test_project(
         Err(e) => {
             println!("{}", format!("Some tests failed: {}", e).red());
             return Err("Some tests failed. Check the output for details.".into());
+        }
+    }
+
+    Ok(())
+}
+
+// Add this function to detect and potentially install compilers/tools
+fn ensure_compiler_available(compiler_label: &str) -> Result<bool, Box<dyn std::error::Error>> {
+    if has_command(compiler_label) {
+        return Ok(true);
+    }
+
+    println!("{}", format!("Compiler '{}' not found. Attempting to install...", compiler_label).yellow());
+
+    match compiler_label.to_lowercase().as_str() {
+        "msvc" | "cl" => {
+            // Try to install Visual Studio Build Tools
+            if cfg!(target_os = "windows") {
+                println!("Installing Visual Studio Build Tools...");
+
+                // Use winget if available (Windows 10+)
+                if has_command("winget") {
+                    let install_cmd = vec![
+                        "winget".to_string(),
+                        "install".to_string(),
+                        "--id".to_string(),
+                        "Microsoft.VisualStudio.2022.BuildTools".to_string(),
+                        "--silent".to_string(),
+                        "--override".to_string(),
+                        "--add Microsoft.VisualStudio.Workload.VCTools".to_string()
+                    ];
+
+                    match run_command(install_cmd, None, None) {
+                        Ok(_) => {
+                            println!("{}", "Visual Studio Build Tools installed successfully.".green());
+                            return Ok(true);
+                        },
+                        Err(e) => {
+                            println!("{}", format!("Failed to install automatically: {}", e).red());
+                        }
+                    }
+                }
+
+                // Manual instructions if automatic installation fails
+                println!("{}", "Please install Visual Studio Build Tools manually:".yellow());
+                println!("1. Download from https://visualstudio.microsoft.com/downloads/");
+                println!("2. Select 'C++ build tools' during installation");
+                println!("3. Restart your command prompt after installation");
+            } else {
+                println!("{}", "MSVC compiler is only available on Windows systems.".red());
+            }
+        },
+        "gcc" | "g++" => {
+            if cfg!(target_os = "windows") {
+                println!("Installing MinGW-w64 (GCC for Windows)...");
+
+                if has_command("winget") {
+                    let install_cmd = vec![
+                        "winget".to_string(),
+                        "install".to_string(),
+                        "--id".to_string(),
+                        "GnuWin32.Make".to_string()
+                    ];
+
+                    match run_command(install_cmd, None, None) {
+                        Ok(_) => {
+                            // Now install MinGW
+                            let mingw_cmd = vec![
+                                "winget".to_string(),
+                                "install".to_string(),
+                                "--id".to_string(),
+                                "MSYS2.MSYS2".to_string()
+                            ];
+
+                            match run_command(mingw_cmd, None, None) {
+                                Ok(_) => {
+                                    println!("{}", "MSYS2 installed. Installing MinGW toolchain...".blue());
+
+                                    // Install MinGW toolchain through MSYS2
+                                    let toolchain_cmd = vec![
+                                        "C:\\msys64\\usr\\bin\\bash.exe".to_string(),
+                                        "-c".to_string(),
+                                        "pacman -S --noconfirm mingw-w64-x86_64-toolchain".to_string()
+                                    ];
+
+                                    match run_command(toolchain_cmd, None, None) {
+                                        Ok(_) => {
+                                            println!("{}", "MinGW toolchain installed successfully.".green());
+                                            println!("{}", "Please add C:\\msys64\\mingw64\\bin to your PATH and restart your command prompt.".yellow());
+                                            return Ok(true);
+                                        },
+                                        Err(e) => {
+                                            println!("{}", format!("Failed to install MinGW toolchain: {}", e).red());
+                                        }
+                                    }
+                                },
+                                Err(e) => {
+                                    println!("{}", format!("Failed to install MSYS2: {}", e).red());
+                                }
+                            }
+                        },
+                        Err(e) => {
+                            println!("{}", format!("Failed to install Make: {}", e).red());
+                        }
+                    }
+                }
+
+                // Manual instructions
+                println!("{}", "Please install MinGW-w64 manually:".yellow());
+                println!("1. Download from https://www.mingw-w64.org/downloads/");
+                println!("2. Add the bin directory to your PATH environment variable");
+                println!("3. Restart your command prompt after installation");
+            } else if cfg!(target_os = "macos") {
+                println!("Installing GCC via Homebrew...");
+
+                if has_command("brew") {
+                    let install_cmd = vec![
+                        "brew".to_string(),
+                        "install".to_string(),
+                        "gcc".to_string()
+                    ];
+
+                    match run_command(install_cmd, None, None) {
+                        Ok(_) => {
+                            println!("{}", "GCC installed successfully.".green());
+                            return Ok(true);
+                        },
+                        Err(e) => {
+                            println!("{}", format!("Failed to install GCC: {}", e).red());
+                        }
+                    }
+                } else {
+                    println!("{}", "Homebrew not found. Please install Homebrew first:".yellow());
+                    println!("/bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"");
+                }
+            } else {
+                // Linux
+                println!("Installing GCC via apt...");
+
+                let install_cmd = vec![
+                    "sudo".to_string(),
+                    "apt".to_string(),
+                    "update".to_string()
+                ];
+
+                match run_command(install_cmd, None, None) {
+                    Ok(_) => {
+                        let gcc_cmd = vec![
+                            "sudo".to_string(),
+                            "apt".to_string(),
+                            "install".to_string(),
+                            "-y".to_string(),
+                            "build-essential".to_string()
+                        ];
+
+                        match run_command(gcc_cmd, None, None) {
+                            Ok(_) => {
+                                println!("{}", "GCC installed successfully.".green());
+                                return Ok(true);
+                            },
+                            Err(e) => {
+                                println!("{}", format!("Failed to install GCC: {}", e).red());
+                            }
+                        }
+                    },
+                    Err(e) => {
+                        println!("{}", format!("Failed to update package lists: {}", e).red());
+                    }
+                }
+            }
+        },
+        "clang" | "clang++" => {
+            if cfg!(target_os = "windows") {
+                println!("Installing LLVM/Clang...");
+
+                if has_command("winget") {
+                    let install_cmd = vec![
+                        "winget".to_string(),
+                        "install".to_string(),
+                        "--id".to_string(),
+                        "LLVM.LLVM".to_string()
+                    ];
+
+                    match run_command(install_cmd, None, None) {
+                        Ok(_) => {
+                            println!("{}", "LLVM/Clang installed successfully.".green());
+                            println!("{}", "Please restart your command prompt to update your PATH.".yellow());
+                            return Ok(true);
+                        },
+                        Err(e) => {
+                            println!("{}", format!("Failed to install LLVM/Clang: {}", e).red());
+                        }
+                    }
+                }
+            } else if cfg!(target_os = "macos") {
+                println!("Installing Clang via Homebrew...");
+
+                if has_command("brew") {
+                    let install_cmd = vec![
+                        "brew".to_string(),
+                        "install".to_string(),
+                        "llvm".to_string()
+                    ];
+
+                    match run_command(install_cmd, None, None) {
+                        Ok(_) => {
+                            println!("{}", "LLVM/Clang installed successfully.".green());
+                            return Ok(true);
+                        },
+                        Err(e) => {
+                            println!("{}", format!("Failed to install LLVM/Clang: {}", e).red());
+                        }
+                    }
+                }
+            } else {
+                // Linux
+                println!("Installing Clang via apt...");
+
+                let install_cmd = vec![
+                    "sudo".to_string(),
+                    "apt".to_string(),
+                    "update".to_string()
+                ];
+
+                match run_command(install_cmd, None, None) {
+                    Ok(_) => {
+                        let clang_cmd = vec![
+                            "sudo".to_string(),
+                            "apt".to_string(),
+                            "install".to_string(),
+                            "-y".to_string(),
+                            "clang".to_string()
+                        ];
+
+                        match run_command(clang_cmd, None, None) {
+                            Ok(_) => {
+                                println!("{}", "Clang installed successfully.".green());
+                                return Ok(true);
+                            },
+                            Err(e) => {
+                                println!("{}", format!("Failed to install Clang: {}", e).red());
+                            }
+                        }
+                    },
+                    Err(e) => {
+                        println!("{}", format!("Failed to update package lists: {}", e).red());
+                    }
+                }
+            }
+        },
+        "ninja" => {
+            if cfg!(target_os = "windows") {
+                println!("Installing Ninja build system...");
+
+                if has_command("winget") {
+                    let install_cmd = vec![
+                        "winget".to_string(),
+                        "install".to_string(),
+                        "--id".to_string(),
+                        "Ninja-build.Ninja".to_string()
+                    ];
+
+                    match run_command(install_cmd, None, None) {
+                        Ok(_) => {
+                            println!("{}", "Ninja build system installed successfully.".green());
+                            println!("{}", "Please restart your command prompt to update your PATH.".yellow());
+                            return Ok(true);
+                        },
+                        Err(e) => {
+                            println!("{}", format!("Failed to install Ninja: {}", e).red());
+                        }
+                    }
+                }
+            } else if cfg!(target_os = "macos") {
+                println!("Installing Ninja via Homebrew...");
+
+                if has_command("brew") {
+                    let install_cmd = vec![
+                        "brew".to_string(),
+                        "install".to_string(),
+                        "ninja".to_string()
+                    ];
+
+                    match run_command(install_cmd, None, None) {
+                        Ok(_) => {
+                            println!("{}", "Ninja build system installed successfully.".green());
+                            return Ok(true);
+                        },
+                        Err(e) => {
+                            println!("{}", format!("Failed to install Ninja: {}", e).red());
+                        }
+                    }
+                }
+            } else {
+                // Linux
+                println!("Installing Ninja via apt...");
+
+                let install_cmd = vec![
+                    "sudo".to_string(),
+                    "apt".to_string(),
+                    "update".to_string()
+                ];
+
+                match run_command(install_cmd, None, None) {
+                    Ok(_) => {
+                        let ninja_cmd = vec![
+                            "sudo".to_string(),
+                            "apt".to_string(),
+                            "install".to_string(),
+                            "-y".to_string(),
+                            "ninja-build".to_string()
+                        ];
+
+                        match run_command(ninja_cmd, None, None) {
+                            Ok(_) => {
+                                println!("{}", "Ninja build system installed successfully.".green());
+                                return Ok(true);
+                            },
+                            Err(e) => {
+                                println!("{}", format!("Failed to install Ninja: {}", e).red());
+                            }
+                        }
+                    },
+                    Err(e) => {
+                        println!("{}", format!("Failed to update package lists: {}", e).red());
+                    }
+                }
+            }
+        },
+        "cmake" => {
+            if cfg!(target_os = "windows") {
+                println!("Installing CMake...");
+
+                if has_command("winget") {
+                    let install_cmd = vec![
+                        "winget".to_string(),
+                        "install".to_string(),
+                        "--id".to_string(),
+                        "Kitware.CMake".to_string()
+                    ];
+
+                    match run_command(install_cmd, None, None) {
+                        Ok(_) => {
+                            println!("{}", "CMake installed successfully.".green());
+                            println!("{}", "Please restart your command prompt to update your PATH.".yellow());
+                            return Ok(true);
+                        },
+                        Err(e) => {
+                            println!("{}", format!("Failed to install CMake: {}", e).red());
+                        }
+                    }
+                }
+            } else if cfg!(target_os = "macos") {
+                println!("Installing CMake via Homebrew...");
+
+                if has_command("brew") {
+                    let install_cmd = vec![
+                        "brew".to_string(),
+                        "install".to_string(),
+                        "cmake".to_string()
+                    ];
+
+                    match run_command(install_cmd, None, None) {
+                        Ok(_) => {
+                            println!("{}", "CMake installed successfully.".green());
+                            return Ok(true);
+                        },
+                        Err(e) => {
+                            println!("{}", format!("Failed to install CMake: {}", e).red());
+                        }
+                    }
+                }
+            } else {
+                // Linux
+                println!("Installing CMake via apt...");
+
+                let install_cmd = vec![
+                    "sudo".to_string(),
+                    "apt".to_string(),
+                    "update".to_string()
+                ];
+
+                match run_command(install_cmd, None, None) {
+                    Ok(_) => {
+                        let cmake_cmd = vec![
+                            "sudo".to_string(),
+                            "apt".to_string(),
+                            "install".to_string(),
+                            "-y".to_string(),
+                            "cmake".to_string()
+                        ];
+
+                        match run_command(cmake_cmd, None, None) {
+                            Ok(_) => {
+                                println!("{}", "CMake installed successfully.".green());
+                                return Ok(true);
+                            },
+                            Err(e) => {
+                                println!("{}", format!("Failed to install CMake: {}", e).red());
+                            }
+                        }
+                    },
+                    Err(e) => {
+                        println!("{}", format!("Failed to update package lists: {}", e).red());
+                    }
+                }
+            }
+        },
+        _ => {
+            println!("{}", format!("Don't know how to install compiler/tool: {}", compiler_label).red());
+        }
+    }
+
+    println!("{}", "Please install the required tools manually and try again.".yellow());
+    Ok(false)
+}
+
+fn auto_adjust_config(config: &mut ProjectConfig) -> Result<(), Box<dyn std::error::Error>> {
+    // Auto-detect best available compiler/generator combo
+    let has_msvc = has_command("cl");
+    let has_gcc = has_command("gcc") || has_command("g++");
+    let has_clang = has_command("clang") || has_command("clang++");
+    let has_ninja = has_command("ninja");
+    let has_mingw_make = has_command("mingw32-make");
+    let has_nmake = has_command("nmake");
+
+    if cfg!(target_os = "windows") {
+        if has_msvc {
+            // If MSVC is available, prefer it with NMake or Ninja
+            config.build.compiler = Some("msvc".to_string());
+            if has_ninja {
+                config.build.generator = Some("Ninja".to_string());
+            } else if has_nmake {
+                config.build.generator = Some("NMake Makefiles".to_string());
+            } else {
+                config.build.generator = Some("Visual Studio 16 2019".to_string());
+            }
+        } else if has_gcc {
+            // If GCC/MinGW is available
+            config.build.compiler = Some("gcc".to_string());
+            if has_mingw_make {
+                config.build.generator = Some("MinGW Makefiles".to_string());
+            } else if has_ninja {
+                config.build.generator = Some("Ninja".to_string());
+            }
+        } else if has_clang {
+            // If Clang is available
+            config.build.compiler = Some("clang".to_string());
+            if has_ninja {
+                config.build.generator = Some("Ninja".to_string());
+            } else if has_mingw_make {
+                config.build.generator = Some("MinGW Makefiles".to_string());
+            }
+        } else {
+            // No compiler detected, attempt to install one
+            println!("{}", "No C++ compiler detected. Attempting to install one...".yellow());
+            ensure_compiler_available("gcc")?;
+
+            // Update config based on what got installed
+            if has_command("gcc") {
+                config.build.compiler = Some("gcc".to_string());
+                config.build.generator = Some("MinGW Makefiles".to_string());
+            }
+        }
+    } else if cfg!(target_os = "macos") {
+        // On macOS, prefer Clang with Ninja or Unix Makefiles
+        config.build.compiler = Some("clang".to_string());
+        if has_ninja {
+            config.build.generator = Some("Ninja".to_string());
+        } else {
+            config.build.generator = Some("Unix Makefiles".to_string());
+        }
+    } else {
+        // On Linux, prefer GCC with Ninja or Unix Makefiles
+        if has_gcc {
+            config.build.compiler = Some("gcc".to_string());
+        } else if has_clang {
+            config.build.compiler = Some("clang".to_string());
+        }
+
+        if has_ninja {
+            config.build.generator = Some("Ninja".to_string());
+        } else {
+            config.build.generator = Some("Unix Makefiles".to_string());
+        }
+    }
+
+    // Update platform config to match compiler
+    if let Some(platforms) = &mut config.platforms {
+        let current_os = if cfg!(target_os = "windows") {
+            "windows"
+        } else if cfg!(target_os = "macos") {
+            "darwin"
+        } else {
+            "linux"
+        };
+
+        if let Some(platform_config) = platforms.get_mut(current_os) {
+            platform_config.compiler = config.build.compiler.clone();
         }
     }
 
