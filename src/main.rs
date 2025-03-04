@@ -584,41 +584,142 @@ fn setup_vcpkg(config: &ProjectConfig, project_path: &Path) -> Result<String, Bo
         return Ok(String::new());
     }
 
-    let vcpkg_path = vcpkg_config.path.as_deref().unwrap_or(VCPKG_DEFAULT_DIR);
-    let vcpkg_path = expand_tilde(vcpkg_path);
+    // First, try the configured path
+    let configured_path = vcpkg_config.path.as_deref().unwrap_or(VCPKG_DEFAULT_DIR);
+    let configured_path = expand_tilde(configured_path);
 
-    // Check if vcpkg exists at the configured path
-    let vcpkg_exe = if cfg!(target_os = "windows") {
-        PathBuf::from(&vcpkg_path).join("vcpkg.exe")
+    // Try to find vcpkg in common locations
+    let mut potential_vcpkg_paths = vec![
+        configured_path.clone(),
+        // Common installation locations
+        String::from("C:/vcpkg"),
+        String::from("C:/dev/vcpkg"),
+        String::from("C:/tools/vcpkg"),
+        String::from("/usr/local/vcpkg"),
+        String::from("/opt/vcpkg"),
+        expand_tilde("~/vcpkg"),
+    ];
+
+    // Also check PATH environment variable
+    if let Ok(path_var) = env::var("PATH") {
+        for path in path_var.split(if cfg!(windows) { ';' } else { ':' }) {
+            let path_buf = PathBuf::from(path);
+            let vcpkg_in_path = if cfg!(windows) {
+                path_buf.join("vcpkg.exe")
+            } else {
+                path_buf.join("vcpkg")
+            };
+
+            if vcpkg_in_path.exists() {
+                // Add the parent directory (vcpkg root)
+                if let Some(parent) = vcpkg_in_path.parent() {
+                    potential_vcpkg_paths.push(parent.to_string_lossy().to_string());
+                }
+            }
+        }
+    }
+
+    // Find the first valid vcpkg installation
+    let mut found_vcpkg_path = None;
+    let mut found_exe_path = None;
+
+    for path in potential_vcpkg_paths {
+        let vcpkg_exe = if cfg!(windows) {
+            PathBuf::from(&path).join("vcpkg.exe")
+        } else {
+            PathBuf::from(&path).join("vcpkg")
+        };
+
+        if vcpkg_exe.exists() {
+            // Check if this is a valid vcpkg installation with the toolchain file
+            let toolchain_file = PathBuf::from(&path)
+                .join("scripts")
+                .join("buildsystems")
+                .join("vcpkg.cmake");
+
+            if toolchain_file.exists() {
+                found_vcpkg_path = Some(path);
+                found_exe_path = Some(vcpkg_exe);
+                break;
+            }
+        }
+    }
+
+    // If vcpkg wasn't found anywhere, try to set it up in the configured path
+    let vcpkg_path = if let Some(path) = found_vcpkg_path {
+        println!("{}", format!("Found existing vcpkg installation at {}", path).green());
+        path
     } else {
-        PathBuf::from(&vcpkg_path).join("vcpkg")
-    };
+        println!("{}", format!("vcpkg not found, attempting to set up at {}", configured_path).blue());
 
-    if !vcpkg_exe.exists() {
-        println!("{}", format!("vcpkg not found at {}, installing...", vcpkg_path).blue());
-
-        // Clone vcpkg repository
-        let vcpkg_parent_dir = Path::new(&vcpkg_path).parent().unwrap();
+        // Create parent directory if it doesn't exist
+        let vcpkg_parent_dir = Path::new(&configured_path).parent().unwrap_or_else(|| Path::new(&configured_path));
         fs::create_dir_all(vcpkg_parent_dir)?;
 
-        run_command(
-            vec![String::from("git"), String::from("clone"), String::from("https://github.com/microsoft/vcpkg.git"), String::from(&vcpkg_path)],
-            None,
-            None,
-        )?;
+        // Check if the directory exists but is not a proper vcpkg installation
+        let vcpkg_dir = Path::new(&configured_path);
+        if vcpkg_dir.exists() {
+            println!("{}", format!("Directory {} exists but does not contain a valid vcpkg installation. Attempting to bootstrap...", configured_path).yellow());
+        } else {
+            // Try to clone vcpkg repository
+            match run_command(
+                vec![
+                    String::from("git"),
+                    String::from("clone"),
+                    String::from("https://github.com/microsoft/vcpkg.git"),
+                    String::from(&configured_path)
+                ],
+                None,
+                None,
+            ) {
+                Ok(_) => {},
+                Err(e) => {
+                    // If clone failed because directory exists, continue anyway
+                    if vcpkg_dir.exists() {
+                        println!("{}", format!("Git clone failed but directory exists: {}", e).yellow());
+                    } else {
+                        return Err(e);
+                    }
+                }
+            }
+        }
 
-        // Bootstrap vcpkg
-        let bootstrap_script = if cfg!(target_os = "windows") {
+        // Try to bootstrap vcpkg
+        let bootstrap_script = if cfg!(windows) {
             "bootstrap-vcpkg.bat"
         } else {
             "./bootstrap-vcpkg.sh"
         };
 
-        run_command(
+        match run_command(
             vec![String::from(bootstrap_script)],
-            Some(&vcpkg_path),
+            Some(&configured_path),
             None,
-        )?;
+        ) {
+            Ok(_) => {},
+            Err(e) => {
+                println!("{}", format!("Bootstrapping vcpkg failed: {}", e).yellow());
+                println!("{}", "Will try to use vcpkg anyway if it exists.".yellow());
+            }
+        }
+
+        configured_path
+    };
+
+    // Get the vcpkg executable path
+    let vcpkg_exe = if let Some(exe) = found_exe_path {
+        exe
+    } else {
+        if cfg!(windows) {
+            PathBuf::from(&vcpkg_path).join("vcpkg.exe")
+        } else {
+            PathBuf::from(&vcpkg_path).join("vcpkg")
+        }
+    };
+
+    // Verify vcpkg executable exists
+    if !vcpkg_exe.exists() {
+        return Err(format!("vcpkg executable not found at {}. Please install vcpkg manually.", vcpkg_exe.display()).into());
     }
 
     // Install configured packages
@@ -637,12 +738,11 @@ fn setup_vcpkg(config: &ProjectConfig, project_path: &Path) -> Result<String, Bo
         .join("vcpkg.cmake");
 
     if !toolchain_file.exists() {
-        return Err(format!("vcpkg toolchain file not found at {}", toolchain_file.display()).into());
+        return Err(format!("vcpkg toolchain file not found at {}. This suggests a corrupt vcpkg installation.", toolchain_file.display()).into());
     }
 
     Ok(toolchain_file.to_string_lossy().to_string())
 }
-
 fn generate_cmake_lists(config: &ProjectConfig, project_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let project_config = &config.project;
     let targets_config = &config.targets;
@@ -691,20 +791,53 @@ fn generate_cmake_lists(config: &ProjectConfig, project_path: &Path) -> Result<(
     for (target_name, target_config) in targets_config {
         let target_type = &project_config.project_type;
         let sources = &target_config.sources;
-        let default = vec![];
-        let include_dirs = target_config.include_dirs.as_ref().unwrap_or(&default);
-        let defines = target_config.defines.as_ref().unwrap_or(&default);
-        let links = target_config.links.as_ref().unwrap_or(&default);
+        let empty_vec = Vec::new();
+        let include_dirs = target_config.include_dirs.as_ref().unwrap_or(&empty_vec);
+        let defines = target_config.defines.as_ref().unwrap_or(&empty_vec);
+        let links = target_config.links.as_ref().unwrap_or(&empty_vec);
+
+        // Check if we have any explicit source files (not globs)
+        let mut has_explicit_sources = false;
+        let mut explicit_sources = Vec::new();
+
+        for source in sources {
+            if !source.contains("*") {
+                has_explicit_sources = true;
+                explicit_sources.push(source.clone());
+            }
+        }
 
         // Convert glob patterns to file_glob commands
         let mut source_vars = Vec::new();
         for (idx, pattern) in sources.iter().enumerate() {
-            let var_name = format!("{}_SOURCES_{}", target_name.to_uppercase(), idx);
-            cmake_content.push(format!("file(GLOB_RECURSE {} {})", var_name, pattern));
-            source_vars.push(format!("${{{}}}", var_name));
+            // Only use glob for patterns containing wildcards
+            if pattern.contains("*") {
+                let var_name = format!("{}_SOURCES_{}", target_name.to_uppercase(), idx);
+                cmake_content.push(format!("file(GLOB_RECURSE {} {})", var_name, pattern));
+                source_vars.push(format!("${{{}}}", var_name));
+            }
         }
 
-        let sources_joined = source_vars.join(" ");
+        // If we don't have any explicit sources or globs, add a check to create a default source file
+        if !has_explicit_sources && source_vars.is_empty() {
+            // Create a default main.cpp file to avoid CMake errors
+            let main_file = project_path.join("src").join("main.cpp");
+            if !main_file.exists() {
+                fs::create_dir_all(project_path.join("src"))?;
+                let mut file = File::create(&main_file)?;
+                file.write_all(b"#include <iostream>\n\nint main(int argc, char* argv[]) {\n    std::cout << \"Hello, CBuild!\" << std::endl;\n    return 0;\n}\n")?;
+                println!("{}", format!("Created default source file at {}", main_file.display()).green());
+            }
+            explicit_sources.push("src/main.cpp".to_string());
+            has_explicit_sources = true;
+        }
+
+        // Combine explicit sources and globbed sources
+        let mut all_sources = Vec::new();
+        all_sources.extend(explicit_sources);
+        all_sources.extend(source_vars);
+
+        let sources_joined = all_sources.join(" ");
 
         // Create target
         if target_type == "executable" {
@@ -1116,28 +1249,30 @@ fn run_command(cmd: Vec<String>, cwd: Option<&str>, env: Option<HashMap<String, 
         }
     }
 
-    let output = command.output()?;
+    let output = match command.output() {
+        Ok(output) => output,
+        Err(e) => {
+            println!("{}", format!("Failed to execute command: {}", e).red());
+            return Err(Box::new(e));
+        }
+    };
+
+    // Capture stdout and stderr
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+
+    // Print command output regardless of success/failure
+    if !stdout.is_empty() {
+        println!("{}", stdout);
+    }
 
     if !output.status.success() {
-        // Print error output
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let stdout = String::from_utf8_lossy(&output.stdout);
-
         println!("{}", "Command failed with error:".red());
-        if !stdout.is_empty() {
-            println!("{}", stdout);
-        }
         if !stderr.is_empty() {
             eprintln!("{}", stderr);
         }
 
         return Err(format!("Command failed with exit code: {}", output.status).into());
-    }
-
-    // Print command output
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    if !stdout.is_empty() {
-        println!("{}", stdout);
     }
 
     Ok(())
