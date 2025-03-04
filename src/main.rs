@@ -2803,20 +2803,19 @@ fn map_compiler_label(label: &str) -> Option<(String, String)> {
         "gcc" => Some(("gcc".to_string(), "g++".to_string())),
         "clang" => Some(("clang".to_string(), "clang++".to_string())),
         "clang-cl" => {
-            // On Windows, if clang-cl.exe is in PATH, you might just specify "clang-cl"
-            Some(("clang-cl".to_string(), "clang-cl".to_string()))
+            if cfg!(windows) {
+                Some(("clang-cl.exe".to_string(), "clang-cl.exe".to_string()))
+            } else {
+                Some(("clang-cl".to_string(), "clang-cl".to_string()))
+            }
         }
         "msvc" | "cl" => {
-            // Usually you let CMake detect the correct "cl.exe" for Visual Studio
-            // or provide the full path. But if you want to do it explicitly:
-            Some((
-                "cl.exe".to_string(),
-                "cl.exe".to_string()
-            ))
+            Some(("cl.exe".to_string(), "cl.exe".to_string()))
         }
         _ => None,
     }
 }
+
 
 
 fn run_project(
