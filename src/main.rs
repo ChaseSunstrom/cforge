@@ -1990,7 +1990,6 @@ fn get_config_specific_options(config: &ProjectConfig, build_type: &str) -> Vec<
 
     if let Some(configs) = &config.build.configs {
         if let Some(cfg_settings) = configs.get(build_type) {
-            // 1) Add config-specific defines as normal
             if let Some(defines) = &cfg_settings.defines {
                 for define in defines {
                     options.push(format!("-D{}=1", define));
@@ -1998,15 +1997,12 @@ fn get_config_specific_options(config: &ProjectConfig, build_type: &str) -> Vec<
             }
 
             // 2) parse universal tokens for flags
-            let system_info = detect_system_info();
-            let is_msvc_style = system_info.compiler == "msvc"
-                || system_info.compiler == "clang-cl";
+            let is_msvc_style = is_msvc_style_for_config(config);
 
             if let Some(token_list) = &cfg_settings.flags {
                 let real_flags = parse_universal_flags(token_list, is_msvc_style);
                 if !real_flags.is_empty() {
                     let joined = real_flags.join(" ");
-                    // We set them in the config-specific variables
                     if is_msvc_style {
                         options.push(format!(
                             "-DCMAKE_CXX_FLAGS_{}:STRING={}",
@@ -2087,32 +2083,24 @@ fn get_active_variant<'a>(config: &'a ProjectConfig, requested_variant: Option<&
     None
 }
 
-fn apply_variant_settings(cmd: &mut Vec<String>, variant: &VariantSettings) {
-    // 1) detect if the compiler is MSVC/clang-cl or GCC/clang(gnu)
-    let system_info = detect_system_info();
-    let is_msvc_style = system_info.compiler == "msvc" || system_info.compiler == "clang-cl";
+fn apply_variant_settings(cmd: &mut Vec<String>, variant: &VariantSettings, config: &ProjectConfig) {
+    let is_msvc_style = is_msvc_style_for_config(config);
 
-    // 2) add variant-specific defines
+    // The rest is the same
     if let Some(defines) = &variant.defines {
         for define in defines {
-            // We use -DXYZ=1 style for CMake
             cmd.push(format!("-D{}=1", define));
         }
     }
 
-    // 3) handle the variant-specific flags: parse them from tokens
     if let Some(token_list) = &variant.flags {
         let real_flags = parse_universal_flags(token_list, is_msvc_style);
         if !real_flags.is_empty() {
             let joined = real_flags.join(" ");
             if is_msvc_style {
-                // For MSVC, use /D for defines etc., but for flags, we do:
-                // e.g. -DCMAKE_CXX_FLAGS:STRING="/O2 /GL ..."
-                // We skip quotes if you want, or if you have spaces, you might do quotes
                 cmd.push(format!("-DCMAKE_CXX_FLAGS:STRING={}", joined));
                 cmd.push(format!("-DCMAKE_C_FLAGS:STRING={}", joined));
             } else {
-                // For GNU compilers, we might single-quote them
                 cmd.push(format!("-DCMAKE_CXX_FLAGS='{}'", joined));
                 cmd.push(format!("-DCMAKE_C_FLAGS='{}'", joined));
             }
@@ -2656,7 +2644,7 @@ fn configure_project(
 
     // Add variant-specific options if a variant is active
     if let Some(variant) = get_active_variant(config, variant_name) {
-        apply_variant_settings(&mut cmd, variant);
+        apply_variant_settings(&mut cmd, variant, config);
     }
 
     // Add cross-compilation options
@@ -3766,4 +3754,11 @@ fn parse_universal_flags(tokens: &[String], is_msvc_style: bool) -> Vec<String> 
         result.extend(expanded);
     }
     result
+}
+
+/// Decide slash or dash based on the user-chosen compiler label
+fn is_msvc_style_for_config(config: &ProjectConfig) -> bool {
+    let label = get_effective_compiler_label(config).to_lowercase();
+    // If user says "msvc" or "clang-cl", do slash-based flags
+    matches!(label.as_str(), "msvc" | "clang-cl")
 }
