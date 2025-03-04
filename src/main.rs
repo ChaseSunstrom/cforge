@@ -866,6 +866,23 @@ fn create_header_only_config() -> ProjectConfig {
     config
 }
 
+fn get_effective_compiler_label(config: &ProjectConfig) -> String {
+    if let Some(label) = &config.build.compiler {
+        // If user explicitly set [build.compiler], use it
+        return label.clone();
+    }
+
+    // Otherwise pick a default:
+    if cfg!(target_os = "windows") {
+        "msvc".to_string()      // Use cl.exe
+    } else if cfg!(target_os = "macos") {
+        "clang".to_string()     // Apple Clang
+    } else {
+        "gcc".to_string()       // Typical default on Linux
+    }
+}
+
+
 fn create_default_config() -> ProjectConfig {
     // First, detect the system and compiler, though we won't directly
     // use it to pick slash/dash flags here. Instead, we store universal
@@ -2537,15 +2554,19 @@ fn configure_project(
     let build_type = get_build_type(config, config_type);
     cmd.push(format!("-DCMAKE_BUILD_TYPE={}", build_type));
 
-    // -----------------------------------------
-    //  Map the user-specified compiler label
-    if let Some(compiler_label) = &config.build.compiler {
-        // We'll do a small helper to map "gcc", "clang", "clang-cl", "msvc", etc.
-        if let Some((c_comp, cxx_comp)) = map_compiler_label(compiler_label) {
+    let compiler_label = get_effective_compiler_label(config); // "msvc", "clang", "gcc", or "clang-cl"
+
+    // 2) Decide if we do slash-based flags (msvc/clang-cl) or dash-based flags (gcc/clang)
+    let is_msvc_style = match compiler_label.to_lowercase().as_str() {
+        "msvc" | "clang-cl" => true,
+        _ => false,
+    };
+
+    // 3) If user wants an explicit compiler override in CMake
+    if compiler_label.to_lowercase() != "default" {
+        if let Some((c_comp, cxx_comp)) = map_compiler_label(&compiler_label) {
             cmd.push(format!("-DCMAKE_C_COMPILER={}", c_comp));
             cmd.push(format!("-DCMAKE_CXX_COMPILER={}", cxx_comp));
-        } else {
-            println!("Warning: unrecognized compiler label '{}'", compiler_label);
         }
     }
     // Create a set of environment variables for hooks
