@@ -166,13 +166,17 @@ enum Commands {
     /// Generate IDE project files
     #[clap(name = "ide")]
     Ide {
-        /// IDE type (vscode, clion, etc.)
+        /// IDE type (vscode, clion, vs, vs2022, vs2019, vs2017, etc.)
         #[clap(name = "type")]
         ide_type: String,
 
         /// Generate for specific project in a workspace
         #[clap(name = "project")]
         project: Option<String>,
+
+        /// Target architecture (x64, Win32, ARM64, etc.) for Visual Studio
+        #[clap(long)]
+        arch: Option<String>,
     },
 
     /// Package the project
@@ -463,12 +467,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 run_script(&proj_config, &name, &PathBuf::from("."))?;
             }
         }
-        Commands::Ide { ide_type, project } => {
+        Commands::Ide { ide_type, project, arch } => {
+            // Format ide_type to include architecture if provided for VS
+            let full_ide_type = match (ide_type.as_str(), arch) {
+                (t, Some(a)) if t.starts_with("vs") => format!("{}:{}", t, a),
+                _ => ide_type,
+            };
+
             if is_workspace() {
-                generate_workspace_ide_files(ide_type, project)?;
+                generate_workspace_ide_files(full_ide_type, project)?;
             } else {
                 let proj_config = load_project_config(None)?;
-                generate_ide_files(&proj_config, &PathBuf::from("."), &ide_type)?;
+                generate_ide_files(&proj_config, &PathBuf::from("."), &full_ide_type)?;
             }
         }
         Commands::Package { project, config, type_ } => {
@@ -2570,14 +2580,32 @@ fn create_simple_config() -> ProjectConfig {
 
 fn get_cmake_generator(config: &ProjectConfig) -> Result<String, Box<dyn std::error::Error>> {
     let generator = config.build.generator.as_deref().unwrap_or("default");
+
+    // If VS is explicitly requested with a version number
+    if generator.starts_with("Visual Studio ") || generator.to_lowercase().starts_with("vs") {
+        let requested_version = if generator.to_lowercase().starts_with("vs") {
+            // Extract version from "vs2019" or similar format
+            let version_str = generator.trim_start_matches("vs").trim_start_matches("VS");
+            match version_str {
+                "2022" => Some("17 2022"),
+                "2019" => Some("16 2019"),
+                "2017" => Some("15 2017"),
+                "2015" => Some("14 2015"),
+                "2013" => Some("12 2013"),
+                _ => None,
+            }
+        } else {
+            // Extract version from "Visual Studio XX YYYY" format
+            Some(generator.trim_start_matches("Visual Studio "))
+        };
+
+        return Ok(get_visual_studio_generator(requested_version));
+    }
+
+    // Handle other specific generators
     if generator != "default" {
         // If a specific generator is requested, try to ensure its tools are available
-
-
-
         match generator {
-
-
             "Ninja" => {
                 if !has_command("ninja") {
                     ensure_compiler_available("ninja")?;
@@ -2598,34 +2626,12 @@ fn get_cmake_generator(config: &ProjectConfig) -> Result<String, Box<dyn std::er
         return Ok(generator.to_string());
     }
 
+    // Auto-detect based on platform
     if cfg!(target_os = "windows") {
         // On Windows, prefer Visual Studio if available
         if Command::new("cl").arg("/?").stdout(Stdio::null()).stderr(Stdio::null()).status().is_ok() {
             // Try to determine VS version
-            if Command::new("msbuild").arg("/?").stdout(Stdio::null()).stderr(Stdio::null()).status().is_ok() {
-                // Use vswhere to find VS version if available
-                if let Ok(output) = Command::new("powershell")
-                    .arg("-Command")
-                    .arg("(Get-ItemProperty -Path 'HKLM:\\SOFTWARE\\Microsoft\\VisualStudio\\SxS\\VS7' -Name '17.0' -ErrorAction SilentlyContinue).'17.0'")
-                    .output()
-                {
-                    if !output.stdout.is_empty() {
-                        return Ok("Visual Studio 17 2022".to_string());
-                    }
-                }
-
-                if let Ok(output) = Command::new("powershell")
-                    .arg("-Command")
-                    .arg("(Get-ItemProperty -Path 'HKLM:\\SOFTWARE\\Microsoft\\VisualStudio\\SxS\\VS7' -Name '16.0' -ErrorAction SilentlyContinue).'16.0'")
-                    .output()
-                {
-                    if !output.stdout.is_empty() {
-                        return Ok("Visual Studio 16 2019".to_string());
-                    }
-                }
-
-                return Ok("Visual Studio 15 2017".to_string());
-            }
+            return Ok(get_visual_studio_generator(None));
         }
 
         // Fallback to Ninja if available
@@ -3854,7 +3860,19 @@ fn run_script(config: &ProjectConfig, script_name: &str, project_path: &Path) ->
 }
 
 fn generate_ide_files(config: &ProjectConfig, project_path: &Path, ide_type: &str) -> Result<(), Box<dyn std::error::Error>> {
-    match ide_type {
+    println!("IDE Type requested: {}", ide_type);
+
+    // Parse IDE type with possible version specification
+    let parts: Vec<&str> = ide_type.split(':').collect();
+    let (base_ide_type, version) = if parts.len() > 1 {
+        (parts[0], Some(parts[1]))
+    } else {
+        (ide_type, None)
+    };
+
+    println!("Base IDE type: {}, Version: {:?}", base_ide_type, version);
+
+    match base_ide_type {
         "vscode" => generate_vscode_files(config, project_path)?,
         "clion" => {
             // CLion doesn't need special files, just CMake project
@@ -3882,59 +3900,80 @@ fn generate_ide_files(config: &ProjectConfig, project_path: &Path, ide_type: &st
                 return Err("Xcode is only available on macOS".into());
             }
         },
-        "vs" => {
+        "vs" | "vs2022" | "vs2019" | "vs2017" | "vs2015" | "vs2013" => {
             // Generate Visual Studio project using CMake
             if cfg!(target_os = "windows") {
                 let build_dir = config.build.build_dir.as_deref().unwrap_or(DEFAULT_BUILD_DIR);
-                let vs_dir = format!("{}-vs", build_dir);
+
+                // Derive VS version from the ide_type or from the version parameter
+                let vs_version_hint = if base_ide_type != "vs" {
+                    // Extract version from "vs20XX" format
+                    Some(base_ide_type.trim_start_matches("vs"))
+                } else {
+                    version
+                };
+
+                println!("VS version hint: {:?}", vs_version_hint);
+
+                // Map year to generator version
+                let vs_version_str = match vs_version_hint {
+                    Some("2022") => Some("17 2022"),
+                    Some("2019") => Some("16 2019"),
+                    Some("2017") => Some("15 2017"),
+                    Some("2015") => Some("14 2015"),
+                    Some("2013") => Some("12 2013"),
+                    _ => None,
+                };
+
+                println!("Looking for VS generator with string: {:?}", vs_version_str);
+
+                // Get appropriate VS generator
+                let vs_generator = get_visual_studio_generator(vs_version_str);
+                println!("Selected VS generator: {}", vs_generator);
+
+                // Create suffix based on VS version
+                let vs_suffix = vs_generator.replace("Visual Studio ", "vs").replace(" ", "");
+                let vs_dir = format!("{}-{}", build_dir, vs_suffix.to_lowercase());
                 let vs_path = project_path.join(&vs_dir);
                 fs::create_dir_all(&vs_path)?;
+
+                println!("Creating VS project in directory: {}", vs_dir);
 
                 let mut cmd = vec![
                     "cmake".to_string(),
                     "..".to_string(),
                     "-G".to_string(),
+                    vs_generator.clone(),
                 ];
 
-                // Determine Visual Studio version
-                let vs_version = if Command::new("msbuild").arg("/?").stdout(Stdio::null()).stderr(Stdio::null()).status().is_ok() {
-                    if let Ok(output) = Command::new("powershell")
-                        .arg("-Command")
-                        .arg("(Get-ItemProperty -Path 'HKLM:\\SOFTWARE\\Microsoft\\VisualStudio\\SxS\\VS7' -Name '17.0' -ErrorAction SilentlyContinue).'17.0'")
-                        .output()
-                    {
-                        if !output.stdout.is_empty() {
-                            "Visual Studio 17 2022".to_string()
-                        } else if let Ok(output) = Command::new("powershell")
-                            .arg("-Command")
-                            .arg("(Get-ItemProperty -Path 'HKLM:\\SOFTWARE\\Microsoft\\VisualStudio\\SxS\\VS7' -Name '16.0' -ErrorAction SilentlyContinue).'16.0'")
-                            .output()
-                        {
-                            if !output.stdout.is_empty() {
-                                "Visual Studio 16 2019".to_string()
-                            } else {
-                                "Visual Studio 15 2017".to_string()
-                            }
-                        } else {
-                            "Visual Studio 15 2017".to_string()
-                        }
-                    } else {
-                        "Visual Studio 15 2017".to_string()
-                    }
-                } else {
-                    "Visual Studio 15 2017".to_string()
-                };
+                // Add platform architecture parameter for VS 2019+
+                // Modern VS generators require the -A parameter
+                if vs_generator.contains("16 2019") || vs_generator.contains("17 2022") {
+                    cmd.push("-A".to_string());
 
-                cmd.push(vs_version.clone());
+                    // Use arch from CLI if provided
+                    let arch = match version {
+                        Some(arch) if arch == "x86" || arch == "Win32" => "Win32",
+                        Some(arch) if arch == "x64" => "x64",
+                        Some(arch) if arch == "ARM" => "ARM",
+                        Some(arch) if arch == "ARM64" => "ARM64",
+                        _ => "x64" // Default to x64
+                    };
+
+                    cmd.push(arch.to_string());
+                    println!("Adding architecture parameter: {}", arch);
+                }
+
+                println!("Final CMake command: {}", cmd.join(" "));
 
                 run_command(cmd, Some(&vs_path.to_string_lossy().to_string()), None)?;
-                println!("{}", format!("{} project generated in {}", vs_version, vs_dir).green());
+                println!("{}", format!("{} project generated in {}", vs_generator, vs_dir).green());
             } else {
                 return Err("Visual Studio is only available on Windows".into());
             }
         },
         _ => {
-            return Err(format!("Unsupported IDE type: {}. Supported types are: vscode, clion, xcode, vs", ide_type).into());
+            return Err(format!("Unsupported IDE type: {}. Supported types are: vscode, clion, xcode, vs, vs2022, vs2019, vs2017, vs2015, vs2013", ide_type).into());
         }
     }
 
@@ -4483,4 +4522,158 @@ fn is_msvc_style_for_config(config: &ProjectConfig) -> bool {
     let label = get_effective_compiler_label(config).to_lowercase();
     // If user says "msvc" or "clang-cl", do slash-based flags
     matches!(label.as_str(), "msvc" | "clang-cl")
+}
+
+// Helper function to detect available Visual Studio versions
+fn detect_visual_studio_versions() -> Vec<(String, String)> {
+    let mut versions = Vec::new();
+
+    // First, try vswhere (most reliable on modern Windows)
+    let vswhere_success = if has_command("vswhere") {
+        if let Ok(output) = Command::new("vswhere")
+            .arg("-latest")
+            .arg("-products")
+            .arg("*")
+            .arg("-requires")
+            .arg("Microsoft.Component.MSBuild")
+            .arg("-property")
+            .arg("installationVersion")
+            .output()
+        {
+            let version_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !version_str.is_empty() {
+                // Parse major version
+                if let Some(major) = version_str.split('.').next() {
+                    let vs_name = match major {
+                        "17" => "Visual Studio 17 2022",
+                        "16" => "Visual Studio 16 2019",
+                        "15" => "Visual Studio 15 2017",
+                        "14" => "Visual Studio 14 2015",
+                        "12" => "Visual Studio 12 2013",
+                        _ => "Unknown Visual Studio",
+                    };
+
+                    versions.push((vs_name.to_string(), format!("{}.0", major)));
+                    true
+                } else {
+                    false
+                }
+            } else {
+                false
+            }
+        } else {
+            false
+        }
+    } else {
+        false
+    };
+
+    // If vswhere didn't work, try registry lookups
+    if !vswhere_success {
+        for (version, reg_key, generator) in &[
+            ("17.0", "17.0", "Visual Studio 17 2022"),
+            ("16.0", "16.0", "Visual Studio 16 2019"),
+            ("15.0", "15.0", "Visual Studio 15 2017"),
+            ("14.0", "14.0", "Visual Studio 14 2015"),
+            ("12.0", "12.0", "Visual Studio 12 2013")
+        ] {
+            if let Ok(output) = Command::new("powershell")
+                .arg("-Command")
+                .arg(format!("(Get-ItemProperty -Path 'HKLM:\\SOFTWARE\\Microsoft\\VisualStudio\\SxS\\VS7' -Name '{}' -ErrorAction SilentlyContinue).'{}'", reg_key, reg_key))
+                .output()
+            {
+                if !output.stdout.is_empty() {
+                    versions.push((generator.to_string(), version.to_string()));
+                }
+            }
+        }
+
+        // Try to find Build Tools instead of full VS
+        if versions.is_empty() {
+            if let Ok(output) = Command::new("powershell")
+                .arg("-Command")
+                .arg("Get-ChildItem 'HKLM:\\SOFTWARE\\Microsoft\\VisualStudio\\SxS\\VS7'")
+                .output()
+            {
+                let result = String::from_utf8_lossy(&output.stdout);
+
+                // Very simple check - look for a common version number
+                if result.contains("17.0") {
+                    versions.push(("Visual Studio 17 2022".to_string(), "17.0".to_string()));
+                } else if result.contains("16.0") {
+                    versions.push(("Visual Studio 16 2019".to_string(), "16.0".to_string()));
+                } else if result.contains("15.0") {
+                    versions.push(("Visual Studio 15 2017".to_string(), "15.0".to_string()));
+                }
+            }
+        }
+    }
+
+    // Try more direct detection: If we have cl.exe, try to determine its version
+    if versions.is_empty() && has_command("cl") {
+        if let Ok(output) = Command::new("cl").output() {
+            let cl_version = String::from_utf8_lossy(&output.stderr);
+            if cl_version.contains("19.30") || cl_version.contains("19.3") {
+                versions.push(("Visual Studio 17 2022".to_string(), "17.0".to_string()));
+            } else if cl_version.contains("19.20") || cl_version.contains("19.2") {
+                versions.push(("Visual Studio 16 2019".to_string(), "16.0".to_string()));
+            } else if cl_version.contains("19.1") {
+                versions.push(("Visual Studio 15 2017".to_string(), "15.0".to_string()));
+            }
+        }
+    }
+
+    // If no version detected, provide modern fallbacks
+    if versions.is_empty() {
+        if has_command("cl") {
+            // If cl.exe exists but we couldn't determine version, default to 2022
+            versions.push(("Visual Studio 17 2022".to_string(), "17.0".to_string()));
+        } else {
+            // No VS detected but will still try to use a modern version
+            versions.push(("Visual Studio 17 2022".to_string(), "17.0".to_string()));
+        }
+    }
+
+    // Sort by version (newest first)
+    versions.sort_by(|a, b| {
+        let a_ver = a.1.split('.').next().unwrap_or("0").parse::<i32>().unwrap_or(0);
+        let b_ver = b.1.split('.').next().unwrap_or("0").parse::<i32>().unwrap_or(0);
+        b_ver.cmp(&a_ver)
+    });
+
+    versions
+}
+
+// Simplified version
+fn get_visual_studio_generator(requested_version: Option<&str>) -> String {
+    println!("Detecting Visual Studio versions...");
+    let versions = detect_visual_studio_versions();
+
+    println!("Available Visual Studio versions: {:?}", versions
+        .iter()
+        .map(|(name, version)| format!("{} ({})", name, version))
+        .collect::<Vec<_>>());
+
+    println!("Requested version: {:?}", requested_version);
+
+    // If a specific version is requested, try to find it
+    if let Some(requested) = requested_version {
+        for (name, _) in &versions {
+            if name.to_lowercase().contains(&requested.to_lowercase()) {
+                println!("Found matching VS version: {}", name);
+                return name.clone();
+            }
+        }
+        println!("No exact match for '{}', falling back to latest", requested);
+    }
+
+    // Otherwise return the latest (first in the list)
+    if let Some((name, _)) = versions.first() {
+        println!("Using latest VS version: {}", name);
+        name.clone()
+    } else {
+        // Modern fallback
+        println!("No VS versions detected, using fallback: Visual Studio 17 2022");
+        "Visual Studio 17 2022".to_string()
+    }
 }
