@@ -1080,7 +1080,7 @@ fn create_default_config() -> ProjectConfig {
             lib_dir: Some(DEFAULT_LIB_DIR.to_string()),
             obj_dir: Some(DEFAULT_OBJ_DIR.to_string()),
         },
-        hooks: Some(hooks),
+        hooks: None,
         scripts: Some(ScriptDefinitions { scripts }),
         variants: Some(BuildVariants {
             default: Some("standard".to_string()),
@@ -1914,28 +1914,34 @@ fn get_config_specific_options(config: &ProjectConfig, build_type: &str) -> Vec<
     // Add configuration-specific options if available
     if let Some(configs) = &config.build.configs {
         if let Some(config_settings) = configs.get(build_type) {
-            // Add configuration-specific defines
+            // Add configuration-specific defines - use =1 format
             if let Some(defines) = &config_settings.defines {
                 for define in defines {
-                    options.push(format!("-D{}", define));
+                    options.push(format!("-D{}=1", define));
                 }
             }
 
-            // Add configuration-specific flags
+            // Add configuration-specific flags - handle Windows specially
             if let Some(flags) = &config_settings.flags {
                 if !flags.is_empty() {
-                    let flags_str = flags.join(" ");
-                    if cfg!(target_os = "windows") {
-                        options.push(format!("-DCMAKE_CXX_FLAGS_{}=\"{}\"", build_type.to_uppercase(), flags_str));
-                        options.push(format!("-DCMAKE_C_FLAGS_{}=\"{}\"", build_type.to_uppercase(), flags_str));
+                    if cfg!(windows) {
+                        // On Windows, join flags and specify STRING type to avoid quoting issues
+                        let flags_str = flags.join(" ");
+                        options.push(format!("-DCMAKE_CXX_FLAGS_{}:STRING={}",
+                                             build_type.to_uppercase(), flags_str));
+                        options.push(format!("-DCMAKE_C_FLAGS_{}:STRING={}",
+                                             build_type.to_uppercase(), flags_str));
                     } else {
-                        options.push(format!("-DCMAKE_CXX_FLAGS_{}='{}'", build_type.to_uppercase(), flags_str));
-                        options.push(format!("-DCMAKE_C_FLAGS_{}='{}'", build_type.to_uppercase(), flags_str));
+                        // On Unix, we can join with spaces and use single quotes
+                        let flags_str = flags.join(" ");
+                        options.push(format!("-DCMAKE_CXX_FLAGS_{}='{}'",
+                                             build_type.to_uppercase(), flags_str));
+                        options.push(format!("-DCMAKE_C_FLAGS_{}='{}'",
+                                             build_type.to_uppercase(), flags_str));
                     }
                 }
             }
 
-            // Add configuration-specific link flags
             if let Some(link_flags) = &config_settings.link_flags {
                 if !link_flags.is_empty() {
                     let link_flags_str = link_flags.join(" ");
@@ -1958,7 +1964,6 @@ fn get_config_specific_options(config: &ProjectConfig, build_type: &str) -> Vec<
 
     options
 }
-
 // Functions to handle build variants
 fn get_active_variant<'a>(config: &'a ProjectConfig, requested_variant: Option<&str>) -> Option<&'a VariantSettings> {
     if let Some(variants) = &config.variants {
@@ -1977,21 +1982,24 @@ fn get_active_variant<'a>(config: &'a ProjectConfig, requested_variant: Option<&
 }
 
 fn apply_variant_settings(cmd: &mut Vec<String>, variant: &VariantSettings) {
-    // Add variant-specific defines
+    // Add variant-specific defines with =1 format
     if let Some(defines) = &variant.defines {
         for define in defines {
-            cmd.push(format!("-D{}", define));
+            cmd.push(format!("-D{}=1", define));
         }
     }
 
-    // Add variant-specific flags
+    // Add variant-specific flags with proper quoting
     if let Some(flags) = &variant.flags {
         if !flags.is_empty() {
-            let flags_str = flags.join(" ");
-            if cfg!(target_os = "windows") {
-                cmd.push(format!("-DCMAKE_CXX_FLAGS=\"{}\"", flags_str));
-                cmd.push(format!("-DCMAKE_C_FLAGS=\"{}\"", flags_str));
+            if cfg!(windows) {
+                // On Windows, join flags and use STRING type
+                let flags_str = flags.join(" ");
+                cmd.push(format!("-DCMAKE_CXX_FLAGS:STRING={}", flags_str));
+                cmd.push(format!("-DCMAKE_C_FLAGS:STRING={}", flags_str));
             } else {
+                // On Unix, use single quotes
+                let flags_str = flags.join(" ");
                 cmd.push(format!("-DCMAKE_CXX_FLAGS='{}'", flags_str));
                 cmd.push(format!("-DCMAKE_C_FLAGS='{}'", flags_str));
             }
@@ -2003,21 +2011,22 @@ fn apply_variant_settings(cmd: &mut Vec<String>, variant: &VariantSettings) {
         cmd.extend(cmake_options.clone());
     }
 }
-
 // Function to run build hooks
 fn run_hooks(hooks: &Option<Vec<String>>, project_path: &Path, env_vars: Option<HashMap<String, String>>) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(commands) = hooks {
         for cmd_str in commands {
             println!("{}", format!("Running hook: {}", cmd_str).blue());
 
-            // Parse the command string into program and arguments
-            let mut parts = cmd_str.split_whitespace();
-            let program = parts.next().unwrap_or("");
-            let args: Vec<_> = parts.collect();
+            // Use the system shell instead of direct command execution
+            let (shell, shell_arg) = if cfg!(windows) {
+                ("cmd", "/C")
+            } else {
+                ("sh", "-c")
+            };
 
             // Create command
-            let mut command = Command::new(program);
-            command.args(&args);
+            let mut command = Command::new(shell);
+            command.arg(shell_arg).arg(cmd_str);
             command.current_dir(project_path);
 
             // Add environment variables if provided
@@ -2051,7 +2060,6 @@ fn run_hooks(hooks: &Option<Vec<String>>, project_path: &Path, env_vars: Option<
 
     Ok(())
 }
-
 fn generate_cmake_lists(config: &ProjectConfig, project_path: &Path, variant_name: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
     let project_config = &config.project;
     let targets_config = &config.targets;
@@ -2318,21 +2326,24 @@ fn get_platform_specific_options(config: &ProjectConfig) -> Vec<String> {
 
     if let Some(platforms) = &config.platforms {
         if let Some(platform_config) = platforms.get(current_os) {
-            // Add platform-specific defines
+            // Add platform-specific defines with =1 format
             if let Some(defines) = &platform_config.defines {
                 for define in defines {
-                    options.push(format!("-D{}", define));
+                    options.push(format!("-D{}=1", define));
                 }
             }
 
-            // Add platform-specific flags
+            // Add platform-specific flags with proper quoting
             if let Some(flags) = &platform_config.flags {
                 if !flags.is_empty() {
-                    let flags_str = flags.join(" ");
-                    if cfg!(target_os = "windows") {
-                        options.push(format!("-DCMAKE_CXX_FLAGS=\"{}\"", flags_str));
-                        options.push(format!("-DCMAKE_C_FLAGS=\"{}\"", flags_str));
+                    if cfg!(windows) {
+                        // On Windows, join flags and use STRING type
+                        let flags_str = flags.join(" ");
+                        options.push(format!("-DCMAKE_CXX_FLAGS:STRING={}", flags_str));
+                        options.push(format!("-DCMAKE_C_FLAGS:STRING={}", flags_str));
                     } else {
+                        // On Unix, use single quotes
+                        let flags_str = flags.join(" ");
                         options.push(format!("-DCMAKE_CXX_FLAGS='{}'", flags_str));
                         options.push(format!("-DCMAKE_C_FLAGS='{}'", flags_str));
                     }
@@ -2343,7 +2354,6 @@ fn get_platform_specific_options(config: &ProjectConfig) -> Vec<String> {
 
     options
 }
-
 fn configure_project(
     config: &ProjectConfig,
     project_path: &Path,
