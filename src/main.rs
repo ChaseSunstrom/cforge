@@ -4,7 +4,9 @@ use regex;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
+    collections::HashSet,
     env,
+    fmt,
     fs::{self, File},
     io::Write,
     path::{Path, PathBuf},
@@ -163,6 +165,17 @@ enum Commands {
         project: Option<String>,
     },
 
+    #[clap(name = "startup")]
+    Startup {
+        /// Set a project as the default startup project
+        #[clap(name = "project")]
+        project: Option<String>,
+
+        /// List all available startup projects
+        #[clap(long)]
+        list: bool,
+    },
+
     /// Generate IDE project files
     #[clap(name = "ide")]
     Ide {
@@ -207,21 +220,25 @@ enum Commands {
 // Configuration Models
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct WorkspaceConfig {
-    workspace: WorkspaceInfo,
-    projects: Vec<String>,
+    workspace: WorkspaceWithProjects,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-struct WorkspaceInfo {
+struct WorkspaceWithProjects {
     name: String,
+    projects: Vec<String>,
+    startup_projects: Option<Vec<String>>, // Projects that can be set as startup
+    default_startup_project: Option<String>, // Default startup project
 }
-
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct ProjectConfig {
     project: ProjectInfo,
     build: BuildConfig,
+    #[serde(default)]
     dependencies: DependenciesConfig,
+    #[serde(default)]
     targets: HashMap<String, TargetConfig>,
+    #[serde(default)]
     platforms: Option<HashMap<String, PlatformConfig>>,
     #[serde(default)]
     output: OutputConfig,
@@ -268,6 +285,7 @@ struct ConfigSettings {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct DependenciesConfig {
+    #[serde(default)]
     vcpkg: VcpkgConfig,
     system: Option<Vec<String>>,
     cmake: Option<Vec<String>>,
@@ -277,6 +295,15 @@ struct DependenciesConfig {
     custom: Vec<CustomDependency>, // Custom dependencies
     #[serde(default)]
     git: Vec<GitDependency>,  // Git dependencies
+    #[serde(default)]
+    workspace: Vec<WorkspaceDependency>, // Dependencies on other workspace projects
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct WorkspaceDependency {
+    name: String,             // Name of the project in workspace
+    link_type: Option<String>, // "static", "shared", or "interface" (default: depends on target type)
+    include_paths: Option<Vec<String>>, // Additional include paths relative to the dependency
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -324,6 +351,7 @@ struct TargetConfig {
     include_dirs: Option<Vec<String>>,
     defines: Option<Vec<String>>,
     links: Option<Vec<String>>,
+    platform_links: Option<HashMap<String, Vec<String>>>, // Platform-specific links
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -395,99 +423,279 @@ struct SystemInfo {
     compiler: String,
 }
 
-// Main implementation
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let cli = Cli::parse();
+#[derive(Debug)]
+pub struct CBuildError {
+    message: String,
+    file_path: Option<String>,
+    line_number: Option<usize>,
+    context: Option<String>,
+}
 
-    match cli.command {
+impl CBuildError {
+    pub fn new(message: &str) -> Self {
+        CBuildError {
+            message: message.to_string(),
+            file_path: None,
+            line_number: None,
+            context: None,
+        }
+    }
+
+    pub fn with_file(mut self, file_path: &str) -> Self {
+        self.file_path = Some(file_path.to_string());
+        self
+    }
+
+    pub fn with_line(mut self, line_number: usize) -> Self {
+        self.line_number = Some(line_number);
+        self
+    }
+
+    pub fn with_context(mut self, context: &str) -> Self {
+        self.context = Some(context.to_string());
+        self
+    }
+}
+
+impl fmt::Display for CBuildError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "CBuild Error: {}", self.message)?;
+
+        if let Some(file) = &self.file_path {
+            write!(f, " in file '{}'", file)?;
+        }
+
+        if let Some(line) = self.line_number {
+            write!(f, " at line {}", line)?;
+        }
+
+        if let Some(context) = &self.context {
+            write!(f, "\nContext: {}", context)?;
+        }
+
+        Ok(())
+    }
+}
+
+impl std::error::Error for CBuildError {}
+
+// Now add this function to convert TOML errors to your custom error type
+fn parse_toml_error(err: toml::de::Error, file_path: &str, file_content: &str) -> CBuildError {
+    let message = err.to_string();
+
+    // Try to extract line number from the error message
+    let line_number = if let Some(span) = err.span() {
+        // If we have a span, we can calculate the line number
+        let content_up_to_error = &file_content[..span.start];
+        Some(content_up_to_error.lines().count())
+    } else {
+        // Try to parse line number from error message (varies by TOML parser)
+        message.lines()
+            .find_map(|line| {
+                if line.contains("line") {
+                    line.split_whitespace()
+                        .find_map(|word| {
+                            if word.chars().all(|c| c.is_digit(10)) {
+                                word.parse::<usize>().ok()
+                            } else {
+                                None
+                            }
+                        })
+                } else {
+                    None
+                }
+            })
+    };
+
+    // Extract context - the line with the error and a few lines before/after
+    let context = if let Some(line_num) = line_number {
+        let lines: Vec<&str> = file_content.lines().collect();
+        let start = line_num.saturating_sub(2);
+        let end = std::cmp::min(line_num + 2, lines.len());
+
+        let mut result = String::new();
+        for i in start..end {
+            let line_prefix = if i == line_num - 1 { " -> " } else { "    " };
+            if i < lines.len() {
+                result.push_str(&format!("{}{}: {}\n", line_prefix, i + 1, lines[i]));
+            }
+        }
+        Some(result)
+    } else {
+        None
+    };
+
+    // Find specific value that caused the error
+    let problem_value = if let Some(span) = err.span() {
+        if span.start < file_content.len() && span.end <= file_content.len() {
+            Some(file_content[span.start..span.end].to_string())
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    // Create detailed error message
+    let detailed_message = if let Some(value) = problem_value {
+        format!("{}\nProblem with value: '{}'", message, value)
+    } else {
+        message
+    };
+
+    let mut error = CBuildError::new(&detailed_message).with_file(file_path);
+
+    if let Some(line) = line_number {
+        error = error.with_line(line);
+    }
+
+    if let Some(ctx) = context {
+        error = error.with_context(&ctx);
+    }
+
+    error
+}
+impl Default for DependenciesConfig {
+    fn default() -> Self {
+        DependenciesConfig {
+            vcpkg: VcpkgConfig::default(),
+            system: None,
+            cmake: None,
+            conan: ConanConfig::default(),
+            custom: Vec::new(),
+            git: Vec::new(),
+            workspace: Vec::new(),
+        }
+    }
+}
+
+impl Default for VcpkgConfig {
+    fn default() -> Self {
+        VcpkgConfig {
+            enabled: false,
+            path: None,
+            packages: Vec::new(),
+        }
+    }
+}
+
+fn run_command_raw(command: &Commands) -> Result<(), Box<dyn std::error::Error>> {
+    match command {
         Commands::Init { workspace, template } => {
-            if workspace {
+            if *workspace {
                 init_workspace()?;
             } else {
                 init_project(None, template.as_deref())?;
             }
+            Ok(())
         }
         Commands::Build { project, config, variant, target } => {
             if is_workspace() {
-                build_workspace(project, config.as_deref(), variant.as_deref(), target.as_deref())?;
+                build_workspace(project.clone(), config.as_deref(), variant.as_deref(), target.as_deref())?;
             } else {
                 let mut proj_config = load_project_config(None)?;
 
                 // Auto-adjust configuration based on available tools
                 auto_adjust_config(&mut proj_config)?;
 
-                build_project(&proj_config, &PathBuf::from("."), config.as_deref(), variant.as_deref(), target.as_deref())?;
+                build_project(&proj_config, &PathBuf::from("."), config.as_deref(), variant.as_deref(), target.as_deref(), None)?;
             }
+            Ok(())
         },
         Commands::Clean { project, config, target } => {
             if is_workspace() {
-                clean_workspace(project, config.as_deref(), target.as_deref())?;
+                clean_workspace(project.clone(), config.as_deref(), target.as_deref())?;
             } else {
                 let proj_config = load_project_config(None)?;
                 clean_project(&proj_config, &PathBuf::from("."), config.as_deref(), target.as_deref())?;
             }
-        }
+            Ok(())
+        },
+        Commands::Startup { project, list } => {
+            if !is_workspace() {
+                return Err("This command is only available in a workspace".into());
+            }
+
+            let mut workspace_config = load_workspace_config()?;
+
+            if *list {
+                list_startup_projects(&workspace_config)?;
+            } else if let Some(proj) = project {
+                set_startup_project(&mut workspace_config, &proj)?;
+            } else {
+                // If neither list nor project specified, show current startup project
+                show_current_startup(&workspace_config)?;
+            }
+            Ok(())
+        },
         Commands::Run { project, config, variant, args } => {
             if is_workspace() {
-                run_workspace(project, config.as_deref(), variant.as_deref(), &args)?;
+                run_workspace(project.clone(), config.as_deref(), variant.as_deref(), &args)?;
             } else {
                 let proj_config = load_project_config(None)?;
-                run_project(&proj_config, &PathBuf::from("."), config.as_deref(), variant.as_deref(), &args)?;
+                run_project(&proj_config, &PathBuf::from("."), config.as_deref(), variant.as_deref(), &args, None)?;
             }
+            Ok(())
         }
         Commands::Test { project, config, variant, filter } => {
             if is_workspace() {
-                test_workspace(project, config.as_deref(), variant.as_deref(), filter.as_deref())?;
+                test_workspace(project.clone(), config.as_deref(), variant.as_deref(), filter.as_deref())?;
             } else {
                 let proj_config = load_project_config(None)?;
                 test_project(&proj_config, &PathBuf::from("."), config.as_deref(), variant.as_deref(), filter.as_deref())?;
             }
+            Ok(())
         }
         Commands::Install { project, config, prefix } => {
             if is_workspace() {
-                install_workspace(project, config.as_deref(), prefix.as_deref())?;
+                install_workspace(project.clone(), config.as_deref(), prefix.as_deref())?;
             } else {
                 let proj_config = load_project_config(None)?;
                 install_project(&proj_config, &PathBuf::from("."), config.as_deref(), prefix.as_deref())?;
             }
+            Ok(())
         }
         Commands::Deps { project, update } => {
             if is_workspace() {
-                install_workspace_deps(project, update)?;
+                install_workspace_deps(project.clone(), *update)?;
             } else {
                 let proj_config = load_project_config(None)?;
-                install_dependencies(&proj_config, &PathBuf::from("."), update)?;
+                install_dependencies(&proj_config, &PathBuf::from("."), *update)?;
             }
+            Ok(())
         }
         Commands::Script { name, project } => {
             if is_workspace() {
-                run_workspace_script(name, project)?;
+                run_workspace_script(name.clone(), project.clone())?;
             } else {
                 let proj_config = load_project_config(None)?;
                 run_script(&proj_config, &name, &PathBuf::from("."))?;
             }
+            Ok(())
         }
         Commands::Ide { ide_type, project, arch } => {
             // Format ide_type to include architecture if provided for VS
             let full_ide_type = match (ide_type.as_str(), arch) {
                 (t, Some(a)) if t.starts_with("vs") => format!("{}:{}", t, a),
-                _ => ide_type,
+                _ => ide_type.to_string(),
             };
 
             if is_workspace() {
-                generate_workspace_ide_files(full_ide_type, project)?;
+                generate_workspace_ide_files(full_ide_type, project.clone())?;
             } else {
                 let proj_config = load_project_config(None)?;
                 generate_ide_files(&proj_config, &PathBuf::from("."), &full_ide_type)?;
             }
+            Ok(())
         }
         Commands::Package { project, config, type_ } => {
             if is_workspace() {
-                package_workspace(project, config.as_deref(), type_.as_deref())?;
+                package_workspace(project.clone(), config.as_deref(), type_.as_deref())?;
             } else {
                 let proj_config = load_project_config(None)?;
                 package_project(&proj_config, &PathBuf::from("."), config.as_deref(), type_.as_deref())?;
             }
+            Ok(())
         }
         Commands::List { what } => {
             if is_workspace() {
@@ -496,15 +704,150 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let proj_config = load_project_config(None)?;
                 list_project_items(&proj_config, what.as_deref())?;
             }
+            Ok(())
+        }
+    }
+}
+// Main implementation
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let cli = Cli::parse();
+
+    match run_command_raw(&cli.command) {
+        Ok(()) => {
+           Ok(())
+        },
+        Err(e) => {
+            println!("{}", "Error:".red().bold());
+
+            // Special formatting for CBuildError
+            if let Some(cbuild_err) = e.downcast_ref::<CBuildError>() {
+                println!("{}", cbuild_err.to_string().red());
+            } else {
+                // Regular error
+                println!("{}", e.to_string().red());
+            }
+
+            std::process::exit(1);
+        }
+    }
+}
+
+// Check if current directory is a workspace
+fn is_workspace() -> bool {
+    Path::new(WORKSPACE_FILE).exists()
+}
+
+fn list_startup_projects(workspace_config: &WorkspaceConfig) -> Result<(), Box<dyn std::error::Error>> {
+    println!("{}", "Available startup projects:".bold());
+
+    let default_startup = workspace_config.workspace.default_startup_project.as_deref();
+
+    if let Some(startup_projects) = &workspace_config.workspace.startup_projects {
+        for project in startup_projects {
+            if Some(project.as_str()) == default_startup {
+                println!(" * {} (default)", project.green());
+            } else {
+                println!(" - {}", project.green());
+            }
+        }
+    } else {
+        // If no specific startup projects, list all projects
+        for project in &workspace_config.workspace.projects {
+            if Some(project.as_str()) == default_startup {
+                println!(" * {} (default)", project.green());
+            } else {
+                println!(" - {}", project.green());
+            }
         }
     }
 
     Ok(())
 }
 
-// Check if current directory is a workspace
-fn is_workspace() -> bool {
-    Path::new(WORKSPACE_FILE).exists()
+fn set_startup_project(workspace_config: &mut WorkspaceConfig, project: &str) -> Result<(), Box<dyn std::error::Error>> {
+    // Check if project exists in workspace
+    if !workspace_config.workspace.projects.contains(&project.to_string()) {
+        return Err(format!("Project '{}' not found in workspace", project).into());
+    }
+
+    // Set as default startup project
+    workspace_config.workspace.default_startup_project = Some(project.to_string());
+
+    // Add to startup projects list if not already there
+    if let Some(startup_projects) = &mut workspace_config.workspace.startup_projects {
+        if !startup_projects.contains(&project.to_string()) {
+            startup_projects.push(project.to_string());
+        }
+    } else {
+        workspace_config.workspace.startup_projects = Some(vec![project.to_string()]);
+    }
+
+    // Save updated config
+    save_workspace_config(workspace_config)?;
+
+    println!("{}", format!("Project '{}' set as default startup project", project).green());
+    Ok(())
+}
+
+fn show_current_startup(workspace_config: &WorkspaceConfig) -> Result<(), Box<dyn std::error::Error>> {
+    if let Some(default_startup) = &workspace_config.workspace.default_startup_project {
+        println!("{}", format!("Current default startup project: {}", default_startup).green());
+    } else {
+        println!("{}", "No default startup project set. The first project will be used.".yellow());
+        if !workspace_config.workspace.projects.is_empty() {
+            println!("{}", format!("First project is: {}", workspace_config.workspace.projects[0]).blue());
+        }
+    }
+
+    Ok(())
+}
+
+fn resolve_workspace_dependencies(
+    config: &ProjectConfig,
+    workspace_config: Option<&WorkspaceConfig>,
+    project_path: &Path,
+) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+    let mut cmake_options = Vec::new();
+
+    if workspace_config.is_none() || config.dependencies.workspace.is_empty() {
+        return Ok(cmake_options);
+    }
+
+    let workspace = workspace_config.unwrap();
+
+    for dep in &config.dependencies.workspace {
+        // Find dependency project in workspace
+        if !workspace.workspace.projects.contains(&dep.name) {
+            println!("{}", format!("Warning: Workspace dependency '{}' not found in workspace", dep.name).yellow());
+            continue;
+        }
+
+        // Add dependency path to CMake
+        let dep_path = Path::new(&dep.name);
+
+        // Load dependency project config
+        match load_project_config(Some(dep_path)) {
+            Ok(dep_config) => {
+                // Add dependency target include directories
+                let link_option = format!("-D{}_DIR={}", dep.name.to_uppercase(), dep_path.to_string_lossy());
+                cmake_options.push(link_option);
+
+                // Add custom include paths if specified
+                if let Some(include_paths) = &dep.include_paths {
+                    for inc_path in include_paths {
+                        let full_path = dep_path.join(inc_path);
+                        cmake_options.push(format!("-D{}_INCLUDE_DIR={}",
+                                                   dep.name.to_uppercase(), full_path.to_string_lossy()));
+                    }
+                }
+            },
+            Err(e) => {
+                println!("{}", format!("Warning: Failed to load config for workspace dependency '{}': {}", dep.name, e).yellow());
+            }
+        }
+    }
+
+    Ok(cmake_options)
 }
 
 // Workspace functions
@@ -520,10 +863,12 @@ fn init_workspace() -> Result<(), Box<dyn std::error::Error>> {
     let workspace_name = prompt("Workspace name: ")?;
 
     let workspace_config = WorkspaceConfig {
-        workspace: WorkspaceInfo {
+        workspace: WorkspaceWithProjects {
             name: workspace_name.trim().to_string(),
+            projects: vec![],
+            startup_projects: None,  // Initialize as None by default
+            default_startup_project: None,  // Initialize as None by default
         },
-        projects: Vec::new(),
     };
 
     save_workspace_config(&workspace_config)?;
@@ -545,38 +890,121 @@ fn save_workspace_config(config: &WorkspaceConfig) -> Result<(), Box<dyn std::er
     Ok(())
 }
 
-fn load_workspace_config() -> Result<WorkspaceConfig, Box<dyn std::error::Error>> {
-    if !Path::new(WORKSPACE_FILE).exists() {
-        return Err(format!("Workspace file '{}' not found", WORKSPACE_FILE).into());
+fn load_workspace_config() -> Result<WorkspaceConfig, CBuildError> {
+    let workspace_path = Path::new(WORKSPACE_FILE);
+
+    if !workspace_path.exists() {
+        return Err(CBuildError::new(&format!(
+            "Workspace file '{}' not found", WORKSPACE_FILE
+        )));
     }
 
-    let toml_str = fs::read_to_string(WORKSPACE_FILE)?;
-    let config: WorkspaceConfig = toml::from_str(&toml_str)?;
-    Ok(config)
+    let toml_str = match fs::read_to_string(workspace_path) {
+        Ok(content) => content,
+        Err(e) => return Err(CBuildError::new(&format!(
+            "Failed to read {}: {}", WORKSPACE_FILE, e
+        )).with_file(WORKSPACE_FILE)),
+    };
+
+    match toml::from_str::<WorkspaceConfig>(&toml_str) {
+        Ok(config) => Ok(config),
+        Err(e) => Err(parse_toml_error(
+            e,
+            WORKSPACE_FILE,
+            &toml_str
+        )),
+    }
 }
 
 fn build_workspace(
     project: Option<String>,
     config_type: Option<&str>,
-    variant: Option<&str>,
+    variant_name: Option<&str>,
     target: Option<&str>
 ) -> Result<(), Box<dyn std::error::Error>> {
     let workspace_config = load_workspace_config()?;
 
     let projects = match project {
         Some(proj) => vec![proj],
-        None => workspace_config.projects,
+        None => workspace_config.workspace.projects.clone(),
     };
 
-    for project_path in projects {
+    // First resolve all projects without building to ensure dependencies
+    // are built before the projects that depend on them
+    let mut dependency_graph = HashMap::new();
+
+    // Build dependency graph
+    for project_path in &projects {
+        let path = PathBuf::from(project_path);
+        if let Ok(config) = load_project_config(Some(&path)) {
+            let deps: Vec<String> = config.dependencies.workspace.iter()
+                .map(|dep| dep.name.clone())
+                .collect();
+            dependency_graph.insert(project_path.clone(), deps);
+        }
+    }
+
+    // Determine build order based on dependencies
+    let build_order = resolve_build_order(&dependency_graph, &projects)?;
+
+    // Build projects in order
+    for project_path in build_order {
         println!("{}", format!("Building project: {}", project_path).blue());
         let path = PathBuf::from(&project_path);
         let config = load_project_config(Some(&path))?;
-        build_project(&config, &path, config_type, variant, target)?;
+        build_project(&config, &path, config_type, variant_name, target, Some(&workspace_config))?;
     }
 
     println!("{}", "Workspace build completed".green());
     Ok(())
+}
+
+// Helper function to resolve build order based on dependencies
+fn resolve_build_order(
+    dependency_graph: &HashMap<String, Vec<String>>,
+    projects: &[String]
+) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+    let mut result = Vec::new();
+    let mut visited = HashSet::new();
+    let mut temp_visited = HashSet::new();
+
+    fn visit(
+        project: &str,
+        graph: &HashMap<String, Vec<String>>,
+        visited: &mut HashSet<String>,
+        temp_visited: &mut HashSet<String>,
+        result: &mut Vec<String>
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if temp_visited.contains(project) {
+            return Err(format!("Circular dependency detected involving project '{}'", project).into());
+        }
+
+        if visited.contains(project) {
+            return Ok(());
+        }
+
+        temp_visited.insert(project.to_string());
+
+        if let Some(deps) = graph.get(project) {
+            for dep in deps {
+                visit(dep, graph, visited, temp_visited, result)?;
+            }
+        }
+
+        temp_visited.remove(project);
+        visited.insert(project.to_string());
+        result.push(project.to_string());
+
+        Ok(())
+    }
+
+    for project in projects {
+        if !visited.contains(project.as_str()) {
+            visit(project, dependency_graph, &mut visited, &mut temp_visited, &mut result)?;
+        }
+    }
+
+    Ok(result)
 }
 
 fn clean_workspace(
@@ -588,7 +1016,7 @@ fn clean_workspace(
 
     let projects = match project {
         Some(proj) => vec![proj],
-        None => workspace_config.projects,
+        None => workspace_config.workspace.projects,
     };
 
     for project_path in projects {
@@ -605,26 +1033,38 @@ fn clean_workspace(
 fn run_workspace(
     project: Option<String>,
     config_type: Option<&str>,
-    variant: Option<&str>,
+    variant_name: Option<&str>,
     args: &[String]
 ) -> Result<(), Box<dyn std::error::Error>> {
     let workspace_config = load_workspace_config()?;
 
+    // Determine which project to run
     let project_path = match project {
         Some(proj) => proj,
         None => {
-            if workspace_config.projects.is_empty() {
+            if workspace_config.workspace.projects.is_empty() {
                 return Err("No projects found in workspace".into());
             }
-            // Default to first project if none specified
-            workspace_config.projects[0].clone()
+
+            // Check for default startup project
+            if let Some(default_startup) = &workspace_config.workspace.default_startup_project {
+                if workspace_config.workspace.projects.contains(default_startup) {
+                    default_startup.clone()
+                } else {
+                    // Default to first project if specified default isn't valid
+                    workspace_config.workspace.projects[0].clone()
+                }
+            } else {
+                // No default specified, use first project
+                workspace_config.workspace.projects[0].clone()
+            }
         }
     };
 
     println!("{}", format!("Running project: {}", project_path).blue());
     let path = PathBuf::from(&project_path);
     let config = load_project_config(Some(&path))?;
-    run_project(&config, &path, config_type, variant, args)?;
+    run_project(&config, &path, config_type, variant_name, args, Some(&workspace_config))?;
 
     Ok(())
 }
@@ -639,7 +1079,7 @@ fn test_workspace(
 
     let projects = match project {
         Some(proj) => vec![proj],
-        None => workspace_config.projects,
+        None => workspace_config.workspace.projects,
     };
 
     for project_path in projects {
@@ -662,7 +1102,7 @@ fn install_workspace(
 
     let projects = match project {
         Some(proj) => vec![proj],
-        None => workspace_config.projects,
+        None => workspace_config.workspace.projects,
     };
 
     for project_path in projects {
@@ -681,7 +1121,7 @@ fn install_workspace_deps(project: Option<String>, update: bool) -> Result<(), B
 
     let projects = match project {
         Some(proj) => vec![proj],
-        None => workspace_config.projects,
+        None => workspace_config.workspace.projects,
     };
 
     for project_path in projects {
@@ -701,11 +1141,11 @@ fn run_workspace_script(name: String, project: Option<String>) -> Result<(), Box
     let project_path = match project {
         Some(proj) => proj,
         None => {
-            if workspace_config.projects.is_empty() {
+            if workspace_config.workspace.projects.is_empty() {
                 return Err("No projects found in workspace".into());
             }
             // Default to first project if none specified
-            workspace_config.projects[0].clone()
+            workspace_config.workspace.projects[0].clone()
         }
     };
 
@@ -722,7 +1162,7 @@ fn generate_workspace_ide_files(ide_type: String, project: Option<String>) -> Re
 
     let projects = match project {
         Some(proj) => vec![proj],
-        None => workspace_config.projects.clone(),
+        None => workspace_config.workspace.projects.clone(),
     };
 
     for project_path in projects {
@@ -758,7 +1198,7 @@ fn package_workspace(
 
     let projects = match project {
         Some(proj) => vec![proj],
-        None => workspace_config.projects,
+        None => workspace_config.workspace.projects,
     };
 
     for project_path in projects {
@@ -776,13 +1216,13 @@ fn list_workspace_items(what: Option<&str>) -> Result<(), Box<dyn std::error::Er
     let workspace_config = load_workspace_config()?;
 
     println!("{}", "Workspace projects:".bold());
-    for (i, project) in workspace_config.projects.iter().enumerate() {
+    for (i, project) in workspace_config.workspace.projects.iter().enumerate() {
         println!(" {}. {}", i + 1, project.green());
     }
 
-    if workspace_config.projects.is_empty() {
+    if workspace_config.workspace.projects.is_empty() {
         println!(" - No projects in workspace");
-    } else if let Some(first_project) = workspace_config.projects.first() {
+    } else if let Some(first_project) = workspace_config.workspace.projects.first() {
         // Show info about the first project
         let path = PathBuf::from(first_project);
         let config = load_project_config(Some(&path))?;
@@ -850,8 +1290,8 @@ fn init_project(path: Option<&Path>, template: Option<&str>) -> Result<(), Box<d
         let mut workspace_config = load_workspace_config()?;
         let project_rel_path = path.unwrap().to_string_lossy().to_string();
 
-        if !workspace_config.projects.contains(&project_rel_path) {
-            workspace_config.projects.push(project_rel_path);
+        if !workspace_config.workspace.projects.contains(&project_rel_path) {
+            workspace_config.workspace.projects.push(project_rel_path);
             save_workspace_config(&workspace_config)?;
         }
     }
@@ -1007,6 +1447,7 @@ fn create_default_config() -> ProjectConfig {
         include_dirs: Some(vec!["include".to_string()]),
         defines: Some(vec![]),
         links: Some(vec![]),
+        platform_links: None, // Add this field
     });
 
     // Create default build variants
@@ -1140,6 +1581,7 @@ fn create_default_config() -> ProjectConfig {
             conan: conan_config,
             custom: vec![],
             git: vec![],
+            workspace: vec![],
         },
         targets,
         platforms: Some(platforms),
@@ -1169,17 +1611,48 @@ fn save_project_config(config: &ProjectConfig, path: &Path) -> Result<(), Box<dy
     Ok(())
 }
 
-fn load_project_config(path: Option<&Path>) -> Result<ProjectConfig, Box<dyn std::error::Error>> {
+fn load_project_config(path: Option<&Path>) -> Result<ProjectConfig, CBuildError> {
     let project_path = path.unwrap_or_else(|| Path::new("."));
-    let config_path = project_path.join(CBUILD_FILE);
+
+    // When loading from a workspace dependency, we need to handle
+    // both absolute paths and paths relative to the workspace root
+    let config_path = if project_path.is_absolute() {
+        project_path.join(CBUILD_FILE)
+    } else if is_workspace() && !project_path.starts_with(".") {
+        // For non-relative paths in a workspace, check if they should
+        // be prefixed with "projects/"
+        let with_projects = Path::new("projects").join(project_path);
+        if with_projects.join(CBUILD_FILE).exists() {
+            with_projects.join(CBUILD_FILE)
+        } else {
+            project_path.join(CBUILD_FILE)
+        }
+    } else {
+        project_path.join(CBUILD_FILE)
+    };
 
     if !config_path.exists() {
-        return Err(format!("Configuration file '{}' not found. Run 'cbuild init' to create one.", config_path.display()).into());
+        return Err(CBuildError::new(&format!(
+            "Configuration file '{}' not found. Run 'cbuild init' to create one.",
+            config_path.display()
+        )));
     }
 
-    let toml_str = fs::read_to_string(config_path)?;
-    let config: ProjectConfig = toml::from_str(&toml_str)?;
-    Ok(config)
+    let toml_str = match fs::read_to_string(&config_path) {
+        Ok(content) => content,
+        Err(e) => return Err(CBuildError::new(&format!(
+            "Failed to read {}: {}", config_path.display(), e
+        )).with_file(&config_path.to_string_lossy().to_string())),
+    };
+
+    match toml::from_str::<ProjectConfig>(&toml_str) {
+        Ok(config) => Ok(config),
+        Err(e) => Err(parse_toml_error(
+            e,
+            &config_path.to_string_lossy().to_string(),
+            &toml_str
+        )),
+    }
 }
 
 fn detect_system_info() -> SystemInfo {
@@ -2177,7 +2650,7 @@ fn run_hooks(hooks: &Option<Vec<String>>, project_path: &Path, env_vars: Option<
 
     Ok(())
 }
-fn generate_cmake_lists(config: &ProjectConfig, project_path: &Path, variant_name: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+fn generate_cmake_lists(config: &ProjectConfig, project_path: &Path, variant_name: Option<&str>, workspace_config: Option<&WorkspaceConfig>) -> Result<(), Box<dyn std::error::Error>> {
     let project_config = &config.project;
     let targets_config = &config.targets;
     let cmake_minimum = CMAKE_MIN_VERSION;
@@ -2203,6 +2676,29 @@ fn generate_cmake_lists(config: &ProjectConfig, project_path: &Path, variant_nam
         "endfunction()".to_string(),
         String::new(),
     ];
+
+    if !config.dependencies.workspace.is_empty() && workspace_config.is_some() {
+        cmake_content.push(String::new());
+        cmake_content.push("# Workspace dependencies".to_string());
+
+        for dep in &config.dependencies.workspace {
+            let dep_name = &dep.name;
+
+            // Add find_package for the workspace dependency
+            cmake_content.push(format!("# Project dependency: {}", dep_name));
+            cmake_content.push(format!("if(DEFINED {0}_DIR)", dep_name.to_uppercase()));
+            cmake_content.push(format!("  find_package({} CONFIG REQUIRED)", dep_name));
+            cmake_content.push(format!("  # Add custom include directories if provided"));
+            cmake_content.push(format!("  if(DEFINED {0}_INCLUDE_DIR)", dep_name.to_uppercase()));
+            cmake_content.push(format!("    include_directories(${{{}}})", format!("{}_INCLUDE_DIR", dep_name.to_uppercase())));
+            cmake_content.push(format!("  endif()"));
+            cmake_content.push(format!("else()"));
+            cmake_content.push(format!("  message(WARNING \"Workspace dependency '{}' not found. Make sure to build dependencies first.\")", dep_name));
+            cmake_content.push(format!("endif()"));
+        }
+
+        cmake_content.push(String::new());
+    }
 
     // Set output directories based on config
     let output_config = &config.output;
@@ -2306,6 +2802,36 @@ fn generate_cmake_lists(config: &ProjectConfig, project_path: &Path, variant_nam
         let include_dirs = target_config.include_dirs.as_ref().unwrap_or(&empty_vec);
         let defines = target_config.defines.as_ref().unwrap_or(&empty_vec);
         let links = target_config.links.as_ref().unwrap_or(&empty_vec);
+        let mut all_links = Vec::new();
+
+        if let Some(links) = &target_config.links {
+            all_links.extend(links.clone());
+        }
+
+        // Add platform-specific links if applicable
+        if let Some(platform_links) = &target_config.platform_links {
+            let current_os = if cfg!(target_os = "windows") {
+                "windows"
+            } else if cfg!(target_os = "macos") {
+                "darwin"
+            } else {
+                "linux"
+            };
+
+            if let Some(os_links) = platform_links.get(current_os) {
+                all_links.extend(os_links.clone());
+            }
+        }
+
+        // Add workspace dependencies
+        for dep in &config.dependencies.workspace {
+            let link_target = format!("{}::{}", dep.name, dep.name);
+
+            // Only add if not already in links
+            if !all_links.contains(&link_target) {
+                all_links.push(link_target);
+            }
+        }
 
         // Handle source files using CMake's file globbing with our helper function
         cmake_content.push(format!("# Source patterns for target {}", target_name));
@@ -2530,8 +3056,9 @@ fn create_simple_config() -> ProjectConfig {
     targets.insert("default".to_string(), TargetConfig {
         sources: vec!["src/**/*.cpp".to_string(), "src/**/*.c".to_string()],
         include_dirs: Some(vec!["include".to_string()]),
-        defines: None,
-        links: None,
+        defines: Some(vec![]),
+        links: Some(vec![]),
+        platform_links: None, // Add this field
     });
 
     // Use the most basic vcpkg config
@@ -2567,6 +3094,7 @@ fn create_simple_config() -> ProjectConfig {
             conan: ConanConfig::default(),
             custom: vec![],
             git: vec![],
+            workspace: vec![]
         },
         targets,
         platforms: Some(platforms),
@@ -2702,7 +3230,8 @@ fn configure_project(
     project_path: &Path,
     config_type: Option<&str>,
     variant_name: Option<&str>,
-    cross_target: Option<&str>
+    cross_target: Option<&str>,
+    workspace_config: Option<&WorkspaceConfig>
 ) -> Result<(), Box<dyn std::error::Error>> {
     if !has_command("cmake") {
         ensure_compiler_available("cmake")?;
@@ -2847,7 +3376,7 @@ fn configure_project(
     let conan_cmake = deps_result.get("conan_cmake").cloned().unwrap_or_default();
 
     // Generate CMakeLists.txt
-    generate_cmake_lists(config, project_path, variant_name)?;
+    generate_cmake_lists(config, project_path, variant_name, workspace_config)?;
 
     // Build CMake command
     let mut cmd = vec!["cmake".to_string(), "..".to_string()];
@@ -2906,6 +3435,11 @@ fn configure_project(
         cmd.extend(cmake_options.clone());
     }
 
+    if let Some(workspace) = workspace_config {
+        let workspace_options = resolve_workspace_dependencies(config, Some(workspace), project_path)?;
+        cmd.extend(workspace_options);
+    }
+
     // Run CMake configuration
     run_command(cmd, Some(&build_path.to_string_lossy().to_string()), env_vars.clone())?;
 
@@ -2930,7 +3464,8 @@ fn build_project(
     project_path: &Path,
     config_type: Option<&str>,
     variant_name: Option<&str>,
-    cross_target: Option<&str>
+    cross_target: Option<&str>,
+    workspace_config: Option<&WorkspaceConfig>
 ) -> Result<(), Box<dyn std::error::Error>> {
     let build_dir = config.build.build_dir.as_deref().unwrap_or(DEFAULT_BUILD_DIR);
     let build_path = if let Some(target) = cross_target {
@@ -2953,7 +3488,7 @@ fn build_project(
 
     if !build_path.join("CMakeCache.txt").exists() {
         println!("{}", "Project not configured yet, configuring...".blue());
-        configure_project(config, project_path, config_type, variant_name, cross_target)?;
+        configure_project(config, project_path, config_type, variant_name, cross_target, workspace_config)?;
     }
 
     // Run pre-build hooks
@@ -3053,7 +3588,8 @@ fn run_project(
     project_path: &Path,
     config_type: Option<&str>,
     variant_name: Option<&str>,
-    args: &[String]
+    args: &[String],
+    workspace_config: Option<&WorkspaceConfig>
 ) -> Result<(), Box<dyn std::error::Error>> {
     let build_dir = config.build.build_dir.as_deref().unwrap_or(DEFAULT_BUILD_DIR);
     let build_path = project_path.join(build_dir);
@@ -3063,7 +3599,7 @@ fn run_project(
 
     // Make sure the project is built
     if !build_path.exists() || !build_path.join("CMakeCache.txt").exists() {
-        build_project(config, project_path, config_type, variant_name, None)?;
+        build_project(config, project_path, config_type, variant_name, None, workspace_config)?;
     }
 
     // Generate all possible executable paths
@@ -3231,7 +3767,7 @@ fn test_project(
 
     // Make sure the project is built
     if !build_path.exists() || !build_path.join("CMakeCache.txt").exists() {
-        build_project(config, project_path, config_type, variant_name, None)?;
+        build_project(config, project_path, config_type, variant_name, None, None)?;
     }
 
     // Run tests using CTest
@@ -3787,7 +4323,7 @@ fn install_project(
 
     // Make sure the project is built
     if !build_path.exists() || !build_path.join("CMakeCache.txt").exists() {
-        build_project(config, project_path, config_type, None, None)?;
+        build_project(config, project_path, config_type, None, None, None)?;
     }
 
     // Run CMake install
@@ -3876,7 +4412,7 @@ fn generate_ide_files(config: &ProjectConfig, project_path: &Path, ide_type: &st
         "vscode" => generate_vscode_files(config, project_path)?,
         "clion" => {
             // CLion doesn't need special files, just CMake project
-            configure_project(config, project_path, None, None, None)?;
+            build_project(config, project_path, None, None, None, None)?;
             println!("{}", "Project is ready for CLion. Open the directory in CLion.".green());
         },
         "xcode" => {
@@ -4148,7 +4684,7 @@ fn generate_vscode_workspace(config: &WorkspaceConfig) -> Result<(), Box<dyn std
 
     // Build list of folders
     let mut folders = Vec::new();
-    for project in &config.projects {
+    for project in &config.workspace.projects {
         folders.push(serde_json::json!({
             "path": project
         }));
@@ -4194,7 +4730,7 @@ fn package_project(
 
     // Make sure the project is built
     if !build_path.exists() || !build_path.join("CMakeCache.txt").exists() {
-        build_project(config, project_path, config_type, None, None)?;
+        build_project(config, project_path, config_type, None, None, None)?;
     }
 
     // Run CPack to create package
@@ -4405,9 +4941,9 @@ fn map_token(token: &str, msvc_style: bool) -> Vec<String> {
         "OPTIMIZE" => {
             // /O2 vs -O2
             if msvc_style {
-                vec!["/O2".to_string()]
+                vec!["/O3".to_string()]
             } else {
-                vec!["-O2".to_string()]
+                vec!["-O3".to_string()]
             }
         }
         "MIN_SIZE" => {
