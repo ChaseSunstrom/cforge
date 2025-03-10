@@ -230,6 +230,19 @@ struct WorkspaceWithProjects {
     startup_projects: Option<Vec<String>>, // Projects that can be set as startup
     default_startup_project: Option<String>, // Default startup project
 }
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+struct PCHConfig {
+    enabled: bool,
+    header: String,
+    source: Option<String>,
+    include_directories: Option<Vec<String>>,
+    compiler_options: Option<Vec<String>>,  // Additional compiler options for PCH
+    only_for_targets: Option<Vec<String>>,  // Apply PCH only to specific targets
+    exclude_sources: Option<Vec<String>>,   // Sources to exclude from PCH
+    disable_unity_build: Option<bool>,      // Disable unity build when using PCH (can cause conflicts)
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct ProjectConfig {
     project: ProjectInfo,
@@ -250,6 +263,8 @@ struct ProjectConfig {
     variants: Option<BuildVariants>,
     #[serde(default)]
     cross_compile: Option<CrossCompileConfig>,
+    #[serde(default)]
+    pch: Option<PCHConfig>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -591,13 +606,11 @@ fn run_command_raw(command: &Commands) -> Result<(), Box<dyn std::error::Error>>
         }
         Commands::Build { project, config, variant, target } => {
             if is_workspace() {
-                build_workspace(project.clone(), config.as_deref(), variant.as_deref(), target.as_deref())?;
+                // Use dependency-order aware build function
+                build_workspace_with_dependency_order(project.clone(), config.as_deref(), variant.as_deref(), target.as_deref())?;
             } else {
                 let mut proj_config = load_project_config(None)?;
-
-                // Auto-adjust configuration based on available tools
                 auto_adjust_config(&mut proj_config)?;
-
                 build_project(&proj_config, &PathBuf::from("."), config.as_deref(), variant.as_deref(), target.as_deref(), None)?;
             }
             Ok(())
@@ -789,6 +802,178 @@ fn set_startup_project(workspace_config: &mut WorkspaceConfig, project: &str) ->
     Ok(())
 }
 
+fn add_pch_support(
+    cmake_content: &mut Vec<String>,
+    config: &ProjectConfig,
+    pch_config: &PCHConfig
+) {
+    if !pch_config.enabled {
+        return;
+    }
+
+    cmake_content.push("# Precompiled header support".to_string());
+    // Define PCH variables
+    cmake_content.push(format!("set(PCH_HEADER \"{}\")", pch_config.header));
+
+    if let Some(source) = &pch_config.source {
+        cmake_content.push(format!("set(PCH_SOURCE \"{}\")", source));
+    }
+
+    // Add exclude patterns if specified
+    if let Some(excludes) = &pch_config.exclude_sources {
+        cmake_content.push("set(PCH_EXCLUDE_SOURCES".to_string());
+        for exclude in excludes {
+            cmake_content.push(format!("  \"{}\"", exclude));
+        }
+        cmake_content.push(")".to_string());
+    }
+
+    // Unity build option
+    if let Some(disable_unity) = pch_config.disable_unity_build {
+        if disable_unity {
+            cmake_content.push("set(CMAKE_UNITY_BUILD OFF)".to_string());
+        }
+    }
+
+    cmake_content.push("# PCH function for targets".to_string());
+    cmake_content.push("function(target_enable_pch target_name)".to_string());
+
+    // Check if target is in only_for_targets list
+    if let Some(only_targets) = &pch_config.only_for_targets {
+        cmake_content.push("  # Check if target is in the allowed targets list".to_string());
+        cmake_content.push("  set(_apply_pch FALSE)".to_string());
+        cmake_content.push("  foreach(_target IN ITEMS".to_string());
+        for target in only_targets {
+            cmake_content.push(format!("    \"{}\"", target));
+        }
+        cmake_content.push("  )".to_string());
+        cmake_content.push("    if(\"${target_name}\" STREQUAL \"${_target}\")".to_string());
+        cmake_content.push("      set(_apply_pch TRUE)".to_string());
+        cmake_content.push("    endif()".to_string());
+        cmake_content.push("  endforeach()".to_string());
+        cmake_content.push("  if(NOT _apply_pch)".to_string());
+        cmake_content.push("    message(STATUS \"Skipping PCH for ${target_name} (not in target list)\")".to_string());
+        cmake_content.push("    return()".to_string());
+        cmake_content.push("  endif()".to_string());
+    }
+
+    // Modern CMake PCH approach (CMake 3.16+)
+    cmake_content.push("  if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.16)".to_string());
+
+    // If we have both header and source (for MSVC style)
+    if pch_config.source.is_some() {
+        cmake_content.push("    if(MSVC)".to_string());
+        cmake_content.push("      target_precompile_headers(${target_name} PRIVATE \"${PCH_HEADER}\")".to_string());
+
+        // Add exclude patterns if necessary
+        if pch_config.exclude_sources.is_some() {
+            cmake_content.push("      if(PCH_EXCLUDE_SOURCES)".to_string());
+            cmake_content.push("        set_source_files_properties(${PCH_EXCLUDE_SOURCES}".to_string());
+            cmake_content.push("          PROPERTIES SKIP_PRECOMPILE_HEADERS ON)".to_string());
+            cmake_content.push("      endif()".to_string());
+        }
+
+        cmake_content.push("    else()".to_string());
+        cmake_content.push("      target_precompile_headers(${target_name} PRIVATE \"${PCH_HEADER}\")".to_string());
+
+        // Add exclude patterns for non-MSVC as well
+        if pch_config.exclude_sources.is_some() {
+            cmake_content.push("      if(PCH_EXCLUDE_SOURCES)".to_string());
+            cmake_content.push("        set_source_files_properties(${PCH_EXCLUDE_SOURCES}".to_string());
+            cmake_content.push("          PROPERTIES SKIP_PRECOMPILE_HEADERS ON)".to_string());
+            cmake_content.push("      endif()".to_string());
+        }
+
+        cmake_content.push("    endif()".to_string());
+    } else {
+        // Header-only PCH
+        cmake_content.push("    target_precompile_headers(${target_name} PRIVATE \"${PCH_HEADER}\")".to_string());
+
+        // Add exclude patterns
+        if pch_config.exclude_sources.is_some() {
+            cmake_content.push("    if(PCH_EXCLUDE_SOURCES)".to_string());
+            cmake_content.push("      set_source_files_properties(${PCH_EXCLUDE_SOURCES}".to_string());
+            cmake_content.push("        PROPERTIES SKIP_PRECOMPILE_HEADERS ON)".to_string());
+            cmake_content.push("    endif()".to_string());
+        }
+    }
+
+    // Add any additional compiler options
+    if let Some(options) = &pch_config.compiler_options {
+        if !options.is_empty() {
+            cmake_content.push("    # Add additional compiler options for PCH".to_string());
+
+            let opts_string = options.iter()
+                .map(|opt| format!("      \"{}\"", opt))
+                .collect::<Vec<_>>()
+                .join("\n");
+
+            cmake_content.push("    target_compile_options(${target_name} PRIVATE".to_string());
+            cmake_content.push(opts_string);
+            cmake_content.push("    )".to_string());
+        }
+    }
+
+    // Fallback for older CMake versions
+    cmake_content.push("  else()".to_string());
+    cmake_content.push("    # Fallback for older CMake - compiler-specific flags".to_string());
+    cmake_content.push("    if(MSVC)".to_string());
+    cmake_content.push("      get_filename_component(PCH_NAME ${PCH_HEADER} NAME_WE)".to_string());
+    cmake_content.push("      set(PCH_OUTPUT \"${CMAKE_CURRENT_BINARY_DIR}/${PCH_NAME}.pch\")".to_string());
+    cmake_content.push("      # Set compiler flags for using PCH".to_string());
+    cmake_content.push("      target_compile_options(${target_name} PRIVATE /Yu\"${PCH_HEADER}\" /Fp\"${PCH_OUTPUT}\")".to_string());
+
+    // Handle separate source file for creating the PCH
+    if let Some(_) = &pch_config.source {
+        cmake_content.push("      # Set PCH creation flag on the source file that will create the PCH".to_string());
+        cmake_content.push("      set_source_files_properties(${PCH_SOURCE} PROPERTIES COMPILE_FLAGS \"/Yc\\\"${PCH_HEADER}\\\" /Fp\\\"${PCH_OUTPUT}\\\"\")".to_string());
+    }
+
+    // Add excluded files for MSVC
+    if pch_config.exclude_sources.is_some() {
+        cmake_content.push("      # Exclude specified files from using PCH".to_string());
+        cmake_content.push("      if(PCH_EXCLUDE_SOURCES)".to_string());
+        cmake_content.push("        foreach(_src ${PCH_EXCLUDE_SOURCES})".to_string());
+        cmake_content.push("          set_source_files_properties(${_src} PROPERTIES COMPILE_FLAGS \"/Y-\")".to_string());
+        cmake_content.push("        endforeach()".to_string());
+        cmake_content.push("      endif()".to_string());
+    }
+
+    // GCC/Clang fallback for older CMake
+    cmake_content.push("    elseif(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES \"Clang\")".to_string());
+    cmake_content.push("      # GCC/Clang PCH for older CMake requires custom command setup".to_string());
+    cmake_content.push("      message(STATUS \"Using manual PCH setup for GCC/Clang with CMake < 3.16\")".to_string());
+
+    // Attempt a basic setup for GCC in older CMake
+    cmake_content.push("      if(CMAKE_COMPILER_IS_GNUCXX)".to_string());
+    cmake_content.push("        # Create a precompiled header from the given header file".to_string());
+    cmake_content.push("        get_filename_component(PCH_NAME ${PCH_HEADER} NAME)".to_string());
+    cmake_content.push("        get_filename_component(PCH_DIR ${PCH_HEADER} DIRECTORY)".to_string());
+    cmake_content.push("        set(PCH_BINARY \"${CMAKE_CURRENT_BINARY_DIR}/${PCH_NAME}.gch\")".to_string());
+
+    // Add compile command for PCH
+    cmake_content.push("        add_custom_command(OUTPUT ${PCH_BINARY}".to_string());
+    cmake_content.push("          COMMAND ${CMAKE_CXX_COMPILER} -x c++-header ${CMAKE_CXX_FLAGS} -o ${PCH_BINARY} ${PCH_HEADER}".to_string());
+    cmake_content.push("          DEPENDS ${PCH_HEADER})".to_string());
+
+    // Add custom target for the PCH
+    cmake_content.push("        add_custom_target(${target_name}_pch DEPENDS ${PCH_BINARY})".to_string());
+    cmake_content.push("        add_dependencies(${target_name} ${target_name}_pch)".to_string());
+
+    // Add include directory if needed
+    cmake_content.push("        target_include_directories(${target_name} PRIVATE ${CMAKE_CURRENT_BINARY_DIR})".to_string());
+
+    // Add compiler flags for using the PCH
+    cmake_content.push("        target_compile_options(${target_name} PRIVATE -include ${PCH_NAME})".to_string());
+    cmake_content.push("      endif()".to_string());
+
+    cmake_content.push("    endif()".to_string());
+    cmake_content.push("  endif()".to_string());
+    cmake_content.push("endfunction()".to_string());
+
+    cmake_content.push(String::new());
+}
+
 fn show_current_startup(workspace_config: &WorkspaceConfig) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(default_startup) = &workspace_config.workspace.default_startup_project {
         println!("{}", format!("Current default startup project: {}", default_startup).green());
@@ -816,39 +1001,176 @@ fn resolve_workspace_dependencies(
     let workspace = workspace_config.unwrap();
 
     for dep in &config.dependencies.workspace {
-        // Find dependency project in workspace
         if !workspace.workspace.projects.contains(&dep.name) {
             println!("{}", format!("Warning: Workspace dependency '{}' not found in workspace", dep.name).yellow());
             continue;
         }
 
-        // Add dependency path to CMake
-        let dep_path = Path::new(&dep.name);
+        // Get the absolute path to the dependency
+        let dep_path = if Path::new(&dep.name).is_absolute() {
+            PathBuf::from(&dep.name)
+        } else if Path::new(&dep.name).exists() {
+            fs::canonicalize(Path::new(&dep.name)).unwrap_or_else(|_| PathBuf::from(&dep.name))
+        } else if Path::new("projects").join(&dep.name).exists() {
+            fs::canonicalize(Path::new("projects").join(&dep.name))
+                .unwrap_or_else(|_| PathBuf::from("projects").join(&dep.name))
+        } else {
+            PathBuf::from(&dep.name)
+        };
 
-        // Load dependency project config
-        match load_project_config(Some(dep_path)) {
-            Ok(dep_config) => {
-                // Add dependency target include directories
-                let link_option = format!("-D{}_DIR={}", dep.name.to_uppercase(), dep_path.to_string_lossy());
-                cmake_options.push(link_option);
+        // Ensure that the dependency's package config is generated.
+        generate_package_config(&dep_path, &dep.name)?;
 
-                // Add custom include paths if specified
-                if let Some(include_paths) = &dep.include_paths {
-                    for inc_path in include_paths {
-                        let full_path = dep_path.join(inc_path);
-                        cmake_options.push(format!("-D{}_INCLUDE_DIR={}",
-                                                   dep.name.to_uppercase(), full_path.to_string_lossy()));
-                    }
+        let dep_config = load_project_config(Some(&dep_path))?;
+        let dep_build_dir = dep_config.build.build_dir.as_deref().unwrap_or(DEFAULT_BUILD_DIR);
+        let dep_build_path = dep_path.join(dep_build_dir);
+
+        // Add the build directory to CMAKE_PREFIX_PATH
+        cmake_options.push(format!(
+            "-DCMAKE_PREFIX_PATH={};${{CMAKE_PREFIX_PATH}}",
+            dep_build_path.to_string_lossy().replace(r"\\?\", "")
+        ));
+
+        // Configure build dir
+        cmake_options.push(format!(
+            "-D{}_DIR={}",
+            dep.name,
+            dep_build_path.to_string_lossy().replace(r"\\?\", "")
+        ));
+
+        // Get the include directory
+        let dep_include = dep_path.join("include");
+        cmake_options.push(format!(
+            "-D{}_INCLUDE_DIR={}",
+            dep.name.to_uppercase(),
+            dep_include.to_string_lossy().replace(r"\\?\", "")
+        ));
+
+        // Determine library name format based on compiler
+        let compiler_label = get_effective_compiler_label(&dep_config);
+        let is_msvc_style = matches!(compiler_label.to_lowercase().as_str(), "msvc" | "clang-cl");
+
+        // Get the library path
+        let lib_dir = dep_config.output.bin_dir.as_deref().unwrap_or("bin");
+
+        // Expand the tokens for the actual configuration
+        let build_type = get_build_type(&dep_config, None);
+        let os_val = if cfg!(windows) { "windows" } else if cfg!(target_os = "macos") { "darwin" } else { "linux" };
+        let arch_val = if cfg!(target_arch = "x86_64") { "x64" } else if cfg!(target_arch = "x86") { "x86" } else { "arm64" };
+
+        let expanded_lib_dir = lib_dir
+            .replace("${CONFIG}", &build_type)
+            .replace("${OS}", os_val)
+            .replace("${ARCH}", arch_val);
+
+        // Build full library path - use an absolute path
+        let lib_path = dep_path.join(&expanded_lib_dir);
+
+        // Print for debugging
+        println!("{}", format!("Looking for library in directory: {}", lib_path.display()).blue());
+
+        // List all files in library directory to help debug
+        if lib_path.exists() {
+            if let Ok(entries) = fs::read_dir(&lib_path) {
+                println!("Files in library directory:");
+                for entry in entries.filter_map(Result::ok) {
+                    println!("  {}", entry.file_name().to_string_lossy());
                 }
-            },
-            Err(e) => {
-                println!("{}", format!("Warning: Failed to load config for workspace dependency '{}': {}", dep.name, e).yellow());
             }
+        }
+
+        // Generate a list of possible library filenames to try
+        let mut possible_filenames = Vec::new();
+
+        // Is this a shared library?
+        let is_shared = dep_config.project.project_type == "shared-library";
+
+        if is_msvc_style {
+            // --- MSVC/clang-cl style ---
+            if is_shared {
+                // For a shared library with MSVC, you typically link against *.lib.
+                // The .dll is needed at runtime but not for the link. We can look for both:
+                possible_filenames.push(format!("{}.lib", dep.name));
+                possible_filenames.push(format!("lib{}.lib", dep.name));
+                // Optionally also see if we find the DLL (in case we want to copy it somewhere):
+                possible_filenames.push(format!("{}.dll", dep.name));
+                possible_filenames.push(format!("lib{}.dll", dep.name));
+            } else {
+                // For a static library on MSVC:
+                possible_filenames.push(format!("{}.lib", dep.name));
+                possible_filenames.push(format!("lib{}.lib", dep.name));
+            }
+        } else {
+            // --- MinGW/GCC/clang (GNU driver) style ---
+            if is_shared {
+                // A shared library on MinGW typically has "libX.dll.a" as the import lib
+                // and "X.dll" or "libX.dll" as the actual runtime
+                possible_filenames.push(format!("lib{}.dll.a", dep.name));
+                possible_filenames.push(format!("{}.dll.a", dep.name));
+                // We can also look for the DLL in case we want to find it:
+                possible_filenames.push(format!("lib{}.dll", dep.name));
+                possible_filenames.push(format!("{}.dll", dep.name));
+            } else {
+                // Static library on MinGW: "libX.a" or "X.a"
+                possible_filenames.push(format!("lib{}.a", dep.name));
+                possible_filenames.push(format!("{}.a", dep.name));
+            }
+        }
+
+        let mut found_lib_file = None;
+
+        // Now loop over possible_filenames to see which actually exists:
+        for filename in &possible_filenames {
+            let candidate = lib_path.join(filename); // Or whatever directory you want
+            println!("Checking for: {}", candidate.display());
+            if candidate.exists() {
+                println!("Found: {}", candidate.display());
+                // Do something with it, e.g. store it or set a CMake variable
+                found_lib_file = Some(candidate);
+                break;
+            }
+        }
+
+        // If not found, search the parent directory too
+        if found_lib_file.is_none() {
+            let parent_dir = lib_path.parent().unwrap_or(&lib_path);
+            for filename in &possible_filenames {
+                let lib_file = parent_dir.join(filename);
+                if lib_file.exists() {
+                    println!("{}", format!("Found library at: {}", lib_file.display()).green());
+                    found_lib_file = Some(lib_file);
+                    break;
+                }
+            }
+        }
+
+        // Add the library path to CMake variables
+        if let Some(lib_file) = found_lib_file {
+            cmake_options.push(format!(
+                "-D{}_LIBRARY={}",
+                dep.name.to_uppercase(),
+                lib_file.to_string_lossy().replace(r"\\?\", "")
+            ));
+        } else {
+            println!("{}", format!("Warning: Library file not found for {}. Linking may fail.", dep.name).yellow());
+
+            // Try to link directly to the library by name as a last resort
+            cmake_options.push(format!(
+                "-DCMAKE_LIBRARY_PATH={}",
+                lib_path.to_string_lossy().replace(r"\\?\", "")
+            ));
+            cmake_options.push(format!(
+                "-DCMAKE_FIND_LIBRARY_PREFIXES=\"lib;\"",
+            ));
+            cmake_options.push(format!(
+                "-DCMAKE_FIND_LIBRARY_SUFFIXES=\".dll;.dll.a;.a;.lib\"",
+            ));
         }
     }
 
     Ok(cmake_options)
 }
+
 
 // Workspace functions
 fn init_workspace() -> Result<(), Box<dyn std::error::Error>> {
@@ -916,7 +1238,7 @@ fn load_workspace_config() -> Result<WorkspaceConfig, CBuildError> {
     }
 }
 
-fn build_workspace(
+fn build_workspace_with_dependency_order(
     project: Option<String>,
     config_type: Option<&str>,
     variant_name: Option<&str>,
@@ -929,11 +1251,409 @@ fn build_workspace(
         None => workspace_config.workspace.projects.clone(),
     };
 
-    // First resolve all projects without building to ensure dependencies
-    // are built before the projects that depend on them
-    let mut dependency_graph = HashMap::new();
+    // Build project paths
+    let mut project_paths = Vec::new();
+    for project_name in &projects {
+        let path = if Path::new(project_name).exists() {
+            PathBuf::from(project_name)
+        } else if Path::new("projects").join(project_name).exists() {
+            PathBuf::from("projects").join(project_name)
+        } else {
+            PathBuf::from(project_name)
+        };
+
+        project_paths.push(path);
+    }
 
     // Build dependency graph
+    let dependency_graph = build_dependency_graph(&workspace_config, &project_paths)?;
+
+    // Determine build order based on dependencies
+    let build_order = resolve_build_order(&dependency_graph, &projects)?;
+
+    println!("{}", format!("Build order: {}", build_order.join(" -> ")).blue());
+
+    // Build projects in order, generating package configs as we go
+    for project_name in &build_order {
+        println!("{}", format!("Building project: {}", project_name).blue());
+        let path = PathBuf::from(project_name);
+        let mut config = load_project_config(Some(&path))?;
+
+        auto_adjust_config(&mut config)?;
+
+        // First, try the normal build process
+        if build_project(&config, &path, config_type, variant_name, target, Some(&workspace_config)).is_err() {
+            // If it fails, let's continue - might be fixed by config generation
+            println!("{}", format!("Warning: Building {} had issues, but continuing", project_name).yellow());
+        }
+
+        // Generate package config after build
+        generate_package_config(&path, project_name)?;
+    }
+
+    println!("{}", "Workspace build completed".green());
+    Ok(())
+}
+
+fn build_dependency_graph(workspace_config: &WorkspaceConfig,
+                          project_paths: &[PathBuf])
+                          -> Result<HashMap<String, Vec<String>>, Box<dyn std::error::Error>> {
+    let mut dependency_graph = HashMap::new();
+
+    // Process each project to find its dependencies
+    for project_path in project_paths {
+        let project_name = project_path.file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or_default()
+            .to_string();
+
+        // Skip if the project isn't in the workspace
+        if !workspace_config.workspace.projects.contains(&project_name) {
+            continue;
+        }
+
+        // Try to load the project config to find dependencies
+        if let Ok(config) = load_project_config(Some(project_path)) {
+            // Extract workspace dependencies
+            let deps: Vec<String> = config.dependencies.workspace.iter()
+                .map(|dep| dep.name.clone())
+                .collect();
+
+            // Add to graph
+            dependency_graph.insert(project_name, deps);
+        } else {
+            // If we can't load the config, assume no dependencies
+            dependency_graph.insert(project_name, Vec::new());
+        }
+    }
+
+    Ok(dependency_graph)
+}
+
+// Helper function to ensure cmake directory exists with necessary files
+fn ensure_cmake_directory(project_path: &Path, project_name: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let cmake_dir = project_path.join("cmake");
+
+    // Create cmake directory if it doesn't exist
+    if !cmake_dir.exists() {
+        fs::create_dir_all(&cmake_dir)?;
+    }
+
+    // Create Config.cmake.in file if it doesn't exist
+    let config_in_path = cmake_dir.join(format!("{}Config.cmake.in", project_name));
+    if !config_in_path.exists() {
+        let config_content = format!(r#"@PACKAGE_INIT@
+
+include("${{CMAKE_CURRENT_LIST_DIR}}/{}Targets.cmake")
+
+check_required_components({})
+"#, project_name, project_name);
+
+        fs::write(&config_in_path, config_content)?;
+    }
+
+    Ok(())
+}
+
+fn generate_package_config(project_path: &Path, project_name: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let config = load_project_config(Some(project_path))?;
+
+    // Skip executable projects.
+    if config.project.project_type == "executable" {
+        return Ok(());
+    }
+
+    let build_dir = config.build.build_dir.as_deref().unwrap_or(DEFAULT_BUILD_DIR);
+    let build_path = project_path.join(build_dir);
+    fs::create_dir_all(&build_path)?;
+
+    // The package configuration file.
+    let config_file = build_path.join(format!("{}Config.cmake", project_name));
+
+    // Get the library output directory and expand tokens like ${CONFIG}, ${OS}, and ${ARCH}.
+    let lib_dir = config.output.lib_dir.as_deref().unwrap_or(DEFAULT_LIB_DIR);
+    let lib_dir_expanded = expand_output_tokens(lib_dir, &config);
+
+    // Create absolute path without using canonicalize (which adds \\?\)
+    let lib_path = if Path::new(&lib_dir_expanded).is_absolute() {
+        PathBuf::from(&lib_dir_expanded)
+    } else {
+        project_path.join(&lib_dir_expanded)
+    };
+
+    println!("{}", format!("Library path resolved to: {}", lib_path.display()).blue());
+
+    // Determine the platform and compiler style to generate the correct library name format
+    let compiler_label = get_effective_compiler_label(&config);
+    let is_msvc_style = matches!(compiler_label.to_lowercase().as_str(), "msvc" | "clang-cl");
+
+    // Check if this is a shared library
+    let is_shared = config.project.project_type == "shared-library";
+
+    // Generate a list of possible library filenames to try
+    let mut possible_filenames = Vec::new();
+
+    if is_msvc_style {
+        // --- MSVC/clang-cl style ---
+        if is_shared {
+            // For a shared library with MSVC, you typically link against *.lib.
+            // The .dll is needed at runtime but not for the link. We can look for both:
+            possible_filenames.push(format!("{}.lib", project_name));
+            possible_filenames.push(format!("lib{}.lib", project_name));
+            // Optionally also see if we find the DLL (in case we want to copy it somewhere):
+            possible_filenames.push(format!("{}.dll", project_name));
+            possible_filenames.push(format!("lib{}.dll", project_name));
+        } else {
+            // For a static library on MSVC:
+            possible_filenames.push(format!("{}.lib", project_name));
+            possible_filenames.push(format!("lib{}.lib", project_name));
+        }
+    } else {
+        // --- MinGW/GCC/clang (GNU driver) style ---
+        if is_shared {
+            // A shared library on MinGW typically has "libX.dll.a" as the import lib
+            // and "X.dll" or "libX.dll" as the actual runtime
+            possible_filenames.push(format!("lib{}.dll.a", project_name));
+            possible_filenames.push(format!("{}.dll.a", project_name));
+            // We can also look for the DLL in case we want to find it:
+            possible_filenames.push(format!("lib{}.dll", project_name));
+            possible_filenames.push(format!("{}.dll", project_name));
+        } else {
+            // Static library on MinGW: "libX.a" or "X.a"
+            possible_filenames.push(format!("lib{}.a", project_name));
+            possible_filenames.push(format!("{}.a", project_name));
+        }
+    }
+
+    let mut lib_file = None;
+
+    // Now loop over possible_filenames to see which actually exists:
+    for filename in &possible_filenames {
+        let candidate = lib_path.join(filename); // Or whatever directory you want
+        println!("Checking for: {}", candidate.display());
+        if candidate.exists() {
+            println!("Found: {}", candidate.display());
+            // Do something with it, e.g. store it or set a CMake variable
+            lib_file = Some(candidate);
+            break;
+        }
+    }
+
+    // If not found, check in the parent directory
+    if lib_file.is_none() {
+        let parent_dir = lib_path.parent().unwrap_or(&lib_path);
+        for filename in &possible_filenames {
+            let file_path = parent_dir.join(filename);
+            if file_path.exists() {
+                println!("{}", format!("Found library at: {}", file_path.display()).green());
+                lib_file = Some(file_path);
+                break;
+            }
+        }
+    }
+
+    // If still not found, try to search the entire project directory
+    if lib_file.is_none() {
+        println!("{}", "Searching project directory for library...".yellow());
+        fn find_library(dir: &Path, patterns: &[String]) -> Option<PathBuf> {
+            if let Ok(entries) = fs::read_dir(dir) {
+                for entry in entries.filter_map(Result::ok) {
+                    let path = entry.path();
+                    if path.is_dir() {
+                        if let Some(found) = find_library(&path, patterns) {
+                            return Some(found);
+                        }
+                    } else if let Some(name) = path.file_name() {
+                        let name_str = name.to_string_lossy();
+                        for pattern in patterns {
+                            if name_str == *pattern {
+                                return Some(path);
+                            }
+                        }
+                    }
+                }
+            }
+            None
+        }
+
+        lib_file = find_library(project_path, &possible_filenames);
+        if let Some(ref path) = lib_file {
+            println!("{}", format!("Found library by search: {}", path.display()).green());
+        }
+    }
+
+    let lib_file = match lib_file {
+        Some(path) => path,
+        None => {
+            println!("{}", format!("Warning: Library file not found for {}. Using placeholder.", project_name).yellow());
+            // Use a placeholder file that will be replaced at link time
+            lib_path.join(if is_msvc_style {
+                format!("{}.lib", project_name)
+            } else if is_shared {
+                format!("lib{}.dll.a", project_name)
+            } else {
+                format!("lib{}.a", project_name)
+            })
+        }
+    };
+
+    // Normalize the path for CMake
+    let raw_lib_file = lib_file.to_string_lossy();
+    let normalized_lib_file = if raw_lib_file.starts_with(r"\\?\") {
+        raw_lib_file[4..].replace("\\", "/")
+    } else {
+        raw_lib_file.replace("\\", "/")
+    };
+
+    // Similarly, for the include path:
+    let include_path = project_path.join("include");
+    let raw_include = include_path.to_string_lossy();
+    let normalized_include = if raw_include.starts_with(r"\\?\") {
+        raw_include[4..].replace("\\", "/")
+    } else {
+        raw_include.replace("\\", "/")
+    };
+
+
+    // Choose the correct import target type
+    let import_type = if is_shared { "SHARED" } else { "STATIC" };
+
+    // Generate the config content with the correct library type
+    let config_content = format!(r#"# Generated by CBuild
+# Config file for {} library
+
+# Compute the installation prefix relative to this file
+get_filename_component(SELF_DIR "${{CMAKE_CURRENT_LIST_FILE}}" PATH)
+
+# Create imported target
+if(NOT TARGET {}::{})
+  add_library({}::{} {} IMPORTED)
+  set_target_properties({}::{}
+    PROPERTIES
+    IMPORTED_LOCATION "{}"
+    INTERFACE_INCLUDE_DIRECTORIES "{}"
+  )
+endif()
+
+# Set variables for backward compatibility
+set({}_LIBRARIES {}::{})
+set({}_INCLUDE_DIRS "{}")
+set({}_FOUND TRUE)
+"#,
+                                 project_name,
+                                 project_name, project_name,
+                                 project_name, project_name, import_type,
+                                 project_name, project_name,
+                                 normalized_lib_file, normalized_include,
+                                 project_name.to_uppercase(), project_name, project_name,
+                                 project_name.to_uppercase(), normalized_include,
+                                 project_name.to_uppercase()
+    );
+
+    fs::write(&config_file, config_content)?;
+    println!("{}", format!("Generated package config at {}", config_file.display()).green());
+
+    // Also generate a version file for exact configuration matching.
+    let version_file = build_path.join(format!("{}ConfigVersion.cmake", project_name));
+    let version_content = format!(r#"# This is a basic version file for the Config-mode of find_package().
+# It is used by find_package() to determine the compatibility of requested and found versions.
+
+set(PACKAGE_VERSION "{}")
+if(PACKAGE_VERSION VERSION_LESS PACKAGE_FIND_VERSION)
+  set(PACKAGE_VERSION_COMPATIBLE FALSE)
+else()
+  set(PACKAGE_VERSION_COMPATIBLE TRUE)
+  if(PACKAGE_FIND_VERSION STREQUAL PACKAGE_VERSION)
+    set(PACKAGE_VERSION_EXACT TRUE)
+  endif()
+endif()
+"#, config.project.version);
+
+    fs::write(&version_file, version_content)?;
+    println!("{}", format!("Generated version file at {}", version_file.display()).green());
+
+    Ok(())
+}
+/// Helper function to expand tokens in output directory strings.
+fn expand_output_tokens(s: &str, config: &ProjectConfig) -> String {
+    let config_val = config.build.default_config.as_deref().unwrap_or("Debug");
+    let os_val = if cfg!(windows) { "windows" } else if cfg!(target_os = "macos") { "darwin" } else { "linux" };
+    let arch_val = if cfg!(target_arch = "x86_64") { "x64" } else if cfg!(target_arch = "x86") { "x86" } else { "arm64" };
+    s.replace("${CONFIG}", config_val)
+        .replace("${OS}", os_val)
+        .replace("${ARCH}", arch_val)
+}
+
+
+fn build_project_with_dependencies(
+    config: &ProjectConfig,
+    project_path: &Path,
+    config_type: Option<&str>,
+    variant_name: Option<&str>,
+    cross_target: Option<&str>,
+    workspace_config: Option<&WorkspaceConfig>,
+    ensure_package_config: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // If we have a workspace with dependencies, ensure package configs exist
+    if let Some(workspace) = workspace_config {
+        if !config.dependencies.workspace.is_empty() && ensure_package_config {
+            // First build dependency graph
+            let mut project_paths = Vec::new();
+            for project_name in &workspace.workspace.projects {
+                let path = if Path::new(project_name).exists() {
+                    PathBuf::from(project_name)
+                } else if Path::new("projects").join(project_name).exists() {
+                    PathBuf::from("projects").join(project_name)
+                } else {
+                    PathBuf::from(project_name)
+                };
+
+                project_paths.push(path);
+            }
+
+            let dep_graph = build_dependency_graph(workspace, &project_paths)?;
+
+            // For each dependency, ensure package config exists
+            for dep in &config.dependencies.workspace {
+                // Check if we can find the dependency path
+                let dep_path = if Path::new(&dep.name).exists() {
+                    PathBuf::from(&dep.name)
+                } else if Path::new("projects").join(&dep.name).exists() {
+                    PathBuf::from("projects").join(&dep.name)
+                } else {
+                    PathBuf::from(&dep.name)
+                };
+
+                // Generate package config for each dependency
+                generate_package_config(&dep_path, &dep.name)?;
+            }
+        }
+    }
+
+    // Now build the project with the normal build process
+    build_project(config, project_path, config_type, variant_name, cross_target, workspace_config)
+}
+
+
+
+fn build_workspace(
+    project: Option<String>,
+    config_type: Option<&str>,
+    variant_name: Option<&str>,
+    target: Option<&str>
+) -> Result<(), Box<dyn std::error::Error>> {
+    let workspace_config = load_workspace_config()?;
+
+    // Determine which projects to build
+    let projects = match project {
+        Some(proj) => vec![proj],
+        None => workspace_config.workspace.projects.clone(),
+    };
+
+    // Build dependency graph
+    let mut dependency_graph = HashMap::new();
+
+    // Process each project to find its dependencies
     for project_path in &projects {
         let path = PathBuf::from(project_path);
         if let Ok(config) = load_project_config(Some(&path)) {
@@ -941,6 +1661,9 @@ fn build_workspace(
                 .map(|dep| dep.name.clone())
                 .collect();
             dependency_graph.insert(project_path.clone(), deps);
+        } else {
+            // If we can't load the config, assume no dependencies
+            dependency_graph.insert(project_path.clone(), Vec::new());
         }
     }
 
@@ -948,11 +1671,16 @@ fn build_workspace(
     let build_order = resolve_build_order(&dependency_graph, &projects)?;
 
     // Build projects in order
-    for project_path in build_order {
+    for project_path in &build_order {
         println!("{}", format!("Building project: {}", project_path).blue());
-        let path = PathBuf::from(&project_path);
+        let path = PathBuf::from(project_path);
         let config = load_project_config(Some(&path))?;
+
+        // Build the project
         build_project(&config, &path, config_type, variant_name, target, Some(&workspace_config))?;
+
+        // After successful build, generate package config
+        generate_package_config(&path, project_path)?;
     }
 
     println!("{}", "Workspace build completed".green());
@@ -1598,6 +2326,7 @@ fn create_default_config() -> ProjectConfig {
             variants,
         }),
         cross_compile: None,
+        pch: None,
     }
 }
 
@@ -2677,37 +3406,71 @@ fn generate_cmake_lists(config: &ProjectConfig, project_path: &Path, variant_nam
         String::new(),
     ];
 
+    // Add pkg-config support
+    cmake_content.push("# Find and configure pkg-config".to_string());
+    cmake_content.push("find_package(PkgConfig QUIET)".to_string());
+    cmake_content.push(String::new());
+
+    // Export this package as a CMake package so other workspace projects can find it
+    cmake_content.push("# Export package information".to_string());
+    cmake_content.push("include(CMakePackageConfigHelpers)".to_string());
+    cmake_content.push(format!("set(EXPORT_NAME {})", project_config.name));
+    cmake_content.push(String::new());
+
+    // Add support for install() commands to work correctly
+    cmake_content.push("# Setup installation paths".to_string());
+    cmake_content.push("if(WIN32 AND NOT DEFINED CMAKE_INSTALL_PREFIX)".to_string());
+    cmake_content.push("  set(CMAKE_INSTALL_PREFIX \"$ENV{ProgramFiles}/${PROJECT_NAME}\")".to_string());
+    cmake_content.push("endif()".to_string());
+    cmake_content.push("include(GNUInstallDirs)".to_string());
+    cmake_content.push(String::new());
+
     if !config.dependencies.workspace.is_empty() && workspace_config.is_some() {
         cmake_content.push(String::new());
         cmake_content.push("# Workspace dependencies".to_string());
-
         for dep in &config.dependencies.workspace {
             let dep_name = &dep.name;
-
-            // Add find_package for the workspace dependency
             cmake_content.push(format!("# Project dependency: {}", dep_name));
-            cmake_content.push(format!("if(DEFINED {0}_DIR)", dep_name.to_uppercase()));
-            cmake_content.push(format!("  find_package({} CONFIG REQUIRED)", dep_name));
-            cmake_content.push(format!("  # Add custom include directories if provided"));
-            cmake_content.push(format!("  if(DEFINED {0}_INCLUDE_DIR)", dep_name.to_uppercase()));
-            cmake_content.push(format!("    include_directories(${{{}}})", format!("{}_INCLUDE_DIR", dep_name.to_uppercase())));
-            cmake_content.push(format!("  endif()"));
-            cmake_content.push(format!("else()"));
+            cmake_content.push(format!("find_package({} CONFIG QUIET)", dep_name));
+            cmake_content.push(format!("if(NOT {}_FOUND)", dep_name));
             cmake_content.push(format!("  message(WARNING \"Workspace dependency '{}' not found. Make sure to build dependencies first.\")", dep_name));
-            cmake_content.push(format!("endif()"));
+            // Only create a dummy imported target if manual paths are provided:
+            cmake_content.push(format!("  if(DEFINED {0}_INCLUDE_DIR AND DEFINED {0}_LIBRARY)", dep_name.to_uppercase()));
+            cmake_content.push(format!("    message(STATUS \"Using manual paths for {}\")", dep_name));
+            cmake_content.push(format!("    add_library({0}::{0} STATIC IMPORTED)", dep_name));
+            cmake_content.push(format!("    set_target_properties({0}::{0} PROPERTIES", dep_name));
+            cmake_content.push(format!("      IMPORTED_LOCATION \"${{{0}_LIBRARY}}\"", dep_name.to_uppercase()));
+            cmake_content.push(format!("      INTERFACE_INCLUDE_DIRECTORIES \"${{{0}_INCLUDE_DIR}}\"", dep_name.to_uppercase()));
+            cmake_content.push("    )".to_string());
+            cmake_content.push(format!("    set({}_FOUND TRUE)", dep_name));
+            cmake_content.push("  endif()".to_string());
+            cmake_content.push("else()".to_string());
+            cmake_content.push(format!("  message(STATUS \"Workspace dependency '{}' found as imported target.\")", dep_name));
+            cmake_content.push("endif()".to_string());
         }
-
         cmake_content.push(String::new());
     }
 
     // Set output directories based on config
     let output_config = &config.output;
     if let Some(bin_dir) = &output_config.bin_dir {
-        cmake_content.push(format!("set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${{CMAKE_BINARY_DIR}}/{})", bin_dir));
+        // Process variables like ${CONFIG}, ${OS}, ${ARCH}
+        let processed_bin_dir = bin_dir
+            .replace("${CONFIG}", "${CMAKE_BUILD_TYPE}")
+            .replace("${OS}", if cfg!(windows) { "windows" } else if cfg!(target_os = "macos") { "darwin" } else { "linux" })
+            .replace("${ARCH}", if cfg!(target_arch = "x86_64") { "x64" } else if cfg!(target_arch = "x86") { "x86" } else { "arm64" });
+
+        cmake_content.push(format!("set(CMAKE_RUNTIME_OUTPUT_DIRECTORY \"{}\")", processed_bin_dir));
     }
+
     if let Some(lib_dir) = &output_config.lib_dir {
-        cmake_content.push(format!("set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${{CMAKE_BINARY_DIR}}/{})", lib_dir));
-        cmake_content.push(format!("set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${{CMAKE_BINARY_DIR}}/{})", lib_dir));
+        let processed_lib_dir = lib_dir
+            .replace("${CONFIG}", "${CMAKE_BUILD_TYPE}")
+            .replace("${OS}", if cfg!(windows) { "windows" } else if cfg!(target_os = "macos") { "darwin" } else { "linux" })
+            .replace("${ARCH}", if cfg!(target_arch = "x86_64") { "x64" } else if cfg!(target_arch = "x86") { "x86" } else { "arm64" });
+
+        cmake_content.push(format!("set(CMAKE_LIBRARY_OUTPUT_DIRECTORY \"{}\")", processed_lib_dir));
+        cmake_content.push(format!("set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY \"{}\")", processed_lib_dir));
     }
 
     // Set C/C++ standard
@@ -2771,17 +3534,6 @@ fn generate_cmake_lists(config: &ProjectConfig, project_path: &Path, variant_nam
         }
     }
 
-    // Create a default source file if needed
-    let default_source_path = project_path.join("src").join("main.cpp");
-    let default_source_exists = default_source_path.exists();
-
-    if !default_source_exists && project_config.project_type == "executable" {
-        fs::create_dir_all(project_path.join("src"))?;
-        let mut file = File::create(&default_source_path)?;
-        file.write_all(b"#include <iostream>\n\nint main(int argc, char* argv[]) {\n    std::cout << \"Hello, CBuild!\" << std::endl;\n    return 0;\n}\n")?;
-        println!("{}", format!("Created default source file: {}", default_source_path.display()).green());
-    }
-
     // Add build variant defines if a variant is specified
     if let Some(variant) = get_active_variant(config, variant_name) {
         if let Some(defines) = &variant.defines {
@@ -2790,6 +3542,61 @@ fn generate_cmake_lists(config: &ProjectConfig, project_path: &Path, variant_nam
             for define in defines {
                 cmake_content.push(format!("add_compile_definitions({})", define));
             }
+            cmake_content.push(String::new());
+        }
+    }
+
+    // Add support for precompiled headers if enabled
+    if let Some(pch_config) = &config.pch {
+        if pch_config.enabled {
+            cmake_content.push("# Precompiled header support".to_string());
+            // Define PCH variables
+            cmake_content.push(format!("set(PCH_HEADER \"{}\")", pch_config.header));
+
+            if let Some(source) = &pch_config.source {
+                cmake_content.push(format!("set(PCH_SOURCE \"{}\")", source));
+            }
+
+            cmake_content.push("# PCH function for targets".to_string());
+            cmake_content.push("function(target_enable_pch target_name)".to_string());
+
+            // Modern CMake PCH approach (CMake 3.16+)
+            cmake_content.push("  if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.16)".to_string());
+
+            // If we have both header and source (for MSVC style)
+            if pch_config.source.is_some() {
+                cmake_content.push("    if(MSVC)".to_string());
+                cmake_content.push("      target_precompile_headers(${target_name} PRIVATE \"${PCH_HEADER}\")".to_string());
+                cmake_content.push("    else()".to_string());
+                cmake_content.push("      target_precompile_headers(${target_name} PRIVATE \"${PCH_HEADER}\")".to_string());
+                cmake_content.push("    endif()".to_string());
+            } else {
+                // Header-only PCH
+                cmake_content.push("    target_precompile_headers(${target_name} PRIVATE \"${PCH_HEADER}\")".to_string());
+            }
+
+            // Fallback for older CMake versions
+            cmake_content.push("  else()".to_string());
+            cmake_content.push("    # Fallback for older CMake - compiler-specific flags".to_string());
+            cmake_content.push("    if(MSVC)".to_string());
+            cmake_content.push("      get_filename_component(PCH_NAME ${PCH_HEADER} NAME_WE)".to_string());
+            cmake_content.push("      set(PCH_OUTPUT \"${CMAKE_CURRENT_BINARY_DIR}/${PCH_NAME}.pch\")".to_string());
+            cmake_content.push("      # Set compiler flags for using PCH".to_string());
+            cmake_content.push("      target_compile_options(${target_name} PRIVATE /Yu\"${PCH_HEADER}\" /Fp\"${PCH_OUTPUT}\")".to_string());
+
+            // Handle separate source file for creating the PCH
+            if let Some(_) = &pch_config.source {
+                cmake_content.push("      # Set PCH creation flag on the source file that will create the PCH".to_string());
+                cmake_content.push("      set_source_files_properties(${PCH_SOURCE} PROPERTIES COMPILE_FLAGS \"/Yc\\\"${PCH_HEADER}\\\" /Fp\\\"${PCH_OUTPUT}\\\"\")".to_string());
+            }
+
+            cmake_content.push("    elseif(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES \"Clang\")".to_string());
+            cmake_content.push("      # GCC/Clang - we can't do much in older CMake".to_string());
+            cmake_content.push("      message(STATUS \"PCH support for GCC/Clang requires CMake 3.16+. PCH disabled.\")".to_string());
+            cmake_content.push("    endif()".to_string());
+            cmake_content.push("  endif()".to_string());
+            cmake_content.push("endfunction()".to_string());
+
             cmake_content.push(String::new());
         }
     }
@@ -2823,8 +3630,9 @@ fn generate_cmake_lists(config: &ProjectConfig, project_path: &Path, variant_nam
             }
         }
 
-        // Add workspace dependencies
+        // Add workspace dependencies as links
         for dep in &config.dependencies.workspace {
+            // Add namespaced target
             let link_target = format!("{}::{}", dep.name, dep.name);
 
             // Only add if not already in links
@@ -2858,15 +3666,42 @@ fn generate_cmake_lists(config: &ProjectConfig, project_path: &Path, variant_nam
         cmake_content.push(format!("  set({}_SOURCES \"${{CMAKE_SOURCE_DIR}}/src/main.cpp\")", target_name.to_uppercase()));
         cmake_content.push(format!("endif()"));
 
+        // Handle PCH source if present - might need to separate it from compilation
+        if let Some(pch_config) = &config.pch {
+            if pch_config.enabled && pch_config.source.is_some() {
+                let pch_source = pch_config.source.as_ref().unwrap();
+                cmake_content.push(format!("# Handle PCH source separately"));
+                cmake_content.push(format!("if(MSVC)"));
+                cmake_content.push(format!("  # Find PCH source in sources list"));
+                cmake_content.push(format!("  foreach(SRC ${{{}_SOURCES}})", target_name.to_uppercase()));
+                cmake_content.push(format!("    if(SRC MATCHES \"{}\")", regex::escape(pch_source)));
+                cmake_content.push(format!("      set(PCH_SOURCE \"${{SRC}}\")"));
+                cmake_content.push(format!("      list(REMOVE_ITEM {}_SOURCES \"${{SRC}}\")", target_name.to_uppercase()));
+                cmake_content.push(format!("    endif()"));
+                cmake_content.push(format!("  endforeach()"));
+                cmake_content.push(format!("  # Add PCH source back to sources"));
+                cmake_content.push(format!("  list(APPEND {}_SOURCES \"${{PCH_SOURCE}}\")", target_name.to_uppercase()));
+                cmake_content.push(format!("endif()"));
+            }
+        }
+
         // Create target using the expanded sources
         if target_type == "executable" {
             cmake_content.push(format!("add_executable({} ${{{}_SOURCES}})", target_name, target_name.to_uppercase()));
-        } else if target_type == "library" {
+        } else if target_type == "shared-library" {
             cmake_content.push(format!("add_library({} SHARED ${{{}_SOURCES}})", target_name, target_name.to_uppercase()));
         } else if target_type == "static-library" {
             cmake_content.push(format!("add_library({} STATIC ${{{}_SOURCES}})", target_name, target_name.to_uppercase()));
         } else if target_type == "header-only" {
             cmake_content.push(format!("add_library({} INTERFACE)", target_name));
+        }
+
+        // Enable PCH for this target if configured
+        if let Some(pch_config) = &config.pch {
+            if pch_config.enabled {
+                cmake_content.push(format!("# Enable PCH for target {}", target_name));
+                cmake_content.push(format!("target_enable_pch({})", target_name));
+            }
         }
 
         // Include directories
@@ -2877,9 +3712,30 @@ fn generate_cmake_lists(config: &ProjectConfig, project_path: &Path, variant_nam
                 .join(" ");
 
             if target_type == "header-only" {
-                cmake_content.push(format!("target_include_directories({} INTERFACE {})", target_name, includes));
+                // For header-only libraries
+                cmake_content.push(format!("target_include_directories({} INTERFACE", target_name));
+                for include_dir in include_dirs {
+                    cmake_content.push(format!("  \"$<BUILD_INTERFACE:${{CMAKE_CURRENT_SOURCE_DIR}}/{}>\"", include_dir));
+                    cmake_content.push(format!("  \"$<INSTALL_INTERFACE:include>\""));
+                }
+                cmake_content.push(")".to_string());
+            } else if target_type == "static-library" || target_type == "shared-library" {
+                // For static libraries
+                cmake_content.push(format!("target_include_directories({} PUBLIC", target_name));
+                for include_dir in include_dirs {
+                    cmake_content.push(format!("  \"$<BUILD_INTERFACE:${{CMAKE_CURRENT_SOURCE_DIR}}/{}>\"", include_dir));
+                    cmake_content.push(format!("  \"$<INSTALL_INTERFACE:include>\""));
+                }
+                cmake_content.push(")".to_string());
             } else {
-                cmake_content.push(format!("target_include_directories({} PRIVATE {})", target_name, includes));
+                // For executables
+                let includes = include_dirs.iter()
+                    .map(|s| format!("\"{}\"", s))
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                if !includes.is_empty() {
+                    cmake_content.push(format!("target_include_directories({} PRIVATE {})", target_name, includes));
+                }
             }
         }
 
@@ -2898,56 +3754,127 @@ fn generate_cmake_lists(config: &ProjectConfig, project_path: &Path, variant_nam
         }
 
         // Link libraries
-        let mut all_links = Vec::new();
-
-        // Add manually specified link libraries
-        if !links.is_empty() {
-            all_links.extend(links.clone());
-        }
-
-        // Add vcpkg package links if they match our link targets
-        if vcpkg_config.enabled && !vcpkg_config.packages.is_empty() {
-            // Only add vcpkg link targets that match our explicit links
-            for link in links {
-                // Check if this is a naked package name without namespace
-                if !link.contains("::") {
-                    // For each vcpkg package, check if we should add its namespaced target
-                    for package in &vcpkg_config.packages {
-                        let base_package = package.split(':').next().unwrap_or(package);
-                        if base_package.to_lowercase() == link.to_lowercase() {
-                            // Add the namespaced target instead of the bare name
-                            all_links.push(format!("{}::{}", base_package, base_package));
-                            // Remove the naked package name
-                            all_links.retain(|l| l != link);
-                        }
-                    }
-                }
-            }
-        }
-
-        // Link all libraries
         if !all_links.is_empty() {
             let links_str = all_links.join(" ");
             if target_type == "header-only" {
                 cmake_content.push(format!("target_link_libraries({} INTERFACE {})", target_name, links_str));
             } else {
-                cmake_content.push(format!("target_link_libraries({} PRIVATE {})", target_name, links_str));
+                // Use PUBLIC instead of PRIVATE to propagate dependencies
+                cmake_content.push(format!("target_link_libraries({} PUBLIC {})", target_name, links_str));
             }
         }
 
-        // Installation rules
-        if target_type != "header-only" {
-            if target_type == "executable" {
-                cmake_content.push(format!("install(TARGETS {} DESTINATION bin)", target_name));
-            } else {
-                cmake_content.push(format!("install(TARGETS {} DESTINATION lib)", target_name));
-                // Install header files for libraries
-                for include_dir in include_dirs {
-                    cmake_content.push(format!("install(DIRECTORY {}/ DESTINATION include)", include_dir));
-                }
+        // Export the target so other workspace projects can find it
+        if target_type != "executable" {
+            // Add export commands so this library can be used as a dependency
+            cmake_content.push(String::new());
+            cmake_content.push("# Export targets for use by other projects".to_string());
+
+            // Create a namespaced alias and export it
+            cmake_content.push(format!("add_library({0}::{0} ALIAS {0})", target_name));
+
+            // Export the targets from the build tree
+            cmake_content.push(format!("export(TARGETS {0} NAMESPACE {0}:: FILE {0}Config.cmake)", target_name));
+
+            // Install the library
+            cmake_content.push(format!("install(TARGETS {0} EXPORT {0}Targets", target_name));
+            cmake_content.push(format!("  LIBRARY DESTINATION ${{CMAKE_INSTALL_LIBDIR}}"));
+            cmake_content.push(format!("  ARCHIVE DESTINATION ${{CMAKE_INSTALL_LIBDIR}}"));
+            cmake_content.push(format!("  RUNTIME DESTINATION ${{CMAKE_INSTALL_BINDIR}}"));
+            cmake_content.push(format!("  INCLUDES DESTINATION ${{CMAKE_INSTALL_INCLUDEDIR}})"));
+
+            // Install headers
+            for include_dir in include_dirs {
+                cmake_content.push(format!("install(DIRECTORY {} DESTINATION ${{CMAKE_INSTALL_INCLUDEDIR}})", include_dir));
             }
+
+            // Export targets for installation
+            cmake_content.push(format!("install(EXPORT {0}Targets NAMESPACE {0}:: DESTINATION ${{CMAKE_INSTALL_LIBDIR}}/cmake/{0})", target_name));
+
+            // Write a basic config file directly into the build directory
+            cmake_content.push(format!("# Write a basic config file for build tree usage"));
+            cmake_content.push(format!("file(WRITE \"${{CMAKE_CURRENT_BINARY_DIR}}/{0}Config.cmake\"", target_name));
+            cmake_content.push(format!("\"include(\\\"${{CMAKE_CURRENT_BINARY_DIR}}/{0}Targets.cmake\\\")\\n\"", target_name));
+            cmake_content.push(format!("\"set({0}_INCLUDE_DIR \\\"${{CMAKE_CURRENT_SOURCE_DIR}}/include\\\")\\n\"", target_name.to_uppercase()));
+            cmake_content.push(format!("\"set({0}_FOUND TRUE)\\n\")", target_name.to_uppercase()));
+
+            // Export package for build tree
+            cmake_content.push(format!("export(PACKAGE {})", target_name));
         }
     }
+
+    // Add testing support if tests directory exists
+    let tests_path = project_path.join("tests");
+    if tests_path.exists() {
+        cmake_content.push(String::new());
+        cmake_content.push("# Testing support".to_string());
+        cmake_content.push("enable_testing()".to_string());
+        cmake_content.push("add_subdirectory(tests)".to_string());
+        cmake_content.push(String::new());
+    }
+
+    // Add version header generation if source directory exists
+    let src_path = project_path.join("src");
+    if src_path.exists() {
+        cmake_content.push("# Generate version information header".to_string());
+        cmake_content.push("configure_file(".to_string());
+        cmake_content.push("  ${CMAKE_CURRENT_SOURCE_DIR}/cmake/version.h.in".to_string());
+        cmake_content.push("  ${CMAKE_CURRENT_BINARY_DIR}/include/version.h".to_string());
+        cmake_content.push(")".to_string());
+        cmake_content.push("include_directories(${CMAKE_CURRENT_BINARY_DIR}/include)".to_string());
+        cmake_content.push(String::new());
+
+        // Create version.h.in template if it doesn't exist
+        let cmake_dir = project_path.join("cmake");
+        if !cmake_dir.exists() {
+            fs::create_dir_all(&cmake_dir)?;
+        }
+
+        let version_template_path = cmake_dir.join("version.h.in");
+        if !version_template_path.exists() {
+            let version_template = format!("#pragma once
+
+// Auto-generated version header
+#define {}_VERSION \"@PROJECT_VERSION@\"
+#define {}_VERSION_MAJOR @PROJECT_VERSION_MAJOR@
+#define {}_VERSION_MINOR @PROJECT_VERSION_MINOR@
+#define {}_VERSION_PATCH @PROJECT_VERSION_PATCH@
+",
+                                           project_config.name.to_uppercase(),
+                                           project_config.name.to_uppercase(),
+                                           project_config.name.to_uppercase(),
+                                           project_config.name.to_uppercase()
+            );
+
+            // Write version template file
+            fs::write(&version_template_path, version_template)?;
+        }
+    }
+
+    // Add installation instructions if not already added
+    let has_install_commands = cmake_content.iter().any(|line| line.contains("install("));
+    if !has_install_commands && project_config.project_type == "executable" {
+        cmake_content.push("# Installation".to_string());
+        cmake_content.push("install(TARGETS default DESTINATION bin)".to_string());
+        cmake_content.push(String::new());
+    }
+
+    // Add CPack configuration for packaging
+    cmake_content.push("# Packaging with CPack".to_string());
+    cmake_content.push("include(CPack)".to_string());
+    cmake_content.push("set(CPACK_PACKAGE_NAME \"${PROJECT_NAME}\")".to_string());
+    cmake_content.push("set(CPACK_PACKAGE_VERSION \"${PROJECT_VERSION}\")".to_string());
+    cmake_content.push("set(CPACK_PACKAGE_VENDOR \"CBuild User\")".to_string());
+    cmake_content.push("set(CPACK_PACKAGE_DESCRIPTION_SUMMARY \"${PROJECT_NAME} - ${PROJECT_DESCRIPTION}\")".to_string());
+
+    // OS-specific packaging options
+    cmake_content.push("if(WIN32)".to_string());
+    cmake_content.push("  set(CPACK_GENERATOR \"ZIP;NSIS\")".to_string());
+    cmake_content.push("elseif(APPLE)".to_string());
+    cmake_content.push("  set(CPACK_GENERATOR \"DragNDrop;TGZ\")".to_string());
+    cmake_content.push("else()".to_string());
+    cmake_content.push("  set(CPACK_GENERATOR \"TGZ;DEB\")".to_string());
+    cmake_content.push("endif()".to_string());
 
     // Write the CMakeLists.txt file
     let cmake_file = project_path.join("CMakeLists.txt");
@@ -3103,6 +4030,7 @@ fn create_simple_config() -> ProjectConfig {
         scripts: None,        // No scripts
         variants: None,       // No variants
         cross_compile: None,  // No cross-compilation
+        pch: None,
     }
 }
 
@@ -3474,7 +4402,30 @@ fn build_project(
         project_path.join(build_dir)
     };
 
-    // Create a set of environment variables for hooks
+    // Ensure the build directory exists.
+    fs::create_dir_all(&build_path)?;
+
+    // Determine the generator being used.
+    let generator = get_cmake_generator(config)?;
+
+    // Check if we need to re-run configuration:
+    // For example, if there's no CMakeCache.txt or, when using Ninja, build.ninja is missing.
+    let needs_configure = {
+        if !build_path.join("CMakeCache.txt").exists() {
+            true
+        } else if generator == "Ninja" && !build_path.join("build.ninja").exists() {
+            true
+        } else {
+            false
+        }
+    };
+
+    if needs_configure {
+        println!("{}", "Project not configured yet or build files missing, configuring...".blue());
+        configure_project(config, project_path, config_type, variant_name, cross_target, workspace_config)?;
+    }
+
+    // Run pre-build hooks
     let mut hook_env = HashMap::new();
     hook_env.insert("PROJECT_PATH".to_string(), project_path.to_string_lossy().to_string());
     hook_env.insert("BUILD_PATH".to_string(), build_path.to_string_lossy().to_string());
@@ -3485,26 +4436,16 @@ fn build_project(
     if let Some(t) = cross_target {
         hook_env.insert("TARGET".to_string(), t.to_string());
     }
-
-    if !build_path.join("CMakeCache.txt").exists() {
-        println!("{}", "Project not configured yet, configuring...".blue());
-        configure_project(config, project_path, config_type, variant_name, cross_target, workspace_config)?;
-    }
-
-    // Run pre-build hooks
     if let Some(hooks) = &config.hooks {
         run_hooks(&hooks.pre_build, project_path, Some(hook_env.clone()))?;
     }
 
     // Build using CMake
     let mut cmd = vec!["cmake".to_string(), "--build".to_string(), ".".to_string()];
-
-    // Add configuration (Debug/Release, etc.)
     let build_type = get_build_type(config, config_type);
     cmd.push("--config".to_string());
     cmd.push(build_type.clone());
 
-    // Run build
     run_command(cmd, Some(&build_path.to_string_lossy().to_string()), None)?;
 
     // Run post-build hooks
@@ -3515,6 +4456,7 @@ fn build_project(
     println!("{}", format!("Build completed successfully ({} configuration)", build_type).green());
     Ok(())
 }
+
 
 fn clean_project(
     config: &ProjectConfig,
@@ -3720,6 +4662,10 @@ fn run_project(
     // Run pre-run hooks
     if let Some(hooks) = &config.hooks {
         run_hooks(&hooks.pre_run, project_path, Some(hook_env.clone()))?;
+    }
+
+    if !is_executable(&executable) || executable.extension().map_or(false, |ext| ext == "txt") {
+        return Err(format!("No valid executable found. Build the project first.").into());
     }
 
     println!("{}", format!("Running: {}", executable.display()).blue());
@@ -4938,7 +5884,24 @@ fn map_token(token: &str, msvc_style: bool) -> Vec<String> {
                 vec!["-O0".to_string()]
             }
         }
+        "NO_WARNINGS" => {
+            if msvc_style {
+                // MSVC/clang-cl
+                vec!["/W0".to_string()] // or "/W0"
+            } else {
+                // GCC/Clang (GNU driver)
+                vec!["-w".to_string()]
+            }
+        }
         "OPTIMIZE" => {
+            // /O2 vs -O2
+            if msvc_style {
+                vec!["/O2".to_string()]
+            } else {
+                vec!["-O2".to_string()]
+            }
+        }
+        "OPTIMIZE_MAX" => {
             // /O2 vs -O2
             if msvc_style {
                 vec!["/O3".to_string()]
