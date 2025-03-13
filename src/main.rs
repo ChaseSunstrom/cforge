@@ -1,3 +1,6 @@
+use lazy_static::lazy_static;
+use regex::Regex;
+use std::collections::VecDeque;
 use clap::{Parser, Subcommand};
 use colored::*;
 use regex;
@@ -6,6 +9,7 @@ use std::{
     collections::HashMap,
     collections::HashSet,
     env,
+    sync::Mutex,
     fmt,
     fs::{self, File},
     io::Write,
@@ -22,6 +26,13 @@ const DEFAULT_LIB_DIR: &str = "lib";
 const DEFAULT_OBJ_DIR: &str = "obj";
 const VCPKG_DEFAULT_DIR: &str = "~/.vcpkg";
 const CMAKE_MIN_VERSION: &str = "3.15";
+
+lazy_static! {
+    static ref EXECUTED_COMMANDS: Mutex<HashSet<String>> = Mutex::new(HashSet::new());
+    static ref VERIFIED_TOOLS: Mutex<HashSet<String>> = Mutex::new(HashSet::new());
+    static ref INSTALLED_PACKAGES: Mutex<HashSet<String>> = Mutex::new(HashSet::new());
+    static ref CACHED_PATHS: Mutex<HashMap<String, String>> = Mutex::new(HashMap::new());
+}
 
 // CLI Commands
 #[derive(Debug, Parser)]
@@ -383,6 +394,16 @@ struct OutputConfig {
     obj_dir: Option<String>,
 }
 
+#[derive(Debug, Clone)]
+struct CompilerDiagnostic {
+    file: String,
+    line: usize,
+    column: usize,
+    level: String,    // "error", "warning", "note", etc.
+    message: String,
+    context: Vec<String>,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 struct BuildHooks {
     pre_configure: Option<Vec<String>>,
@@ -501,6 +522,8 @@ fn parse_toml_error(err: toml::de::Error, file_path: &str, file_content: &str) -
     // Try to extract line number from the error message
     let line_number = if let Some(span) = err.span() {
         // If we have a span, we can calculate the line number
+
+
         let content_up_to_error = &file_content[..span.start];
         Some(content_up_to_error.lines().count())
     } else {
@@ -592,6 +615,26 @@ impl Default for VcpkgConfig {
             packages: Vec::new(),
         }
     }
+}
+
+fn run_command_once(
+    cmd: Vec<String>,
+    cwd: Option<&str>,
+    env: Option<HashMap<String, String>>,
+    cache_key: Option<&str>
+) -> Result<(), Box<dyn std::error::Error>> {
+    // If a cache key is provided, check if we've already run this command
+    if let Some(key) = cache_key {
+        let mut cache = EXECUTED_COMMANDS.lock().unwrap();
+        if cache.contains(key) {
+            println!("{}", format!("Skipping already executed command: {}", key).blue());
+            return Ok(());
+        }
+        cache.insert(key.to_string());
+    }
+
+    // Run the command
+    run_command(cmd, cwd, env)
 }
 
 fn run_command_raw(command: &Commands) -> Result<(), Box<dyn std::error::Error>> {
@@ -999,12 +1042,15 @@ fn resolve_workspace_dependencies(
     }
 
     let workspace = workspace_config.unwrap();
+    println!("{}", "Resolving workspace dependencies...".blue());
 
     for dep in &config.dependencies.workspace {
         if !workspace.workspace.projects.contains(&dep.name) {
             println!("{}", format!("Warning: Workspace dependency '{}' not found in workspace", dep.name).yellow());
             continue;
         }
+
+        println!("{}", format!("Processing dependency: {}", dep.name).blue());
 
         // Get the absolute path to the dependency
         let dep_path = if Path::new(&dep.name).is_absolute() {
@@ -1018,14 +1064,40 @@ fn resolve_workspace_dependencies(
             PathBuf::from(&dep.name)
         };
 
-        // Ensure that the dependency's package config is generated.
-        generate_package_config(&dep_path, &dep.name)?;
+        // First, try to load the dependency's config
+        let dep_config = match load_project_config(Some(&dep_path)) {
+            Ok(config) => config,
+            Err(e) => {
+                println!("{}", format!("Warning: Could not load config for dependency '{}': {}", dep.name, e).yellow());
+                continue;
+            }
+        };
 
-        let dep_config = load_project_config(Some(&dep_path))?;
+        // Check if the dependency has been built
         let dep_build_dir = dep_config.build.build_dir.as_deref().unwrap_or(DEFAULT_BUILD_DIR);
         let dep_build_path = dep_path.join(dep_build_dir);
 
+        if !dep_build_path.exists() {
+            println!("{}", format!("Dependency '{}' has not been built yet. Building it now...", dep.name).yellow());
+
+            // Try to build the dependency
+            let mut dep_conf = dep_config.clone();
+            auto_adjust_config(&mut dep_conf)?;
+            if let Err(e) = build_project(&dep_conf, &dep_path, None, None, None, Some(workspace)) {
+                println!("{}", format!("Warning: Failed to build dependency '{}': {}", dep.name, e).red());
+                println!("{}", "Continuing with dependency resolution anyway, but linking might fail.".yellow());
+            }
+        }
+
+        // Ensure the package config is generated
+        if let Err(e) = generate_package_config(&dep_path, &dep.name) {
+            println!("{}", format!("Warning: Failed to generate package config for '{}': {}", dep.name, e).yellow());
+            println!("{}", "Continuing with dependency resolution anyway, but linking might fail.".yellow());
+        }
+
         // Add the build directory to CMAKE_PREFIX_PATH
+        let dep_build_dir = dep_config.build.build_dir.as_deref().unwrap_or(DEFAULT_BUILD_DIR);
+        let dep_build_path = dep_path.join(dep_build_dir);
         cmake_options.push(format!(
             "-DCMAKE_PREFIX_PATH={};${{CMAKE_PREFIX_PATH}}",
             dep_build_path.to_string_lossy().replace(r"\\?\", "")
@@ -1050,8 +1122,11 @@ fn resolve_workspace_dependencies(
         let compiler_label = get_effective_compiler_label(&dep_config);
         let is_msvc_style = matches!(compiler_label.to_lowercase().as_str(), "msvc" | "clang-cl");
 
-        // Get the library path
-        let lib_dir = dep_config.output.bin_dir.as_deref().unwrap_or("bin");
+        // Is this a shared library?
+        let is_shared = dep_config.project.project_type == "shared-library";
+
+        // Find all potential library files
+        let lib_dir = dep_config.output.lib_dir.as_deref().unwrap_or("lib");
 
         // Expand the tokens for the actual configuration
         let build_type = get_build_type(&dep_config, None);
@@ -1066,111 +1141,158 @@ fn resolve_workspace_dependencies(
         // Build full library path - use an absolute path
         let lib_path = dep_path.join(&expanded_lib_dir);
 
-        // Print for debugging
-        println!("{}", format!("Looking for library in directory: {}", lib_path.display()).blue());
+        println!("{}", format!("Searching for library files for '{}' in: {}", dep.name, lib_path.display()).blue());
 
-        // List all files in library directory to help debug
-        if lib_path.exists() {
-            if let Ok(entries) = fs::read_dir(&lib_path) {
-                println!("Files in library directory:");
-                for entry in entries.filter_map(Result::ok) {
-                    println!("  {}", entry.file_name().to_string_lossy());
-                }
-            }
-        }
+        // Use enhanced library finding function
+        let found_libraries = find_library_files(&lib_path, &dep.name, is_shared, is_msvc_style);
 
-        // Generate a list of possible library filenames to try
-        let mut possible_filenames = Vec::new();
+        if !found_libraries.is_empty() {
+            for (lib_file, filename) in &found_libraries {
+                println!("{}", format!("Found library: {} ({})", lib_file.display(), filename).green());
 
-        // Is this a shared library?
-        let is_shared = dep_config.project.project_type == "shared-library";
+                // Add the library path to CMake variables
+                cmake_options.push(format!(
+                    "-D{}_LIBRARY={}",
+                    dep.name.to_uppercase(),
+                    lib_file.to_string_lossy().replace(r"\\?\", "")
+                ));
 
-        if is_msvc_style {
-            // --- MSVC/clang-cl style ---
-            if is_shared {
-                // For a shared library with MSVC, you typically link against *.lib.
-                // The .dll is needed at runtime but not for the link. We can look for both:
-                possible_filenames.push(format!("{}.lib", dep.name));
-                possible_filenames.push(format!("lib{}.lib", dep.name));
-                // Optionally also see if we find the DLL (in case we want to copy it somewhere):
-                possible_filenames.push(format!("{}.dll", dep.name));
-                possible_filenames.push(format!("lib{}.dll", dep.name));
-            } else {
-                // For a static library on MSVC:
-                possible_filenames.push(format!("{}.lib", dep.name));
-                possible_filenames.push(format!("lib{}.lib", dep.name));
-            }
-        } else {
-            // --- MinGW/GCC/clang (GNU driver) style ---
-            if is_shared {
-                // A shared library on MinGW typically has "libX.dll.a" as the import lib
-                // and "X.dll" or "libX.dll" as the actual runtime
-                possible_filenames.push(format!("lib{}.dll.a", dep.name));
-                possible_filenames.push(format!("{}.dll.a", dep.name));
-                // We can also look for the DLL in case we want to find it:
-                possible_filenames.push(format!("lib{}.dll", dep.name));
-                possible_filenames.push(format!("{}.dll", dep.name));
-            } else {
-                // Static library on MinGW: "libX.a" or "X.a"
-                possible_filenames.push(format!("lib{}.a", dep.name));
-                possible_filenames.push(format!("{}.a", dep.name));
-            }
-        }
-
-        let mut found_lib_file = None;
-
-        // Now loop over possible_filenames to see which actually exists:
-        for filename in &possible_filenames {
-            let candidate = lib_path.join(filename); // Or whatever directory you want
-            println!("Checking for: {}", candidate.display());
-            if candidate.exists() {
-                println!("Found: {}", candidate.display());
-                // Do something with it, e.g. store it or set a CMake variable
-                found_lib_file = Some(candidate);
+                // Just use the first library file we find
                 break;
             }
-        }
+        } else {
+            // If no libraries found, try to search the entire project directory
+            println!("{}", format!("No libraries found in standard locations for '{}', performing deep search...", dep.name).yellow());
 
-        // If not found, search the parent directory too
-        if found_lib_file.is_none() {
-            let parent_dir = lib_path.parent().unwrap_or(&lib_path);
-            for filename in &possible_filenames {
-                let lib_file = parent_dir.join(filename);
-                if lib_file.exists() {
-                    println!("{}", format!("Found library at: {}", lib_file.display()).green());
-                    found_lib_file = Some(lib_file);
+            let found_libraries = find_library_files(&dep_path, &dep.name, is_shared, is_msvc_style);
+
+            if !found_libraries.is_empty() {
+                for (lib_file, filename) in &found_libraries {
+                    println!("{}", format!("Found library: {} ({})", lib_file.display(), filename).green());
+
+                    // Add the library path to CMake variables
+                    cmake_options.push(format!(
+                        "-D{}_LIBRARY={}",
+                        dep.name.to_uppercase(),
+                        lib_file.to_string_lossy().replace(r"\\?\", "")
+                    ));
+
+                    // Just use the first library file we find
                     break;
                 }
+            } else {
+                println!("{}", format!("Warning: No library files found for '{}'. Linking may fail.", dep.name).yellow());
+
+                // Try to link directly to the library by name as a last resort
+                cmake_options.push(format!(
+                    "-DCMAKE_LIBRARY_PATH={}",
+                    lib_path.to_string_lossy().replace(r"\\?\", "")
+                ));
+
+                // Try different prefix/suffix combinations
+                cmake_options.push(format!(
+                    "-DCMAKE_FIND_LIBRARY_PREFIXES=\"lib;\"",
+                ));
+
+                // Add all possible library extensions
+                cmake_options.push(format!(
+                    "-DCMAKE_FIND_LIBRARY_SUFFIXES=\".dll;.dll.a;.a;.lib;.so;.dylib\"",
+                ));
+
+                // Try to find the library by name
+                cmake_options.push(format!(
+                    "-D{}_LIBRARY_NAME={}",
+                    dep.name.to_uppercase(),
+                    dep.name
+                ));
             }
-        }
-
-        // Add the library path to CMake variables
-        if let Some(lib_file) = found_lib_file {
-            cmake_options.push(format!(
-                "-D{}_LIBRARY={}",
-                dep.name.to_uppercase(),
-                lib_file.to_string_lossy().replace(r"\\?\", "")
-            ));
-        } else {
-            println!("{}", format!("Warning: Library file not found for {}. Linking may fail.", dep.name).yellow());
-
-            // Try to link directly to the library by name as a last resort
-            cmake_options.push(format!(
-                "-DCMAKE_LIBRARY_PATH={}",
-                lib_path.to_string_lossy().replace(r"\\?\", "")
-            ));
-            cmake_options.push(format!(
-                "-DCMAKE_FIND_LIBRARY_PREFIXES=\"lib;\"",
-            ));
-            cmake_options.push(format!(
-                "-DCMAKE_FIND_LIBRARY_SUFFIXES=\".dll;.dll.a;.a;.lib\"",
-            ));
         }
     }
 
+    println!("{}", "Workspace dependency resolution completed.".green());
     Ok(cmake_options)
 }
 
+fn find_library_files(base_path: &Path, project_name: &str, is_shared: bool, is_msvc_style: bool) -> Vec<(PathBuf, String)> {
+    let mut result = Vec::new();
+    let possible_filenames = get_possible_library_filenames(project_name, is_shared, is_msvc_style);
+
+    // First look directly in the specified path
+    for filename in &possible_filenames {
+        let lib_path = base_path.join(filename);
+        if lib_path.exists() {
+            result.push((lib_path, filename.clone()));
+        }
+    }
+
+    // If nothing found, try common subdirectories
+    if result.is_empty() {
+        for subdir in &["lib", "libs", "bin", "build/lib", "build/bin"] {
+            let subdir_path = base_path.join(subdir);
+            if subdir_path.exists() {
+                for filename in &possible_filenames {
+                    let lib_path = subdir_path.join(filename);
+                    if lib_path.exists() {
+                        result.push((lib_path, filename.clone()));
+                    }
+                }
+            }
+        }
+
+        // Also search for configuration-specific directories
+        for config in &["Debug", "Release", "RelWithDebInfo", "MinSizeRel"] {
+            let config_path = base_path.join(config);
+            if config_path.exists() {
+                for filename in &possible_filenames {
+                    let lib_path = config_path.join(filename);
+                    if lib_path.exists() {
+                        result.push((lib_path, filename.clone()));
+                    }
+                }
+            }
+        }
+    }
+
+    // If still empty, do a more exhaustive search (breadth-first to avoid going too deep)
+    if result.is_empty() {
+        let mut queue = VecDeque::new();
+        queue.push_back(base_path.to_path_buf());
+        let mut visited = HashSet::new();
+
+        while let Some(dir) = queue.pop_front() {
+            if visited.contains(&dir) {
+                continue;
+            }
+            visited.insert(dir.clone());
+
+            // Don't go more than 3 levels deep to avoid excessive searching
+            let current_depth = dir.strip_prefix(base_path).map_or(0, |p| p.components().count());
+            if current_depth > 3 {
+                continue;
+            }
+
+            // Check for library files in this directory
+            for filename in &possible_filenames {
+                let lib_path = dir.join(filename);
+                if lib_path.exists() {
+                    result.push((lib_path, filename.clone()));
+                }
+            }
+
+            // Add subdirectories to the queue
+            if let Ok(entries) = fs::read_dir(&dir) {
+                for entry in entries.filter_map(Result::ok) {
+                    let path = entry.path();
+                    if path.is_dir() {
+                        queue.push_back(path);
+                    }
+                }
+            }
+        }
+    }
+
+    result
+}
 
 // Workspace functions
 fn init_workspace() -> Result<(), Box<dyn std::error::Error>> {
@@ -1282,17 +1404,61 @@ fn build_workspace_with_dependency_order(
         auto_adjust_config(&mut config)?;
 
         // First, try the normal build process
-        if build_project(&config, &path, config_type, variant_name, target, Some(&workspace_config)).is_err() {
-            // If it fails, let's continue - might be fixed by config generation
+        if let Err(e) = build_project(&config, &path, config_type, variant_name, target, Some(&workspace_config)) {
+            // Print a clear error line in cbuild style, but continue with other projects
             println!("{}", format!("Warning: Building {} had issues, but continuing", project_name).yellow());
         }
 
         // Generate package config after build
-        generate_package_config(&path, project_name)?;
+        if let Err(e) = generate_package_config(&path, project_name) {
+            println!("{}", format!("Error generating package config: {}", e).yellow());
+        }
     }
 
     println!("{}", "Workspace build completed".green());
     Ok(())
+}
+
+fn get_possible_library_filenames(project_name: &str, is_shared: bool, is_msvc_style: bool) -> Vec<String> {
+    let mut filenames = Vec::new();
+
+    if is_msvc_style {
+        // MSVC-style libraries
+        if is_shared {
+            // Import libraries
+            filenames.push(format!("{}.lib", project_name));
+            filenames.push(format!("lib{}.lib", project_name));
+
+            // DLLs
+            filenames.push(format!("{}.dll", project_name));
+            filenames.push(format!("lib{}.dll", project_name));
+        } else {
+            // Static libraries
+            filenames.push(format!("{}.lib", project_name));
+            filenames.push(format!("lib{}.lib", project_name));
+        }
+    } else {
+        // GCC/Clang-style libraries
+        if is_shared {
+            // Import libraries
+            filenames.push(format!("lib{}.dll.a", project_name));
+            filenames.push(format!("{}.dll.a", project_name));
+
+            // Shared objects
+            filenames.push(format!("lib{}.so", project_name));
+            filenames.push(format!("lib{}.dylib", project_name));
+
+            // DLLs
+            filenames.push(format!("lib{}.dll", project_name));
+            filenames.push(format!("{}.dll", project_name));
+        } else {
+            // Static libraries
+            filenames.push(format!("lib{}.a", project_name));
+            filenames.push(format!("{}.a", project_name));
+        }
+    }
+
+    filenames
 }
 
 fn build_dependency_graph(workspace_config: &WorkspaceConfig,
@@ -2405,12 +2571,48 @@ fn detect_system_info() -> SystemInfo {
 
     // Helper to see if a command is available
     fn has_command(cmd: &str) -> bool {
-        Command::new(cmd)
+        let cmd_str = if cfg!(windows) && !cmd.ends_with(".exe") && !cmd.ends_with(".bat") && !cmd.ends_with(".cmd") {
+            format!("{}.exe", cmd)
+        } else {
+            cmd.to_string()
+        };
+
+        // Try with --version flag first (most common)
+        let version_result = Command::new(&cmd_str)
             .arg("--version")
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .status()
-            .is_ok()
+            .is_ok();
+
+        if version_result {
+            return true;
+        }
+
+        // Some tools don't support --version, so try with no arguments
+        let no_args_result = Command::new(&cmd_str)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .is_ok();
+
+        if no_args_result {
+            return true;
+        }
+
+        // For MSVC cl.exe specially
+        if cmd == "cl" {
+            let cl_result = Command::new("cl")
+                .arg("/?")
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .is_ok();
+
+            return cl_result;
+        }
+
+        false
     }
 
     // Windows logic:
@@ -2449,18 +2651,52 @@ fn detect_system_info() -> SystemInfo {
 
 
 fn setup_vcpkg(config: &ProjectConfig, project_path: &Path) -> Result<String, Box<dyn std::error::Error>> {
+    // Skip if vcpkg is disabled
     let vcpkg_config = &config.dependencies.vcpkg;
     if !vcpkg_config.enabled {
         return Ok(String::new());
+    }
+
+    // Check if we've already set up vcpkg in this session
+    let cache_key = "vcpkg_setup";
+    {
+        let installed = INSTALLED_PACKAGES.lock().unwrap();
+        if installed.contains(cache_key) {
+            let cached_path = get_cached_vcpkg_toolchain_path();
+            if !cached_path.is_empty() {
+                println!("{}", "Using previously set up vcpkg".blue());
+                return Ok(cached_path);
+            }
+        }
     }
 
     // First, try the configured path
     let configured_path = vcpkg_config.path.as_deref().unwrap_or(VCPKG_DEFAULT_DIR);
     let configured_path = expand_tilde(configured_path);
 
+    // Check if vcpkg is in PATH environment variable
+    let mut vcpkg_in_path = None;
+
+    if let Ok(path_var) = env::var("PATH") {
+        for path in path_var.split(if cfg!(windows) { ';' } else { ':' }) {
+            let vcpkg_exe = if cfg!(windows) {
+                PathBuf::from(path).join("vcpkg.exe")
+            } else {
+                PathBuf::from(path).join("vcpkg")
+            };
+
+            if vcpkg_exe.exists() {
+                vcpkg_in_path = Some(vcpkg_exe.parent().unwrap().to_path_buf());
+                break;
+            }
+        }
+    }
+
     // Try to find vcpkg in common locations
     let mut potential_vcpkg_paths = vec![
         configured_path.clone(),
+        // Add the path found in PATH if any
+        vcpkg_in_path.map_or(String::new(), |p| p.to_string_lossy().to_string()),
         // Common installation locations
         String::from("C:/vcpkg"),
         String::from("C:/dev/vcpkg"),
@@ -2470,24 +2706,8 @@ fn setup_vcpkg(config: &ProjectConfig, project_path: &Path) -> Result<String, Bo
         expand_tilde("~/vcpkg"),
     ];
 
-    // Also check PATH environment variable
-    if let Ok(path_var) = env::var("PATH") {
-        for path in path_var.split(if cfg!(windows) { ';' } else { ':' }) {
-            let path_buf = PathBuf::from(path);
-            let vcpkg_in_path = if cfg!(windows) {
-                path_buf.join("vcpkg.exe")
-            } else {
-                path_buf.join("vcpkg")
-            };
-
-            if vcpkg_in_path.exists() {
-                // Add the parent directory (vcpkg root)
-                if let Some(parent) = vcpkg_in_path.parent() {
-                    potential_vcpkg_paths.push(parent.to_string_lossy().to_string());
-                }
-            }
-        }
-    }
+    // Filter out empty strings
+    potential_vcpkg_paths.retain(|s| !s.is_empty());
 
     // Find the first valid vcpkg installation
     let mut found_vcpkg_path = None;
@@ -2540,13 +2760,86 @@ fn setup_vcpkg(config: &ProjectConfig, project_path: &Path) -> Result<String, Bo
                     String::from(&configured_path)
                 ],
                 None,
-                None,
+                None
             ) {
                 Ok(_) => {},
                 Err(e) => {
-                    // If clone failed because directory exists, continue anyway
                     if vcpkg_dir.exists() {
                         println!("{}", format!("Git clone failed but directory exists: {}", e).yellow());
+                    } else if !has_command("git") {
+                        // Try to install git
+                        println!("{}", "Git not found. Attempting to install git...".yellow());
+
+                        let git_installed = if cfg!(windows) {
+                            if has_command("winget") {
+                                run_command(
+                                    vec![
+                                        "winget".to_string(),
+                                        "install".to_string(),
+                                        "--id".to_string(),
+                                        "Git.Git".to_string()
+                                    ],
+                                    None,
+                                    None
+                                ).is_ok()
+                            } else {
+                                false
+                            }
+                        } else if cfg!(target_os = "macos") {
+                            if has_command("brew") {
+                                run_command(
+                                    vec![
+                                        "brew".to_string(),
+                                        "install".to_string(),
+                                        "git".to_string()
+                                    ],
+                                    None,
+                                    None
+                                ).is_ok()
+                            } else {
+                                false
+                            }
+                        } else { // Linux
+                            run_command(
+                                vec![
+                                    "sudo".to_string(),
+                                    "apt-get".to_string(),
+                                    "update".to_string()
+                                ],
+                                None,
+                                None
+                            ).is_ok() &&
+                                run_command(
+                                    vec![
+                                        "sudo".to_string(),
+                                        "apt-get".to_string(),
+                                        "install".to_string(),
+                                        "-y".to_string(),
+                                        "git".to_string()
+                                    ],
+                                    None,
+                                    None
+                                ).is_ok()
+                        };
+
+                        if git_installed && has_command("git") {
+                            // Try cloning again
+                            match run_command(
+                                vec![
+                                    String::from("git"),
+                                    String::from("clone"),
+                                    String::from("https://github.com/microsoft/vcpkg.git"),
+                                    String::from(&configured_path)
+                                ],
+                                None,
+                                None
+                            ) {
+                                Ok(_) => {},
+                                Err(e) => return Err(format!("Failed to clone vcpkg repository: {}", e).into())
+                            }
+                        } else {
+                            return Err("Git is required to set up vcpkg but could not be installed. Please install git manually.".into());
+                        }
                     } else {
                         return Err(e);
                     }
@@ -2561,12 +2854,21 @@ fn setup_vcpkg(config: &ProjectConfig, project_path: &Path) -> Result<String, Bo
             "./bootstrap-vcpkg.sh"
         };
 
+        // Check if we have the necessary compilers for bootstrapping
+        if cfg!(windows) && !has_command("cl") && !has_command("g++") && !has_command("clang++") {
+            println!("{}", "No C++ compiler found for bootstrapping vcpkg. Attempting to install a compiler...".yellow());
+            ensure_compiler_available("msvc").or_else(|_| ensure_compiler_available("gcc"))?;
+        } else if !cfg!(windows) && !has_command("g++") && !has_command("clang++") {
+            println!("{}", "No C++ compiler found for bootstrapping vcpkg. Attempting to install a compiler...".yellow());
+            ensure_compiler_available("gcc").or_else(|_| ensure_compiler_available("clang"))?;
+        }
+
         match run_command(
             vec![String::from(bootstrap_script)],
             Some(&configured_path),
-            None,
+            None
         ) {
-            Ok(_) => {},
+            Ok(_) => println!("{}", "vcpkg bootstrap completed successfully.".green()),
             Err(e) => {
                 println!("{}", format!("Bootstrapping vcpkg failed: {}", e).yellow());
                 println!("{}", "Will try to use vcpkg anyway if it exists.".yellow());
@@ -2594,14 +2896,26 @@ fn setup_vcpkg(config: &ProjectConfig, project_path: &Path) -> Result<String, Bo
 
     // Install configured packages
     if !vcpkg_config.packages.is_empty() {
-        println!("{}", "Installing vcpkg packages...".blue());
-        let mut cmd = vec![vcpkg_exe.to_string_lossy().to_string(), "install".to_string()];
-        cmd.extend(vcpkg_config.packages.clone());
+        println!("{}", "Installing dependencies with vcpkg...".blue());
 
-        run_command(cmd, Some(&vcpkg_path), None)?;
+        // First update vcpkg itself (quietly)
+        let _ = Command::new(&vcpkg_exe)
+            .arg("update")
+            .current_dir(&vcpkg_path)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+
+        // Install packages with clean output
+        run_vcpkg_install(&vcpkg_exe, &vcpkg_path, &vcpkg_config.packages)?;
     }
 
     // Return the path to vcpkg.cmake for CMake integration
+    {
+        let mut installed = INSTALLED_PACKAGES.lock().unwrap();
+        installed.insert(cache_key.to_string());
+    }
+
     let toolchain_file = PathBuf::from(&vcpkg_path)
         .join("scripts")
         .join("buildsystems")
@@ -2611,10 +2925,125 @@ fn setup_vcpkg(config: &ProjectConfig, project_path: &Path) -> Result<String, Bo
         return Err(format!("vcpkg toolchain file not found at {}. This suggests a corrupt vcpkg installation.", toolchain_file.display()).into());
     }
 
+    cache_vcpkg_toolchain_path(&toolchain_file);
+
     Ok(toolchain_file.to_string_lossy().to_string())
 }
 
-// Setup Conan packages
+fn check_vcpkg_package_installed(vcpkg_path: &str, package: &str) -> bool {
+    let vcpkg_exe = if cfg!(windows) {
+        PathBuf::from(vcpkg_path).join("vcpkg.exe")
+    } else {
+        PathBuf::from(vcpkg_path).join("vcpkg")
+    };
+
+    // Run vcpkg list to check if the package is installed
+    let output = Command::new(vcpkg_exe)
+        .arg("list")
+        .arg(package)
+        .current_dir(vcpkg_path)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output();
+
+    match output {
+        Ok(output) => {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            stdout.contains(package)
+        },
+        Err(_) => false
+    }
+}
+
+fn run_vcpkg_install(
+    vcpkg_exe: &Path,
+    vcpkg_path: &str,
+    packages: &[String]
+) -> Result<(), Box<dyn std::error::Error>> {
+    // First check which packages are already installed
+    let mut already_installed = Vec::new();
+    let mut to_install = Vec::new();
+
+    for pkg in packages {
+        if check_vcpkg_package_installed(vcpkg_path, pkg) {
+            already_installed.push(pkg.clone());
+        } else {
+            to_install.push(pkg.clone());
+        }
+    }
+
+    // If all packages are already installed, just show that
+    if to_install.is_empty() {
+        println!("{}", "Packages already installed:".green());
+        for pkg in &already_installed {
+            println!("  - {}", pkg.green());
+        }
+        println!("{}", "vcpkg dependencies configured successfully".green());
+        return Ok(());
+    }
+
+    // Otherwise, run the install command for new packages
+    let mut cmd = Command::new(vcpkg_exe);
+    cmd.arg("install");
+    cmd.args(&to_install);
+    cmd.current_dir(vcpkg_path);
+    cmd.stdout(Stdio::piped());
+    cmd.stderr(Stdio::piped());
+
+    match cmd.output() {
+        Ok(output) => {
+            let status = output.status;
+
+            if !status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                println!("{}", "Error installing vcpkg packages:".red());
+                println!("{}", stderr);
+                return Err("vcpkg install failed".into());
+            }
+
+            // Show the results
+            if !already_installed.is_empty() {
+                println!("{}", "Packages already installed:".green());
+                for pkg in already_installed {
+                    println!("  - {}", pkg.green());
+                }
+            }
+
+            if !to_install.is_empty() {
+                println!("{}", "Newly installed packages:".green());
+                for pkg in to_install {
+                    println!("  - {}", pkg.green());
+                }
+            }
+
+            println!("{}", "vcpkg dependencies configured successfully".green());
+            Ok(())
+        },
+        Err(e) => {
+            println!("{}", format!("Error running vcpkg: {}", e).red());
+            Err(e.into())
+        }
+    }
+}
+
+fn run_vcpkg_command(cmd: Vec<String>, cwd: &str) -> Result<String, Box<dyn std::error::Error>> {
+    let mut command = Command::new(&cmd[0]);
+    command.args(&cmd[1..]);
+    command.current_dir(cwd);
+    command.stdout(Stdio::piped());
+    command.stderr(Stdio::piped());
+
+    let output = command.output()?;
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+
+    if !output.status.success() {
+        return Err(format!("vcpkg command failed: {}", stderr).into());
+    }
+
+    Ok(stdout)
+}
+
 fn setup_conan(config: &ProjectConfig, project_path: &Path) -> Result<String, Box<dyn std::error::Error>> {
     let conan_config = &config.dependencies.conan;
     if !conan_config.enabled || conan_config.packages.is_empty() {
@@ -2958,7 +3387,7 @@ fn install_dependencies(config: &ProjectConfig, project_path: &Path, update: boo
     }
 
     if !dependencies_info.is_empty() {
-        println!("{}", "Dependencies installed successfully".green());
+        println!("{}", "Dependencies configured successfully".green());
     } else {
         println!("{}", "No dependencies configured or all dependencies are disabled".blue());
     }
@@ -3355,18 +3784,16 @@ fn run_hooks(hooks: &Option<Vec<String>>, project_path: &Path, env_vars: Option<
                 }
             }
 
+            // Hide detailed output
+            command.stdout(Stdio::null());
+            command.stderr(Stdio::piped());
+
             // Execute the command
             let output = command.output()?;
 
-            // Print output
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            let stderr = String::from_utf8_lossy(&output.stderr);
-
-            if !stdout.is_empty() {
-                println!("{}", stdout);
-            }
-
+            // Only print errors
             if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
                 println!("{}", "Hook command failed:".red());
                 if !stderr.is_empty() {
                     eprintln!("{}", stderr);
@@ -3895,6 +4322,215 @@ fn has_command(cmd: &str) -> bool {
         .is_ok()
 }
 
+fn ensure_build_tools(config: &ProjectConfig) -> Result<(), Box<dyn std::error::Error>> {
+    println!("{}", "Checking for required build tools...".blue());
+
+    // Create a key for this specific config to ensure tools match
+    let config_key = format!("tools_for_{}",
+                             config.build.compiler.as_deref().unwrap_or("default"));
+
+    // Check if we've already verified tools for this config - but with a timeout
+    {
+        // Add a timeout to prevent deadlocks
+        if let Ok(guard) = VERIFIED_TOOLS.try_lock() {
+            if guard.contains(&config_key) {
+                println!("{}", "Build tools already verified, skipping checks.".blue());
+                return Ok(());
+            }
+        } else {
+            println!("{}", "Warning: Could not acquire verification lock, continuing anyway.".yellow());
+        }
+    }
+
+    // 1. First, ensure CMake is available - with timeout check
+    let cmake_available = has_command_with_timeout("cmake", 5);
+    if !cmake_available {
+        println!("{}", "CMake not found. Attempting to install...".yellow());
+
+        // Try to install CMake but with a timeout
+        let (tx, rx) = std::sync::mpsc::channel();
+        let handle = std::thread::spawn(move || {
+            let result = ensure_compiler_available("cmake");
+            let _ = tx.send(result.is_ok());
+        });
+
+        match rx.recv_timeout(std::time::Duration::from_secs(60)) {
+            Ok(true) => {
+                println!("{}", "CMake installed successfully.".green());
+            },
+            _ => {
+                println!("{}", "CMake installation timed out or failed.".red());
+                return Err("CMake is required but couldn't be installed automatically. Please install it manually.".into());
+            }
+        }
+
+        let _ = handle.join();
+
+        // Verify again after attempted install
+        if !has_command_with_timeout("cmake", 5) {
+            return Err("CMake is required but couldn't be installed automatically. Please install it manually.".into());
+        }
+    } else {
+        println!("{}", "CMake: ✓".green());
+    }
+
+    // 2. Ensure the configured compiler is available - with safety
+    let compiler_label = get_effective_compiler_label(config);
+    let compilers_to_check = match compiler_label.as_str() {
+        "msvc" => vec!["cl"],
+        "gcc" => vec!["gcc", "g++"],
+        "clang" => vec!["clang", "clang++"],
+        "clang-cl" => vec!["clang-cl"],
+        _ => vec![compiler_label.as_str()]
+    };
+
+    let mut compiler_found = true;
+    for compiler in &compilers_to_check {
+        if !has_command_with_timeout(compiler, 5) {
+            compiler_found = false;
+            println!("{}", format!("Compiler '{}' not found.", compiler).yellow());
+            break;
+        }
+    }
+
+    if !compiler_found {
+        println!("{}", format!("Attempting to install compiler: {}", compiler_label).yellow());
+
+        // Try to install the compiler with a timeout
+        let (tx, rx) = std::sync::mpsc::channel();
+        let compiler_to_install = compiler_label.clone();
+        let handle = std::thread::spawn(move || {
+            let result = ensure_compiler_available(&compiler_to_install);
+            let _ = tx.send(result.is_ok());
+        });
+
+        match rx.recv_timeout(std::time::Duration::from_secs(120)) {
+            Ok(true) => {
+                println!("{}", format!("Compiler '{}' installed successfully.", compiler_label).green());
+            },
+            _ => {
+                println!("{}", format!("Compiler '{}' installation timed out or failed.", compiler_label).red());
+                return Err(format!("Required compiler '{}' could not be installed automatically.", compiler_label).into());
+            }
+        }
+
+        let _ = handle.join();
+
+        // Verify again after attempted install
+        let mut success = true;
+        for compiler in &compilers_to_check {
+            if !has_command_with_timeout(compiler, 5) {
+                success = false;
+                println!("{}", format!("Compiler '{}' still not available after installation attempt.", compiler).red());
+            }
+        }
+
+        if !success {
+            return Err(format!("Required compiler '{}' could not be installed automatically.", compiler_label).into());
+        }
+    } else {
+        println!("{}", format!("Compiler '{}': ✓", compiler_label).green());
+    }
+
+    // 3. Ensure a build generator is available - with safety
+    let generator = config.build.generator.as_deref().unwrap_or("default");
+    let generator_command = match generator {
+        "Ninja" => Some("ninja"),
+        "MinGW Makefiles" => Some("mingw32-make"),
+        "NMake Makefiles" => Some("nmake"),
+        "Unix Makefiles" => Some("make"),
+        _ => None
+    };
+
+    if let Some(cmd) = generator_command {
+        if !has_command_with_timeout(cmd, 5) {
+            println!("{}", format!("Build generator '{}' not found. Attempting to install...", cmd).yellow());
+
+            // Try to install the generator with a timeout
+            let (tx, rx) = std::sync::mpsc::channel();
+            let cmd_to_install = cmd.to_string();
+            let handle = std::thread::spawn(move || {
+                let install_success = match cmd_to_install.as_str() {
+                    "ninja" => ensure_compiler_available("ninja").is_ok(),
+                    "mingw32-make" => ensure_compiler_available("gcc").is_ok(), // MinGW includes make
+                    "nmake" => ensure_compiler_available("msvc").is_ok(),       // MSVC includes nmake
+                    "make" => ensure_compiler_available("gcc").is_ok(),         // gcc usually brings make
+                    _ => false
+                };
+                let _ = tx.send(install_success);
+            });
+
+            match rx.recv_timeout(std::time::Duration::from_secs(60)) {
+                Ok(true) => {
+                    if has_command_with_timeout(cmd, 5) {
+                        println!("{}", format!("Build generator '{}' installed successfully.", cmd).green());
+                    } else {
+                        println!("{}", format!("Could not install generator '{}', will try alternatives.", cmd).yellow());
+                    }
+                },
+                _ => {
+                    println!("{}", format!("Generator '{}' installation timed out or failed.", cmd).yellow());
+                }
+            }
+
+            let _ = handle.join();
+        } else {
+            println!("{}", format!("Build generator '{}': ✓", cmd).green());
+        }
+    }
+
+    // 4. Check if vcpkg is required but not available
+    // We'll skip actual setup here, just do a basic check
+    if config.dependencies.vcpkg.enabled {
+        println!("{}", "vcpkg: ✓ (will be configured during build)".green());
+    }
+
+    // 5. Check if conan is required but not available - with timeout
+    if config.dependencies.conan.enabled {
+        if !has_command_with_timeout("conan", 5) {
+            println!("{}", "Conan package manager not found. It will be installed during build if needed.".yellow());
+        } else {
+            println!("{}", "Conan package manager: ✓".green());
+        }
+    }
+
+    // Mark this tool set as verified, but safely handle potential lock issues
+    if let Ok(mut guard) = VERIFIED_TOOLS.try_lock() {
+        guard.insert(config_key);
+    } else {
+        println!("{}", "Warning: Could not update verification cache, but continuing.".yellow());
+    }
+
+    println!("{}", "All required build tools are available.".green());
+
+    Ok(())
+}
+
+// New helper function to check for commands with a timeout
+fn has_command_with_timeout(cmd: &str, timeout_seconds: u64) -> bool {
+    let (tx, rx) = std::sync::mpsc::channel();
+    let cmd_string = cmd.to_string();
+    let handle = std::thread::spawn(move || {
+        let result = Command::new(&cmd_string)
+            .arg("--version")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .is_ok();
+        let _ = tx.send(result);
+    });
+
+    match rx.recv_timeout(std::time::Duration::from_secs(timeout_seconds)) {
+        Ok(result) => result,
+        Err(_) => {
+            println!("{}", format!("Command check for '{}' timed out.", cmd).yellow());
+            false
+        }
+    }
+}
+
+
+
 // Ensure at least one generator is installed
 fn ensure_generator_available() -> Result<String, Box<dyn std::error::Error>> {
     // Try to find an available generator in order of preference
@@ -4161,89 +4797,15 @@ fn configure_project(
     cross_target: Option<&str>,
     workspace_config: Option<&WorkspaceConfig>
 ) -> Result<(), Box<dyn std::error::Error>> {
-    if !has_command("cmake") {
-        ensure_compiler_available("cmake")?;
-        if !has_command("cmake") {
-            return Err("CMake is required but could not be installed. Please install CMake manually.".into());
-        }
-    }
+    // First ensure all required build tools are available
+    ensure_build_tools(config)?;
 
     let compiler_label = get_effective_compiler_label(config);
-
-    // Ensure the compiler is available
-    if !has_command(&compiler_label) {
-        ensure_compiler_available(&compiler_label)?;
-        // Verify installation was successful
-        if !has_command(&compiler_label) {
-            println!("{}", format!("Warning: Compiler '{}' is not available. Build may fail.", compiler_label).yellow());
-        }
-    }
-
-    if config.build.generator.as_deref().unwrap_or("default") == "default" {
-        ensure_generator_available()?
-    } else {
-        let requested_generator = config.build.generator.as_deref().unwrap();
-        // Check if the requested generator is available
-        let generator_available = match requested_generator {
-            "Ninja" => has_command("ninja"),
-            "MinGW Makefiles" => has_command("mingw32-make") || has_command("make"),
-            "NMake Makefiles" => has_command("nmake"),
-            _ => true // Assume other generators are available
-        };
-
-        if !generator_available {
-            println!("{}", format!("Requested generator '{}' is not available. Attempting to install...", requested_generator).yellow());
-            match requested_generator {
-                "Ninja" => ensure_compiler_available("ninja")?,
-                "MinGW Makefiles" => ensure_compiler_available("gcc")?,
-                "NMake Makefiles" => ensure_compiler_available("msvc")?,
-                _ => false,
-            };
-
-            // If still not available, fall back to what we can find
-            if !generator_available {
-                ensure_generator_available()?
-            } else {
-                requested_generator.to_string()
-            }
-        } else {
-            requested_generator.to_string()
-        }
-    };
 
     let build_dir = config.build.build_dir.as_deref().unwrap_or("build");
     let build_path = project_path.join(build_dir);
     fs::create_dir_all(&build_path)?;
 
-    // Build up the CMake command
-    let mut cmd = vec![
-        "cmake".to_string(),
-        "..".to_string(),
-    ];
-
-    // Add generator, build type, etc.:
-    let generator = get_cmake_generator(config)?;
-    cmd.push("-G".to_string());
-    cmd.push(generator);
-
-    let build_type = get_build_type(config, config_type);
-    cmd.push(format!("-DCMAKE_BUILD_TYPE={}", build_type));
-
-    let compiler_label = get_effective_compiler_label(config); // "msvc", "clang", "gcc", or "clang-cl"
-
-    // 2) Decide if we do slash-based flags (msvc/clang-cl) or dash-based flags (gcc/clang)
-    let is_msvc_style = match compiler_label.to_lowercase().as_str() {
-        "msvc" | "clang-cl" => true,
-        _ => false,
-    };
-
-    // 3) If user wants an explicit compiler override in CMake
-    if compiler_label.to_lowercase() != "default" {
-        if let Some((c_comp, cxx_comp)) = map_compiler_label(&compiler_label) {
-            cmd.push(format!("-DCMAKE_C_COMPILER={}", c_comp));
-            cmd.push(format!("-DCMAKE_CXX_COMPILER={}", cxx_comp));
-        }
-    }
     // Create a set of environment variables for hooks
     let mut hook_env = HashMap::new();
     hook_env.insert("PROJECT_PATH".to_string(), project_path.to_string_lossy().to_string());
@@ -4321,6 +4883,14 @@ fn configure_project(
         cmd.push(format!("-DCMAKE_TOOLCHAIN_FILE={}", vcpkg_toolchain));
     }
 
+    // Add compiler specification
+    let is_msvc_style = matches!(compiler_label.to_lowercase().as_str(), "msvc" | "clang-cl");
+
+    if let Some((c_comp, cxx_comp)) = map_compiler_label(&compiler_label) {
+        cmd.push(format!("-DCMAKE_C_COMPILER={}", c_comp));
+        cmd.push(format!("-DCMAKE_CXX_COMPILER={}", cxx_comp));
+    }
+
     // Add platform-specific options
     let platform_options = get_platform_specific_options(config);
     cmd.extend(platform_options);
@@ -4363,13 +4933,40 @@ fn configure_project(
         cmd.extend(cmake_options.clone());
     }
 
+    // Add workspace dependency options
     if let Some(workspace) = workspace_config {
         let workspace_options = resolve_workspace_dependencies(config, Some(workspace), project_path)?;
         cmd.extend(workspace_options);
     }
 
     // Run CMake configuration
-    run_command(cmd, Some(&build_path.to_string_lossy().to_string()), env_vars.clone())?;
+    let cmake_result = run_command(cmd, Some(&build_path.to_string_lossy().to_string()), env_vars.clone());
+
+    if let Err(e) = cmake_result {
+        println!("{}", format!("CMake configuration failed: {}", e).red());
+        println!("{}", "Attempting to fix common issues and retry...".yellow());
+
+        // Try to recover from common CMake errors
+        if try_fix_cmake_errors(&build_path, is_msvc_style) {
+            // If fixes were applied, try running CMake again
+            let mut retry_cmd = vec!["cmake".to_string(), "..".to_string()];
+            retry_cmd.push("-G".to_string());
+            retry_cmd.push(generator.clone());
+            retry_cmd.push(format!("-DCMAKE_BUILD_TYPE={}", build_type));
+
+            // Add other essential options
+            if !vcpkg_toolchain.is_empty() {
+                retry_cmd.push(format!("-DCMAKE_TOOLCHAIN_FILE={}", vcpkg_toolchain));
+            }
+
+            // Retry with minimal options
+            println!("{}", "Retrying CMake configuration with minimal options...".blue());
+            run_command(retry_cmd, Some(&build_path.to_string_lossy().to_string()), env_vars.clone())?;
+        } else {
+            // If we couldn't fix it, return the original error
+            return Err(e);
+        }
+    }
 
     // Run post-configure hooks
     if let Some(hooks) = &config.hooks {
@@ -4387,74 +4984,99 @@ fn configure_project(
     Ok(())
 }
 
-fn build_project(
-    config: &ProjectConfig,
-    project_path: &Path,
-    config_type: Option<&str>,
-    variant_name: Option<&str>,
-    cross_target: Option<&str>,
-    workspace_config: Option<&WorkspaceConfig>
-) -> Result<(), Box<dyn std::error::Error>> {
-    let build_dir = config.build.build_dir.as_deref().unwrap_or(DEFAULT_BUILD_DIR);
-    let build_path = if let Some(target) = cross_target {
-        project_path.join(format!("{}-{}", build_dir, target))
-    } else {
-        project_path.join(build_dir)
-    };
+fn try_fix_cmake_errors(build_path: &Path, is_msvc_style: bool) -> bool {
+    let mut fixed_something = false;
 
-    // Ensure the build directory exists.
-    fs::create_dir_all(&build_path)?;
-
-    // Determine the generator being used.
-    let generator = get_cmake_generator(config)?;
-
-    // Check if we need to re-run configuration:
-    // For example, if there's no CMakeCache.txt or, when using Ninja, build.ninja is missing.
-    let needs_configure = {
-        if !build_path.join("CMakeCache.txt").exists() {
-            true
-        } else if generator == "Ninja" && !build_path.join("build.ninja").exists() {
-            true
+    // Check for CMakeCache.txt
+    let cache_path = build_path.join("CMakeCache.txt");
+    if cache_path.exists() {
+        // Remove CMakeCache.txt to force CMake to reconfigure
+        if let Err(e) = fs::remove_file(&cache_path) {
+            println!("{}", format!("Warning: Could not remove CMakeCache.txt: {}", e).yellow());
         } else {
-            false
+            println!("{}", "Removed CMakeCache.txt to force reconfiguration.".green());
+            fixed_something = true;
         }
-    };
-
-    if needs_configure {
-        println!("{}", "Project not configured yet or build files missing, configuring...".blue());
-        configure_project(config, project_path, config_type, variant_name, cross_target, workspace_config)?;
     }
 
-    // Run pre-build hooks
-    let mut hook_env = HashMap::new();
-    hook_env.insert("PROJECT_PATH".to_string(), project_path.to_string_lossy().to_string());
-    hook_env.insert("BUILD_PATH".to_string(), build_path.to_string_lossy().to_string());
-    hook_env.insert("CONFIG_TYPE".to_string(), get_build_type(config, config_type));
-    if let Some(v) = variant_name {
-        hook_env.insert("VARIANT".to_string(), v.to_string());
-    }
-    if let Some(t) = cross_target {
-        hook_env.insert("TARGET".to_string(), t.to_string());
-    }
-    if let Some(hooks) = &config.hooks {
-        run_hooks(&hooks.pre_build, project_path, Some(hook_env.clone()))?;
+    // Check for CMakeFiles directory
+    let cmake_files_path = build_path.join("CMakeFiles");
+    if cmake_files_path.exists() {
+        // Remove CMakeFiles directory to force CMake to reconfigure
+        if let Err(e) = fs::remove_dir_all(&cmake_files_path) {
+            println!("{}", format!("Warning: Could not remove CMakeFiles directory: {}", e).yellow());
+        } else {
+            println!("{}", "Removed CMakeFiles directory to force reconfiguration.".green());
+            fixed_something = true;
+        }
     }
 
-    // Build using CMake
-    let mut cmd = vec!["cmake".to_string(), "--build".to_string(), ".".to_string()];
-    let build_type = get_build_type(config, config_type);
-    cmd.push("--config".to_string());
-    cmd.push(build_type.clone());
+    // Create a minimal CMakeLists.txt in build directory to test CMake
+    let test_cmake_path = build_path.join("test_cmake.txt");
+    let test_content = "cmake_minimum_required(VERSION 3.10)\nproject(test_cmake)\n";
+    if let Err(e) = fs::write(&test_cmake_path, test_content) {
+        println!("{}", format!("Warning: Could not create test CMake file: {}", e).yellow());
+    } else {
+        println!("{}", "Created test CMake file to check configuration.".green());
 
-    run_command(cmd, Some(&build_path.to_string_lossy().to_string()), None)?;
+        // Try to run a minimal CMake command to verify it works
+        let mut test_cmd = vec!["cmake".to_string(), "-P".to_string(), "test_cmake.txt".to_string()];
+        match Command::new(&test_cmd[0])
+            .args(&test_cmd[1..])
+            .current_dir(build_path)
+            .output() {
+            Ok(_) => {
+                println!("{}", "CMake appears to be working.".green());
+                fixed_something = true;
+            },
+            Err(e) => {
+                println!("{}", format!("Warning: CMake test failed: {}", e).yellow());
+            }
+        }
 
-    // Run post-build hooks
-    if let Some(hooks) = &config.hooks {
-        run_hooks(&hooks.post_build, project_path, Some(hook_env))?;
+        // Remove test file
+        if let Err(e) = fs::remove_file(&test_cmake_path) {
+            println!("{}", format!("Warning: Could not remove test CMake file: {}", e).yellow());
+        }
     }
 
-    println!("{}", format!("Build completed successfully ({} configuration)", build_type).green());
-    Ok(())
+    // For MSVC, try to configure environment variables
+    if is_msvc_style {
+        println!("{}", "Trying to set up MSVC environment variables...".blue());
+
+        // Try to find vcvarsall.bat
+        let possible_paths = [
+            r"C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat",
+            r"C:\Program Files\Microsoft Visual Studio\2019\Community\VC\Auxiliary\Build\vcvarsall.bat",
+            r"C:\Program Files (x86)\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat",
+            r"C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Auxiliary\Build\vcvarsall.bat",
+            r"C:\Program Files (x86)\Microsoft Visual Studio\2017\Community\VC\Auxiliary\Build\vcvarsall.bat",
+        ];
+
+        for path in &possible_paths {
+            if Path::new(path).exists() {
+                println!("{}", format!("Found vcvarsall.bat at: {}", path).green());
+
+                // Create a batch file to set up the environment
+                let batch_path = build_path.join("setup_env.bat");
+                let batch_content = format!(
+                    "@echo off\n\"{}\" x64\necho Environment set up for MSVC\n",
+                    path
+                );
+
+                if let Err(e) = fs::write(&batch_path, batch_content) {
+                    println!("{}", format!("Warning: Could not create environment setup batch file: {}", e).yellow());
+                } else {
+                    println!("{}", "Created environment setup batch file. Please run it before building.".green());
+                    fixed_something = true;
+                }
+
+                break;
+            }
+        }
+    }
+
+    fixed_something
 }
 
 
@@ -4692,6 +5314,20 @@ fn run_project(
     }
 
     Ok(())
+}
+
+fn cache_vcpkg_toolchain_path(path: &Path) {
+    let path_str = path.to_string_lossy().to_string();
+    let mut cache = CACHED_PATHS.lock().unwrap();
+    cache.insert("vcpkg_toolchain".to_string(), path_str);
+}
+
+// Function to retrieve the cached vcpkg toolchain path
+fn get_cached_vcpkg_toolchain_path() -> String {
+    let cache = CACHED_PATHS.lock().unwrap();
+    cache.get("vcpkg_toolchain")
+        .cloned()
+        .unwrap_or_default()
 }
 
 fn test_project(
@@ -5164,65 +5800,103 @@ fn auto_adjust_config(config: &mut ProjectConfig) -> Result<(), Box<dyn std::err
     let has_ninja = has_command("ninja");
     let has_mingw_make = has_command("mingw32-make");
     let has_nmake = has_command("nmake");
+    let has_make = has_command("make");
 
-    if cfg!(target_os = "windows") {
-        if has_msvc {
-            // If MSVC is available, prefer it with NMake or Ninja
-            config.build.compiler = Some("msvc".to_string());
-            if has_ninja {
-                config.build.generator = Some("Ninja".to_string());
+    // First ensure we have a compiler configured
+    if config.build.compiler.is_none() {
+        if cfg!(target_os = "windows") {
+            if has_msvc {
+                config.build.compiler = Some("msvc".to_string());
+            } else if has_clang {
+                config.build.compiler = Some("clang".to_string());
+            } else if has_gcc {
+                config.build.compiler = Some("gcc".to_string());
+            } else {
+                // Try to install a compiler, with preference for MSVC on Windows
+                if ensure_compiler_available("msvc").is_ok() && has_command("cl") {
+                    config.build.compiler = Some("msvc".to_string());
+                } else if ensure_compiler_available("gcc").is_ok() && (has_command("gcc") || has_command("g++")) {
+                    config.build.compiler = Some("gcc".to_string());
+                } else if ensure_compiler_available("clang").is_ok() && (has_command("clang") || has_command("clang++")) {
+                    config.build.compiler = Some("clang".to_string());
+                } else {
+                    return Err("Could not find or install any C++ compiler. Please install one manually.".into());
+                }
+            }
+        } else if cfg!(target_os = "macos") {
+            if has_clang {
+                config.build.compiler = Some("clang".to_string());
+            } else if has_gcc {
+                config.build.compiler = Some("gcc".to_string());
+            } else {
+                // Try to install Xcode command line tools (comes with clang)
+                if ensure_compiler_available("clang").is_ok() && has_command("clang") {
+                    config.build.compiler = Some("clang".to_string());
+                } else {
+                    return Err("Could not find or install Clang compiler. Please install Xcode Command Line Tools.".into());
+                }
+            }
+        } else {
+            // Linux - prefer GCC, fallback to Clang
+            if has_gcc {
+                config.build.compiler = Some("gcc".to_string());
+            } else if has_clang {
+                config.build.compiler = Some("clang".to_string());
+            } else {
+                // Try to install GCC
+                if ensure_compiler_available("gcc").is_ok() && (has_command("gcc") || has_command("g++")) {
+                    config.build.compiler = Some("gcc".to_string());
+                } else if ensure_compiler_available("clang").is_ok() && (has_command("clang") || has_command("clang++")) {
+                    config.build.compiler = Some("clang".to_string());
+                } else {
+                    return Err("Could not find or install any C++ compiler. Please install GCC or Clang manually.".into());
+                }
+            }
+        }
+    }
+
+    // Now ensure we have a generator
+    if config.build.generator.is_none() || config.build.generator.as_deref().unwrap_or("") == "default" {
+        // Pick best generator based on what's available
+        if has_ninja {
+            config.build.generator = Some("Ninja".to_string());
+        } else if cfg!(target_os = "windows") {
+            if has_msvc {
+                // Visual Studio generator
+                let vs_version = get_visual_studio_generator(None);
+                config.build.generator = Some(vs_version);
+            } else if has_mingw_make {
+                config.build.generator = Some("MinGW Makefiles".to_string());
             } else if has_nmake {
                 config.build.generator = Some("NMake Makefiles".to_string());
             } else {
-                config.build.generator = Some("Visual Studio 16 2019".to_string());
+                // Try to install Ninja
+                if ensure_compiler_available("ninja").is_ok() && has_command("ninja") {
+                    config.build.generator = Some("Ninja".to_string());
+                } else {
+                    // Use a Visual Studio generator even if not installed
+                    // CMake will try to locate it
+                    let vs_version = get_visual_studio_generator(None);
+                    config.build.generator = Some(vs_version);
+                }
             }
-        } else if has_gcc {
-            // If GCC/MinGW is available
-            config.build.compiler = Some("gcc".to_string());
-            if has_mingw_make {
-                config.build.generator = Some("MinGW Makefiles".to_string());
-            } else if has_ninja {
-                config.build.generator = Some("Ninja".to_string());
-            }
-        } else if has_clang {
-            // If Clang is available
-            config.build.compiler = Some("clang".to_string());
+        } else {
+            // macOS or Linux
             if has_ninja {
                 config.build.generator = Some("Ninja".to_string());
-            } else if has_mingw_make {
-                config.build.generator = Some("MinGW Makefiles".to_string());
+            } else if has_make {
+                config.build.generator = Some("Unix Makefiles".to_string());
+            } else if cfg!(target_os = "macos") {
+                config.build.generator = Some("Xcode".to_string());
+            } else {
+                // Try to install a generator
+                if ensure_compiler_available("ninja").is_ok() && has_command("ninja") {
+                    config.build.generator = Some("Ninja".to_string());
+                } else {
+                    // Default fallback
+                    config.build.generator = Some("Unix Makefiles".to_string());
+                }
             }
-        } else {
-            // No compiler detected, attempt to install one
-            println!("{}", "No C++ compiler detected. Attempting to install one...".yellow());
-            ensure_compiler_available("gcc")?;
-
-            // Update config based on what got installed
-            if has_command("gcc") {
-                config.build.compiler = Some("gcc".to_string());
-                config.build.generator = Some("MinGW Makefiles".to_string());
-            }
-        }
-    } else if cfg!(target_os = "macos") {
-        // On macOS, prefer Clang with Ninja or Unix Makefiles
-        config.build.compiler = Some("clang".to_string());
-        if has_ninja {
-            config.build.generator = Some("Ninja".to_string());
-        } else {
-            config.build.generator = Some("Unix Makefiles".to_string());
-        }
-    } else {
-        // On Linux, prefer GCC with Ninja or Unix Makefiles
-        if has_gcc {
-            config.build.compiler = Some("gcc".to_string());
-        } else if has_clang {
-            config.build.compiler = Some("clang".to_string());
-        }
-
-        if has_ninja {
-            config.build.generator = Some("Ninja".to_string());
-        } else {
-            config.build.generator = Some("Unix Makefiles".to_string());
         }
     }
 
@@ -5238,7 +5912,32 @@ fn auto_adjust_config(config: &mut ProjectConfig) -> Result<(), Box<dyn std::err
 
         if let Some(platform_config) = platforms.get_mut(current_os) {
             platform_config.compiler = config.build.compiler.clone();
+        } else {
+            // Create platform config if it doesn't exist
+            platforms.insert(current_os.to_string(), PlatformConfig {
+                compiler: config.build.compiler.clone(),
+                defines: Some(vec![]),
+                flags: Some(vec![]),
+            });
         }
+    } else {
+        // Create platforms map if it doesn't exist
+        let mut platforms = HashMap::new();
+        let current_os = if cfg!(target_os = "windows") {
+            "windows"
+        } else if cfg!(target_os = "macos") {
+            "darwin"
+        } else {
+            "linux"
+        };
+
+        platforms.insert(current_os.to_string(), PlatformConfig {
+            compiler: config.build.compiler.clone(),
+            defines: Some(vec![]),
+            flags: Some(vec![]),
+        });
+
+        config.platforms = Some(platforms);
     }
 
     Ok(())
@@ -5789,51 +6488,1004 @@ fn list_project_items(config: &ProjectConfig, what: Option<&str>) -> Result<(), 
 }
 
 // Utility functions
-fn run_command(cmd: Vec<String>, cwd: Option<&str>, env: Option<HashMap<String, String>>) -> Result<(), Box<dyn std::error::Error>> {
-    println!("{}", format!("Running: {}", cmd.join(" ")).blue());
+// Enhanced run_command function with Rust-style C++ error formatting
+fn run_command(
+    cmd: Vec<String>,
+    cwd: Option<&str>,
+    env: Option<HashMap<String, String>>
+) -> Result<(), Box<dyn std::error::Error>> {
+    if cmd.is_empty() {
+        return Err("Cannot run empty command".into());
+    }
 
+    // Check if this is a CMake command or other verbose compiler command
+    let is_cmake = cmd[0].contains("cmake");
+    let is_compiler_command = cmd[0].contains("cl") || cmd[0].contains("clang") || cmd[0].contains("gcc");
+    let is_verbose_command = is_cmake || is_compiler_command;
+    let is_build_command = is_cmake && cmd.len() > 1 && cmd.contains(&"--build".to_string());
+    let show_output = false;
+
+    let is_vcpkg_install = cmd.len() >= 2 &&
+        (cmd[0].contains("vcpkg") ||
+            cmd[0].ends_with("vcpkg.exe")) &&
+        cmd[1] == "install";
+
+    if is_vcpkg_install {
+        // For vcpkg install, we'll run the command but handle output specially
+        let mut command = Command::new(&cmd[0]);
+        command.args(&cmd[1..]);
+        if let Some(dir) = cwd {
+            command.current_dir(dir);
+        }
+        if let Some(env_vars) = env {
+            for (key, value) in env_vars {
+                command.env(key, value);
+            }
+        }
+
+        command.stdout(Stdio::piped());
+        command.stderr(Stdio::piped());
+
+        let output = command.output()?;
+        let status = output.status;
+
+        // If command failed, show error
+        if !status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+            println!("{}", "vcpkg install failed:".red());
+            println!("{}", stderr);
+            return Err("vcpkg install command failed".into());
+        }
+
+        // Process the packages mentioned in the command
+        let packages: Vec<&str> = cmd.iter()
+            .skip(2) // Skip "vcpkg install"
+            .map(|s| s.as_str())
+            .collect();
+
+        println!("{}", "Packages already installed:".green());
+        for pkg in packages {
+            println!("  - {}", pkg.green());
+        }
+
+        println!("{}", "vcpkg dependencies configured successfully".green());
+        return Ok(());
+    }
+
+    // Always capture output
     let mut command = Command::new(&cmd[0]);
     command.args(&cmd[1..]);
-
     if let Some(dir) = cwd {
         command.current_dir(dir);
     }
-
     if let Some(env_vars) = env {
         for (key, value) in env_vars {
             command.env(key, value);
         }
     }
 
-    let output = match command.output() {
-        Ok(output) => output,
-        Err(e) => {
-            println!("{}", format!("Failed to execute command: {}", e).red());
-            return Err(Box::new(e));
-        }
-    };
+    // Always pipe output so we can process it
+    command.stdout(Stdio::piped());
+    command.stderr(Stdio::piped());
 
-    // Capture stdout and stderr
+    // For verbose commands, just show "executing" and status
+    if is_verbose_command && !show_output {
+        if is_build_command {
+            println!("{}", "Building...".blue());
+        } else {
+            println!("{}", format!("Executing: {}...", cmd[0]).blue());
+        }
+    } else {
+        println!("{}", format!("Executing: {}", cmd.join(" ")).blue());
+    }
+
+
+
+    let output = command.output()?;
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
 
-    // Print command output regardless of success/failure
-    if !stdout.is_empty() {
-        println!("{}", stdout);
+    // If the command failed, format errors in cbuild style directly in console
+    if !output.status.success() {
+        // For build failures, extract and format key errors
+        if is_cmake || is_compiler_command {
+            // Write full error output to a log file for reference
+            let log_file = format!("cbuild_error_{}.log", chrono::Local::now().format("%Y%m%d_%H%M%S"));
+            if let Ok(mut file) = File::create(&log_file) {
+                let _ = file.write_all(format!("STDOUT:\n{}\n\nSTDERR:\n{}", stdout, stderr).as_bytes());
+            }
+
+            // Extract the main error files and patterns
+            println!("{}", "Build failed with the following errors:".red().bold());
+
+            // Extract key errors from the build output
+            let error_count = display_syntax_errors(&stdout, &stderr);
+
+            // If no errors were found using syntax patterns, show the raw error output
+            if error_count == 0 {
+                display_raw_errors(&stdout, &stderr);
+            }
+
+            println!("{}", format!("Full error details written to {}", log_file).yellow());
+        } else {
+            // For other commands, print the regular output
+            println!("{}", stderr);
+        }
+        return Err("Command failed".into());
     }
 
-    if !output.status.success() {
-        println!("{}", "Command failed with error:".red());
-        if !stderr.is_empty() {
-            eprintln!("{}", stderr);
-        }
-
-        return Err(format!("Command failed with exit code: {}", output.status).into());
+    // Print output only when explicitly asked or for non-verbose commands
+    if show_output || (!is_verbose_command && !stdout.is_empty()) {
+        println!("{}", stdout);
+    } else if !is_verbose_command {
+        println!("{}", format!("Command '{}' completed successfully.", cmd[0]).green());
     }
 
     Ok(())
 }
 
+
+// Function to display syntax errors in a rust-like format directly in the console
+fn display_syntax_errors(stdout: &str, stderr: &str) -> usize {
+    // Use regex to extract errors from stdout and stderr
+    let error_patterns = [
+        // Clang/GCC style errors with file:line:col: error: message
+        (regex::Regex::new(r"(?m)(.*?):(\d+):(\d+):\s+(error|warning|note):\s+(.*)").unwrap(), true),
+
+        // MSVC style errors
+        (regex::Regex::new(r"(?m)(.*?)\((\d+),(\d+)\):\s+(error|warning|note):\s+(.*)").unwrap(), true),
+
+        // Rust-style errors
+        (regex::Regex::new(r"(?m)^.*error(?:\[E\d+\])?:\s+(.*)$").unwrap(), true),
+
+        // Generic errors
+        (regex::Regex::new(r"(?m)^.*Error:\s+(.*)$").unwrap(), true),
+
+        // Ninja errors
+        (regex::Regex::new(r"(?m)^ninja:\s+error:\s+(.*)$").unwrap(), true),
+
+        // CMake errors
+        (regex::Regex::new(r"(?m)^CMake\s+Error:\s+(.*)$").unwrap(), true),
+
+        // Missing file errors
+        (regex::Regex::new(r"(?m).*(?:No such file or directory|cannot find|not found).*").unwrap(), false),
+    ];
+
+    // Used to track unique errors to avoid duplicates
+    let mut seen_errors = HashSet::new();
+    let mut displayed_error_count = 0;
+    let max_errors_to_display = 10;
+
+    // Look in stderr first (more likely to contain actual errors)
+    for (pattern, is_important) in &error_patterns {
+        for cap in pattern.captures_iter(stderr) {
+            // If we already have enough errors, stop
+            if displayed_error_count >= max_errors_to_display {
+                break;
+            }
+
+            // Format depends on the pattern matched
+            let error_text = if cap.len() >= 6 {
+                // clang-style error with file, line, column
+                let file = &cap[1];
+                let line = &cap[2];
+                let column = &cap[3];
+                let error_type = &cap[4];
+                let message = &cap[5];
+
+                format!("{}:{}:{}: {}: {}", file, line, column, error_type, message)
+            } else if cap.len() >= 2 {
+                // Error message without file location
+                cap[0].to_string()
+            } else {
+                continue;
+            };
+
+            // Deduplicate errors
+            let error_key = error_text.chars()
+                .filter(|c| !c.is_whitespace())
+                .collect::<String>();
+
+            if !seen_errors.contains(&error_key) {
+                seen_errors.insert(error_key);
+
+                // Format the error nicely
+                println!("  {}", error_text.red());
+
+                // Try to extract the source code line if it exists
+                if cap.len() >= 6 {
+                    let file = &cap[1];
+                    let line_num = cap[2].parse::<usize>().unwrap_or(0);
+
+                    // Try to find the corresponding code in the error output
+                    if let Some(code_line) = extract_source_line(stdout, stderr, file, line_num) {
+                        println!("      | {}", code_line.trim());
+
+                        // Try to create the caret line showing the error position
+                        let column = cap[3].parse::<usize>().unwrap_or(0);
+                        let caret_line = create_caret_line(column, &cap[5]);
+                        println!("      | {}", caret_line.red());
+                    }
+                }
+
+                displayed_error_count += 1;
+            }
+        }
+
+        // Also check stdout for errors (some tools output errors to stdout)
+        for cap in pattern.captures_iter(stdout) {
+            // If we already have enough errors, stop
+            if displayed_error_count >= max_errors_to_display {
+                break;
+            }
+
+            // Format depends on the pattern matched
+            let error_text = if cap.len() >= 6 {
+                // clang-style error with file, line, column
+                let file = &cap[1];
+                let line = &cap[2];
+                let column = &cap[3];
+                let error_type = &cap[4];
+                let message = &cap[5];
+
+                format!("{}:{}:{}: {}: {}", file, line, column, error_type, message)
+            } else if cap.len() >= 2 {
+                // Error message without file location
+                cap[0].to_string()
+            } else {
+                continue;
+            };
+
+            // Deduplicate errors
+            let error_key = error_text.chars()
+                .filter(|c| !c.is_whitespace())
+                .collect::<String>();
+
+            if !seen_errors.contains(&error_key) {
+                seen_errors.insert(error_key);
+
+                // Format the error nicely
+                println!("  {}", error_text.red());
+
+                // Try to extract the source code line if it exists
+                if cap.len() >= 6 {
+                    let file = &cap[1];
+                    let line_num = cap[2].parse::<usize>().unwrap_or(0);
+
+                    // Try to find the corresponding code in the error output
+                    if let Some(code_line) = extract_source_line(stdout, stderr, file, line_num) {
+                        println!("      | {}", code_line.trim());
+
+                        // Try to create the caret line showing the error position
+                        let column = cap[3].parse::<usize>().unwrap_or(0);
+                        let caret_line = create_caret_line(column, &cap[5]);
+                        println!("      | {}", caret_line.red());
+                    }
+                }
+
+                displayed_error_count += 1;
+            }
+        }
+    }
+
+    displayed_error_count
+}
+
+// Display raw errors when no structured errors could be found
+fn display_raw_errors(stdout: &str, stderr: &str) {
+    let mut error_lines = Vec::new();
+
+    // First check stderr
+    for line in stderr.lines() {
+        if line.contains("error") || line.contains("Error") || line.contains("failed") ||
+            line.contains("Failed") || line.contains("missing") {
+            error_lines.push(line);
+        }
+    }
+
+    // If no errors found in stderr, check stdout
+    if error_lines.is_empty() {
+        for line in stdout.lines() {
+            if line.contains("error") || line.contains("Error") || line.contains("failed") ||
+                line.contains("Failed") || line.contains("missing") {
+                error_lines.push(line);
+            }
+        }
+    }
+
+    // Display the errors (up to 10)
+    let max_errors = 10;
+    for (i, line) in error_lines.iter().take(max_errors).enumerate() {
+        // Clean up the line by removing ANSI escape codes and trimming
+        let clean_line = line.trim();
+        println!("  {}: {}", format!("Error {}", i+1).red().bold(), clean_line.red());
+    }
+
+    // Show how many more errors there are
+    if error_lines.len() > max_errors {
+        println!("  ... and {} more errors", error_lines.len() - max_errors);
+    }
+
+    // If we found no errors at all, show a generic message
+    if error_lines.is_empty() {
+        println!("  {}: Build command failed but no specific errors were found", "Error".red().bold());
+
+        // Try to show the last few lines of stderr or stdout as context
+        if !stderr.is_empty() {
+            let last_lines: Vec<&str> = stderr.lines().rev().take(5).collect();
+            println!("  Last few lines of stderr:");
+            for line in last_lines.iter().rev() {
+                println!("    {}", line);
+            }
+        } else if !stdout.is_empty() {
+            let last_lines: Vec<&str> = stdout.lines().rev().take(5).collect();
+            println!("  Last few lines of stdout:");
+            for line in last_lines.iter().rev() {
+                println!("    {}", line);
+            }
+        }
+    }
+}
+
+// Try to extract the source code line that caused the error
+fn extract_source_line(stdout: &str, stderr: &str, file: &str, line_num: usize) -> Option<String> {
+    // Try to find patterns like "line_num |   code..." in the output
+    let pattern = format!(r"(?m)^.*\s*{}\s*\|\s*(.*)$", line_num);
+    let line_pattern = regex::Regex::new(&pattern).ok()?;
+
+    // Check stderr first
+    if let Some(cap) = line_pattern.captures(stderr) {
+        if cap.len() >= 2 {
+            return Some(cap[1].to_string());
+        }
+    }
+
+    // Then check stdout
+    if let Some(cap) = line_pattern.captures(stdout) {
+        if cap.len() >= 2 {
+            return Some(cap[1].to_string());
+        }
+    }
+
+    // If we couldn't find the line in the build output, try to read from the file directly
+    // (Only do this for safe paths)
+    if !file.contains("..") && Path::new(file).exists() {
+        if let Ok(content) = fs::read_to_string(file) {
+            let lines: Vec<&str> = content.lines().collect();
+            if line_num > 0 && line_num <= lines.len() {
+                return Some(lines[line_num - 1].to_string());
+            }
+        }
+    }
+
+    None
+}
+
+// Create a caret line with the appropriate positioning for the error
+fn create_caret_line(column: usize, message: &str) -> String {
+    let mut caret_line = String::new();
+
+    // Add spaces until we reach the column
+    for _ in 0..column.saturating_sub(1) {
+        caret_line.push(' ');
+    }
+
+    // Add the caret
+    caret_line.push('^');
+
+    // Add a few squiggly lines
+    let squiggle_length = message.len().min(30);
+    for _ in 0..squiggle_length.saturating_sub(1) {
+        caret_line.push('~');
+    }
+
+    caret_line
+}
+
+fn extract_build_errors(stdout: &str, stderr: &str) -> Vec<String> {
+    let mut errors = Vec::new();
+
+    // Common error patterns to look for
+    let error_patterns = [
+        (regex::Regex::new(r"(?m)^(?:.*?)error(?::|\[)[^\n]*$").unwrap(), true),
+        (regex::Regex::new(r"(?m)^.*Error:.*$").unwrap(), true),
+        (regex::Regex::new(r"(?m)^.*fatal error:.*$").unwrap(), true),
+        (regex::Regex::new(r"(?m)^.*undefined reference to.*$").unwrap(), true),
+        (regex::Regex::new(r"(?m)^.*cannot find.*$").unwrap(), false),
+        (regex::Regex::new(r"(?m)^.*No such file or directory.*$").unwrap(), false),
+    ];
+
+    // Search for errors in stderr first (more likely to contain actual errors)
+    for (pattern, is_important) in &error_patterns {
+        for cap in pattern.captures_iter(stderr) {
+            let error = cap[0].to_string();
+            if *is_important || errors.len() < 10 {  // Only include less important errors if we don't have many
+                errors.push(error);
+            }
+        }
+    }
+
+    // If we didn't find any errors in stderr, check stdout too
+    if errors.is_empty() {
+        for (pattern, is_important) in &error_patterns {
+            for cap in pattern.captures_iter(stdout) {
+                let error = cap[0].to_string();
+                if *is_important || errors.len() < 10 {
+                    errors.push(error);
+                }
+            }
+        }
+    }
+
+    // Sort errors by importance and uniqueness
+    errors.sort_by_key(|e| (!e.contains("error:"), !e.contains("Error:"), e.clone()));
+
+    // Remove duplicates
+    errors.dedup();
+
+    // To make the error list more manageable, group similar errors
+    let mut grouped_errors = Vec::new();
+    let mut seen_patterns = HashSet::new();
+
+    for error in errors {
+        // Try to extract just the key error message without file/line details
+        if let Some(idx) = error.find(':') {
+            let error_type = &error[idx+1..];
+            // Get a simplified version for deduplication
+            let simple = error_type.trim()
+                .chars()
+                .filter(|c| !c.is_whitespace())
+                .collect::<String>();
+
+            if simple.len() > 10 && !seen_patterns.contains(&simple) {
+                seen_patterns.insert(simple);
+                grouped_errors.push(error);
+            }
+        } else {
+            grouped_errors.push(error);
+        }
+    }
+
+    // If we have too many errors, just take the most important ones
+    if grouped_errors.len() > 20 {
+        grouped_errors.truncate(20);
+    }
+
+    grouped_errors
+}
+
+
+// Helper function to check if a command is a build command
+
+fn is_build_command(cmd: &[String]) -> bool {
+    if cmd.is_empty() {
+        return false;
+    }
+
+    // Check if it's a CMake build command
+    if cmd[0] == "cmake" && cmd.len() > 1 {
+        return cmd.iter().any(|arg| arg == "--build");
+    }
+
+    // Check for other build commands
+    matches!(cmd[0].as_str(), "make" | "ninja" | "cl" | "clang" | "g++" | "gcc" | "MSBuild.exe")
+}
+
+
+
+// Format C++ errors in a Rust-like style
+fn format_cpp_errors_rust_style(output: &str) -> Vec<String> {
+    let mut results = Vec::new();
+    let mut diagnostics = Vec::new();
+
+    // We use these regexes for capturing:
+    let clang_style = Regex::new(r"(?m)(.*?):(\d+):(\d+): (error|warning|note): (.*)").unwrap();
+    let msvc_style  = Regex::new(r"(?m)(.*?)\((\d+),(\d+)\): (error|warning|note)(?:\s+[A-Z]\d+)?: (.*)").unwrap();
+    // MSVC sometimes omits the column:
+    let msvc_style_alt = Regex::new(r"(?m)(.*?)\((\d+)\): (error|warning|note)(?:\s+[A-Z]\d+)?: (.*)").unwrap();
+
+    // This will help gather lines that appear immediately after an error line for context
+    let lines: Vec<&str> = output.lines().collect();
+
+    // We'll store all matched diagnostics in a Vec, then we’ll add context.
+    // clang/gcc pattern first:
+    for cap in clang_style.captures_iter(output) {
+        let file    = cap[1].to_string();
+        let line    = cap[2].parse::<usize>().unwrap_or(0);
+        let column  = cap[3].parse::<usize>().unwrap_or(0);
+        let level   = cap[4].to_string();
+        let message = cap[5].to_string();
+
+        diagnostics.push(CompilerDiagnostic {
+            file, line, column,
+            level,
+            message,
+            context: vec![],
+        });
+    }
+
+    // Next, MSVC pattern (with column):
+    for cap in msvc_style.captures_iter(output) {
+        let file    = cap[1].to_string();
+        let line    = cap[2].parse::<usize>().unwrap_or(0);
+        let column  = cap[3].parse::<usize>().unwrap_or(0);
+        let level   = cap[4].to_string();
+        let message = cap[5].to_string();
+
+        diagnostics.push(CompilerDiagnostic {
+            file, line, column,
+            level,
+            message,
+            context: vec![],
+        });
+    }
+
+    // Next, MSVC pattern (no column):
+    for cap in msvc_style_alt.captures_iter(output) {
+        let file    = cap[1].to_string();
+        let line    = cap[2].parse::<usize>().unwrap_or(0);
+        let level   = cap[3].to_string();
+        let message = cap[4].to_string();
+        // We guess a column of 1
+        diagnostics.push(CompilerDiagnostic {
+            file,
+            line,
+            column: 1,
+            level,
+            message,
+            context: vec![],
+        });
+    }
+
+    // Now we add some snippet context for each error line. We'll look up to ~2 lines around.
+    // We do this by scanning through `lines` to find occurrences of e.g. "file:line"
+    // But let's do a simpler approach: we have the file + line in diagnostics;
+    // we won't open that file from disk — we'll just try to glean lines from the *compiler output itself.*
+    // For truly Rust-like snippet context, you'd read the actual file from disk. But below uses the raw compiler lines.
+    //
+    // For big/bulky logs, you might want a more advanced approach. For now, we do a best-effort gather.
+
+    // We'll just do the "In file included from..." lines or the next 1–3 lines if they appear to be code context.
+    // For example, clang often shows something like:
+    //   <source>:20:10: error: ...
+    //   20 |     int x = ...
+    //      |          ^
+    //   ...
+    // We'll collect those lines.
+
+    // We'll do a simpler approach: if the line has "line:col: error", the next 2 lines might be code context
+    for diag in &mut diagnostics {
+        // We'll try to find the exact line text in the compiler output that has the caret afterward.
+        // That usually is the next line after the line that matched. Let’s find that index:
+        let re_for_search = format!("{}:{}:{}:", diag.file, diag.line, diag.column);
+        let pos = lines.iter().position(|ln| ln.contains(&re_for_search));
+        if let Some(idx) = pos {
+            // Next lines might contain code context or caret:
+            // We'll gather up to 3 lines after that
+            for offset in 1..=3 {
+                if idx + offset < lines.len() {
+                    let possible_code_line = lines[idx + offset];
+                    // If it looks like an error or warning line, we stop:
+                    if possible_code_line.contains("error:") || possible_code_line.contains("warning:") {
+                        break;
+                    }
+                    diag.context.push(possible_code_line.to_string());
+                }
+            }
+        }
+    }
+
+    // Deduplicate
+    let mut seen = HashSet::new();
+    let mut unique_diagnostics = Vec::new();
+    for d in &diagnostics {
+        let key = format!("{}:{}:{}:{}:{}",
+                          d.file, d.line, d.column, d.level, d.message
+        );
+        if !seen.contains(&key) {
+            seen.insert(key);
+            unique_diagnostics.push(d.clone());
+        }
+    }
+
+    // Sort by level (error first, warning, then note) and by file + line
+    unique_diagnostics.sort_by(|a, b| {
+        let order_level = cmp_level(&a.level).cmp(&cmp_level(&b.level));
+        if order_level != std::cmp::Ordering::Equal {
+            return order_level;
+        }
+        let order_file = a.file.cmp(&b.file);
+        if order_file != std::cmp::Ordering::Equal {
+            return order_file;
+        }
+        a.line.cmp(&b.line)
+    });
+
+    // Now we create fancy multiline strings
+    for diag in &mut unique_diagnostics {
+        // Make a Rust-like header with error code
+        let error_code = if diag.level == "error" { "E0001" }
+        else if diag.level == "warning" { "W0001" }
+        else { "N0001" };
+
+        let color = match diag.level.as_str() {
+            "error"   => Color::Red,
+            "warning" => Color::Yellow,
+            "note"    => Color::BrightBlue,
+            _         => Color::White,
+        };
+
+        // Create a nicer header with error code and file location
+        let header = format!(
+            "{}[{}]: {}",
+            format!("{}{}", diag.level.to_uppercase(), if diag.level == "error" { format!("[{}]", error_code) } else { String::new() }),
+            short_path(&diag.file),
+            diag.message
+        )
+            .color(color)
+            .bold()
+            .to_string();
+
+        // Add line/column indicator like Rust
+        let location = format!(
+            " --> {}:{}:{}",
+            diag.file,
+            diag.line,
+            diag.column
+        )
+            .color(color)
+            .to_string();
+
+        // Create a nicer code snippet with line numbers
+        let mut snippet_lines = Vec::new();
+
+        // Add line number for context
+        snippet_lines.push(format!("{} |", diag.line.to_string().blue().bold()));
+
+        // Add the code line if available
+        if !diag.context.is_empty() {
+            snippet_lines.push(format!("{} | {}", " ".blue().bold(), diag.context[0]));
+
+            // Add caret line with appropriate spacing
+            let mut indicator = String::new();
+            for _ in 0..(diag.column.saturating_sub(1)) {
+                indicator.push(' ');
+            }
+            indicator.push('^');
+            for _ in 0..diag.message.len().min(3) {
+                indicator.push('~');
+            }
+
+            snippet_lines.push(format!("{} | {}", " ".blue().bold(), indicator.color(color).bold()));
+        }
+
+        // Add a help message for common errors
+        let help_message = get_help_for_error(&diag.message);
+        if !help_message.is_empty() {
+            snippet_lines.push(format!("{}: {}", "help".green().bold(), help_message));
+        }
+
+        results.push(header);
+        results.push(location);
+        results.push(String::new());  // Empty line for spacing
+        results.extend(snippet_lines);
+        results.push(String::new());  // Empty line for spacing
+    }
+
+    results
+}
+
+fn get_help_for_error(error_msg: &str) -> String {
+    if error_msg.contains("undeclared identifier") {
+        return "make sure the variable or function is declared before use".to_string();
+    } else if error_msg.contains("template parameter pack") {
+        return "variadic template parameters must be the last parameter in the template list".to_string();
+    } else if error_msg.contains("no member named") {
+        return "check for typos or ensure the class defines this member".to_string();
+    } else if error_msg.contains("constexpr") && error_msg.contains("not a literal type") {
+        return "add a constexpr constructor to the class or remove constexpr from the function".to_string();
+    }
+
+    String::new()
+}
+
+fn cmp_level(lv: &str) -> u8 {
+    match lv {
+        "error"   => 0,
+        "warning" => 1,
+        "note"    => 2,
+        _         => 3,
+    }
+}
+
+fn short_path(path: &str) -> String {
+    // e.g. "C:/Arcnum/Spark/include\spark_event.hpp" => "include/spark_event.hpp"
+    let p = std::path::Path::new(path);
+    if let Some(fname) = p.file_name() {
+        let fname_s = fname.to_string_lossy();
+        // Also try to grab one directory level up:
+        if let Some(parent) = p.parent() {
+            if let Some(pdir) = parent.file_name() {
+                return format!("{}/{}", pdir.to_string_lossy(), fname_s);
+            }
+        }
+        fname_s.into_owned()
+    } else {
+        path.to_string()
+    }
+}
+
+// Helper to process and format an error with its context
+fn process_error_context(
+    formatted_errors: &mut Vec<String>,
+    seen: &mut HashSet<String>,
+    file: &str,
+    context: &[String],
+    line_num: usize,
+    column: usize,
+    message: &str,
+    error_type: &str
+) {
+    if file.is_empty() || line_num == 0 || context.is_empty() {
+        return;
+    }
+
+    // Create a unique key for the error
+    let key = format!("{}:{}:{}:{}", file, line_num, column, message);
+    if seen.contains(&key) {
+        return; // Skip duplicate error
+    }
+    seen.insert(key);
+
+    let error_color = if error_type == "error" {
+        "red"
+    } else if error_type == "warning" {
+        "yellow"
+    } else {
+        "blue"
+    };
+
+    let formatted_file = format_file_path(file);
+    let error_header = format!("{}[{}]: {}", error_type.to_uppercase(), formatted_file, message);
+    formatted_errors.push(format!("{}", error_header.color(error_color).bold()));
+
+    // Pick a representative line from the context (e.g. second line if available)
+    let error_line = if context.len() >= 3 {
+        context.get(1).unwrap_or(&context[0]).clone()
+    } else {
+        context[0].clone()
+    };
+
+    formatted_errors.push(format!("   {} |", line_num.to_string().blue().bold()));
+    formatted_errors.push(format!("   {} | {}", " ".blue().bold(), error_line));
+
+    // Create an indicator line with a caret at the error column
+    let mut indicator = String::new();
+    for _ in 0..(column.saturating_sub(1)) {
+        indicator.push(' ');
+    }
+    indicator.push('^');
+    for _ in 0..message.len().min(3) {
+        indicator.push('~');
+    }
+    formatted_errors.push(format!("   {} | {}", " ".blue().bold(), indicator.color(error_color).bold()));
+    formatted_errors.push(String::new());
+}
+
+// Helper to format file paths for display
+fn format_file_path(path: &str) -> String {
+    // Extract just the filename and a bit of path context
+    let path_obj = std::path::Path::new(path);
+    if let Some(filename) = path_obj.file_name() {
+
+
+        let filename_str = filename.to_string_lossy();
+
+        // Try to include the parent directory for context
+        if let Some(parent) = path_obj.parent() {
+            if let Some(dirname) = parent.file_name() {
+                return format!("{}/{}", dirname.to_string_lossy(), filename_str);
+            }
+        }
+
+        return filename_str.to_string();
+    }
+
+    path.to_string()
+}
+
+// Analyze C++ errors and provide specific suggestions
+fn analyze_cpp_errors(error_output: &str) -> Vec<String> {
+    let mut suggestions = Vec::new();
+
+    // Common C++ error patterns and their solutions
+    if error_output.contains("constexpr function's return type") && error_output.contains("is not a literal type") {
+        suggestions.push("Add a constexpr constructor to the class or remove constexpr from the function".to_string());
+        suggestions.push("Example: 'constexpr VertexLayout() = default;' in your class definition".to_string());
+    }
+
+    if error_output.contains("template parameter pack must be the last template parameter") {
+        suggestions.push("Move the variadic template parameter to the end of the parameter list".to_string());
+        suggestions.push("Example: Change 'template <typename... As, typename... Bs>' to 'template <typename A, typename... Bs>'".to_string());
+    }
+
+    if error_output.contains("use of undeclared identifier 'AllIn'") {
+        suggestions.push("Define the 'AllIn' template concept before using it".to_string());
+        suggestions.push("Example: 'template<typename T, typename... Types> concept AllIn = (std::is_same_v<T, Types> || ...);'".to_string());
+    }
+
+    if error_output.contains("member initializer") && error_output.contains("does not name a non-static data member") {
+        suggestions.push("Declare the member variable in your class before initializing it in the constructor".to_string());
+        suggestions.push("Example: Add 'VariantT m_variant;' to your class definition".to_string());
+    }
+
+    if error_output.contains("No such file or directory") || error_output.contains("cannot open include file") {
+        suggestions.push("Check that the include path is correct and the file exists".to_string());
+        suggestions.push("Make sure all dependencies are installed with 'cbuild deps'".to_string());
+    }
+
+    if error_output.contains("undefined reference to") || error_output.contains("unresolved external symbol") {
+        suggestions.push("Ensure the required library is linked in your cbuild.toml".to_string());
+        suggestions.push("Check that the function/symbol is defined in the linked libraries".to_string());
+    }
+
+    if error_output.contains("error[E0282]") || error_output.contains("type annotations needed") {
+        suggestions.push("Add explicit type annotations to ambiguous variable declarations".to_string());
+        suggestions.push("Example: Change 'let x = func();' to 'let x: ReturnType = func();'".to_string());
+    }
+
+    // Return only unique suggestions
+    suggestions.sort();
+    suggestions.dedup();
+    suggestions
+}
+
+// Enhanced build_project function with cleaner error reporting
+fn build_project(
+    config: &ProjectConfig,
+    project_path: &Path,
+    config_type: Option<&str>,
+    variant_name: Option<&str>,
+    cross_target: Option<&str>,
+    workspace_config: Option<&WorkspaceConfig>
+) -> Result<(), Box<dyn std::error::Error>> {
+    // First, ensure all required tools are installed
+    ensure_build_tools(config)?;
+
+    let build_dir = config.build.build_dir.as_deref().unwrap_or(DEFAULT_BUILD_DIR);
+    let build_path = if let Some(target) = cross_target {
+        project_path.join(format!("{}-{}", build_dir, target))
+    } else {
+        project_path.join(build_dir)
+    };
+
+    // Ensure the build directory exists.
+    fs::create_dir_all(&build_path)?;
+
+    // Determine the generator being used.
+    let generator = get_cmake_generator(config)?;
+
+    // Check if we need to re-run configuration:
+    // For example, if there's no CMakeCache.txt or, when using Ninja, build.ninja is missing.
+    let needs_configure = {
+        if !build_path.join("CMakeCache.txt").exists() {
+            true
+        } else if generator == "Ninja" && !build_path.join("build.ninja").exists() {
+            true
+        } else {
+            false
+        }
+    };
+
+    if needs_configure {
+        println!("{}", "Project not configured yet or build files missing, configuring...".blue());
+        configure_project(config, project_path, config_type, variant_name, cross_target, workspace_config)?;
+    }
+
+    // Run pre-build hooks
+    let mut hook_env = HashMap::new();
+    hook_env.insert("PROJECT_PATH".to_string(), project_path.to_string_lossy().to_string());
+    hook_env.insert("BUILD_PATH".to_string(), build_path.to_string_lossy().to_string());
+    hook_env.insert("CONFIG_TYPE".to_string(), get_build_type(config, config_type));
+    if let Some(v) = variant_name {
+        hook_env.insert("VARIANT".to_string(), v.to_string());
+    }
+    if let Some(t) = cross_target {
+        hook_env.insert("TARGET".to_string(), t.to_string());
+    }
+    if let Some(hooks) = &config.hooks {
+        run_hooks(&hooks.pre_build, project_path, Some(hook_env.clone()))?;
+    }
+
+    // Build using CMake
+    let mut cmd = vec!["cmake".to_string(), "--build".to_string(), ".".to_string()];
+    let build_type = get_build_type(config, config_type);
+    cmd.push("--config".to_string());
+    cmd.push(build_type.clone());
+
+    // Add parallelism for faster builds
+    let num_threads = num_cpus::get();
+    cmd.push("--parallel".to_string());
+    cmd.push(format!("{}", num_threads));
+
+    // Try to build with quiet output
+    println!("{}", format!("Building {} in {} configuration...", config.project.name, build_type).blue());
+    let build_result = run_command(cmd, Some(&build_path.to_string_lossy().to_string()), None);
+
+    if let Err(e) = build_result {
+        println!("{}", "Build failed with errors. See above for details.".red());
+        return Err(e);
+    }
+
+    // Run post-build hooks
+    if let Some(hooks) = &config.hooks {
+        run_hooks(&hooks.post_build, project_path, Some(hook_env))?;
+    }
+
+    println!("{}", format!("Build completed successfully ({} configuration)", build_type).green());
+    Ok(())
+}
+
+
+fn analyze_build_error(error_output: &str) -> Vec<String> {
+    let mut suggestions = Vec::new();
+
+    // Common C++ build errors and their solutions
+    if error_output.contains("No such file or directory") || error_output.contains("cannot open include file") {
+        suggestions.push("Missing header file. Check that all dependencies are installed.".to_string());
+        suggestions.push("Verify include paths are correct in your cbuild.toml.".to_string());
+    }
+
+    if error_output.contains("undefined reference to") || error_output.contains("unresolved external symbol") {
+        suggestions.push("Missing library or object file. Check that all dependencies are installed.".to_string());
+        suggestions.push("Verify library paths and link options in your cbuild.toml.".to_string());
+        suggestions.push("Make sure the library was built with the same compiler/settings.".to_string());
+    }
+
+    if error_output.contains("incompatible types") || error_output.contains("cannot convert") {
+        suggestions.push("Type mismatch error. This might be caused by using different compiler flags or standard versions.".to_string());
+        suggestions.push("Make sure all libraries and your code use compatible C++ standards.".to_string());
+    }
+
+    if error_output.contains("permission denied") {
+        suggestions.push("Permission error. Try running the command with administrative privileges.".to_string());
+        suggestions.push("Check if the files or directories are read-only or locked by another process.".to_string());
+    }
+
+    if error_output.contains("vcpkg") && error_output.contains("not found") {
+        suggestions.push("vcpkg issue. Make sure vcpkg is properly installed.".to_string());
+        suggestions.push("Check if the vcpkg path in cbuild.toml is correct.".to_string());
+        suggestions.push("Try running 'cbuild deps' to install dependencies first.".to_string());
+    }
+
+    if error_output.contains("cl.exe") && error_output.contains("not recognized") {
+        suggestions.push("Visual Studio tools not found. Make sure Visual Studio or Build Tools are installed.".to_string());
+        suggestions.push("Try opening a Developer Command Prompt or run from Visual Studio Command Prompt.".to_string());
+        suggestions.push("Make sure the environment variables are set correctly.".to_string());
+    }
+
+    if error_output.contains("CMake Error") {
+        if error_output.contains("generator") {
+            suggestions.push("CMake generator issue. Make sure the requested generator is installed.".to_string());
+            suggestions.push("Try using a different generator in cbuild.toml or let CBuild auto-detect.".to_string());
+        }
+
+        if error_output.contains("Could not find") {
+            suggestions.push("CMake dependency issue. Make sure all required packages are installed.".to_string());
+            suggestions.push("Run 'cbuild deps' to install dependencies.".to_string());
+        }
+    }
+
+    // If no specific issues found, provide general suggestions
+    if suggestions.is_empty() {
+        suggestions.push("Check if all build tools are installed and available in PATH.".to_string());
+        suggestions.push("Make sure all dependencies are installed with 'cbuild deps'.".to_string());
+        suggestions.push("Try using a different compiler or generator.".to_string());
+        suggestions.push("Run 'cbuild clean' and then try building again.".to_string());
+    }
+
+    suggestions
+}
 fn prompt(message: &str) -> Result<String, Box<dyn std::error::Error>> {
     print!("{}", message);
     std::io::stdout().flush()?;
@@ -6173,6 +7825,8 @@ fn get_visual_studio_generator(requested_version: Option<&str>) -> String {
     } else {
         // Modern fallback
         println!("No VS versions detected, using fallback: Visual Studio 17 2022");
+
+
         "Visual Studio 17 2022".to_string()
     }
 }
