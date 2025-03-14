@@ -45,13 +45,13 @@
 ### From Cargo
 
 ```bash
-cargo install cbuild
+cargo install cbuild-tool
 ```
 
 ### From Source
 
 ```bash
-git clone https://github.com/yourusername/cbuild.git
+git clone https://github.com/ChaseSunstrom/cbuild.git
 cd cbuild
 cargo build --release
 cargo install --path .
