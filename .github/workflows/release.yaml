@@ -6,6 +6,9 @@ on:
       - 'v*'
   workflow_dispatch:
 
+permissions:
+  contents: write  # This is crucial for creating releases
+
 jobs:
   build:
     name: Build ${{ matrix.target }}
