@@ -1,11 +1,14 @@
 [package]
-name = "cbuild"
+name = "cbuild-tool"
 version = "0.1.0"
 edition = "2021"
 authors = ["Chase Sunstrom casunstrom@gmail.com"]
 description = "A TOML-based build system for C/C++ with CMake and vcpkg integration"
 readme = "README.md"
 license = "MIT"
+repository = "https://github.com/yourusername/cbuild"
+keywords = ["build-system", "CPP", "cmake", "vcpkg", "cbuild"]
+categories = ["development-tools", "development-tools::build-utils"]
 
 [dependencies]
 clap = { version = "4.3", features = ["derive"] }
