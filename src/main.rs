@@ -21,8 +21,8 @@ use std::{
 };
 
 // Constants
-const CBUILD_FILE: &str = "cbuild.toml";
-const WORKSPACE_FILE: &str = "cbuild-workspace.toml";
+const cforge_FILE: &str = "cforge.toml";
+const WORKSPACE_FILE: &str = "cforge-workspace.toml";
 const DEFAULT_BUILD_DIR: &str = "build";
 const DEFAULT_BIN_DIR: &str = "bin";
 const DEFAULT_LIB_DIR: &str = "lib";
@@ -40,7 +40,7 @@ lazy_static! {
 // CLI Commands
 #[derive(Debug, Parser)]
 #[clap(
-    name = "cbuild",
+    name = "cforge",
     about = "A TOML-based build system for C/C++ with CMake and vcpkg integration",
     version = env!("CARGO_PKG_VERSION"),
 )]
@@ -467,16 +467,16 @@ struct SystemInfo {
 }
 
 #[derive(Debug)]
-pub struct CBuildError {
+pub struct cforgeError {
     message: String,
     file_path: Option<String>,
     line_number: Option<usize>,
     context: Option<String>,
 }
 
-impl CBuildError {
+impl cforgeError {
     pub fn new(message: &str) -> Self {
-        CBuildError {
+        cforgeError {
             message: message.to_string(),
             file_path: None,
             line_number: None,
@@ -500,9 +500,9 @@ impl CBuildError {
     }
 }
 
-impl fmt::Display for CBuildError {
+impl fmt::Display for cforgeError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "CBuild Error: {}", self.message)?;
+        write!(f, "cforge Error: {}", self.message)?;
 
         if let Some(file) = &self.file_path {
             write!(f, " in file '{}'", file)?;
@@ -520,10 +520,10 @@ impl fmt::Display for CBuildError {
     }
 }
 
-impl std::error::Error for CBuildError {}
+impl std::error::Error for cforgeError {}
 
 // Now add this function to convert TOML errors to your custom error type
-fn parse_toml_error(err: toml::de::Error, file_path: &str, file_content: &str) -> CBuildError {
+fn parse_toml_error(err: toml::de::Error, file_path: &str, file_content: &str) -> cforgeError {
     let message = err.to_string();
 
     // Try to extract line number from the error message
@@ -588,7 +588,7 @@ fn parse_toml_error(err: toml::de::Error, file_path: &str, file_content: &str) -
         message
     };
 
-    let mut error = CBuildError::new(&detailed_message).with_file(file_path);
+    let mut error = cforgeError::new(&detailed_message).with_file(file_path);
 
     if let Some(line) = line_number {
         error = error.with_line(line);
@@ -776,11 +776,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
     // Set verbosity level from command line or environment
-    if let Ok(val) = env::var("CBUILD_VERBOSE") {
+    if let Ok(val) = env::var("cforge_VERBOSE") {
         if val == "1" || val.to_lowercase() == "true" {
             set_verbosity("verbose");
         }
-    } else if let Ok(val) = env::var("CBUILD_QUIET") {
+    } else if let Ok(val) = env::var("cforge_QUIET") {
         if val == "1" || val.to_lowercase() == "true" {
             set_verbosity("quiet");
         }
@@ -794,7 +794,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Show header only if not in quiet mode
     if !is_quiet() {
         println!("┌{:─^50}┐", "");
-        println!("│{:^50}│", "CBuild - C/C++ Build System".bold());
+        println!("│{:^50}│", "cforge - C/C++ Build System".bold());
         println!("│{:^50}│", format!("v{}", env!("CARGO_PKG_VERSION")));
         println!("└{:─^50}┘", "");
         println!();
@@ -812,19 +812,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // Format and display the error
             println!();
 
-            // Special formatting for CBuildError
-            if let Some(cbuild_err) = e.downcast_ref::<CBuildError>() {
-                print_error(&format!("CBuild Error: {}", cbuild_err.message));
+            // Special formatting for cforgeError
+            if let Some(cforge_err) = e.downcast_ref::<cforgeError>() {
+                print_error(&format!("cforge Error: {}", cforge_err.message));
 
-                if let Some(file_path) = &cbuild_err.file_path {
+                if let Some(file_path) = &cforge_err.file_path {
                     print_substep(&format!("File: {}", file_path));
                 }
 
-                if let Some(line_number) = cbuild_err.line_number {
+                if let Some(line_number) = cforge_err.line_number {
                     print_substep(&format!("Line: {}", line_number));
                 }
 
-                if let Some(context) = &cbuild_err.context {
+                if let Some(context) = &cforge_err.context {
                     print_substep("Context:");
                     for line in context.lines() {
                         println!("    {}", line);
@@ -1373,7 +1373,7 @@ fn init_workspace() -> Result<(), Box<dyn std::error::Error>> {
     fs::create_dir_all("projects")?;
 
     println!("{}", "Workspace initialized successfully".green());
-    println!("To add projects, run: {} in the projects directory", "cbuild init".cyan());
+    println!("To add projects, run: {} in the projects directory", "cforge init".cyan());
 
     Ok(())
 }
@@ -1386,18 +1386,18 @@ fn save_workspace_config(config: &WorkspaceConfig) -> Result<(), Box<dyn std::er
     Ok(())
 }
 
-fn load_workspace_config() -> Result<WorkspaceConfig, CBuildError> {
+fn load_workspace_config() -> Result<WorkspaceConfig, cforgeError> {
     let workspace_path = Path::new(WORKSPACE_FILE);
 
     if !workspace_path.exists() {
-        return Err(CBuildError::new(&format!(
+        return Err(cforgeError::new(&format!(
             "Workspace file '{}' not found", WORKSPACE_FILE
         )));
     }
 
     let toml_str = match fs::read_to_string(workspace_path) {
         Ok(content) => content,
-        Err(e) => return Err(CBuildError::new(&format!(
+        Err(e) => return Err(cforgeError::new(&format!(
             "Failed to read {}: {}", WORKSPACE_FILE, e
         )).with_file(WORKSPACE_FILE)),
     };
@@ -1797,7 +1797,7 @@ fn generate_package_config(project_path: &Path, project_name: &str) -> Result<()
     let import_type = if is_shared { "SHARED" } else { "STATIC" };
 
     // Generate the config content with the correct library type
-    let config_content = format!(r#"# Generated by CBuild
+    let config_content = format!(r#"# Generated by cforge
 # Config file for {} library
 
 # Compute the installation prefix relative to this file
@@ -2277,7 +2277,7 @@ fn list_workspace_items(what: Option<&str>) -> Result<(), Box<dyn std::error::Er
 fn init_project(path: Option<&Path>, template: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
     let project_path = path.unwrap_or_else(|| Path::new("."));
 
-    let config_path = project_path.join(CBUILD_FILE);
+    let config_path = project_path.join(cforge_FILE);
     if config_path.exists() {
         let response = prompt("Project already exists. Overwrite? (y/N): ")?;
         if response.trim().to_lowercase() != "y" {
@@ -2303,7 +2303,7 @@ fn init_project(path: Option<&Path>, template: Option<&str>) -> Result<(), Box<d
     if config.project.project_type == "executable" {
         let main_file = project_path.join("src").join("main.cpp");
         let mut file = File::create(main_file)?;
-        file.write_all(b"#include <iostream>\n\nint main(int argc, char* argv[]) {\n    std::cout << \"Hello, CBuild!\" << std::endl;\n    return 0;\n}\n")?;
+        file.write_all(b"#include <iostream>\n\nint main(int argc, char* argv[]) {\n    std::cout << \"Hello, cforge!\" << std::endl;\n    return 0;\n}\n")?;
     } else if config.project.project_type == "library" {
         // Create a header file
         let header_file = project_path.join("include").join(format!("{}.h", config.project.name));
@@ -2341,7 +2341,7 @@ fn init_project(path: Option<&Path>, template: Option<&str>) -> Result<(), Box<d
 fn create_library_config() -> ProjectConfig {
     let mut config = create_default_config();
     config.project.project_type = "library".to_string();
-    config.project.description = "A C++ library built with CBuild".to_string();
+    config.project.description = "A C++ library built with cforge".to_string();
 
     config
 }
@@ -2349,7 +2349,7 @@ fn create_library_config() -> ProjectConfig {
 fn create_header_only_config() -> ProjectConfig {
     let mut config = create_default_config();
     config.project.project_type = "header-only".to_string();
-    config.project.description = "A header-only C++ library built with CBuild".to_string();
+    config.project.description = "A header-only C++ library built with cforge".to_string();
 
     // For header-only libraries, we don't need source files
     if let Some(target) = config.targets.get_mut("default") {
@@ -2595,7 +2595,7 @@ fn create_default_config() -> ProjectConfig {
                 .to_string_lossy()
                 .to_string(),
             version: "0.1.0".to_string(),
-            description: "A C/C++ project built with CBuild".to_string(),
+            description: "A C/C++ project built with cforge".to_string(),
             project_type: "executable".to_string(),
             language: "c++".to_string(),
             standard: "c++17".to_string(),
@@ -2643,44 +2643,44 @@ fn create_default_config() -> ProjectConfig {
 
 
 fn save_project_config(config: &ProjectConfig, path: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    let config_path = path.join(CBUILD_FILE);
+    let config_path = path.join(cforge_FILE);
     let toml_string = toml::to_string_pretty(config)?;
     let mut file = File::create(config_path)?;
     file.write_all(toml_string.as_bytes())?;
-    println!("{}", format!("Configuration saved to {}", path.join(CBUILD_FILE).display()).green());
+    println!("{}", format!("Configuration saved to {}", path.join(cforge_FILE).display()).green());
     Ok(())
 }
 
-fn load_project_config(path: Option<&Path>) -> Result<ProjectConfig, CBuildError> {
+fn load_project_config(path: Option<&Path>) -> Result<ProjectConfig, cforgeError> {
     let project_path = path.unwrap_or_else(|| Path::new("."));
 
     // When loading from a workspace dependency, we need to handle
     // both absolute paths and paths relative to the workspace root
     let config_path = if project_path.is_absolute() {
-        project_path.join(CBUILD_FILE)
+        project_path.join(cforge_FILE)
     } else if is_workspace() && !project_path.starts_with(".") {
         // For non-relative paths in a workspace, check if they should
         // be prefixed with "projects/"
         let with_projects = Path::new("projects").join(project_path);
-        if with_projects.join(CBUILD_FILE).exists() {
-            with_projects.join(CBUILD_FILE)
+        if with_projects.join(cforge_FILE).exists() {
+            with_projects.join(cforge_FILE)
         } else {
-            project_path.join(CBUILD_FILE)
+            project_path.join(cforge_FILE)
         }
     } else {
-        project_path.join(CBUILD_FILE)
+        project_path.join(cforge_FILE)
     };
 
     if !config_path.exists() {
-        return Err(CBuildError::new(&format!(
-            "Configuration file '{}' not found. Run 'cbuild init' to create one.",
+        return Err(cforgeError::new(&format!(
+            "Configuration file '{}' not found. Run 'cforge init' to create one.",
             config_path.display()
         )));
     }
 
     let toml_str = match fs::read_to_string(&config_path) {
         Ok(content) => content,
-        Err(e) => return Err(CBuildError::new(&format!(
+        Err(e) => return Err(cforgeError::new(&format!(
             "Failed to read {}: {}", config_path.display(), e
         )).with_file(&config_path.to_string_lossy().to_string())),
     };
@@ -4054,15 +4054,15 @@ fn add_error_suggestions(stdout: &str, stderr: &str) {
     let mut suggestions = Vec::new();
 
     if combined.contains("undefined reference") || combined.contains("unresolved external symbol") {
-        suggestions.push("• Check library linking settings in your cbuild.toml");
-        suggestions.push("• Make sure all dependencies are installed with 'cbuild deps'");
+        suggestions.push("• Check library linking settings in your cforge.toml");
+        suggestions.push("• Make sure all dependencies are installed with 'cforge deps'");
         suggestions.push("• Verify that all required libraries are in your PATH or system paths");
     }
 
     if combined.contains("No such file or directory") || combined.contains("cannot find") ||
         combined.contains("not found") {
-        suggestions.push("• Verify include paths in your cbuild.toml");
-        suggestions.push("• Make sure all dependencies are installed with 'cbuild deps'");
+        suggestions.push("• Verify include paths in your cforge.toml");
+        suggestions.push("• Make sure all dependencies are installed with 'cforge deps'");
         suggestions.push("• Check file paths for typos");
     }
 
@@ -4106,7 +4106,7 @@ fn generate_cmake_lists(config: &ProjectConfig, project_path: &Path, variant_nam
         format!("cmake_minimum_required(VERSION {})", cmake_minimum),
         format!("project({} VERSION {})", project_config.name, project_config.version),
         String::new(),
-        "# Generated by CBuild - Do not edit manually".to_string(),
+        "# Generated by cforge - Do not edit manually".to_string(),
         String::new(),
         // Add helper function to expand glob patterns at configure time
         "# Helper function to expand glob patterns and verify sources exist".to_string(),
@@ -4582,7 +4582,7 @@ fn generate_cmake_lists(config: &ProjectConfig, project_path: &Path, variant_nam
     cmake_content.push("include(CPack)".to_string());
     cmake_content.push("set(CPACK_PACKAGE_NAME \"${PROJECT_NAME}\")".to_string());
     cmake_content.push("set(CPACK_PACKAGE_VERSION \"${PROJECT_VERSION}\")".to_string());
-    cmake_content.push("set(CPACK_PACKAGE_VENDOR \"CBuild User\")".to_string());
+    cmake_content.push("set(CPACK_PACKAGE_VENDOR \"cforge User\")".to_string());
     cmake_content.push("set(CPACK_PACKAGE_DESCRIPTION_SUMMARY \"${PROJECT_NAME} - ${PROJECT_DESCRIPTION}\")".to_string());
 
     // OS-specific packaging options
@@ -6575,7 +6575,7 @@ fn generate_vscode_files(config: &ProjectConfig, project_path: &Path) -> Result<
     let mut properties = serde_json::json!({
         "configurations": [
             {
-                "name": "CBuild",
+                "name": "cforge",
                 "includePath": include_paths,
                 "defines": intellisense_defines,
                 "compilerPath": "/usr/bin/g++",
@@ -6651,7 +6651,7 @@ fn generate_vscode_files(config: &ProjectConfig, project_path: &Path) -> Result<
             {
                 "label": "build",
                 "type": "shell",
-                "command": "cbuild",
+                "command": "cforge",
                 "args": ["build"],
                 "group": {
                     "kind": "build",
@@ -6662,21 +6662,21 @@ fn generate_vscode_files(config: &ProjectConfig, project_path: &Path) -> Result<
             {
                 "label": "clean",
                 "type": "shell",
-                "command": "cbuild",
+                "command": "cforge",
                 "args": ["clean"],
                 "problemMatcher": []
             },
             {
                 "label": "run",
                 "type": "shell",
-                "command": "cbuild",
+                "command": "cforge",
                 "args": ["run"],
                 "problemMatcher": []
             },
             {
                 "label": "test",
                 "type": "shell",
-                "command": "cbuild",
+                "command": "cforge",
                 "args": ["test"],
                 "problemMatcher": ["$gcc"]
             }
@@ -7511,9 +7511,9 @@ fn print_general_suggestions(error_categories: &HashSet<String>) {
             println!("  - Use include guards or #pragma once in headers");
         }
 
-        println!("  - Ensure all necessary libraries are linked (add them in cbuild.toml)");
+        println!("  - Ensure all necessary libraries are linked (add them in cforge.toml)");
         println!("  - Check library order - sometimes order matters for dependencies");
-        println!("  - Run `cbuild deps` to install all dependencies");
+        println!("  - Run `cforge deps` to install all dependencies");
         println!();
         printed_help = true;
     }
@@ -7525,8 +7525,8 @@ fn print_general_suggestions(error_categories: &HashSet<String>) {
         println!("  - Check file paths and names for typos");
         println!("  - Use angle brackets for system headers: #include <vector>");
         println!("  - Use quotes for your own headers: #include \"myheader.h\"");
-        println!("  - Make sure include directories are correctly set in cbuild.toml");
-        println!("  - Verify that dependencies are installed: `cbuild deps`");
+        println!("  - Make sure include directories are correctly set in cforge.toml");
+        println!("  - Verify that dependencies are installed: `cforge deps`");
         println!("  - Check relative paths if using non-standard include structures");
         println!();
         printed_help = true;
@@ -7598,11 +7598,11 @@ fn print_general_suggestions(error_categories: &HashSet<String>) {
     if categories.contains(&"build_system".to_string()) {
         println!("{}", "● For build system errors:".bold());
 
-        println!("  - Check your cbuild.toml for syntax errors");
+        println!("  - Check your cforge.toml for syntax errors");
         println!("  - Ensure all tools (CMake, compilers) are correctly installed");
-        println!("  - Try running `cbuild clean` and then build again");
+        println!("  - Try running `cforge clean` and then build again");
         println!("  - Check build generator compatibility with your system");
-        println!("  - Verify that dependencies are installed: `cbuild deps`");
+        println!("  - Verify that dependencies are installed: `cforge deps`");
         println!("  - Make sure source file patterns match your project structure");
         println!();
         printed_help = true;
@@ -7615,8 +7615,8 @@ fn print_general_suggestions(error_categories: &HashSet<String>) {
         println!("  - Ensure all variables are declared before use");
         println!("  - Verify that required headers are included");
         println!("  - Look for mismatched types in function calls and assignments");
-        println!("  - Check that you're including the correct libraries in cbuild.toml");
-        println!("  - Try `cbuild clean` followed by `cbuild build`");
+        println!("  - Check that you're including the correct libraries in cforge.toml");
+        println!("  - Try `cforge clean` followed by `cforge build`");
         println!("  - Read error messages from top to bottom - earlier errors often cause later ones");
         println!();
     }
@@ -7626,7 +7626,7 @@ fn print_general_suggestions(error_categories: &HashSet<String>) {
     println!("For compiler-specific error assistance:");
     println!("  - GCC/Clang: {}", "https://gcc.gnu.org/onlinedocs/".underline());
     println!("  - MSVC: {}", "https://docs.microsoft.com/en-us/cpp/error-messages/".underline());
-    println!("For CBuild documentation, run: `cbuild --help`");
+    println!("For cforge documentation, run: `cforge --help`");
 }
 
 fn hash_error_for_code(error_text: &str) -> u32 {
@@ -8735,11 +8735,11 @@ fn analyze_cpp_errors(error_output: &str) -> Vec<String> {
 
     if error_output.contains("No such file or directory") || error_output.contains("cannot open include file") {
         suggestions.push("Check that the include path is correct and the file exists".to_string());
-        suggestions.push("Make sure all dependencies are installed with 'cbuild deps'".to_string());
+        suggestions.push("Make sure all dependencies are installed with 'cforge deps'".to_string());
     }
 
     if error_output.contains("undefined reference to") || error_output.contains("unresolved external symbol") {
-        suggestions.push("Ensure the required library is linked in your cbuild.toml".to_string());
+        suggestions.push("Ensure the required library is linked in your cforge.toml".to_string());
         suggestions.push("Check that the function/symbol is defined in the linked libraries".to_string());
     }
 
@@ -8881,12 +8881,12 @@ fn analyze_build_error(error_output: &str) -> Vec<String> {
     // Common C++ build errors and their solutions
     if error_output.contains("No such file or directory") || error_output.contains("cannot open include file") {
         suggestions.push("Missing header file. Check that all dependencies are installed.".to_string());
-        suggestions.push("Verify include paths are correct in your cbuild.toml.".to_string());
+        suggestions.push("Verify include paths are correct in your cforge.toml.".to_string());
     }
 
     if error_output.contains("undefined reference to") || error_output.contains("unresolved external symbol") {
         suggestions.push("Missing library or object file. Check that all dependencies are installed.".to_string());
-        suggestions.push("Verify library paths and link options in your cbuild.toml.".to_string());
+        suggestions.push("Verify library paths and link options in your cforge.toml.".to_string());
         suggestions.push("Make sure the library was built with the same compiler/settings.".to_string());
     }
 
@@ -8902,8 +8902,8 @@ fn analyze_build_error(error_output: &str) -> Vec<String> {
 
     if error_output.contains("vcpkg") && error_output.contains("not found") {
         suggestions.push("vcpkg issue. Make sure vcpkg is properly installed.".to_string());
-        suggestions.push("Check if the vcpkg path in cbuild.toml is correct.".to_string());
-        suggestions.push("Try running 'cbuild deps' to install dependencies first.".to_string());
+        suggestions.push("Check if the vcpkg path in cforge.toml is correct.".to_string());
+        suggestions.push("Try running 'cforge deps' to install dependencies first.".to_string());
     }
 
     if error_output.contains("cl.exe") && error_output.contains("not recognized") {
@@ -8915,21 +8915,21 @@ fn analyze_build_error(error_output: &str) -> Vec<String> {
     if error_output.contains("CMake Error") {
         if error_output.contains("generator") {
             suggestions.push("CMake generator issue. Make sure the requested generator is installed.".to_string());
-            suggestions.push("Try using a different generator in cbuild.toml or let CBuild auto-detect.".to_string());
+            suggestions.push("Try using a different generator in cforge.toml or let cforge auto-detect.".to_string());
         }
 
         if error_output.contains("Could not find") {
             suggestions.push("CMake dependency issue. Make sure all required packages are installed.".to_string());
-            suggestions.push("Run 'cbuild deps' to install dependencies.".to_string());
+            suggestions.push("Run 'cforge deps' to install dependencies.".to_string());
         }
     }
 
     // If no specific issues found, provide general suggestions
     if suggestions.is_empty() {
         suggestions.push("Check if all build tools are installed and available in PATH.".to_string());
-        suggestions.push("Make sure all dependencies are installed with 'cbuild deps'.".to_string());
+        suggestions.push("Make sure all dependencies are installed with 'cforge deps'.".to_string());
         suggestions.push("Try using a different compiler or generator.".to_string());
-        suggestions.push("Run 'cbuild clean' and then try building again.".to_string());
+        suggestions.push("Run 'cforge clean' and then try building again.".to_string());
     }
 
     suggestions
