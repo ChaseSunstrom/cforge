@@ -4,12 +4,14 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
 
 jobs:
   build:
     name: Build ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false  # Continue with other builds even if one fails
       matrix:
         include:
           - os: ubuntu-latest
@@ -29,36 +31,47 @@ jobs:
       - uses: actions/checkout@v4
       
       - name: Setup Rust
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
-          target: ${{ matrix.target }}
-          override: true
+          targets: ${{ matrix.target }}
           
       - name: Build
-        uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: --release --target ${{ matrix.target }}
+        run: cargo build --release --target ${{ matrix.target }}
           
+      - name: Prepare artifact
+        shell: bash
+        run: |
+          mkdir -p release-artifacts
+          if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
+            cp target/${{ matrix.target }}/release/${{ matrix.artifact_name }} release-artifacts/${{ matrix.asset_name }}
+          else
+            cp target/${{ matrix.target }}/release/${{ matrix.artifact_name }} release-artifacts/${{ matrix.asset_name }}
+          fi
+      
       - name: Upload artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4  # Updated to v4
         with:
           name: ${{ matrix.asset_name }}
-          path: target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
+          path: release-artifacts/${{ matrix.asset_name }}
           
   release:
     name: Create Release
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - name: Download artifacts
-        uses: actions/download-artifact@v3
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4  # Updated to v4
+        with:
+          path: artifacts
         
+      - name: List artifacts
+        run: ls -R artifacts
+      
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            cbuild-tool-linux-amd64/cbuild-tool
-            cbuild-tool-windows-amd64.exe/cbuild-tool.exe
-            cbuild-tool-macos-amd64/cbuild-tool
+            artifacts/cbuild-tool-linux-amd64/cbuild-tool-linux-amd64
+            artifacts/cbuild-tool-windows-amd64.exe/cbuild-tool-windows-amd64.exe
+            artifacts/cbuild-tool-macos-amd64/cbuild-tool-macos-amd64
+          generate_release_notes: true
