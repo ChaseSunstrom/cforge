@@ -16,16 +16,16 @@ jobs:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            artifact_name: cbuild-tool
-            asset_name: cbuild-tool-linux-amd64
+            artifact_name: cforge
+            asset_name: cforge-linux-amd64
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            artifact_name: cbuild-tool.exe
-            asset_name: cbuild-tool-windows-amd64.exe
+            artifact_name: cforge.exe
+            asset_name: cforge-windows-amd64.exe
           - os: macos-latest
             target: x86_64-apple-darwin
-            artifact_name: cbuild-tool
-            asset_name: cbuild-tool-macos-amd64
+            artifact_name: cforge
+            asset_name: cforge-macos-amd64
 
     steps:
       - uses: actions/checkout@v4
@@ -71,7 +71,7 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            artifacts/cbuild-tool-linux-amd64/cbuild-tool-linux-amd64
-            artifacts/cbuild-tool-windows-amd64.exe/cbuild-tool-windows-amd64.exe
-            artifacts/cbuild-tool-macos-amd64/cbuild-tool-macos-amd64
+            artifacts/cforge-linux-amd64/cforge-linux-amd64
+            artifacts/cforge-windows-amd64.exe/cforge-windows-amd64.exe
+            artifacts/cforge-macos-amd64/cforge-macos-amd64
           generate_release_notes: true
