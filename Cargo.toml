@@ -1,13 +1,13 @@
 [package]
-name = "cbuild-tool"
+name = "cforge"
 version = "1.0.2"
 edition = "2021"
 authors = ["Chase Sunstrom casunstrom@gmail.com"]
 description = "A TOML-based build system for C/C++ with CMake and vcpkg integration"
 readme = "README.md"
 license = "MIT"
-repository = "https://github.com/ChaseSunstrom/cbuild"
-keywords = ["build-system", "CPP", "cmake", "vcpkg", "cbuild"]
+repository = "https://github.com/ChaseSunstrom/cforge"
+keywords = ["build-system", "CPP", "cmake", "vcpkg",  "cforge"]
 categories = ["development-tools", "development-tools::build-utils"]
 
 [dependencies]
