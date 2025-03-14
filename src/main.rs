@@ -1,3 +1,6 @@
+
+mod output_utils;
+use crate::output_utils::*;
 use lazy_static::lazy_static;
 use regex::Regex;
 use std::collections::VecDeque;
@@ -39,11 +42,15 @@ lazy_static! {
 #[clap(
     name = "cbuild",
     about = "A TOML-based build system for C/C++ with CMake and vcpkg integration",
-    version = "0.2.0",
+    version = env!("CARGO_PKG_VERSION"),
 )]
 struct Cli {
     #[clap(subcommand)]
     command: Commands,
+
+    /// Set verbosity level (quiet, normal, verbose)
+    #[clap(long, global = true)]
+    verbosity: Option<String>,
 }
 
 #[derive(Debug, Subcommand)]
@@ -768,19 +775,64 @@ fn run_command_raw(command: &Commands) -> Result<(), Box<dyn std::error::Error>>
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
+    // Set verbosity level from command line or environment
+    if let Ok(val) = env::var("CBUILD_VERBOSE") {
+        if val == "1" || val.to_lowercase() == "true" {
+            set_verbosity("verbose");
+        }
+    } else if let Ok(val) = env::var("CBUILD_QUIET") {
+        if val == "1" || val.to_lowercase() == "true" {
+            set_verbosity("quiet");
+        }
+    } else {
+        // Set from CLI argument if provided
+        if let Some(verbosity) = cli.verbosity.as_deref() {
+            set_verbosity(verbosity);
+        }
+    }
+
+    // Show header only if not in quiet mode
+    if !is_quiet() {
+        println!("┌{:─^50}┐", "");
+        println!("│{:^50}│", "CBuild - C/C++ Build System".bold());
+        println!("│{:^50}│", format!("v{}", env!("CARGO_PKG_VERSION")));
+        println!("└{:─^50}┘", "");
+        println!();
+    }
+
     match run_command_raw(&cli.command) {
         Ok(()) => {
-           Ok(())
+            if !is_quiet() {
+                println!();
+                print_success("Command completed successfully");
+            }
+            Ok(())
         },
         Err(e) => {
-            println!("{}", "Error:".red().bold());
+            // Format and display the error
+            println!();
 
             // Special formatting for CBuildError
             if let Some(cbuild_err) = e.downcast_ref::<CBuildError>() {
-                println!("{}", cbuild_err.to_string().red());
+                print_error(&format!("CBuild Error: {}", cbuild_err.message));
+
+                if let Some(file_path) = &cbuild_err.file_path {
+                    print_substep(&format!("File: {}", file_path));
+                }
+
+                if let Some(line_number) = cbuild_err.line_number {
+                    print_substep(&format!("Line: {}", line_number));
+                }
+
+                if let Some(context) = &cbuild_err.context {
+                    print_substep("Context:");
+                    for line in context.lines() {
+                        println!("    {}", line);
+                    }
+                }
             } else {
                 // Regular error
-                println!("{}", e.to_string().red());
+                print_error(&e.to_string());
             }
 
             std::process::exit(1);
@@ -1360,17 +1412,30 @@ fn load_workspace_config() -> Result<WorkspaceConfig, CBuildError> {
     }
 }
 
+// Enhanced workspace build function with cleaner output
 fn build_workspace_with_dependency_order(
     project: Option<String>,
     config_type: Option<&str>,
     variant_name: Option<&str>,
     target: Option<&str>
 ) -> Result<(), Box<dyn std::error::Error>> {
+    // Load workspace configuration
+    print_header("Workspace Build");
+
     let workspace_config = load_workspace_config()?;
 
+    // Determine which projects to build
     let projects = match project {
-        Some(proj) => vec![proj],
-        None => workspace_config.workspace.projects.clone(),
+        Some(ref proj) => {
+            print_status(&format!("Building specific project: {}", format_project_name(proj)));
+            vec![proj.clone()]
+        },
+        None => {
+            if !is_quiet() {
+                print_status("Building all workspace projects");
+            }
+            workspace_config.workspace.projects.clone()
+        }
     };
 
     // Build project paths
@@ -1388,34 +1453,81 @@ fn build_workspace_with_dependency_order(
     }
 
     // Build dependency graph
+    let spinner = ProgressSpinner::start("Analyzing dependencies");
     let dependency_graph = build_dependency_graph(&workspace_config, &project_paths)?;
 
     // Determine build order based on dependencies
     let build_order = resolve_build_order(&dependency_graph, &projects)?;
+    spinner.success();
 
-    println!("{}", format!("Build order: {}", build_order.join(" -> ")).blue());
+    // Show build order
+    if !is_quiet() {
+        print_status(&format!("Build order: {}",
+                              build_order.iter()
+                                  .map(|p| format_project_name(p).to_string())
+                                  .collect::<Vec<_>>()
+                                  .join(" → ")));
+    }
 
-    // Build projects in order, generating package configs as we go
-    for project_name in &build_order {
-        println!("{}", format!("Building project: {}", project_name).blue());
-        let path = PathBuf::from(project_name);
-        let mut config = load_project_config(Some(&path))?;
+    // Create task list
+    let mut task_list = TaskList::new(build_order.clone());
+    task_list.display();
 
-        auto_adjust_config(&mut config)?;
+    // Build projects in order
+    for (i, project_name) in build_order.iter().enumerate() {
+        task_list.start_task(i);
 
-        // First, try the normal build process
-        if let Err(e) = build_project(&config, &path, config_type, variant_name, target, Some(&workspace_config)) {
-            // Print a clear error line in cbuild style, but continue with other projects
-            println!("{}", format!("Warning: Building {} had issues, but continuing", project_name).yellow());
+        let path = if Path::new(project_name).exists() {
+            PathBuf::from(project_name)
+        } else if Path::new("projects").join(project_name).exists() {
+            PathBuf::from("projects").join(project_name)
+        } else {
+            PathBuf::from(project_name)
+        };
+
+        print_status(&format!("Building project: {}", format_project_name(project_name)));
+
+        let mut config = match load_project_config(Some(&path)) {
+            Ok(cfg) => cfg,
+            Err(e) => {
+                print_warning(&format!("Could not load config for {}: {}", project_name, e));
+                print_warning("Skipping project and continuing...");
+                continue;
+            }
+        };
+
+        // Auto-adjust configuration if needed
+        if let Err(e) = auto_adjust_config(&mut config) {
+            print_warning(&format!("Error adjusting config for {}: {}", project_name, e));
+            print_warning("Using default configuration");
+        }
+
+        // Try to build project
+        let build_result = build_project(&config, &path, config_type, variant_name, target, Some(&workspace_config));
+
+        if let Err(e) = build_result {
+            print_warning(&format!("Building {} had issues: {}", project_name, e));
+            print_warning("Continuing with other projects...");
+        } else {
+            task_list.complete_task(i);
         }
 
         // Generate package config after build
+        let spinner = ProgressSpinner::start(&format!("Generating package config for {}", project_name));
         if let Err(e) = generate_package_config(&path, project_name) {
-            println!("{}", format!("Error generating package config: {}", e).yellow());
+            spinner.failure(&format!("Error: {}", e));
+        } else {
+            spinner.success();
         }
     }
 
-    println!("{}", "Workspace build completed".green());
+    // Completion message
+    if task_list.all_completed() {
+        print_success("Workspace build completed successfully");
+    } else {
+        print_warning("Workspace build completed with some issues");
+    }
+
     Ok(())
 }
 
@@ -1906,21 +2018,47 @@ fn clean_workspace(
     config_type: Option<&str>,
     target: Option<&str>
 ) -> Result<(), Box<dyn std::error::Error>> {
+    print_header("Workspace Clean");
+
     let workspace_config = load_workspace_config()?;
 
+    // Determine which projects to clean
     let projects = match project {
-        Some(proj) => vec![proj],
-        None => workspace_config.workspace.projects,
+        Some(proj) => {
+            print_status(&format!("Cleaning specific project: {}", format_project_name(&proj)));
+            vec![proj]
+        },
+        None => {
+            print_status("Cleaning all workspace projects");
+            workspace_config.workspace.projects
+        }
     };
 
-    for project_path in projects {
-        println!("{}", format!("Cleaning project: {}", project_path).blue());
-        let path = PathBuf::from(&project_path);
-        let config = load_project_config(Some(&path))?;
-        clean_project(&config, &path, config_type, target)?;
+    // Create task list
+    let mut task_list = TaskList::new(projects.clone());
+    task_list.display();
+
+    // Clean projects
+    for (i, project_path) in projects.iter().enumerate() {
+        task_list.start_task(i);
+
+        let path = PathBuf::from(project_path);
+        match load_project_config(Some(&path)) {
+            Ok(config) => {
+                if let Err(e) = clean_project(&config, &path, config_type, target) {
+                    print_warning(&format!("Error cleaning project {}: {}", project_path, e));
+                } else {
+                    task_list.complete_task(i);
+                }
+            },
+            Err(e) => {
+                print_warning(&format!("Could not load config for {}: {}", project_path, e));
+                print_warning("Skipping project");
+            }
+        }
     }
 
-    println!("{}", "Workspace clean completed".green());
+    print_success("Workspace clean completed");
     Ok(())
 }
 
@@ -1930,6 +2068,8 @@ fn run_workspace(
     variant_name: Option<&str>,
     args: &[String]
 ) -> Result<(), Box<dyn std::error::Error>> {
+    print_header("Workspace Run");
+
     let workspace_config = load_workspace_config()?;
 
     // Determine which project to run
@@ -1945,20 +2085,25 @@ fn run_workspace(
                 if workspace_config.workspace.projects.contains(default_startup) {
                     default_startup.clone()
                 } else {
-                    // Default to first project if specified default isn't valid
                     workspace_config.workspace.projects[0].clone()
                 }
             } else {
-                // No default specified, use first project
                 workspace_config.workspace.projects[0].clone()
             }
         }
     };
 
-    println!("{}", format!("Running project: {}", project_path).blue());
+    print_status(&format!("Running project: {}", format_project_name(&project_path)));
+
     let path = PathBuf::from(&project_path);
-    let config = load_project_config(Some(&path))?;
-    run_project(&config, &path, config_type, variant_name, args, Some(&workspace_config))?;
+    match load_project_config(Some(&path)) {
+        Ok(config) => {
+            run_project(&config, &path, config_type, variant_name, args, Some(&workspace_config))?;
+        },
+        Err(e) => {
+            return Err(format!("Could not load config for {}: {}", project_path, e).into());
+        }
+    }
 
     Ok(())
 }
@@ -2650,7 +2795,10 @@ fn detect_system_info() -> SystemInfo {
 }
 
 
-fn setup_vcpkg(config: &ProjectConfig, project_path: &Path) -> Result<String, Box<dyn std::error::Error>> {
+fn setup_vcpkg(
+    config: &ProjectConfig,
+    project_path: &Path
+) -> Result<String, Box<dyn std::error::Error>> {
     // Skip if vcpkg is disabled
     let vcpkg_config = &config.dependencies.vcpkg;
     if !vcpkg_config.enabled {
@@ -2664,7 +2812,7 @@ fn setup_vcpkg(config: &ProjectConfig, project_path: &Path) -> Result<String, Bo
         if installed.contains(cache_key) {
             let cached_path = get_cached_vcpkg_toolchain_path();
             if !cached_path.is_empty() {
-                println!("{}", "Using previously set up vcpkg".blue());
+                print_detailed("Using previously set up vcpkg");
                 return Ok(cached_path);
             }
         }
@@ -2674,9 +2822,11 @@ fn setup_vcpkg(config: &ProjectConfig, project_path: &Path) -> Result<String, Bo
     let configured_path = vcpkg_config.path.as_deref().unwrap_or(VCPKG_DEFAULT_DIR);
     let configured_path = expand_tilde(configured_path);
 
-    // Check if vcpkg is in PATH environment variable
-    let mut vcpkg_in_path = None;
+    // Try to find vcpkg location
+    let spinner = ProgressSpinner::start("Locating vcpkg");
 
+    // Check if vcpkg is in PATH
+    let mut vcpkg_in_path = None;
     if let Ok(path_var) = env::var("PATH") {
         for path in path_var.split(if cfg!(windows) { ';' } else { ':' }) {
             let vcpkg_exe = if cfg!(windows) {
@@ -2692,12 +2842,10 @@ fn setup_vcpkg(config: &ProjectConfig, project_path: &Path) -> Result<String, Bo
         }
     }
 
-    // Try to find vcpkg in common locations
+    // Try common locations
     let mut potential_vcpkg_paths = vec![
         configured_path.clone(),
-        // Add the path found in PATH if any
         vcpkg_in_path.map_or(String::new(), |p| p.to_string_lossy().to_string()),
-        // Common installation locations
         String::from("C:/vcpkg"),
         String::from("C:/dev/vcpkg"),
         String::from("C:/tools/vcpkg"),
@@ -2735,12 +2883,14 @@ fn setup_vcpkg(config: &ProjectConfig, project_path: &Path) -> Result<String, Bo
         }
     }
 
+    spinner.success();
+
     // If vcpkg wasn't found anywhere, try to set it up in the configured path
     let vcpkg_path = if let Some(path) = found_vcpkg_path {
-        println!("{}", format!("Found existing vcpkg installation at {}", path).green());
+        print_substep(&format!("Found existing vcpkg installation at {}", path));
         path
     } else {
-        println!("{}", format!("vcpkg not found, attempting to set up at {}", configured_path).blue());
+        print_substep(&format!("vcpkg not found, attempting to set up at {}", configured_path));
 
         // Create parent directory if it doesn't exist
         let vcpkg_parent_dir = Path::new(&configured_path).parent().unwrap_or_else(|| Path::new(&configured_path));
@@ -2749,100 +2899,111 @@ fn setup_vcpkg(config: &ProjectConfig, project_path: &Path) -> Result<String, Bo
         // Check if the directory exists but is not a proper vcpkg installation
         let vcpkg_dir = Path::new(&configured_path);
         if vcpkg_dir.exists() {
-            println!("{}", format!("Directory {} exists but does not contain a valid vcpkg installation. Attempting to bootstrap...", configured_path).yellow());
-        } else {
-            // Try to clone vcpkg repository
-            match run_command(
-                vec![
-                    String::from("git"),
-                    String::from("clone"),
-                    String::from("https://github.com/microsoft/vcpkg.git"),
-                    String::from(&configured_path)
-                ],
-                None,
-                None
-            ) {
-                Ok(_) => {},
-                Err(e) => {
-                    if vcpkg_dir.exists() {
-                        println!("{}", format!("Git clone failed but directory exists: {}", e).yellow());
-                    } else if !has_command("git") {
-                        // Try to install git
-                        println!("{}", "Git not found. Attempting to install git...".yellow());
+            print_warning(&format!("Directory {} exists but does not contain a valid vcpkg installation", configured_path));
+        }
 
-                        let git_installed = if cfg!(windows) {
-                            if has_command("winget") {
-                                run_command(
-                                    vec![
-                                        "winget".to_string(),
-                                        "install".to_string(),
-                                        "--id".to_string(),
-                                        "Git.Git".to_string()
-                                    ],
-                                    None,
-                                    None
-                                ).is_ok()
-                            } else {
-                                false
-                            }
-                        } else if cfg!(target_os = "macos") {
-                            if has_command("brew") {
-                                run_command(
-                                    vec![
-                                        "brew".to_string(),
-                                        "install".to_string(),
-                                        "git".to_string()
-                                    ],
-                                    None,
-                                    None
-                                ).is_ok()
-                            } else {
-                                false
-                            }
-                        } else { // Linux
+        // Try to clone vcpkg repository
+        let clone_spinner = ProgressSpinner::start("Cloning vcpkg repository");
+        match run_command(
+            vec![
+                String::from("git"),
+                String::from("clone"),
+                String::from("https://github.com/microsoft/vcpkg.git"),
+                String::from(&configured_path)
+            ],
+            None,
+            None
+        ) {
+            Ok(_) => {
+                clone_spinner.success();
+            },
+            Err(e) => {
+                clone_spinner.failure(&e.to_string());
+
+                if vcpkg_dir.exists() {
+                    print_warning("Git clone failed but directory exists");
+                } else if !has_command("git") {
+                    // Try to install git
+                    print_warning("Git not found. Attempting to install git...");
+
+                    let git_installed = if cfg!(windows) {
+                        if has_command("winget") {
+                            run_command(
+                                vec![
+                                    "winget".to_string(),
+                                    "install".to_string(),
+                                    "--id".to_string(),
+                                    "Git.Git".to_string()
+                                ],
+                                None,
+                                None
+                            ).is_ok()
+                        } else {
+                            false
+                        }
+                    } else if cfg!(target_os = "macos") {
+                        if has_command("brew") {
+                            run_command(
+                                vec![
+                                    "brew".to_string(),
+                                    "install".to_string(),
+                                    "git".to_string()
+                                ],
+                                None,
+                                None
+                            ).is_ok()
+                        } else {
+                            false
+                        }
+                    } else { // Linux
+                        run_command(
+                            vec![
+                                "sudo".to_string(),
+                                "apt-get".to_string(),
+                                "update".to_string()
+                            ],
+                            None,
+                            None
+                        ).is_ok() &&
                             run_command(
                                 vec![
                                     "sudo".to_string(),
                                     "apt-get".to_string(),
-                                    "update".to_string()
+                                    "install".to_string(),
+                                    "-y".to_string(),
+                                    "git".to_string()
                                 ],
                                 None,
                                 None
-                            ).is_ok() &&
-                                run_command(
-                                    vec![
-                                        "sudo".to_string(),
-                                        "apt-get".to_string(),
-                                        "install".to_string(),
-                                        "-y".to_string(),
-                                        "git".to_string()
-                                    ],
-                                    None,
-                                    None
-                                ).is_ok()
-                        };
+                            ).is_ok()
+                    };
 
-                        if git_installed && has_command("git") {
-                            // Try cloning again
-                            match run_command(
-                                vec![
-                                    String::from("git"),
-                                    String::from("clone"),
-                                    String::from("https://github.com/microsoft/vcpkg.git"),
-                                    String::from(&configured_path)
-                                ],
-                                None,
-                                None
-                            ) {
-                                Ok(_) => {},
-                                Err(e) => return Err(format!("Failed to clone vcpkg repository: {}", e).into())
+                    if git_installed && has_command("git") {
+                        // Try cloning again
+                        let retry_spinner = ProgressSpinner::start("Retrying vcpkg clone");
+                        match run_command(
+                            vec![
+                                String::from("git"),
+                                String::from("clone"),
+                                String::from("https://github.com/microsoft/vcpkg.git"),
+                                String::from(&configured_path)
+                            ],
+                            None,
+                            None
+                        ) {
+                            Ok(_) => {
+                                retry_spinner.success();
+                            },
+                            Err(e) => {
+                                retry_spinner.failure(&e.to_string());
+                                return Err("Failed to clone vcpkg repository".into());
                             }
-                        } else {
-                            return Err("Git is required to set up vcpkg but could not be installed. Please install git manually.".into());
                         }
                     } else {
-                        return Err(e);
+                        return Err("Git is required to set up vcpkg but could not be installed".into());
                     }
+                } else {
+                    return Err(e);
                 }
             }
         }
@@ -2854,24 +3015,27 @@ fn setup_vcpkg(config: &ProjectConfig, project_path: &Path) -> Result<String, Bo
             "./bootstrap-vcpkg.sh"
         };
 
-        // Check if we have the necessary compilers for bootstrapping
+        // Check if compilers are available for bootstrapping
         if cfg!(windows) && !has_command("cl") && !has_command("g++") && !has_command("clang++") {
-            println!("{}", "No C++ compiler found for bootstrapping vcpkg. Attempting to install a compiler...".yellow());
+            print_warning("No C++ compiler found for bootstrapping vcpkg. Attempting to install...");
             ensure_compiler_available("msvc").or_else(|_| ensure_compiler_available("gcc"))?;
         } else if !cfg!(windows) && !has_command("g++") && !has_command("clang++") {
-            println!("{}", "No C++ compiler found for bootstrapping vcpkg. Attempting to install a compiler...".yellow());
+            print_warning("No C++ compiler found for bootstrapping vcpkg. Attempting to install...");
             ensure_compiler_available("gcc").or_else(|_| ensure_compiler_available("clang"))?;
         }
 
+        let bootstrap_spinner = ProgressSpinner::start("Bootstrapping vcpkg");
         match run_command(
             vec![String::from(bootstrap_script)],
             Some(&configured_path),
             None
         ) {
-            Ok(_) => println!("{}", "vcpkg bootstrap completed successfully.".green()),
+            Ok(_) => {
+                bootstrap_spinner.success();
+            },
             Err(e) => {
-                println!("{}", format!("Bootstrapping vcpkg failed: {}", e).yellow());
-                println!("{}", "Will try to use vcpkg anyway if it exists.".yellow());
+                bootstrap_spinner.failure(&e.to_string());
+                print_warning("Bootstrapping failed, but will try to use vcpkg anyway if it exists");
             }
         }
 
@@ -2896,18 +3060,29 @@ fn setup_vcpkg(config: &ProjectConfig, project_path: &Path) -> Result<String, Bo
 
     // Install configured packages
     if !vcpkg_config.packages.is_empty() {
-        println!("{}", "Installing dependencies with vcpkg...".blue());
+        print_substep("Installing dependencies with vcpkg");
 
-        // First update vcpkg itself (quietly)
+        // First update vcpkg (quietly)
+        let update_spinner = ProgressSpinner::start("Updating vcpkg");
         let _ = Command::new(&vcpkg_exe)
             .arg("update")
             .current_dir(&vcpkg_path)
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .status();
+        update_spinner.success();
 
-        // Install packages with clean output
-        run_vcpkg_install(&vcpkg_exe, &vcpkg_path, &vcpkg_config.packages)?;
+        // Install packages
+        let install_spinner = ProgressSpinner::start("Installing packages");
+        match run_vcpkg_install(&vcpkg_exe, &vcpkg_path, &vcpkg_config.packages) {
+            Ok(_) => {
+                install_spinner.success();
+            },
+            Err(e) => {
+                install_spinner.failure(&e.to_string());
+                return Err(e);
+            }
+        }
     }
 
     // Return the path to vcpkg.cmake for CMake integration
@@ -2974,11 +3149,12 @@ fn run_vcpkg_install(
 
     // If all packages are already installed, just show that
     if to_install.is_empty() {
-        println!("{}", "Packages already installed:".green());
-        for pkg in &already_installed {
-            println!("  - {}", pkg.green());
+        if !is_quiet() {
+            print_substep("Packages already installed:");
+            for pkg in &already_installed {
+                print_detailed(&format!("• {}", pkg));
+            }
         }
-        println!("{}", "vcpkg dependencies configured successfully".green());
         return Ok(());
     }
 
@@ -2996,35 +3172,35 @@ fn run_vcpkg_install(
 
             if !status.success() {
                 let stderr = String::from_utf8_lossy(&output.stderr);
-                println!("{}", "Error installing vcpkg packages:".red());
-                println!("{}", stderr);
+                print_error("Error installing vcpkg packages:");
+                print_error(&stderr);
                 return Err("vcpkg install failed".into());
             }
 
             // Show the results
-            if !already_installed.is_empty() {
-                println!("{}", "Packages already installed:".green());
+            if !already_installed.is_empty() && !is_quiet() {
+                print_substep("Packages already installed:");
                 for pkg in already_installed {
-                    println!("  - {}", pkg.green());
+                    print_detailed(&format!("• {}", pkg));
                 }
             }
 
-            if !to_install.is_empty() {
-                println!("{}", "Newly installed packages:".green());
+            if !to_install.is_empty() && !is_quiet() {
+                print_substep("Newly installed packages:");
                 for pkg in to_install {
-                    println!("  - {}", pkg.green());
+                    print_detailed(&format!("• {}", pkg));
                 }
             }
 
-            println!("{}", "vcpkg dependencies configured successfully".green());
             Ok(())
         },
         Err(e) => {
-            println!("{}", format!("Error running vcpkg: {}", e).red());
+            print_error(&format!("Error running vcpkg: {}", e));
             Err(e.into())
         }
     }
 }
+
 
 fn run_vcpkg_command(cmd: Vec<String>, cwd: &str) -> Result<String, Box<dyn std::error::Error>> {
     let mut command = Command::new(&cmd[0]);
@@ -3359,37 +3535,101 @@ fn setup_custom_dependencies(config: &ProjectConfig, project_path: &Path) -> Res
 }
 
 // Enhanced install_dependencies function
-fn install_dependencies(config: &ProjectConfig, project_path: &Path, update: bool) -> Result<HashMap<String, String>, Box<dyn std::error::Error>> {
+fn install_dependencies(
+    config: &ProjectConfig,
+    project_path: &Path,
+    update: bool
+) -> Result<HashMap<String, String>, Box<dyn std::error::Error>> {
     let mut dependencies_info = HashMap::new();
 
     // Set up vcpkg dependencies
-    let vcpkg_toolchain = setup_vcpkg(config, project_path)?;
-    if !vcpkg_toolchain.is_empty() {
-        dependencies_info.insert("vcpkg_toolchain".to_string(), vcpkg_toolchain);
+    if config.dependencies.vcpkg.enabled {
+        print_status("Setting up vcpkg dependencies");
+
+        let spinner = ProgressSpinner::start("Configuring vcpkg");
+        match setup_vcpkg(config, project_path) {
+            Ok(toolchain) => {
+                if !toolchain.is_empty() {
+                    dependencies_info.insert("vcpkg_toolchain".to_string(), toolchain);
+                    spinner.success();
+                } else {
+                    spinner.success(); // Still success but empty result
+                }
+            },
+            Err(e) => {
+                spinner.failure(&e.to_string());
+                return Err(e);
+            }
+        }
     }
 
     // Set up conan dependencies
-    let conan_cmake = setup_conan(config, project_path)?;
-    if !conan_cmake.is_empty() {
-        dependencies_info.insert("conan_cmake".to_string(), conan_cmake);
+    if config.dependencies.conan.enabled && !config.dependencies.conan.packages.is_empty() {
+        print_status("Setting up Conan dependencies");
+
+        let spinner = ProgressSpinner::start("Configuring Conan");
+        match setup_conan(config, project_path) {
+            Ok(cmake_file) => {
+                if !cmake_file.is_empty() {
+                    dependencies_info.insert("conan_cmake".to_string(), cmake_file);
+                    spinner.success();
+                } else {
+                    spinner.success(); // Still success but empty result
+                }
+            },
+            Err(e) => {
+                spinner.failure(&e.to_string());
+                return Err(e);
+            }
+        }
     }
 
     // Set up git dependencies
-    let git_includes = setup_git_dependencies(config, project_path)?;
-    if !git_includes.is_empty() {
-        dependencies_info.insert("git_includes".to_string(), git_includes.join(";"));
+    if !config.dependencies.git.is_empty() {
+        print_status("Setting up git dependencies");
+
+        let spinner = ProgressSpinner::start("Configuring git dependencies");
+        match setup_git_dependencies(config, project_path) {
+            Ok(includes) => {
+                if !includes.is_empty() {
+                    dependencies_info.insert("git_includes".to_string(), includes.join(";"));
+                    spinner.success();
+                } else {
+                    spinner.success(); // Still success but empty result
+                }
+            },
+            Err(e) => {
+                spinner.failure(&e.to_string());
+                return Err(e);
+            }
+        }
     }
 
     // Set up custom dependencies
-    let custom_includes = setup_custom_dependencies(config, project_path)?;
-    if !custom_includes.is_empty() {
-        dependencies_info.insert("custom_includes".to_string(), custom_includes.join(";"));
+    if !config.dependencies.custom.is_empty() {
+        print_status("Setting up custom dependencies");
+
+        let spinner = ProgressSpinner::start("Configuring custom dependencies");
+        match setup_custom_dependencies(config, project_path) {
+            Ok(includes) => {
+                if !includes.is_empty() {
+                    dependencies_info.insert("custom_includes".to_string(), includes.join(";"));
+                    spinner.success();
+                } else {
+                    spinner.success(); // Still success but empty result
+                }
+            },
+            Err(e) => {
+                spinner.failure(&e.to_string());
+                return Err(e);
+            }
+        }
     }
 
     if !dependencies_info.is_empty() {
-        println!("{}", "Dependencies configured successfully".green());
+        print_success("Dependencies configured successfully");
     } else {
-        println!("{}", "No dependencies configured or all dependencies are disabled".blue());
+        print_substep("No dependencies configured or all dependencies are disabled");
     }
 
     Ok(dependencies_info)
@@ -3806,6 +4046,57 @@ fn run_hooks(hooks: &Option<Vec<String>>, project_path: &Path, env_vars: Option<
 
     Ok(())
 }
+
+fn add_error_suggestions(stdout: &str, stderr: &str) {
+    let combined = format!("{}\n{}", stdout, stderr);
+
+    // Look for common error patterns and provide suggestions
+    let mut suggestions = Vec::new();
+
+    if combined.contains("undefined reference") || combined.contains("unresolved external symbol") {
+        suggestions.push("• Check library linking settings in your cbuild.toml");
+        suggestions.push("• Make sure all dependencies are installed with 'cbuild deps'");
+        suggestions.push("• Verify that all required libraries are in your PATH or system paths");
+    }
+
+    if combined.contains("No such file or directory") || combined.contains("cannot find") ||
+        combined.contains("not found") {
+        suggestions.push("• Verify include paths in your cbuild.toml");
+        suggestions.push("• Make sure all dependencies are installed with 'cbuild deps'");
+        suggestions.push("• Check file paths for typos");
+    }
+
+    if combined.contains("constexpr") && combined.contains("not a literal type") {
+        suggestions.push("• Add a constexpr constructor to your class");
+        suggestions.push("• Example: 'constexpr ClassName() = default;'");
+    }
+
+    if combined.contains("template parameter pack") {
+        suggestions.push("• Move the variadic template parameter to the end of the parameter list");
+        suggestions.push("• Example: Change 'template<typename... Ts, typename U>' to 'template<typename U, typename... Ts>'");
+    }
+
+    if combined.contains("undeclared identifier") {
+        suggestions.push("• Make sure the variable is declared before use");
+        suggestions.push("• Check for typos in variable names");
+        suggestions.push("• Verify that required headers are included");
+    }
+
+    if combined.contains("does not name a non-static data member") {
+        suggestions.push("• Declare the member variable in your class definition");
+        suggestions.push("• Example: 'YourType m_member;' in the class body");
+    }
+
+    if !suggestions.is_empty() {
+        println!();
+        print_status("Suggestions to fix the errors:");
+        for suggestion in suggestions {
+            print_substep(suggestion);
+        }
+        println!();
+    }
+}
+
 fn generate_cmake_lists(config: &ProjectConfig, project_path: &Path, variant_name: Option<&str>, workspace_config: Option<&WorkspaceConfig>) -> Result<(), Box<dyn std::error::Error>> {
     let project_config = &config.project;
     let targets_config = &config.targets;
@@ -4789,6 +5080,7 @@ fn get_platform_specific_options(config: &ProjectConfig) -> Vec<String> {
 
     options
 }
+// Enhanced configure_project function with cleaner output
 fn configure_project(
     config: &ProjectConfig,
     project_path: &Path,
@@ -4797,30 +5089,47 @@ fn configure_project(
     cross_target: Option<&str>,
     workspace_config: Option<&WorkspaceConfig>
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // First ensure all required build tools are available
+    // Create a progress tracker for configuration
+    let mut progress = BuildProgress::new(&format!("Configuring {}", config.project.name), 5);
+
+    // Step 1: Ensure tools
+    progress.next_step("Checking required tools");
     ensure_build_tools(config)?;
 
+    // Get compiler and build paths
     let compiler_label = get_effective_compiler_label(config);
-
     let build_dir = config.build.build_dir.as_deref().unwrap_or("build");
-    let build_path = project_path.join(build_dir);
+    let build_path = if let Some(target) = cross_target {
+        project_path.join(format!("{}-{}", build_dir, target))
+    } else {
+        project_path.join(build_dir)
+    };
     fs::create_dir_all(&build_path)?;
 
-    // Create a set of environment variables for hooks
+    // Create environment for hooks
     let mut hook_env = HashMap::new();
     hook_env.insert("PROJECT_PATH".to_string(), project_path.to_string_lossy().to_string());
     hook_env.insert("BUILD_PATH".to_string(), build_path.to_string_lossy().to_string());
     hook_env.insert("CONFIG_TYPE".to_string(), get_build_type(config, config_type));
+
     if let Some(v) = variant_name {
         hook_env.insert("VARIANT".to_string(), v.to_string());
     }
 
-    // Run pre-configure hooks
+    // Step 2: Run pre-configure hooks
+    progress.next_step("Running pre-configure hooks");
     if let Some(hooks) = &config.hooks {
-        run_hooks(&hooks.pre_configure, project_path, Some(hook_env.clone()))?;
+        if let Some(pre_hooks) = &hooks.pre_configure {
+            if !pre_hooks.is_empty() {
+                run_hooks(&Some(pre_hooks.clone()), project_path, Some(hook_env.clone()))?;
+            }
+        }
     }
 
-    // Determine cross-compilation configuration
+    // Step 3: Setup dependencies
+    progress.next_step("Setting up dependencies");
+
+    // Check for cross-compilation config
     let cross_config = if let Some(target) = cross_target {
         if let Some(predefined) = get_predefined_cross_target(target) {
             Some(predefined)
@@ -4843,30 +5152,43 @@ fn configure_project(
         None
     };
 
-    // If cross-compiling, use a subdirectory for the build
+    // If cross-compiling, adjust build path
     let build_path = if let Some(cross_config) = &cross_config {
         let target_build_dir = format!("{}-{}", build_dir, cross_config.target);
         let target_build_path = project_path.join(&target_build_dir);
         fs::create_dir_all(&target_build_path)?;
+
+        if !is_quiet() {
+            print_substep(&format!("Using cross-compilation target: {}",
+                                   cross_config.target));
+        }
+
         target_build_path
     } else {
         fs::create_dir_all(&build_path)?;
         build_path
     };
 
-    // Get CMake generator
-    let generator = get_cmake_generator(config)?;
-
-    // Get build type
-    let build_type = get_build_type(config, config_type);
-
-    // Set up dependencies
+    // Setup dependencies
+    let spinner = ProgressSpinner::start("Setting up dependencies");
     let deps_result = install_dependencies(config, project_path, false)?;
+    spinner.success();
+
     let vcpkg_toolchain = deps_result.get("vcpkg_toolchain").cloned().unwrap_or_default();
     let conan_cmake = deps_result.get("conan_cmake").cloned().unwrap_or_default();
 
-    // Generate CMakeLists.txt
+    // Step 4: Generate CMake files
+    progress.next_step("Generating build files");
+
+    let spinner = ProgressSpinner::start("Generating CMakeLists.txt");
     generate_cmake_lists(config, project_path, variant_name, workspace_config)?;
+    spinner.success();
+
+    // Step 5: Run CMake configuration
+    progress.next_step("Running CMake configuration");
+
+    // Get CMake generator
+    let generator = get_cmake_generator(config)?;
 
     // Build CMake command
     let mut cmd = vec!["cmake".to_string(), "..".to_string()];
@@ -4876,6 +5198,7 @@ fn configure_project(
     cmd.push(generator.clone());
 
     // Add build type
+    let build_type = get_build_type(config, config_type);
     cmd.push(format!("-DCMAKE_BUILD_TYPE={}", build_type));
 
     // Add vcpkg toolchain if available
@@ -4884,8 +5207,6 @@ fn configure_project(
     }
 
     // Add compiler specification
-    let is_msvc_style = matches!(compiler_label.to_lowercase().as_str(), "msvc" | "clang-cl");
-
     if let Some((c_comp, cxx_comp)) = map_compiler_label(&compiler_label) {
         cmd.push(format!("-DCMAKE_C_COMPILER={}", c_comp));
         cmd.push(format!("-DCMAKE_CXX_COMPILER={}", cxx_comp));
@@ -4899,7 +5220,7 @@ fn configure_project(
     let config_options = get_config_specific_options(config, &build_type);
     cmd.extend(config_options);
 
-    // Add variant-specific options if a variant is active
+    // Add variant-specific options
     if let Some(variant) = get_active_variant(config, variant_name) {
         apply_variant_settings(&mut cmd, variant, config);
     }
@@ -4907,8 +5228,6 @@ fn configure_project(
     // Add cross-compilation options
     let mut env_vars = None;
     if let Some(cross_config) = &cross_config {
-        println!("{}", format!("Configuring for cross-compilation target: {}", cross_config.target).blue());
-
         // Get cross-compilation CMake options
         let cross_options = setup_cross_compilation(config, cross_config)?;
         cmd.extend(cross_options);
@@ -4917,15 +5236,15 @@ fn configure_project(
         let cross_env = get_cross_compilation_env(cross_config);
         if !cross_env.is_empty() {
             let mut all_env = cross_env;
-            for (k, v) in hook_env {
+            for (k, v) in hook_env.clone() {
                 all_env.insert(k, v);
             }
             env_vars = Some(all_env);
         } else {
-            env_vars = Some(hook_env);
+            env_vars = Some(hook_env.clone());
         }
     } else {
-        env_vars = Some(hook_env);
+        env_vars = Some(hook_env.clone());
     }
 
     // Add custom CMake options
@@ -4939,46 +5258,56 @@ fn configure_project(
         cmd.extend(workspace_options);
     }
 
-    // Run CMake configuration
+    // Run the CMake configuration command
     let cmake_result = run_command(cmd, Some(&build_path.to_string_lossy().to_string()), env_vars.clone());
 
     if let Err(e) = cmake_result {
-        println!("{}", format!("CMake configuration failed: {}", e).red());
-        println!("{}", "Attempting to fix common issues and retry...".yellow());
+        print_warning("CMake configuration failed. Attempting to fix common issues and retry...");
 
-        // Try to recover from common CMake errors
-        if try_fix_cmake_errors(&build_path, is_msvc_style) {
-            // If fixes were applied, try running CMake again
+        if try_fix_cmake_errors(&build_path, is_msvc_style_for_config(config)) {
+            // If fixes were applied, try a simpler configuration
             let mut retry_cmd = vec!["cmake".to_string(), "..".to_string()];
             retry_cmd.push("-G".to_string());
             retry_cmd.push(generator.clone());
             retry_cmd.push(format!("-DCMAKE_BUILD_TYPE={}", build_type));
 
-            // Add other essential options
+            // Add essential options only
             if !vcpkg_toolchain.is_empty() {
                 retry_cmd.push(format!("-DCMAKE_TOOLCHAIN_FILE={}", vcpkg_toolchain));
             }
 
-            // Retry with minimal options
-            println!("{}", "Retrying CMake configuration with minimal options...".blue());
+            print_status("Retrying CMake configuration with minimal options...");
             run_command(retry_cmd, Some(&build_path.to_string_lossy().to_string()), env_vars.clone())?;
         } else {
-            // If we couldn't fix it, return the original error
             return Err(e);
         }
     }
 
     // Run post-configure hooks
     if let Some(hooks) = &config.hooks {
-        run_hooks(&hooks.post_configure, project_path, env_vars)?;
+        if let Some(post_hooks) = &hooks.post_configure {
+            if !post_hooks.is_empty() {
+                print_substep("Running post-configure hooks");
+                run_hooks(&Some(post_hooks.clone()), project_path, env_vars)?;
+            }
+        }
     }
 
-    println!("{}", format!("Project configured with generator: {} ({})", generator, build_type).green());
-    if let Some(variant_name) = variant_name {
-        println!("{}", format!("Using build variant: {}", variant_name).green());
-    }
-    if let Some(cross_config) = &cross_config {
-        println!("{}", format!("Cross-compilation target: {}", cross_config.target).green());
+    // Complete progress
+    progress.complete();
+
+    // Show configuration summary
+    if !is_quiet() {
+        print_status(&format!("Project configured with generator: {} ({})",
+                              generator, build_type));
+
+        if let Some(variant_name) = variant_name {
+            print_substep(&format!("Using build variant: {}", variant_name));
+        }
+
+        if let Some(cross_config) = &cross_config {
+            print_substep(&format!("Cross-compilation target: {}", cross_config.target));
+        }
     }
 
     Ok(())
@@ -5086,6 +5415,7 @@ fn clean_project(
     config_type: Option<&str>,
     cross_target: Option<&str>
 ) -> Result<(), Box<dyn std::error::Error>> {
+    // Calculate paths
     let build_dir = config.build.build_dir.as_deref().unwrap_or(DEFAULT_BUILD_DIR);
     let build_path = if let Some(target) = cross_target {
         project_path.join(format!("{}-{}", build_dir, target))
@@ -5093,33 +5423,58 @@ fn clean_project(
         project_path.join(build_dir)
     };
 
-    // Create a set of environment variables for hooks
+    // Create environment for hooks
     let mut hook_env = HashMap::new();
     hook_env.insert("PROJECT_PATH".to_string(), project_path.to_string_lossy().to_string());
     hook_env.insert("BUILD_PATH".to_string(), build_path.to_string_lossy().to_string());
+
     if let Some(c) = config_type {
         hook_env.insert("CONFIG_TYPE".to_string(), c.to_string());
     }
+
     if let Some(t) = cross_target {
         hook_env.insert("TARGET".to_string(), t.to_string());
     }
 
     // Run pre-clean hooks
     if let Some(hooks) = &config.hooks {
-        run_hooks(&hooks.pre_clean, project_path, Some(hook_env.clone()))?;
+        if let Some(pre_hooks) = &hooks.pre_clean {
+            if !pre_hooks.is_empty() {
+                print_header("Pre-clean Hooks");
+                run_hooks(&Some(pre_hooks.clone()), project_path, Some(hook_env.clone()))?;
+            }
+        }
     }
 
+    // Perform the clean operation
     if build_path.exists() {
-        println!("{}", format!("Removing build directory: {}", build_path.display()).blue());
-        fs::remove_dir_all(&build_path)?;
-        println!("{}", "Clean completed".green());
+        print_status(&format!("Cleaning project: {}", format_project_name(&config.project.name)));
+        print_substep(&format!("Removing build directory: {}", build_path.display()));
+
+        let spinner = ProgressSpinner::start("Removing build files");
+        match fs::remove_dir_all(&build_path) {
+            Ok(_) => {
+                spinner.success();
+                print_success("Clean completed");
+            },
+            Err(e) => {
+                spinner.failure(&e.to_string());
+                return Err(format!("Failed to remove build directory: {}", e).into());
+            }
+        }
     } else {
-        println!("{}", "Nothing to clean".blue());
+        print_status(&format!("Project: {}", format_project_name(&config.project.name)));
+        print_substep("Nothing to clean (build directory does not exist)");
     }
 
     // Run post-clean hooks
     if let Some(hooks) = &config.hooks {
-        run_hooks(&hooks.post_clean, project_path, Some(hook_env))?;
+        if let Some(post_hooks) = &hooks.post_clean {
+            if !post_hooks.is_empty() {
+                print_header("Post-clean Hooks");
+                run_hooks(&Some(post_hooks.clone()), project_path, Some(hook_env))?;
+            }
+        }
     }
 
     Ok(())
@@ -5155,18 +5510,24 @@ fn run_project(
     args: &[String],
     workspace_config: Option<&WorkspaceConfig>
 ) -> Result<(), Box<dyn std::error::Error>> {
+    // Calculate paths
     let build_dir = config.build.build_dir.as_deref().unwrap_or(DEFAULT_BUILD_DIR);
     let build_path = project_path.join(build_dir);
     let project_name = &config.project.name;
     let build_type = get_build_type(config, config_type);
     let bin_dir = config.output.bin_dir.as_deref().unwrap_or(DEFAULT_BIN_DIR);
 
+    print_header(&format!("Running: {}", format_project_name(project_name)));
+
     // Make sure the project is built
     if !build_path.exists() || !build_path.join("CMakeCache.txt").exists() {
+        print_warning("Project not built yet. Building first...");
         build_project(config, project_path, config_type, variant_name, None, workspace_config)?;
     }
 
     // Generate all possible executable paths
+    let spinner = ProgressSpinner::start("Locating executable");
+
     let mut executable_paths = Vec::new();
 
     // Path from build logs
@@ -5182,7 +5543,7 @@ fn run_project(
     executable_paths.push(build_path.join(&build_type).join(project_name));
     executable_paths.push(build_path.join(&build_type).join(format!("{}.exe", project_name)));
 
-    // Check for target name other than project name (default)
+    // Check for target name other than project name
     if config.targets.contains_key("default") && project_name != "default" {
         executable_paths.push(build_path.join(bin_dir).join("default.exe"));
         executable_paths.push(build_path.join(bin_dir).join("default"));
@@ -5192,23 +5553,12 @@ fn run_project(
         executable_paths.push(build_path.join(&build_type).join("default.exe"));
     }
 
-    // Debug: List all checked paths
-    println!("{}", "Searching for executable in:".blue());
-    for path in &executable_paths {
-        println!("  - {} {}", path.display(), if path.exists() { "✓".green() } else { "✗".red() });
-    }
-
     // Find the first executable that exists
     let mut executable_path = None;
     for path in &executable_paths {
-        if path.exists() {
-            if is_executable(path) {
-                executable_path = Some(path.clone());
-                println!("{}", format!("Found executable: {}", path.display()).green());
-                break;
-            } else {
-                println!("{}", format!("Found file but not executable: {}", path.display()).yellow());
-            }
+        if path.exists() && is_executable(path) {
+            executable_path = Some(path.clone());
+            break;
         }
     }
 
@@ -5216,16 +5566,12 @@ fn run_project(
     if executable_path.is_none() {
         let bin_path = build_path.join(bin_dir);
         if bin_path.exists() {
-            println!("{}", format!("Searching for any executable in {}", bin_path.display()).blue());
-
-            // Look for any .exe file in the bin directory
             if let Ok(entries) = fs::read_dir(&bin_path) {
                 for entry in entries {
                     if let Ok(entry) = entry {
                         let path = entry.path();
-                        if path.is_file() && path.extension().map_or(false, |ext| ext == "exe") {
+                        if path.is_file() && is_executable(&path) {
                             executable_path = Some(path.clone());
-                            println!("{}", format!("Found executable: {}", path.display()).green());
                             break;
                         }
                     }
@@ -5234,87 +5580,109 @@ fn run_project(
         }
     }
 
-    let executable = match executable_path {
-        Some(path) => path,
-        None => {
-            // One last attempt - find any executable in the build directory
-            let mut found = None;
+    // One last attempt - recursive search
+    if executable_path.is_none() {
+        let mut found = None;
 
-            // Walk the build directory recursively
-            fn find_executables(dir: &Path, found: &mut Option<PathBuf>) {
-                if let Ok(entries) = fs::read_dir(dir) {
-                    for entry in entries {
-                        if let Ok(entry) = entry {
-                            let path = entry.path();
+        fn find_executables(dir: &Path, found: &mut Option<PathBuf>) {
+            if let Ok(entries) = fs::read_dir(dir) {
+                for entry in entries {
+                    if let Ok(entry) = entry {
+                        let path = entry.path();
 
-                            if path.is_dir() {
-                                find_executables(&path, found);
-                            } else if path.is_file() &&
-                                (path.extension().map_or(false, |ext| ext == "exe") || is_executable(&path)) {
-                                *found = Some(path.clone());
-                                return;
-                            }
+                        if path.is_dir() {
+                            find_executables(&path, found);
+                        } else if path.is_file() && is_executable(&path) {
+                            *found = Some(path.clone());
+                            return;
                         }
                     }
                 }
             }
+        }
 
-            find_executables(&build_path, &mut found);
+        find_executables(&build_path, &mut found);
+        executable_path = found;
+    }
 
-            match found {
-                Some(path) => {
-                    println!("{}", format!("Found executable by recursive search: {}", path.display()).green());
-                    path
-                },
-                None => return Err(format!("Executable not found. Make sure the project is built successfully.").into())
-            }
+    // Check if we found an executable
+    let executable = match executable_path {
+        Some(path) => {
+            spinner.success();
+            print_substep(&format!("Found executable: {}", path.display()));
+            path
+        },
+        None => {
+            spinner.failure("No executable found");
+            return Err("Executable not found. Make sure the project is built successfully.".into());
         }
     };
 
-    // Create a set of environment variables for hooks
+    // Create environment for hooks
     let mut hook_env = HashMap::new();
     hook_env.insert("PROJECT_PATH".to_string(), project_path.to_string_lossy().to_string());
     hook_env.insert("BUILD_PATH".to_string(), build_path.to_string_lossy().to_string());
     hook_env.insert("CONFIG_TYPE".to_string(), build_type);
     hook_env.insert("EXECUTABLE".to_string(), executable.to_string_lossy().to_string());
+
     if let Some(v) = variant_name {
         hook_env.insert("VARIANT".to_string(), v.to_string());
     }
 
     // Run pre-run hooks
     if let Some(hooks) = &config.hooks {
-        run_hooks(&hooks.pre_run, project_path, Some(hook_env.clone()))?;
+        if let Some(pre_hooks) = &hooks.pre_run {
+            if !pre_hooks.is_empty() {
+                print_substep("Running pre-run hooks");
+                run_hooks(&Some(pre_hooks.clone()), project_path, Some(hook_env.clone()))?;
+            }
+        }
     }
 
-    if !is_executable(&executable) || executable.extension().map_or(false, |ext| ext == "txt") {
-        return Err(format!("No valid executable found. Build the project first.").into());
+    // Check executable one more time
+    if !is_executable(&executable) {
+        return Err(format!("No valid executable found at {}", executable.display()).into());
     }
 
-    println!("{}", format!("Running: {}", executable.display()).blue());
+    // Run the executable
+    print_status(&format!("Running: {}", executable.display()));
 
-    // Create command with passed arguments
+    if !args.is_empty() {
+        print_substep(&format!("Arguments: {}", args.join(" ")));
+    }
+
+    // Create and run command
     let mut command = Command::new(&executable);
     command.current_dir(project_path);
+
     if !args.is_empty() {
         command.args(args);
-        println!("{}", format!("Arguments: {}", args.join(" ")).blue());
     }
+
+    // Run directly showing full output
+    print_header("Program Output");
 
     let status = command.status()?;
 
     if !status.success() {
-        println!("{}", format!("Program exited with code {}", status.code().unwrap_or(-1)).yellow());
+        print_warning(&format!("Program exited with code {}", status.code().unwrap_or(-1)));
     } else {
-        println!("{}", "Program executed successfully".green());
+        print_success("Program executed successfully");
     }
 
     // Run post-run hooks
     if let Some(hooks) = &config.hooks {
-        run_hooks(&hooks.post_run, project_path, Some(hook_env))?;
+        if let Some(post_hooks) = &hooks.post_run {
+            if !post_hooks.is_empty() {
+                print_substep("Running post-run hooks");
+                run_hooks(&Some(post_hooks.clone()), project_path, Some(hook_env))?;
+            }
+        }
     }
 
     Ok(())
 }
+
 
 fn cache_vcpkg_toolchain_path(path: &Path) {
     let path_str = path.to_string_lossy().to_string();
@@ -6489,6 +6857,7 @@ fn list_project_items(config: &ProjectConfig, what: Option<&str>) -> Result<(), 
 
 // Utility functions
 // Enhanced run_command function with Rust-style C++ error formatting
+// Enhanced run_command function with cleaner output
 fn run_command(
     cmd: Vec<String>,
     cwd: Option<&str>,
@@ -6498,130 +6867,134 @@ fn run_command(
         return Err("Cannot run empty command".into());
     }
 
-    // Check if this is a CMake command or other verbose compiler command
-    let is_cmake = cmd[0].contains("cmake");
-    let is_compiler_command = cmd[0].contains("cl") || cmd[0].contains("clang") || cmd[0].contains("gcc");
+    // Get command type characteristics
+    let command_name = &cmd[0];
+    let is_cmake = command_name.contains("cmake");
+    let is_compiler_command = command_name.contains("cl") ||
+        command_name.contains("clang") ||
+        command_name.contains("gcc");
     let is_verbose_command = is_cmake || is_compiler_command;
     let is_build_command = is_cmake && cmd.len() > 1 && cmd.contains(&"--build".to_string());
-    let show_output = false;
 
-    let is_vcpkg_install = cmd.len() >= 2 &&
-        (cmd[0].contains("vcpkg") ||
-            cmd[0].ends_with("vcpkg.exe")) &&
-        cmd[1] == "install";
+    // Track command using a cache key to avoid duplicates
+    let cache_key = cmd.join(" ");
+    let already_executed = {
+        let cache = EXECUTED_COMMANDS.lock().unwrap();
+        cache.contains(&cache_key)
+    };
 
-    if is_vcpkg_install {
-        // For vcpkg install, we'll run the command but handle output specially
-        let mut command = Command::new(&cmd[0]);
-        command.args(&cmd[1..]);
-        if let Some(dir) = cwd {
-            command.current_dir(dir);
-        }
-        if let Some(env_vars) = env {
-            for (key, value) in env_vars {
-                command.env(key, value);
-            }
-        }
-
-        command.stdout(Stdio::piped());
-        command.stderr(Stdio::piped());
-
-        let output = command.output()?;
-        let status = output.status;
-
-        // If command failed, show error
-        if !status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-            println!("{}", "vcpkg install failed:".red());
-            println!("{}", stderr);
-            return Err("vcpkg install command failed".into());
-        }
-
-        // Process the packages mentioned in the command
-        let packages: Vec<&str> = cmd.iter()
-            .skip(2) // Skip "vcpkg install"
-            .map(|s| s.as_str())
-            .collect();
-
-        println!("{}", "Packages already installed:".green());
-        for pkg in packages {
-            println!("  - {}", pkg.green());
-        }
-
-        println!("{}", "vcpkg dependencies configured successfully".green());
+    if already_executed && !is_build_command {
+        print_detailed(&format!("Skipping already executed: {}", command_name));
         return Ok(());
     }
 
-    // Always capture output
+    // Show appropriate message based on command type
+    if is_build_command {
+        print_step("Building", "...");
+    } else if is_verbose_command && !is_verbose() {
+        // For verbose commands, just show a simple message in normal mode
+        print_step(&format!("Running {}", command_name), "");
+    } else {
+        // For non-verbose commands or in verbose mode, show the full command
+        if is_verbose() {
+            print_step("Executing", &cmd.join(" "));
+        } else {
+            // Show a more compact representation
+            let compact_cmd = if cmd.len() > 3 {
+                format!("{} {} ...", cmd[0], cmd[1])
+            } else {
+                cmd.join(" ")
+            };
+            print_step("Executing", &compact_cmd);
+        }
+    }
+
+    // For long-running operations, show a spinner
+    let spinner = if is_build_command || is_cmake {
+        let msg = if is_build_command {
+            "Building project".to_string()
+        } else {
+            format!("Running {}", command_name)
+        };
+        Some(ProgressSpinner::start(&msg))
+    } else {
+        None
+    };
+
+    // Create and execute the command
     let mut command = Command::new(&cmd[0]);
     command.args(&cmd[1..]);
+
     if let Some(dir) = cwd {
         command.current_dir(dir);
     }
+
     if let Some(env_vars) = env {
         for (key, value) in env_vars {
             command.env(key, value);
         }
     }
 
-    // Always pipe output so we can process it
+    // Always capture output for processing
     command.stdout(Stdio::piped());
     command.stderr(Stdio::piped());
 
-    // For verbose commands, just show "executing" and status
-    if is_verbose_command && !show_output {
-        if is_build_command {
-            println!("{}", "Building...".blue());
-        } else {
-            println!("{}", format!("Executing: {}...", cmd[0]).blue());
-        }
-    } else {
-        println!("{}", format!("Executing: {}", cmd.join(" ")).blue());
-    }
+    // Execute the command
+    match command.output() {
+        Ok(output) => {
+            let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+            let status = output.status;
 
-
-
-    let output = command.output()?;
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-
-    // If the command failed, format errors in cbuild style directly in console
-    if !output.status.success() {
-        // For build failures, extract and format key errors
-        if is_cmake || is_compiler_command {
-            // Write full error output to a log file for reference
-            let log_file = format!("cbuild_error_{}.log", chrono::Local::now().format("%Y%m%d_%H%M%S"));
-            if let Ok(mut file) = File::create(&log_file) {
-                let _ = file.write_all(format!("STDOUT:\n{}\n\nSTDERR:\n{}", stdout, stderr).as_bytes());
+            // Stop spinner if any
+            if let Some(s) = spinner {
+                if status.success() {
+                    s.success();
+                } else {
+                    s.failure("Command failed");
+                }
             }
 
-            // Extract the main error files and patterns
-            println!("{}", "Build failed with the following errors:".red().bold());
+            // If successful
+            if status.success() {
+                // Print output in verbose mode
+                if is_verbose() && !stdout.is_empty() {
+                    println!("{}", stdout);
+                }
+                Ok(())
+            } else {
+                // If build command failed, format errors instead of logging
+                if is_cmake || is_compiler_command {
+                    print_error("Build failed with the following errors:");
 
-            // Extract key errors from the build output
-            let error_count = display_syntax_errors(&stdout, &stderr);
+                    // Extract and format errors
+                    let error_count = display_syntax_errors(&stdout, &stderr);
 
-            // If no errors were found using syntax patterns, show the raw error output
-            if error_count == 0 {
-                display_raw_errors(&stdout, &stderr);
+                    // If no structured errors found, show raw errors
+                    if error_count == 0 {
+                        display_raw_errors(&stdout, &stderr);
+                    }
+                } else {
+                    // For other commands, print error messages
+                    if !stderr.is_empty() {
+                        print_error(&stderr);
+                    } else {
+                        print_error(&format!("Command failed with status: {}", status));
+                    }
+                }
+
+                Err("Command failed".into())
             }
-
-            println!("{}", format!("Full error details written to {}", log_file).yellow());
-        } else {
-            // For other commands, print the regular output
-            println!("{}", stderr);
+        },
+        Err(e) => {
+            // Command failed to execute
+            if let Some(s) = spinner {
+                s.failure(&e.to_string());
+            }
+            print_error(&format!("Failed to execute command: {}", e));
+            Err(e.into())
         }
-        return Err("Command failed".into());
     }
-
-    // Print output only when explicitly asked or for non-verbose commands
-    if show_output || (!is_verbose_command && !stdout.is_empty()) {
-        println!("{}", stdout);
-    } else if !is_verbose_command {
-        println!("{}", format!("Command '{}' completed successfully.", cmd[0]).green());
-    }
-
-    Ok(())
 }
 
 
@@ -6633,22 +7006,16 @@ fn display_syntax_errors(stdout: &str, stderr: &str) -> usize {
         (regex::Regex::new(r"(?m)(.*?):(\d+):(\d+):\s+(error|warning|note):\s+(.*)").unwrap(), true),
 
         // MSVC style errors
-        (regex::Regex::new(r"(?m)(.*?)\((\d+),(\d+)\):\s+(error|warning|note):\s+(.*)").unwrap(), true),
+        (regex::Regex::new(r"(?m)(.*?)\((\d+),(\d+)\):\s+(error|warning|note)(?:\s+[A-Z]\d+)?: (.*)").unwrap(), true),
 
-        // Rust-style errors
+        // MSVC style errors without column
+        (regex::Regex::new(r"(?m)(.*?)\((\d+)\):\s+(error|warning|note)(?:\s+[A-Z]\d+)?: (.*)").unwrap(), true),
+
+        // Other common patterns
         (regex::Regex::new(r"(?m)^.*error(?:\[E\d+\])?:\s+(.*)$").unwrap(), true),
-
-        // Generic errors
         (regex::Regex::new(r"(?m)^.*Error:\s+(.*)$").unwrap(), true),
-
-        // Ninja errors
         (regex::Regex::new(r"(?m)^ninja:\s+error:\s+(.*)$").unwrap(), true),
-
-        // CMake errors
         (regex::Regex::new(r"(?m)^CMake\s+Error:\s+(.*)$").unwrap(), true),
-
-        // Missing file errors
-        (regex::Regex::new(r"(?m).*(?:No such file or directory|cannot find|not found).*").unwrap(), false),
     ];
 
     // Used to track unique errors to avoid duplicates
@@ -6656,119 +7023,945 @@ fn display_syntax_errors(stdout: &str, stderr: &str) -> usize {
     let mut displayed_error_count = 0;
     let max_errors_to_display = 10;
 
-    // Look in stderr first (more likely to contain actual errors)
-    for (pattern, is_important) in &error_patterns {
+    // Track error categories for later generating generic suggestions
+    let mut error_categories = HashSet::new();
+
+    // Process stderr first
+    let mut errors = Vec::new();
+
+    for (pattern, _) in &error_patterns {
         for cap in pattern.captures_iter(stderr) {
-            // If we already have enough errors, stop
-            if displayed_error_count >= max_errors_to_display {
-                break;
-            }
-
-            // Format depends on the pattern matched
-            let error_text = if cap.len() >= 6 {
-                // clang-style error with file, line, column
+            if cap.len() >= 6 {
+                // clang/GCC style error with file, line, column
                 let file = &cap[1];
-                let line = &cap[2];
-                let column = &cap[3];
+                let line = cap[2].parse::<usize>().unwrap_or(0);
+                let column = cap[3].parse::<usize>().unwrap_or(0);
                 let error_type = &cap[4];
                 let message = &cap[5];
 
-                format!("{}:{}:{}: {}: {}", file, line, column, error_type, message)
-            } else if cap.len() >= 2 {
-                // Error message without file location
-                cap[0].to_string()
-            } else {
-                continue;
-            };
+                let error_key = format!("{}:{}:{}:{}", file, line, column, message);
+                if !seen_errors.contains(&error_key) {
+                    seen_errors.insert(error_key);
+                    errors.push((file.to_string(), line, column, error_type.to_string(), message.to_string()));
 
-            // Deduplicate errors
-            let error_key = error_text.chars()
-                .filter(|c| !c.is_whitespace())
-                .collect::<String>();
-
-            if !seen_errors.contains(&error_key) {
-                seen_errors.insert(error_key);
-
-                // Format the error nicely
-                println!("  {}", error_text.red());
-
-                // Try to extract the source code line if it exists
-                if cap.len() >= 6 {
-                    let file = &cap[1];
-                    let line_num = cap[2].parse::<usize>().unwrap_or(0);
-
-                    // Try to find the corresponding code in the error output
-                    if let Some(code_line) = extract_source_line(stdout, stderr, file, line_num) {
-                        println!("      | {}", code_line.trim());
-
-                        // Try to create the caret line showing the error position
-                        let column = cap[3].parse::<usize>().unwrap_or(0);
-                        let caret_line = create_caret_line(column, &cap[5]);
-                        println!("      | {}", caret_line.red());
+                    // Categorize the error
+                    let categories = categorize_error(message);
+                    for category in categories {
+                        error_categories.insert(category);
                     }
                 }
-
-                displayed_error_count += 1;
-            }
-        }
-
-        // Also check stdout for errors (some tools output errors to stdout)
-        for cap in pattern.captures_iter(stdout) {
-            // If we already have enough errors, stop
-            if displayed_error_count >= max_errors_to_display {
-                break;
-            }
-
-            // Format depends on the pattern matched
-            let error_text = if cap.len() >= 6 {
-                // clang-style error with file, line, column
+            } else if cap.len() >= 5 {
+                // MSVC style error without column
                 let file = &cap[1];
-                let line = &cap[2];
-                let column = &cap[3];
-                let error_type = &cap[4];
-                let message = &cap[5];
+                let line = cap[2].parse::<usize>().unwrap_or(0);
+                let error_type = &cap[3];
+                let message = &cap[4];
 
-                format!("{}:{}:{}: {}: {}", file, line, column, error_type, message)
-            } else if cap.len() >= 2 {
-                // Error message without file location
-                cap[0].to_string()
-            } else {
-                continue;
-            };
+                let error_key = format!("{}:{}:{}", file, line, message);
+                if !seen_errors.contains(&error_key) {
+                    seen_errors.insert(error_key);
+                    errors.push((file.to_string(), line, 1, error_type.to_string(), message.to_string()));
 
-            // Deduplicate errors
-            let error_key = error_text.chars()
-                .filter(|c| !c.is_whitespace())
-                .collect::<String>();
-
-            if !seen_errors.contains(&error_key) {
-                seen_errors.insert(error_key);
-
-                // Format the error nicely
-                println!("  {}", error_text.red());
-
-                // Try to extract the source code line if it exists
-                if cap.len() >= 6 {
-                    let file = &cap[1];
-                    let line_num = cap[2].parse::<usize>().unwrap_or(0);
-
-                    // Try to find the corresponding code in the error output
-                    if let Some(code_line) = extract_source_line(stdout, stderr, file, line_num) {
-                        println!("      | {}", code_line.trim());
-
-                        // Try to create the caret line showing the error position
-                        let column = cap[3].parse::<usize>().unwrap_or(0);
-                        let caret_line = create_caret_line(column, &cap[5]);
-                        println!("      | {}", caret_line.red());
+                    // Categorize the error
+                    let categories = categorize_error(message);
+                    for category in categories {
+                        error_categories.insert(category);
                     }
                 }
+            } else if cap.len() >= 2 {
+                // Simple error without file info
+                let message = &cap[0];
 
-                displayed_error_count += 1;
+                if !seen_errors.contains(message) {
+                    seen_errors.insert(message.to_string());
+                    errors.push(("unknown".to_string(), 0, 0, "error".to_string(), message.to_string()));
+
+                    // Categorize the error
+                    let categories = categorize_error(message);
+                    for category in categories {
+                        error_categories.insert(category);
+                    }
+                }
             }
         }
     }
 
+    // Process stdout only if we didn't find enough errors in stderr
+    if errors.len() < max_errors_to_display {
+        for (pattern, _) in &error_patterns {
+            for cap in pattern.captures_iter(stdout) {
+                if errors.len() >= max_errors_to_display {
+                    break;
+                }
+
+                if cap.len() >= 6 {
+                    // clang/GCC style error
+                    let file = &cap[1];
+                    let line = cap[2].parse::<usize>().unwrap_or(0);
+                    let column = cap[3].parse::<usize>().unwrap_or(0);
+                    let error_type = &cap[4];
+                    let message = &cap[5];
+
+                    let error_key = format!("{}:{}:{}:{}", file, line, column, message);
+                    if !seen_errors.contains(&error_key) {
+                        seen_errors.insert(error_key);
+                        errors.push((file.to_string(), line, column, error_type.to_string(), message.to_string()));
+
+                        // Categorize the error
+                        let categories = categorize_error(message);
+                        for category in categories {
+                            error_categories.insert(category);
+                        }
+                    }
+                } else if cap.len() >= 5 {
+                    // MSVC style without column
+                    let file = &cap[1];
+                    let line = cap[2].parse::<usize>().unwrap_or(0);
+                    let error_type = &cap[3];
+                    let message = &cap[4];
+
+                    let error_key = format!("{}:{}:{}", file, line, message);
+                    if !seen_errors.contains(&error_key) {
+                        seen_errors.insert(error_key);
+                        errors.push((file.to_string(), line, 1, error_type.to_string(), message.to_string()));
+
+                        // Categorize the error
+                        let categories = categorize_error(message);
+                        for category in categories {
+                            error_categories.insert(category);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Sort errors by file and line number
+    errors.sort_by(|a, b| {
+        let file_cmp = a.0.cmp(&b.0);
+        if file_cmp != std::cmp::Ordering::Equal {
+            return file_cmp;
+        }
+
+        let line_cmp = a.1.cmp(&b.1);
+        if line_cmp != std::cmp::Ordering::Equal {
+            return line_cmp;
+        }
+
+        a.2.cmp(&b.2)
+    });
+
+    // Display errors in Rust style
+    for (file, line, column, error_type, message) in &errors {
+        // Create error code (Rust-like)
+        let error_code = match error_type.as_str() {
+            "error" => format!("E{:04}", hash_error_for_code(message) % 10000),
+            "warning" => format!("W{:04}", hash_error_for_code(message) % 10000),
+            _ => format!("N{:04}", hash_error_for_code(message) % 10000),
+        };
+
+        // Format file path for display - just show filename and parent directory
+        let path = std::path::Path::new(file);
+        let file_display = if let Some(file_name) = path.file_name() {
+            if let Some(parent) = path.parent() {
+                if let Some(parent_name) = parent.file_name() {
+                    format!("{}/{}", parent_name.to_string_lossy(), file_name.to_string_lossy())
+                } else {
+                    file_name.to_string_lossy().to_string()
+                }
+            } else {
+                file_name.to_string_lossy().to_string()
+            }
+        } else {
+            file.clone()
+        };
+
+        // Print header line
+        if error_type == "error" {
+            println!("{}[{}]: {}", "error".red().bold(), error_code.red(), message);
+        } else if error_type == "warning" {
+            println!("{}[{}]: {}", "warning".yellow().bold(), error_code.yellow(), message);
+        } else {
+            println!("{}[{}]: {}", "note".blue().bold(), error_code.blue(), message);
+        }
+
+        // Print location
+        println!(" {} {}:{}:{}", "-->".blue().bold(), file, line, column);
+
+        // Get source line if available
+        if let Some(source_line) = extract_source_line(stdout, stderr, file, *line) {
+            println!("  {}| {}", line.to_string().blue().bold(), source_line.trim());
+
+            // Create caret line
+            let mut caret_line = String::new();
+            for _ in 0..*column {
+                caret_line.push(' ');
+            }
+            caret_line.push('^');
+
+            // Add wavy underlines for longer errors
+            let error_len = message.len().min(15);
+            for _ in 0..error_len {
+                caret_line.push('~');
+            }
+
+            // Print with the correct color
+            if error_type == "error" {
+                println!("  {}| {}", " ".blue().bold(), caret_line.red().bold());
+            } else if error_type == "warning" {
+                println!("  {}| {}", " ".blue().bold(), caret_line.yellow().bold());
+            } else {
+                println!("  {}| {}", " ".blue().bold(), caret_line.blue().bold());
+            }
+        }
+
+        // Get specific help message for this error
+        let help = get_help_for_error(message);
+        if !help.is_empty() {
+            println!("  {} {}", "help:".green().bold(), help);
+        }
+
+        println!();  // Add empty line between errors
+        displayed_error_count += 1;
+    }
+
+    // Add general suggestions for each error category
+    if displayed_error_count > 0 {
+        print_general_suggestions(&error_categories);
+    }
+
     displayed_error_count
+}
+
+
+fn print_general_suggestions(error_categories: &HashSet<String>) {
+    let categories: Vec<String> = error_categories.iter().cloned().collect();
+
+    println!("{}", "Help for common errors:".yellow().bold());
+
+    let mut printed_help = false;
+
+    // --- Template Errors ---
+    if categories.iter().any(|c| c.starts_with("template_")) {
+        println!("{}", "● For template errors:".bold());
+
+        if categories.contains(&"template_parameter_pack".to_string()) {
+            println!("  - Variadic templates (template<typename... Args>) must be the last parameter");
+            println!("  - Change `template<typename... T, typename U>` to `template<typename U, typename... T>`");
+            println!("  - Each parameter pack expansion must have matching pack sizes");
+        }
+
+        if categories.contains(&"template_deduction".to_string()) {
+            println!("  - When template argument deduction fails, specify arguments explicitly");
+            println!("  - Example: `func<int, float>(a, b)` instead of just `func(a, b)`");
+            println!("  - Check if function parameters match the template parameter types");
+        }
+
+        if categories.contains(&"template_specialization".to_string()) {
+            println!("  - Template specializations must come after the primary template");
+            println!("  - Partial specializations only work for class templates, not function templates");
+            println!("  - Ensure specialization syntax is correct: `template<> class MyClass<int> {{...}}`");
+        }
+
+        if categories.contains(&"template_instantiation".to_string()) {
+            println!("  - Check for errors in the template body that only appear when instantiated");
+            println!("  - Template code is only checked when actually instantiated with specific types");
+            println!("  - Templates used with incompatible types will fail at instantiation time");
+        }
+
+        println!("  - Remember that template code must be in header files or explicitly instantiated");
+        println!("  - Use concepts (C++20) or SFINAE to restrict template usage to valid types");
+        println!();
+        printed_help = true;
+    }
+
+    // --- Constexpr Errors ---
+    if categories.iter().any(|c| c.starts_with("constexpr_")) {
+        println!("{}", "● For constexpr errors:".bold());
+
+        if categories.contains(&"constexpr_not_literal".to_string()) {
+            println!("  - A class used with constexpr must be a literal type, which requires:");
+            println!("    * At least one constexpr constructor");
+            println!("    * A trivial or constexpr destructor");
+            println!("    * All non-static data members must be literal types");
+            println!("  - Example fix: Add `constexpr YourClass() = default;` to your class");
+        }
+
+        if categories.contains(&"constexpr_invalid".to_string()) || categories.contains(&"constexpr_non_constexpr".to_string()) {
+            println!("  - Constexpr functions can only contain:");
+            println!("    * Literal values and constexpr variables");
+            println!("    * Calls to other constexpr functions");
+            println!("    * Simple control flow (if/else, for loops with known bounds)");
+            println!("  - Cannot use: dynamic memory allocation, virtual functions, try/catch");
+        }
+
+        if categories.contains(&"constexpr_if".to_string()) {
+            println!("  - `if constexpr` requires a constant expression condition");
+            println!("  - Use to conditionally compile code based on template parameters");
+        }
+
+        println!("  - Consider if constexpr is necessary for your use case");
+        println!("  - C++20 relaxes many constexpr restrictions (dynamic allocation, try/catch)");
+        println!();
+        printed_help = true;
+    }
+
+    // --- Undeclared Identifier Errors ---
+    if categories.iter().any(|c| c.starts_with("undeclared_")) {
+        println!("{}", "● For undeclared identifier errors:".bold());
+
+        if categories.contains(&"undeclared_identifier".to_string()) {
+            println!("  - Ensure the variable or function is declared before use");
+            println!("  - Check for typos in the identifier name");
+            println!("  - Variables declared in inner scopes aren't visible in outer scopes");
+            println!("  - Variables declared in if/for/while conditions are only visible inside");
+        }
+
+        if categories.contains(&"undefined_function".to_string()) || categories.contains(&"undefined_reference".to_string()) {
+            println!("  - Function is declared but not defined (implemented)");
+            println!("  - Ensure the implementation file (.cpp) is included in the build");
+            println!("  - For templates, implementation must be visible at point of instantiation");
+            println!("  - Check that function signature exactly matches the declaration");
+        }
+
+        if categories.contains(&"undefined_type".to_string()) {
+            println!("  - Class/struct/enum type not defined before use");
+            println!("  - Include the header that defines the type");
+            println!("  - Check for missing 'struct'/'class' keywords in C-style code");
+        }
+
+        println!("  - Verify that required headers are included");
+        println!("  - Check if the identifier is in a namespace (use `namespace::identifier`)");
+        println!("  - Consider using forward declarations where appropriate");
+        println!();
+        printed_help = true;
+    }
+
+    // --- Member Errors ---
+    if categories.iter().any(|c| c == "no_member" || c == "class_general" || c == "access_control") {
+        println!("{}", "● For class member errors:".bold());
+
+        if categories.contains(&"no_member".to_string()) {
+            println!("  - The member variable or function doesn't exist in this class");
+            println!("  - Ensure the member is declared in the class definition");
+            println!("  - Check for typos in the member name");
+            println!("  - Member variables must be declared in the class body, not in constructors");
+            println!("  - Example: Add `Type memberName;` to your class definition");
+        }
+
+        if categories.contains(&"access_control".to_string()) {
+            println!("  - Private members can only be accessed within the class itself");
+            println!("  - Protected members can only be accessed by the class and its descendants");
+            println!("  - Consider making the member public or providing accessor methods");
+            println!("  - Friend functions/classes can access private members");
+        }
+
+        if categories.contains(&"constructor".to_string()) {
+            println!("  - Check constructor parameter types match the arguments");
+            println!("  - Default constructor is not generated if any constructor is defined");
+            println!("  - Use = default to explicitly request default constructors");
+            println!("  - Member initializer lists should use : not = and separate with commas");
+        }
+
+        println!("  - Remember that each class instance has its own copy of non-static members");
+        println!("  - Static members must be defined outside the class in a .cpp file");
+        println!("  - Inherited members might be hidden by same-named members in derived classes");
+        println!();
+        printed_help = true;
+    }
+
+    // --- Type Errors ---
+    if categories.iter().any(|c| c.starts_with("type_")) {
+        println!("{}", "● For type conversion and function matching errors:".bold());
+
+        if categories.contains(&"type_conversion".to_string()) {
+            println!("  - Types are incompatible for implicit conversion");
+            println!("  - Use explicit casts: `static_cast<TargetType>(value)`");
+            println!("  - For custom types, consider adding conversion operators or constructors");
+            println!("  - Be careful with numeric conversions that might lose precision");
+        }
+
+        if categories.contains(&"no_matching_function".to_string()) || categories.contains(&"overload_resolution".to_string()) {
+            println!("  - No function exactly matches the argument types you provided");
+            println!("  - Check function parameter types and ensure they match your arguments");
+            println!("  - Look at compiler suggestions for valid function signatures");
+            println!("  - Try explicitly casting arguments to match the expected types");
+        }
+
+        if categories.contains(&"ambiguous_call".to_string()) {
+            println!("  - Multiple overloaded functions could match these arguments");
+            println!("  - Use explicit casts to select a specific overload");
+            println!("  - Make function calls more specific to avoid ambiguity");
+        }
+
+        if categories.contains(&"type_deduction".to_string()) {
+            println!("  - Auto type deduction or template argument deduction failed");
+            println!("  - Specify types explicitly instead of relying on deduction");
+            println!("  - Check that expressions have well-defined types");
+        }
+
+        if categories.contains(&"incomplete_type".to_string()) {
+            println!("  - Using a type that's only forward-declared, not fully defined");
+            println!("  - Include the complete definition before using the type");
+            println!("  - Forward declarations only work for pointers/references, not full objects");
+        }
+
+        println!("  - Consider using `auto` for complex types or template results");
+        println!("  - Use `decltype` to refer to the exact type of another variable");
+        println!("  - Check for const/volatile qualifiers that might affect matching");
+        println!();
+        printed_help = true;
+    }
+
+    // --- Concept Errors ---
+    if categories.iter().any(|c| c.starts_with("concept_")) {
+        println!("{}", "● For C++20 concept and constraints errors:".bold());
+
+        println!("  - Define concepts before using them in requires clauses");
+        println!("  - Example: `template<typename T> concept Addable = requires(T a, T b) {{ a + b; }};`");
+        println!("  - Make sure type constraints are satisfied by the provided types");
+        println!("  - Check if you need to include additional headers for concept definitions");
+        println!("  - Concept requirements are strictly checked - no implicit conversions");
+        println!("  - Use `static_assert` with concepts to provide better error messages");
+        println!();
+        printed_help = true;
+    }
+
+    // --- Initialization Errors ---
+    if categories.contains(&"initialization".to_string()) || categories.contains(&"constructor_init".to_string()) {
+        println!("{}", "● For initialization errors:".bold());
+
+        println!("  - Check constructor initializer list syntax: `Constructor() : member(value) `");
+        println!("  - Members should be initialized in the same order as declared in the class");
+        println!("  - Initialize all members either in the initializer list or in the constructor body");
+        println!("  - Use uniform initialization syntax with braces for clearer initialization");
+        println!("  - Remember that class members without initializers get default-initialized");
+        println!();
+        printed_help = true;
+    }
+
+    // --- Lambda Errors ---
+    if categories.iter().any(|c| c.starts_with("lambda_")) {
+        println!("{}", "● For lambda expression errors:".bold());
+
+        println!("  - Capture variables from enclosing scope that you use inside the lambda");
+        println!("  - Use [=] to capture by value or [&] to capture by reference");
+        println!("  - For specific variables: [x, &y] captures x by value, y by reference");
+        println!("  - Capture this pointer explicitly with [this] if needed");
+        println!("  - Lambda parameters and return type can be explicitly specified");
+        println!("  - Mutable lambdas allow modifying captured-by-value variables");
+        println!();
+        printed_help = true;
+    }
+
+    // --- STL Errors ---
+    if categories.contains(&"stl".to_string()) || categories.iter().any(|c| c.starts_with("stl_")) {
+        println!("{}", "● For Standard Library (STL) errors:".bold());
+
+        if categories.contains(&"stl_iterator".to_string()) {
+            println!("  - Don't dereference end() iterators or invalidated iterators");
+            println!("  - Operations like erase() invalidate iterators to the erased element");
+            println!("  - Container modifications may invalidate iterators (especially for vector)");
+            println!("  - Use iterator ranges carefully: [begin, end) where end is not included");
+        }
+
+        if categories.contains(&"stl_out_of_range".to_string()) {
+            println!("  - Array or container access is out of valid range");
+            println!("  - Use .at() instead of [] for bounds checking");
+            println!("  - Always check container size before accessing elements");
+        }
+
+        println!("  - Use container member functions like find() instead of algorithms when available");
+        println!("  - STL algorithms expect specific iterator categories (input, forward, etc.)");
+        println!("  - Use std::make_shared and std::make_unique for smart pointers");
+        println!();
+        printed_help = true;
+    }
+
+    // --- Memory Errors ---
+    if categories.iter().any(|c| c.starts_with("memory")) {
+        println!("{}", "● For memory management errors:".bold());
+
+        println!("  - Match each new with exactly one delete (or use smart pointers)");
+        println!("  - Use new[] with delete[] for arrays, regular new with delete for single objects");
+        println!("  - Check for null pointers before dereferencing");
+        println!("  - Consider using smart pointers instead of raw pointers");
+        println!("  - std::unique_ptr for exclusive ownership");
+        println!("  - std::shared_ptr for shared ownership");
+        println!("  - std::weak_ptr for temporary references to shared objects");
+        println!();
+        printed_help = true;
+    }
+
+    // --- Linker Errors ---
+    if categories.contains(&"linker".to_string()) || categories.iter().any(|c| c.starts_with("linker_")) {
+        println!("{}", "● For linker errors:".bold());
+
+        if categories.contains(&"undefined_symbol".to_string()) {
+            println!("  - Symbol is declared but not defined or not included in the build");
+            println!("  - Make sure implementation files (.cpp) are included in your build");
+            println!("  - Check that function signatures match exactly between declaration and definition");
+            println!("  - Template definitions must be visible at point of instantiation");
+        }
+
+        if categories.contains(&"linker_duplicate".to_string()) {
+            println!("  - Multiple definitions of the same symbol");
+            println!("  - Non-inline functions should be defined only once across all translation units");
+            println!("  - Don't define functions or variables in header files without inline/static");
+            println!("  - Use include guards or #pragma once in headers");
+        }
+
+        println!("  - Ensure all necessary libraries are linked (add them in cbuild.toml)");
+        println!("  - Check library order - sometimes order matters for dependencies");
+        println!("  - Run `cbuild deps` to install all dependencies");
+        println!();
+        printed_help = true;
+    }
+
+    // --- Include and File Errors ---
+    if categories.contains(&"missing_file".to_string()) {
+        println!("{}", "● For missing file errors:".bold());
+
+        println!("  - Check file paths and names for typos");
+        println!("  - Use angle brackets for system headers: #include <vector>");
+        println!("  - Use quotes for your own headers: #include \"myheader.h\"");
+        println!("  - Make sure include directories are correctly set in cbuild.toml");
+        println!("  - Verify that dependencies are installed: `cbuild deps`");
+        println!("  - Check relative paths if using non-standard include structures");
+        println!();
+        printed_help = true;
+    }
+
+    // --- Preprocessor Errors ---
+    if categories.contains(&"preprocessor".to_string()) {
+        println!("{}", "● For preprocessor errors:".bold());
+
+        println!("  - Use include guards or #pragma once in header files");
+        println!("  - Each #if must have a matching #endif");
+        println!("  - Check for recursive includes that might cause problems");
+        println!("  - Macros are textual replacements - watch for unexpected expansions");
+        println!("  - Use () around macro parameters to avoid operator precedence issues");
+        println!("  - Consider using constexpr and inline functions instead of macros");
+        println!();
+        printed_help = true;
+    }
+
+    // --- Syntax Errors ---
+    if categories.contains(&"syntax".to_string()) || categories.contains(&"missing_semicolon".to_string()) {
+        println!("{}", "● For syntax errors:".bold());
+
+        println!("  - Check for missing semicolons at the end of statements");
+        println!("  - Ensure braces {{}} are properly balanced");
+        println!("  - Parentheses () must match for function calls and conditions");
+        println!("  - Watch for typos in keywords and operators");
+        println!("  - Class definitions end with a semicolon after the closing brace");
+        println!("  - C++ is case-sensitive (myVar != MyVar)");
+        println!();
+        printed_help = true;
+    }
+
+    // --- Modern C++ Feature Errors ---
+    if categories.contains(&"auto_type".to_string()) ||
+        categories.contains(&"move_semantics".to_string()) ||
+        categories.contains(&"concepts".to_string()) ||
+        categories.contains(&"if_constexpr".to_string()) {
+        println!("{}", "● For modern C++ feature errors:".bold());
+
+        if categories.contains(&"auto_type".to_string()) {
+            println!("  - auto requires an initializer with a deducible type");
+            println!("  - auto with initializer lists requires explicit type: auto x = {{1, 2, 3}}; // error");
+        }
+
+        if categories.contains(&"move_semantics".to_string()) {
+            println!("  - Use std::move() to convert to rvalue references");
+            println!("  - Don't use moved-from objects except to reassign or destroy them");
+            println!("  - Rule of five: if you need one, you usually need all five special members");
+        }
+
+        if categories.contains(&"concepts".to_string()) {
+            println!("  - Concepts require C++20 support - check your standard version");
+            println!("  - Define concepts before using them in requires clauses");
+        }
+
+        if categories.contains(&"if_constexpr".to_string()) {
+            println!("  - if constexpr requires a constant expression condition");
+            println!("  - Use to conditionally compile code based on template parameters");
+        }
+
+        println!("  - Check your compiler supports the C++ standard you're using");
+        println!("  - Some features require additional headers (e.g., <concepts>)");
+        println!();
+        printed_help = true;
+    }
+
+    // --- Build System Errors ---
+    if categories.contains(&"build_system".to_string()) {
+        println!("{}", "● For build system errors:".bold());
+
+        println!("  - Check your cbuild.toml for syntax errors");
+        println!("  - Ensure all tools (CMake, compilers) are correctly installed");
+        println!("  - Try running `cbuild clean` and then build again");
+        println!("  - Check build generator compatibility with your system");
+        println!("  - Verify that dependencies are installed: `cbuild deps`");
+        println!("  - Make sure source file patterns match your project structure");
+        println!();
+        printed_help = true;
+    }
+
+    // General help if we couldn't categorize the errors or as a fallback
+    if !printed_help || categories.contains(&"general".to_string()) {
+        println!("{}", "● General troubleshooting:".bold());
+        println!("  - Check for missing semicolons or unbalanced brackets");
+        println!("  - Ensure all variables are declared before use");
+        println!("  - Verify that required headers are included");
+        println!("  - Look for mismatched types in function calls and assignments");
+        println!("  - Check that you're including the correct libraries in cbuild.toml");
+        println!("  - Try `cbuild clean` followed by `cbuild build`");
+        println!("  - Read error messages from top to bottom - earlier errors often cause later ones");
+        println!();
+    }
+
+    // Add documentation pointer
+    println!("For more detailed C++ language help, see: {}", "https://en.cppreference.com/".underline());
+    println!("For compiler-specific error assistance:");
+    println!("  - GCC/Clang: {}", "https://gcc.gnu.org/onlinedocs/".underline());
+    println!("  - MSVC: {}", "https://docs.microsoft.com/en-us/cpp/error-messages/".underline());
+    println!("For CBuild documentation, run: `cbuild --help`");
+}
+
+fn hash_error_for_code(error_text: &str) -> u32 {
+    use std::hash::{Hash, Hasher};
+    use std::collections::hash_map::DefaultHasher;
+
+    let mut hasher = DefaultHasher::new();
+    error_text.hash(&mut hasher);
+    (hasher.finish() & 0xFFFFFFFF) as u32
+}
+
+fn categorize_error(error_msg: &str) -> Vec<String> {
+    let error_text = error_msg.to_lowercase();
+    let mut categories = Vec::new();
+
+    // Template errors - many subcategories
+    if error_text.contains("template") {
+        categories.push("template_general".to_string());
+
+        if error_text.contains("parameter pack") {
+            categories.push("template_parameter_pack".to_string());
+        }
+        if error_text.contains("specialization") {
+            categories.push("template_specialization".to_string());
+        }
+        if error_text.contains("deduction") || error_text.contains("deduce") {
+            categories.push("template_deduction".to_string());
+        }
+        if error_text.contains("requires") || error_text.contains("concept") {
+            categories.push("template_constraints".to_string());
+        }
+        if error_text.contains("partial") {
+            categories.push("template_partial_spec".to_string());
+        }
+        if error_text.contains("instantiation") {
+            categories.push("template_instantiation".to_string());
+        }
+        if error_text.contains("template argument") {
+            categories.push("template_arguments".to_string());
+        }
+        if error_text.contains("non-type") {
+            categories.push("template_non_type_param".to_string());
+        }
+    }
+
+    // Constexpr errors
+    if error_text.contains("constexpr") || error_text.contains("constant expression") {
+        categories.push("constexpr_general".to_string());
+
+        if error_text.contains("not a literal type") {
+            categories.push("constexpr_not_literal".to_string());
+        }
+        if error_text.contains("cannot") || error_text.contains("invalid") {
+            categories.push("constexpr_invalid".to_string());
+        }
+        if error_text.contains("non-constexpr") {
+            categories.push("constexpr_non_constexpr".to_string());
+        }
+        if error_text.contains("constexpr if") {
+            categories.push("constexpr_if".to_string());
+        }
+    }
+
+    // Undeclared/undefined errors
+    if error_text.contains("undeclared") || error_text.contains("undefined") {
+        categories.push("undeclared_general".to_string());
+
+        if error_text.contains("identifier") {
+            categories.push("undeclared_identifier".to_string());
+        }
+        if error_text.contains("function") {
+            categories.push("undefined_function".to_string());
+        }
+        if error_text.contains("reference") {
+            categories.push("undefined_reference".to_string());
+        }
+        if error_text.contains("variable") {
+            categories.push("undeclared_variable".to_string());
+        }
+        if error_text.contains("type") {
+            categories.push("undefined_type".to_string());
+        }
+    }
+
+    // Class/member errors
+    if error_text.contains("class") || error_text.contains("struct") || error_text.contains("member") {
+        categories.push("class_general".to_string());
+
+        if error_text.contains("does not name") || error_text.contains("no member named") {
+            categories.push("no_member".to_string());
+        }
+        if error_text.contains("private") || error_text.contains("protected") {
+            categories.push("access_control".to_string());
+        }
+        if error_text.contains("virtual") {
+            categories.push("virtual_function".to_string());
+        }
+        if error_text.contains("static") {
+            categories.push("static_member".to_string());
+        }
+        if error_text.contains("constructor") {
+            categories.push("constructor".to_string());
+        }
+        if error_text.contains("destructor") {
+            categories.push("destructor".to_string());
+        }
+        if error_text.contains("deleted function") {
+            categories.push("deleted_function".to_string());
+        }
+        if error_text.contains("override") {
+            categories.push("override".to_string());
+        }
+        if error_text.contains("abstract") {
+            categories.push("abstract_class".to_string());
+        }
+        if error_text.contains("pure virtual") {
+            categories.push("pure_virtual".to_string());
+        }
+    }
+
+    // Type errors - many subcategories
+    if error_text.contains("type") {
+        categories.push("type_general".to_string());
+
+        if error_text.contains("cannot convert") || error_text.contains("incompatible") {
+            categories.push("type_conversion".to_string());
+        }
+        if error_text.contains("no matching") {
+            categories.push("no_matching_function".to_string());
+        }
+        if error_text.contains("overloaded") {
+            categories.push("overload_resolution".to_string());
+        }
+        if error_text.contains("ambiguous") {
+            categories.push("ambiguous_call".to_string());
+        }
+        if error_text.contains("could not deduce") {
+            categories.push("type_deduction".to_string());
+        }
+        if error_text.contains("incomplete type") {
+            categories.push("incomplete_type".to_string());
+        }
+        if error_text.contains("static_cast") || error_text.contains("dynamic_cast") ||
+            error_text.contains("reinterpret_cast") || error_text.contains("const_cast") {
+            categories.push("cast_error".to_string());
+        }
+    }
+
+    // Concept errors (C++20)
+    if error_text.contains("concept") || error_text.contains("requires") {
+        categories.push("concept_general".to_string());
+
+        if error_text.contains("constraint") {
+            categories.push("concept_constraint".to_string());
+        }
+        if error_text.contains("satisfaction") {
+            categories.push("concept_satisfaction".to_string());
+        }
+        if error_text.contains("requirement") {
+            categories.push("concept_requirement".to_string());
+        }
+    }
+
+    // Initialization errors
+    if error_text.contains("initialize") || error_text.contains("initializer") {
+        categories.push("initialization".to_string());
+
+        if error_text.contains("constructor") {
+            categories.push("constructor_init".to_string());
+        }
+        if error_text.contains("list") {
+            categories.push("initializer_list".to_string());
+        }
+        if error_text.contains("member") {
+            categories.push("member_init".to_string());
+        }
+        if error_text.contains("default") {
+            categories.push("default_init".to_string());
+        }
+    }
+
+    // Lambda errors
+    if error_text.contains("lambda") {
+        categories.push("lambda_general".to_string());
+
+        if error_text.contains("capture") {
+            categories.push("lambda_capture".to_string());
+        }
+        if error_text.contains("this") {
+            categories.push("lambda_this".to_string());
+        }
+    }
+
+    // Smart pointer errors
+    if error_text.contains("unique_ptr") || error_text.contains("shared_ptr") ||
+        error_text.contains("weak_ptr") || error_text.contains("auto_ptr") {
+        categories.push("smart_pointer".to_string());
+    }
+
+    // STL errors
+    if error_text.contains("vector") || error_text.contains("map") ||
+        error_text.contains("set") || error_text.contains("list") ||
+        error_text.contains("queue") || error_text.contains("stack") ||
+        error_text.contains("string") || error_text.contains("iterator") ||
+        error_text.contains("algorithm") {
+        categories.push("stl".to_string());
+
+        if error_text.contains("iterator") {
+            categories.push("stl_iterator".to_string());
+        }
+        if error_text.contains("out_of_range") || error_text.contains("out of range") {
+            categories.push("stl_out_of_range".to_string());
+        }
+        if error_text.contains("allocator") {
+            categories.push("stl_allocator".to_string());
+        }
+    }
+
+    // Memory errors
+    if error_text.contains("memory") || error_text.contains("allocation") ||
+        error_text.contains("free") || error_text.contains("delete") ||
+        error_text.contains("new") {
+        categories.push("memory".to_string());
+
+        if error_text.contains("leak") {
+            categories.push("memory_leak".to_string());
+        }
+        if error_text.contains("double free") || error_text.contains("delete") {
+            categories.push("double_free".to_string());
+        }
+        if error_text.contains("null") || error_text.contains("nullptr") {
+            categories.push("null_pointer".to_string());
+        }
+        if error_text.contains("uninitialized") {
+            categories.push("uninitialized_memory".to_string());
+        }
+    }
+
+    // Missing files/includes
+    if error_text.contains("no such file") || error_text.contains("cannot open") ||
+        error_text.contains("file not found") || error_text.contains("#include") {
+        categories.push("missing_file".to_string());
+    }
+
+    // Linker errors
+    if error_text.contains("link") || error_text.contains("ld") ||
+        error_text.contains("undefined reference") || error_text.contains("unresolved external") {
+        categories.push("linker".to_string());
+
+        if error_text.contains("duplicate") || error_text.contains("multiple definition") {
+            categories.push("linker_duplicate".to_string());
+        }
+        if error_text.contains("LNK") {
+            categories.push("msvc_linker".to_string());
+        }
+        if error_text.contains("undefined symbol") || error_text.contains("undefined reference") {
+            categories.push("undefined_symbol".to_string());
+        }
+    }
+
+    // Preprocessor errors
+    if error_text.contains("#include") || error_text.contains("#define") ||
+        error_text.contains("#if") || error_text.contains("#ifdef") ||
+        error_text.contains("macro") {
+        categories.push("preprocessor".to_string());
+
+        if error_text.contains("redefined") {
+            categories.push("macro_redefined".to_string());
+        }
+        if error_text.contains("#if") || error_text.contains("#ifdef") || error_text.contains("#endif") {
+            categories.push("conditional_compilation".to_string());
+        }
+    }
+
+    // Build system errors
+    if error_text.contains("cmake") || error_text.contains("ninja") ||
+        error_text.contains("make") || error_text.contains("msbuild") {
+        categories.push("build_system".to_string());
+    }
+
+    // Syntax errors
+    if error_text.contains("syntax") || error_text.contains("expected") {
+        categories.push("syntax".to_string());
+
+        if error_text.contains("expected") && error_text.contains(";") {
+            categories.push("missing_semicolon".to_string());
+        }
+        if error_text.contains("expected") &&
+            (error_text.contains("{") || error_text.contains("}") ||
+                error_text.contains("(") || error_text.contains(")")) {
+            categories.push("mismatched_brackets".to_string());
+        }
+    }
+
+    // C++11/14/17/20 specific features
+    if error_text.contains("auto") {
+        categories.push("auto_type".to_string());
+    }
+    if error_text.contains("decltype") {
+        categories.push("decltype".to_string());
+    }
+    if error_text.contains("nullptr") {
+        categories.push("nullptr".to_string());
+    }
+    if error_text.contains("move") || error_text.contains("rvalue") || error_text.contains("&&") {
+        categories.push("move_semantics".to_string());
+    }
+    if error_text.contains("variadic") {
+        categories.push("variadic_templates".to_string());
+    }
+    if error_text.contains("fold") && error_text.contains("expression") {
+        categories.push("fold_expressions".to_string());
+    }
+    if error_text.contains("structured binding") {
+        categories.push("structured_binding".to_string());
+    }
+    if error_text.contains("if constexpr") {
+        categories.push("if_constexpr".to_string());
+    }
+    if error_text.contains("consteval") {
+        categories.push("consteval".to_string());
+    }
+    if error_text.contains("concept") {
+        categories.push("concepts".to_string());
+    }
+    if error_text.contains("module") && (error_text.contains("import") || error_text.contains("export")) {
+        categories.push("modules".to_string());
+    }
+
+    // Add at least one category if none was found
+    if categories.is_empty() {
+        categories.push("general".to_string());
+    }
+
+    categories
 }
 
 // Display raw errors when no structured errors could be found
@@ -6798,30 +7991,30 @@ fn display_raw_errors(stdout: &str, stderr: &str) {
     for (i, line) in error_lines.iter().take(max_errors).enumerate() {
         // Clean up the line by removing ANSI escape codes and trimming
         let clean_line = line.trim();
-        println!("  {}: {}", format!("Error {}", i+1).red().bold(), clean_line.red());
+        print_error(&format!("[{}] {}", i+1, clean_line));
     }
 
     // Show how many more errors there are
     if error_lines.len() > max_errors {
-        println!("  ... and {} more errors", error_lines.len() - max_errors);
+        print_warning(&format!("... and {} more errors", error_lines.len() - max_errors));
     }
 
     // If we found no errors at all, show a generic message
     if error_lines.is_empty() {
-        println!("  {}: Build command failed but no specific errors were found", "Error".red().bold());
+        print_error("Build command failed but no specific errors were found");
 
         // Try to show the last few lines of stderr or stdout as context
         if !stderr.is_empty() {
             let last_lines: Vec<&str> = stderr.lines().rev().take(5).collect();
-            println!("  Last few lines of stderr:");
+            print_status("Last few lines of stderr:");
             for line in last_lines.iter().rev() {
-                println!("    {}", line);
+                print_substep(line);
             }
         } else if !stdout.is_empty() {
             let last_lines: Vec<&str> = stdout.lines().rev().take(5).collect();
-            println!("  Last few lines of stdout:");
+            print_status("Last few lines of stdout:");
             for line in last_lines.iter().rev() {
-                println!("    {}", line);
+                print_substep(line);
             }
         }
     }
@@ -6848,8 +8041,7 @@ fn extract_source_line(stdout: &str, stderr: &str, file: &str, line_num: usize) 
     }
 
     // If we couldn't find the line in the build output, try to read from the file directly
-    // (Only do this for safe paths)
-    if !file.contains("..") && Path::new(file).exists() {
+    if Path::new(file).exists() {
         if let Ok(content) = fs::read_to_string(file) {
             let lines: Vec<&str> = content.lines().collect();
             if line_num > 0 && line_num <= lines.len() {
@@ -7176,14 +8368,236 @@ fn format_cpp_errors_rust_style(output: &str) -> Vec<String> {
 }
 
 fn get_help_for_error(error_msg: &str) -> String {
-    if error_msg.contains("undeclared identifier") {
-        return "make sure the variable or function is declared before use".to_string();
-    } else if error_msg.contains("template parameter pack") {
-        return "variadic template parameters must be the last parameter in the template list".to_string();
-    } else if error_msg.contains("no member named") {
-        return "check for typos or ensure the class defines this member".to_string();
-    } else if error_msg.contains("constexpr") && error_msg.contains("not a literal type") {
-        return "add a constexpr constructor to the class or remove constexpr from the function".to_string();
+    let error_text = error_msg.to_lowercase();
+
+    // Template parameter pack errors
+    if error_text.contains("template parameter pack must be the last template parameter") {
+        return "variadic template parameters (template<typename... Args>) must always be the last parameter in the template parameter list".to_string();
+    }
+
+    // Constexpr errors
+    if error_text.contains("constexpr function's return type") && error_text.contains("not a literal type") {
+        return "classes used with constexpr must have at least one constexpr constructor and a trivial destructor".to_string();
+    }
+
+    if error_text.contains("constexpr") && error_text.contains("non-constexpr") {
+        return "a constexpr function can only call other constexpr functions and use constexpr variables".to_string();
+    }
+
+    // Undeclared identifiers
+    if error_text.contains("use of undeclared identifier") {
+        let var_name = extract_quoted_or_word_after(&error_text, "identifier");
+        if !var_name.is_empty() {
+            return format!("'{}' is used before being declared - check for typos or missing includes", var_name);
+        }
+        return "identifier used before being declared - check for typos or missing includes".to_string();
+    }
+
+    // Member errors
+    if error_text.contains("member initializer") && error_text.contains("does not name a non-static data member") {
+        let member_name = extract_quoted_or_word_after(&error_text, "initializer");
+        if !member_name.is_empty() {
+            return format!("'{}' is not a declared member of this class - add it to the class definition first", member_name);
+        }
+        return "trying to initialize a member that doesn't exist in the class - declare it first".to_string();
+    }
+
+    if error_text.contains("no member named") {
+        let member_name = extract_quoted_or_word_after(&error_text, "named");
+        if !member_name.is_empty() {
+            return format!("no member named '{}' in this class - check for typos or add the member", member_name);
+        }
+        return "member doesn't exist in this class - check for typos or missing declaration".to_string();
+    }
+
+    // Concept errors
+    if error_text.contains("requires") && error_text.contains("concept") {
+        return "ensure your types satisfy all constraints of the concept".to_string();
+    }
+
+    if error_text.contains("undeclared identifier") && error_text.contains("allin") {
+        return "define the 'AllIn' concept before using it, e.g.: template<typename T, typename... Types> concept AllIn = (std::is_same_v<T, Types> || ...)".to_string();
+    }
+
+    // No matching function
+    if error_text.contains("no matching function for call") {
+        return "the arguments don't match any available function overload - check parameter types".to_string();
+    }
+
+    if error_text.contains("no matching member function for call") {
+        return "this class doesn't have a method that matches these arguments - check signature".to_string();
+    }
+
+    // Type conversion errors
+    if error_text.contains("cannot convert") || error_text.contains("invalid conversion") {
+        let from_type = extract_between(&error_text, "from ", " to");
+        let to_type = extract_after(&error_text, "to ");
+
+        if !from_type.is_empty() && !to_type.is_empty() {
+            return format!("cannot convert from '{}' to '{}' - consider using an explicit cast", from_type, to_type);
+        }
+        return "types are incompatible - an explicit conversion may be required (static_cast<Type>)".to_string();
+    }
+
+    // Private/protected member access
+    if error_text.contains("is a private member") {
+        let member_name = extract_quoted_or_word_after(&error_text, "member");
+        if !member_name.is_empty() {
+            return format!("'{}' is private and can only be accessed within the class or by friends", member_name);
+        }
+        return "trying to access a private member - use public accessor methods instead".to_string();
+    }
+
+    if error_text.contains("is a protected member") {
+        return "protected members can only be accessed by the class itself and derived classes".to_string();
+    }
+
+    // Reference errors
+    if error_text.contains("undefined reference to") {
+        let symbol = extract_quoted_or_word_after(&error_text, "to");
+        if !symbol.is_empty() {
+            return format!("'{}' is declared but not defined - ensure implementation is provided and linked", symbol);
+        }
+        return "symbol is declared but not defined - check implementation file is included in build".to_string();
+    }
+
+    if error_text.contains("unresolved external symbol") {
+        return "function or variable is declared but not defined - check implementation is linked".to_string();
+    }
+
+    // Include errors
+    if error_text.contains("file not found") {
+        let file_name = extract_quoted(&error_text);
+        if !file_name.is_empty() {
+            return format!("cannot find '{}' - check file path and include directories", file_name);
+        }
+        return "header file not found - check include paths and file names".to_string();
+    }
+
+    // Virtual function errors
+    if error_text.contains("override") && error_text.contains("virtual") {
+        return "function signature doesn't match the base class method it's trying to override".to_string();
+    }
+
+    // Missing semicolon
+    if error_text.contains("expected ';'") {
+        return "missing semicolon at the end of a statement or declaration".to_string();
+    }
+
+    // Default constructor
+    if error_text.contains("no default constructor") {
+        return "this class has no default constructor - provide arguments or define a default constructor".to_string();
+    }
+
+    // Deleted function
+    if error_text.contains("deleted function") {
+        return "attempting to call a function marked as deleted (maybe copy constructor/assignment)".to_string();
+    }
+
+    // Ambiguous call
+    if error_text.contains("ambiguous") && error_text.contains("call") {
+        return "multiple overloads match this call - provide more specific types or explicit casts".to_string();
+    }
+
+    // Auto type deduction
+    if error_text.contains("unable to deduce") && error_text.contains("auto") {
+        return "auto type deduction failed - ensure the expression has a well-defined type".to_string();
+    }
+
+    // Template argument deduction
+    if error_text.contains("failed template argument deduction") {
+        return "cannot deduce template arguments - consider specifying them explicitly".to_string();
+    }
+
+    // Lambda captures
+    if error_text.contains("lambda") && error_text.contains("capture") {
+        return "issue with lambda capture - ensure captured variables exist in the enclosing scope".to_string();
+    }
+
+    // Structured bindings
+    if error_text.contains("structured binding") {
+        return "check that the number and types of variables match the structure being bound".to_string();
+    }
+
+    // Missing return
+    if error_text.contains("no return statement") || (error_text.contains("return") && error_text.contains("void")) {
+        return "function needs a return statement with a value of the correct return type".to_string();
+    }
+
+    // Incomplete type
+    if error_text.contains("incomplete type") {
+        return "trying to use a type that's only forward-declared - include the full definition".to_string();
+    }
+
+    // Parameter type mismatch
+    if error_text.contains("argument") && (error_text.contains("mismatch") || error_text.contains("invalid")) {
+        return "function arguments don't match parameter types - check function signature".to_string();
+    }
+
+    // Vector/container errors
+    if error_text.contains("vector") && error_text.contains("range") {
+        return "accessing vector with invalid index - use .at() for bounds checking or check index".to_string();
+    }
+
+    // STL errors
+    if error_text.contains("iterator") && (error_text.contains("end") || error_text.contains("dereference")) {
+        return "dereferencing invalid iterator (such as end() or after erase) - be careful with iterator validity".to_string();
+    }
+
+    // Return no specific help if we didn't identify the error
+    String::new()
+}
+
+// Extract text between two patterns
+fn extract_between(text: &str, start_pattern: &str, end_pattern: &str) -> String {
+    if let Some(start_idx) = text.find(start_pattern) {
+        let after_start = &text[start_idx + start_pattern.len()..];
+        if let Some(end_idx) = after_start.find(end_pattern) {
+            return after_start[..end_idx].trim().to_string();
+        }
+    }
+    String::new()
+}
+
+// Extract text after a pattern
+fn extract_after(text: &str, pattern: &str) -> String {
+    if let Some(idx) = text.find(pattern) {
+        return text[idx + pattern.len()..].trim().to_string();
+    }
+    String::new()
+}
+
+// Extract quoted text from string
+fn extract_quoted(text: &str) -> String {
+    if let Some(start) = text.find('\'') {
+        if let Some(end) = text[start+1..].find('\'') {
+            return text[start+1..start+1+end].to_string();
+        }
+    }
+    if let Some(start) = text.find('"') {
+        if let Some(end) = text[start+1..].find('"') {
+            return text[start+1..start+1+end].to_string();
+        }
+    }
+    String::new()
+}
+
+fn extract_quoted_or_word_after(text: &str, pattern: &str) -> String {
+    // Try quoted first
+    let quoted = extract_quoted(text);
+    if !quoted.is_empty() {
+        return quoted;
+    }
+
+    // Try word after pattern
+    if let Some(idx) = text.find(pattern) {
+        let after = &text[idx + pattern.len()..];
+        let words: Vec<&str> = after.split_whitespace().collect();
+        if !words.is_empty() {
+            // Clean up any punctuation
+            let word = words[0].trim_matches(|c: char| !c.is_alphanumeric() && c != '_');
+            return word.to_string();
+        }
     }
 
     String::new()
@@ -7341,6 +8755,7 @@ fn analyze_cpp_errors(error_output: &str) -> Vec<String> {
 }
 
 // Enhanced build_project function with cleaner error reporting
+// Enhanced build_project function with cleaner output
 fn build_project(
     config: &ProjectConfig,
     project_path: &Path,
@@ -7349,9 +8764,16 @@ fn build_project(
     cross_target: Option<&str>,
     workspace_config: Option<&WorkspaceConfig>
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // First, ensure all required tools are installed
+    let project_name = &config.project.name;
+
+    // Create a progress tracker for the build process
+    let mut progress = BuildProgress::new(project_name, 4); // 4 main steps
+
+    // Step 1: Ensure tools
+    progress.next_step("Checking build tools");
     ensure_build_tools(config)?;
 
+    // Calculate build paths
     let build_dir = config.build.build_dir.as_deref().unwrap_or(DEFAULT_BUILD_DIR);
     let build_path = if let Some(target) = cross_target {
         project_path.join(format!("{}-{}", build_dir, target))
@@ -7359,47 +8781,61 @@ fn build_project(
         project_path.join(build_dir)
     };
 
-    // Ensure the build directory exists.
+    // Ensure the build directory exists
     fs::create_dir_all(&build_path)?;
 
-    // Determine the generator being used.
-    let generator = get_cmake_generator(config)?;
+    // Check if we need to configure
+    let needs_configure = !build_path.join("CMakeCache.txt").exists() ||
+        (config.build.generator.as_deref().unwrap_or("") == "Ninja" &&
+            !build_path.join("build.ninja").exists());
 
-    // Check if we need to re-run configuration:
-    // For example, if there's no CMakeCache.txt or, when using Ninja, build.ninja is missing.
-    let needs_configure = {
-        if !build_path.join("CMakeCache.txt").exists() {
-            true
-        } else if generator == "Ninja" && !build_path.join("build.ninja").exists() {
-            true
-        } else {
-            false
-        }
-    };
-
+    // Step 2: Configure if needed
     if needs_configure {
-        println!("{}", "Project not configured yet or build files missing, configuring...".blue());
+        progress.next_step("Configuring project");
+
+        if !is_quiet() {
+            print_status("Project not configured or build files missing, configuring...");
+        }
+
         configure_project(config, project_path, config_type, variant_name, cross_target, workspace_config)?;
+    } else {
+        progress.next_step("Project already configured");
     }
 
-    // Run pre-build hooks
+    // Step 3: Pre-build hooks
+    progress.next_step("Running pre-build hooks");
+
+    // Setup environment for hooks
     let mut hook_env = HashMap::new();
     hook_env.insert("PROJECT_PATH".to_string(), project_path.to_string_lossy().to_string());
     hook_env.insert("BUILD_PATH".to_string(), build_path.to_string_lossy().to_string());
     hook_env.insert("CONFIG_TYPE".to_string(), get_build_type(config, config_type));
+
     if let Some(v) = variant_name {
         hook_env.insert("VARIANT".to_string(), v.to_string());
     }
+
     if let Some(t) = cross_target {
         hook_env.insert("TARGET".to_string(), t.to_string());
     }
+
+    // Run pre-build hooks
     if let Some(hooks) = &config.hooks {
-        run_hooks(&hooks.pre_build, project_path, Some(hook_env.clone()))?;
+        if let Some(pre_hooks) = &hooks.pre_build {
+            if !pre_hooks.is_empty() {
+                print_substep("Running pre-build hooks");
+                run_hooks(&Some(pre_hooks.clone()), project_path, Some(hook_env.clone()))?;
+            }
+        }
     }
+
+    // Step 4: Build
+    progress.next_step("Building project");
 
     // Build using CMake
     let mut cmd = vec!["cmake".to_string(), "--build".to_string(), ".".to_string()];
     let build_type = get_build_type(config, config_type);
+
     cmd.push("--config".to_string());
     cmd.push(build_type.clone());
 
@@ -7408,21 +8844,33 @@ fn build_project(
     cmd.push("--parallel".to_string());
     cmd.push(format!("{}", num_threads));
 
-    // Try to build with quiet output
-    println!("{}", format!("Building {} in {} configuration...", config.project.name, build_type).blue());
+    // Build with simpler output
+    if !is_quiet() {
+        print_status(&format!("Building {} in {} configuration",
+                              format_project_name(project_name),
+                              build_type));
+    }
+
     let build_result = run_command(cmd, Some(&build_path.to_string_lossy().to_string()), None);
 
     if let Err(e) = build_result {
-        println!("{}", "Build failed with errors. See above for details.".red());
+        print_error("Build failed. See above for details.");
         return Err(e);
     }
 
     // Run post-build hooks
     if let Some(hooks) = &config.hooks {
-        run_hooks(&hooks.post_build, project_path, Some(hook_env))?;
+        if let Some(post_hooks) = &hooks.post_build {
+            if !post_hooks.is_empty() {
+                print_substep("Running post-build hooks");
+                run_hooks(&Some(post_hooks.clone()), project_path, Some(hook_env))?;
+            }
+        }
     }
 
-    println!("{}", format!("Build completed successfully ({} configuration)", build_type).green());
+    // Complete build
+    progress.complete();
+
     Ok(())
 }
 
