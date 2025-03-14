@@ -1,5 +1,7 @@
 
 mod output_utils;
+
+use std::sync::mpsc::channel;
 use crate::output_utils::*;
 use lazy_static::lazy_static;
 use regex::Regex;
@@ -8,17 +10,9 @@ use clap::{Parser, Subcommand};
 use colored::*;
 use regex;
 use serde::{Deserialize, Serialize};
-use std::{
-    collections::HashMap,
-    collections::HashSet,
-    env,
-    sync::Mutex,
-    fmt,
-    fs::{self, File},
-    io::Write,
-    path::{Path, PathBuf},
-    process::{Command, Stdio},
-};
+use std::{collections::HashMap, collections::HashSet, env, sync::Mutex, fmt, fs::{self, File}, io::{Write, BufRead, BufReader}, path::{Path, PathBuf}, process::{Command, Stdio}, thread};
+use std::sync::Arc;
+use std::time::Duration;
 
 // Constants
 const CFORGE_FILE: &str = "cforge.toml";
@@ -467,16 +461,16 @@ struct SystemInfo {
 }
 
 #[derive(Debug)]
-pub struct cforgeError {
+pub struct CforgeError {
     message: String,
     file_path: Option<String>,
     line_number: Option<usize>,
     context: Option<String>,
 }
 
-impl cforgeError {
+impl CforgeError {
     pub fn new(message: &str) -> Self {
-        cforgeError {
+        CforgeError {
             message: message.to_string(),
             file_path: None,
             line_number: None,
@@ -500,7 +494,7 @@ impl cforgeError {
     }
 }
 
-impl fmt::Display for cforgeError {
+impl fmt::Display for CforgeError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "cforge Error: {}", self.message)?;
 
@@ -520,10 +514,10 @@ impl fmt::Display for cforgeError {
     }
 }
 
-impl std::error::Error for cforgeError {}
+impl std::error::Error for CforgeError {}
 
 // Now add this function to convert TOML errors to your custom error type
-fn parse_toml_error(err: toml::de::Error, file_path: &str, file_content: &str) -> cforgeError {
+fn parse_toml_error(err: toml::de::Error, file_path: &str, file_content: &str) -> CforgeError {
     let message = err.to_string();
 
     // Try to extract line number from the error message
@@ -588,7 +582,7 @@ fn parse_toml_error(err: toml::de::Error, file_path: &str, file_content: &str) -
         message
     };
 
-    let mut error = cforgeError::new(&detailed_message).with_file(file_path);
+    let mut error = CforgeError::new(&detailed_message).with_file(file_path);
 
     if let Some(line) = line_number {
         error = error.with_line(line);
@@ -776,11 +770,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
     // Set verbosity level from command line or environment
-    if let Ok(val) = env::var("cforge_VERBOSE") {
+    if let Ok(val) = env::var("CFORGE_VERBOSE") {
         if val == "1" || val.to_lowercase() == "true" {
             set_verbosity("verbose");
         }
-    } else if let Ok(val) = env::var("cforge_QUIET") {
+    } else if let Ok(val) = env::var("CFORGE_QUIET") {
         if val == "1" || val.to_lowercase() == "true" {
             set_verbosity("quiet");
         }
@@ -804,7 +798,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Ok(()) => {
             if !is_quiet() {
                 println!();
-                print_success("Command completed successfully");
+                print_success("Command completed successfully", None);
             }
             Ok(())
         },
@@ -812,9 +806,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // Format and display the error
             println!();
 
-            // Special formatting for cforgeError
-            if let Some(cforge_err) = e.downcast_ref::<cforgeError>() {
-                print_error(&format!("cforge Error: {}", cforge_err.message));
+            // Special formatting for CforgeError
+            if let Some(cforge_err) = e.downcast_ref::<CforgeError>() {
+                print_error(&format!("cforge Error: {}", cforge_err.message), None, None);
 
                 if let Some(file_path) = &cforge_err.file_path {
                     print_substep(&format!("File: {}", file_path));
@@ -832,7 +826,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             } else {
                 // Regular error
-                print_error(&e.to_string());
+                print_error(&e.to_string(), None, None);
             }
 
             std::process::exit(1);
@@ -1386,18 +1380,18 @@ fn save_workspace_config(config: &WorkspaceConfig) -> Result<(), Box<dyn std::er
     Ok(())
 }
 
-fn load_workspace_config() -> Result<WorkspaceConfig, cforgeError> {
+fn load_workspace_config() -> Result<WorkspaceConfig, CforgeError> {
     let workspace_path = Path::new(WORKSPACE_FILE);
 
     if !workspace_path.exists() {
-        return Err(cforgeError::new(&format!(
+        return Err(CforgeError::new(&format!(
             "Workspace file '{}' not found", WORKSPACE_FILE
         )));
     }
 
     let toml_str = match fs::read_to_string(workspace_path) {
         Ok(content) => content,
-        Err(e) => return Err(cforgeError::new(&format!(
+        Err(e) => return Err(CforgeError::new(&format!(
             "Failed to read {}: {}", WORKSPACE_FILE, e
         )).with_file(WORKSPACE_FILE)),
     };
@@ -1420,7 +1414,7 @@ fn build_workspace_with_dependency_order(
     target: Option<&str>
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Load workspace configuration
-    print_header("Workspace Build");
+    print_header("Workspace Build", None);
 
     let workspace_config = load_workspace_config()?;
 
@@ -1490,24 +1484,24 @@ fn build_workspace_with_dependency_order(
         let mut config = match load_project_config(Some(&path)) {
             Ok(cfg) => cfg,
             Err(e) => {
-                print_warning(&format!("Could not load config for {}: {}", project_name, e));
-                print_warning("Skipping project and continuing...");
+                print_warning(&format!("Could not load config for {}: {}", project_name, e), None);
+                print_warning("Skipping project and continuing...", None);
                 continue;
             }
         };
 
         // Auto-adjust configuration if needed
         if let Err(e) = auto_adjust_config(&mut config) {
-            print_warning(&format!("Error adjusting config for {}: {}", project_name, e));
-            print_warning("Using default configuration");
+            print_warning(&format!("Error adjusting config for {}: {}", project_name, e), None);
+            print_warning("Using default configuration", None);
         }
 
         // Try to build project
         let build_result = build_project(&config, &path, config_type, variant_name, target, Some(&workspace_config));
 
         if let Err(e) = build_result {
-            print_warning(&format!("Building {} had issues: {}", project_name, e));
-            print_warning("Continuing with other projects...");
+            print_warning(&format!("Building {} had issues: {}", project_name, e), None);
+            print_warning("Continuing with other projects...", None);
         } else {
             task_list.complete_task(i);
         }
@@ -1523,9 +1517,9 @@ fn build_workspace_with_dependency_order(
 
     // Completion message
     if task_list.all_completed() {
-        print_success("Workspace build completed successfully");
+        print_success("Workspace build completed successfully", None);
     } else {
-        print_warning("Workspace build completed with some issues");
+        print_warning("Workspace build completed with some issues", None);
     }
 
     Ok(())
@@ -2018,7 +2012,7 @@ fn clean_workspace(
     config_type: Option<&str>,
     target: Option<&str>
 ) -> Result<(), Box<dyn std::error::Error>> {
-    print_header("Workspace Clean");
+    print_header("Workspace Clean", None);
 
     let workspace_config = load_workspace_config()?;
 
@@ -2046,19 +2040,19 @@ fn clean_workspace(
         match load_project_config(Some(&path)) {
             Ok(config) => {
                 if let Err(e) = clean_project(&config, &path, config_type, target) {
-                    print_warning(&format!("Error cleaning project {}: {}", project_path, e));
+                    print_warning(&format!("Error cleaning project {}: {}", project_path, e), None);
                 } else {
                     task_list.complete_task(i);
                 }
             },
             Err(e) => {
-                print_warning(&format!("Could not load config for {}: {}", project_path, e));
-                print_warning("Skipping project");
+                print_warning(&format!("Could not load config for {}: {}", project_path, e), None);
+                print_warning("Skipping project", None);
             }
         }
     }
 
-    print_success("Workspace clean completed");
+    print_success("Workspace clean completed", None);
     Ok(())
 }
 
@@ -2068,7 +2062,7 @@ fn run_workspace(
     variant_name: Option<&str>,
     args: &[String]
 ) -> Result<(), Box<dyn std::error::Error>> {
-    print_header("Workspace Run");
+    print_header("Workspace Run", None);
 
     let workspace_config = load_workspace_config()?;
 
@@ -2277,7 +2271,7 @@ fn list_workspace_items(what: Option<&str>) -> Result<(), Box<dyn std::error::Er
 fn init_project(path: Option<&Path>, template: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
     let project_path = path.unwrap_or_else(|| Path::new("."));
 
-    let config_path = project_path.join(cforge_FILE);
+    let config_path = project_path.join(CFORGE_FILE);
     if config_path.exists() {
         let response = prompt("Project already exists. Overwrite? (y/N): ")?;
         if response.trim().to_lowercase() != "y" {
@@ -2643,36 +2637,36 @@ fn create_default_config() -> ProjectConfig {
 
 
 fn save_project_config(config: &ProjectConfig, path: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    let config_path = path.join(cforge_FILE);
+    let config_path = path.join(CFORGE_FILE);
     let toml_string = toml::to_string_pretty(config)?;
     let mut file = File::create(config_path)?;
     file.write_all(toml_string.as_bytes())?;
-    println!("{}", format!("Configuration saved to {}", path.join(cforge_FILE).display()).green());
+    println!("{}", format!("Configuration saved to {}", path.join(CFORGE_FILE).display()).green());
     Ok(())
 }
 
-fn load_project_config(path: Option<&Path>) -> Result<ProjectConfig, cforgeError> {
+fn load_project_config(path: Option<&Path>) -> Result<ProjectConfig, CforgeError> {
     let project_path = path.unwrap_or_else(|| Path::new("."));
 
     // When loading from a workspace dependency, we need to handle
     // both absolute paths and paths relative to the workspace root
     let config_path = if project_path.is_absolute() {
-        project_path.join(cforge_FILE)
+        project_path.join(CFORGE_FILE)
     } else if is_workspace() && !project_path.starts_with(".") {
         // For non-relative paths in a workspace, check if they should
         // be prefixed with "projects/"
         let with_projects = Path::new("projects").join(project_path);
-        if with_projects.join(cforge_FILE).exists() {
-            with_projects.join(cforge_FILE)
+        if with_projects.join(CFORGE_FILE).exists() {
+            with_projects.join(CFORGE_FILE)
         } else {
-            project_path.join(cforge_FILE)
+            project_path.join(CFORGE_FILE)
         }
     } else {
-        project_path.join(cforge_FILE)
+        project_path.join(CFORGE_FILE)
     };
 
     if !config_path.exists() {
-        return Err(cforgeError::new(&format!(
+        return Err(CforgeError::new(&format!(
             "Configuration file '{}' not found. Run 'cforge init' to create one.",
             config_path.display()
         )));
@@ -2680,7 +2674,7 @@ fn load_project_config(path: Option<&Path>) -> Result<ProjectConfig, cforgeError
 
     let toml_str = match fs::read_to_string(&config_path) {
         Ok(content) => content,
-        Err(e) => return Err(cforgeError::new(&format!(
+        Err(e) => return Err(CforgeError::new(&format!(
             "Failed to read {}: {}", config_path.display(), e
         )).with_file(&config_path.to_string_lossy().to_string())),
     };
@@ -2807,7 +2801,7 @@ fn setup_vcpkg(
 
     // Check if we've already set up vcpkg in this session
     let cache_key = "vcpkg_setup";
-    {
+    let should_setup = {
         let installed = INSTALLED_PACKAGES.lock().unwrap();
         if installed.contains(cache_key) {
             let cached_path = get_cached_vcpkg_toolchain_path();
@@ -2815,7 +2809,14 @@ fn setup_vcpkg(
                 print_detailed("Using previously set up vcpkg");
                 return Ok(cached_path);
             }
+            false
+        } else {
+            true
         }
+    };
+
+    if !should_setup {
+        return Ok(String::new());
     }
 
     // First, try the configured path
@@ -2899,12 +2900,12 @@ fn setup_vcpkg(
         // Check if the directory exists but is not a proper vcpkg installation
         let vcpkg_dir = Path::new(&configured_path);
         if vcpkg_dir.exists() {
-            print_warning(&format!("Directory {} exists but does not contain a valid vcpkg installation", configured_path));
+            print_warning(&format!("Directory {} exists but does not contain a valid vcpkg installation", configured_path), None);
         }
 
         // Try to clone vcpkg repository
         let clone_spinner = ProgressSpinner::start("Cloning vcpkg repository");
-        match run_command(
+        match run_command_with_timeout(
             vec![
                 String::from("git"),
                 String::from("clone"),
@@ -2912,7 +2913,8 @@ fn setup_vcpkg(
                 String::from(&configured_path)
             ],
             None,
-            None
+            None,
+            180  // 3 minute timeout for git clone
         ) {
             Ok(_) => {
                 clone_spinner.success();
@@ -2921,14 +2923,14 @@ fn setup_vcpkg(
                 clone_spinner.failure(&e.to_string());
 
                 if vcpkg_dir.exists() {
-                    print_warning("Git clone failed but directory exists");
+                    print_warning("Git clone failed but directory exists", None);
                 } else if !has_command("git") {
                     // Try to install git
-                    print_warning("Git not found. Attempting to install git...");
+                    print_warning("Git not found. Attempting to install git...", None);
 
                     let git_installed = if cfg!(windows) {
                         if has_command("winget") {
-                            run_command(
+                            run_command_with_timeout(
                                 vec![
                                     "winget".to_string(),
                                     "install".to_string(),
@@ -2936,36 +2938,39 @@ fn setup_vcpkg(
                                     "Git.Git".to_string()
                                 ],
                                 None,
-                                None
+                                None,
+                                120  // 2 minute timeout
                             ).is_ok()
                         } else {
                             false
                         }
                     } else if cfg!(target_os = "macos") {
                         if has_command("brew") {
-                            run_command(
+                            run_command_with_timeout(
                                 vec![
                                     "brew".to_string(),
                                     "install".to_string(),
                                     "git".to_string()
                                 ],
                                 None,
-                                None
+                                None,
+                                180  // 3 minute timeout
                             ).is_ok()
                         } else {
                             false
                         }
                     } else { // Linux
-                        run_command(
+                        run_command_with_timeout(
                             vec![
                                 "sudo".to_string(),
                                 "apt-get".to_string(),
                                 "update".to_string()
                             ],
                             None,
-                            None
+                            None,
+                            60   // 1 minute timeout
                         ).is_ok() &&
-                            run_command(
+                            run_command_with_timeout(
                                 vec![
                                     "sudo".to_string(),
                                     "apt-get".to_string(),
@@ -2974,14 +2979,15 @@ fn setup_vcpkg(
                                     "git".to_string()
                                 ],
                                 None,
-                                None
+                                None,
+                                120  // 2 minute timeout
                             ).is_ok()
                     };
 
                     if git_installed && has_command("git") {
                         // Try cloning again
                         let retry_spinner = ProgressSpinner::start("Retrying vcpkg clone");
-                        match run_command(
+                        match run_command_with_timeout(
                             vec![
                                 String::from("git"),
                                 String::from("clone"),
@@ -2989,7 +2995,8 @@ fn setup_vcpkg(
                                 String::from(&configured_path)
                             ],
                             None,
-                            None
+                            None,
+                            180  // 3 minute timeout
                         ) {
                             Ok(_) => {
                                 retry_spinner.success();
@@ -3017,25 +3024,26 @@ fn setup_vcpkg(
 
         // Check if compilers are available for bootstrapping
         if cfg!(windows) && !has_command("cl") && !has_command("g++") && !has_command("clang++") {
-            print_warning("No C++ compiler found for bootstrapping vcpkg. Attempting to install...");
+            print_warning("No C++ compiler found for bootstrapping vcpkg. Attempting to install...", None);
             ensure_compiler_available("msvc").or_else(|_| ensure_compiler_available("gcc"))?;
         } else if !cfg!(windows) && !has_command("g++") && !has_command("clang++") {
-            print_warning("No C++ compiler found for bootstrapping vcpkg. Attempting to install...");
+            print_warning("No C++ compiler found for bootstrapping vcpkg. Attempting to install...", None);
             ensure_compiler_available("gcc").or_else(|_| ensure_compiler_available("clang"))?;
         }
 
         let bootstrap_spinner = ProgressSpinner::start("Bootstrapping vcpkg");
-        match run_command(
+        match run_command_with_timeout(
             vec![String::from(bootstrap_script)],
             Some(&configured_path),
-            None
+            None,
+            300  // 5 minute timeout
         ) {
             Ok(_) => {
                 bootstrap_spinner.success();
             },
             Err(e) => {
                 bootstrap_spinner.failure(&e.to_string());
-                print_warning("Bootstrapping failed, but will try to use vcpkg anyway if it exists");
+                print_warning("Bootstrapping failed or timed out", Some("Will try to use existing vcpkg if available"));
             }
         }
 
@@ -3062,19 +3070,28 @@ fn setup_vcpkg(
     if !vcpkg_config.packages.is_empty() {
         print_substep("Installing dependencies with vcpkg");
 
-        // First update vcpkg (quietly)
+        // First update vcpkg (quietly) with timeout
         let update_spinner = ProgressSpinner::start("Updating vcpkg");
-        let _ = Command::new(&vcpkg_exe)
-            .arg("update")
-            .current_dir(&vcpkg_path)
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
-        update_spinner.success();
+        let update_result = run_command_with_timeout(
+            vec![
+                vcpkg_exe.to_string_lossy().to_string(),
+                "update".to_string()
+            ],
+            Some(&vcpkg_path),
+            None,
+            120  // 2 minute timeout
+        );
 
-        // Install packages
+        if update_result.is_ok() {
+            update_spinner.success();
+        } else {
+            update_spinner.failure("Update timed out or failed");
+            print_warning("vcpkg update failed or timed out", Some("Continuing with package installation"));
+        }
+
+        // Install packages with timeout
         let install_spinner = ProgressSpinner::start("Installing packages");
-        match run_vcpkg_install(&vcpkg_exe, &vcpkg_path, &vcpkg_config.packages) {
+        match run_vcpkg_install_with_timeout(&vcpkg_exe, &vcpkg_path, &vcpkg_config.packages, 600) { // 10 minute timeout
             Ok(_) => {
                 install_spinner.success();
             },
@@ -3103,6 +3120,247 @@ fn setup_vcpkg(
     cache_vcpkg_toolchain_path(&toolchain_file);
 
     Ok(toolchain_file.to_string_lossy().to_string())
+}
+
+// Implementation of run_command_with_timeout
+
+fn run_command_with_timeout(
+    cmd: Vec<String>,
+    cwd: Option<&str>,
+    env: Option<HashMap<String, String>>,
+    timeout_seconds: u64
+) -> Result<(), Box<dyn std::error::Error>> {
+    // Build the Command as before
+    let mut command = Command::new(&cmd[0]);
+    command.args(&cmd[1..]);
+
+    if let Some(dir) = cwd {
+        command.current_dir(dir);
+    }
+    if let Some(env_vars) = env {
+        for (key, value) in env_vars {
+            command.env(key, value);
+        }
+    }
+
+    // Pipe stdout and stderr so we can read them
+    command.stdout(Stdio::piped());
+    command.stderr(Stdio::piped());
+
+    // Spawn the command
+    let child = command.spawn()
+        .map_err(|e| format!("Failed to execute command: {}", e))?;
+
+    // Wrap the Child in Arc<Mutex<>> so multiple threads can access
+    let child_arc = Arc::new(Mutex::new(child));
+
+    // Take ownership of stdout/stderr handles *before* the wait thread
+    let stdout = child_arc
+        .lock()
+        .unwrap()
+        .stdout
+        .take()
+        .ok_or("Failed to capture child stdout")?;
+    let stderr = child_arc
+        .lock()
+        .unwrap()
+        .stderr
+        .take()
+        .ok_or("Failed to capture child stderr")?;
+
+    // Spawn a thread to continuously read from stdout
+    let child_arc_out = Arc::clone(&child_arc);
+    let out_handle = thread::spawn(move || {
+        let reader = BufReader::new(stdout);
+        for line in reader.lines() {
+            if let Ok(line) = line {
+                println!("STDOUT> {}", line);
+            }
+        }
+        drop(child_arc_out); // not strictly necessary, but can be explicit
+    });
+
+    // Spawn a thread to continuously read from stderr
+    let child_arc_err = Arc::clone(&child_arc);
+    let err_handle = thread::spawn(move || {
+        let reader = BufReader::new(stderr);
+        for line in reader.lines() {
+            if let Ok(line) = line {
+                eprintln!("STDERR> {}", line);
+            }
+        }
+        drop(child_arc_err);
+    });
+
+    // We also need a channel to receive when the process completes
+    let (tx, rx) = channel();
+    let child_arc_wait = Arc::clone(&child_arc);
+
+    // Thread to wait on the child's exit
+    thread::spawn(move || {
+        // Wait for the child to exit
+        let status = child_arc_wait.lock().unwrap().wait();
+        // Send the result back so we know the command is done
+        let _ = tx.send(status);
+    });
+
+    // Now we wait up to `timeout_seconds` for the child to finish
+    match rx.recv_timeout(Duration::from_secs(timeout_seconds)) {
+        Ok(status_result) => {
+            // The child exited (we got a status). Join reading threads
+            out_handle.join().ok();
+            err_handle.join().ok();
+
+            match status_result {
+                Ok(status) => {
+                    if status.success() {
+                        Ok(())
+                    } else {
+                        Err(format!("Command failed with exit code: {}",
+                                    status.code().unwrap_or(-1)).into())
+                    }
+                },
+                Err(e) => Err(format!("Command error: {}", e).into()),
+            }
+        },
+        Err(_) => {
+            // Timeout occurred: kill the child
+            eprintln!(
+                "Command timed out after {} seconds: {}",
+                timeout_seconds,
+                cmd.join(" ")
+            );
+
+            // Because we have Arc<Mutex<Child>>, we can kill safely
+            let mut child = child_arc.lock().unwrap();
+            let _ = child.kill();
+
+            // Optionally wait() again to reap the process
+            let _ = child.wait();
+
+            Err(format!(
+                "Command timed out after {} seconds: {}",
+                timeout_seconds,
+                cmd.join(" ")
+            )
+                .into())
+        }
+    }
+}
+
+// Implementation of run_vcpkg_install with timeout
+fn run_vcpkg_install_with_timeout(
+    vcpkg_exe: &Path,
+    vcpkg_path: &str,
+    packages: &[String],
+    timeout_seconds: u64
+) -> Result<(), Box<dyn std::error::Error>> {
+    // First check which packages are already installed
+    let mut already_installed = Vec::new();
+    let mut to_install = Vec::new();
+
+    for pkg in packages {
+        if check_vcpkg_package_installed(vcpkg_path, pkg) {
+            already_installed.push(pkg.clone());
+        } else {
+            to_install.push(pkg.clone());
+        }
+    }
+
+    // If all packages are already installed, just show that
+    if to_install.is_empty() {
+        if !is_quiet() {
+            print_substep("Packages already installed:");
+            for pkg in &already_installed {
+                print_detailed(&format!("• {}", pkg));
+            }
+        }
+        return Ok(());
+    }
+
+    // Otherwise, run the install command for new packages
+    let mut cmd = vec![
+        vcpkg_exe.to_string_lossy().to_string(),
+        "install".to_string(),
+    ];
+
+    // Add all packages to install at once
+    for pkg in &to_install {
+        cmd.push(pkg.clone());
+    }
+
+    // Store the count for later use (avoid borrowing moved value)
+    let to_install_count = to_install.len();
+
+    // Use the timeout version
+    match run_command_with_timeout(cmd, Some(vcpkg_path), None, timeout_seconds) {
+        Ok(_) => {
+            // Show the results
+            if !already_installed.is_empty() && !is_quiet() {
+                print_substep("Packages already installed:");
+                for pkg in already_installed {
+                    print_detailed(&format!("• {}", pkg));
+                }
+            }
+
+            if !to_install.is_empty() && !is_quiet() {
+                print_substep("Newly installed packages:");
+                for pkg in &to_install {
+                    print_detailed(&format!("• {}", pkg));
+                }
+            }
+
+            Ok(())
+        },
+        Err(e) => {
+            print_error(&format!("Error running vcpkg: {}", e), None, None);
+
+            // Try installing packages one by one as a fallback
+            print_warning("Batch installation failed, trying one package at a time", None);
+
+            let mut success_count = 0;
+            let mut failed_pkgs = Vec::new();
+
+            // Use a reference to avoid moving to_install
+            for pkg in &to_install {
+                let package_spinner = ProgressSpinner::start(&format!("Installing package {}", pkg));
+
+                let single_cmd = vec![
+                    vcpkg_exe.to_string_lossy().to_string(),
+                    "install".to_string(),
+                    pkg.clone(),
+                ];
+
+                match run_command_with_timeout(single_cmd, Some(vcpkg_path), None, 300) { // 5 minute timeout per package
+                    Ok(_) => {
+                        package_spinner.success();
+                        success_count += 1;
+                    },
+                    Err(e) => {
+                        package_spinner.failure(&e.to_string());
+                        failed_pkgs.push(pkg.clone());
+                    }
+                }
+            }
+
+            if success_count > 0 {
+                print_substep(&format!("Successfully installed {} out of {} packages",
+                                       success_count, to_install_count));
+
+                if !failed_pkgs.is_empty() {
+                    print_warning(&format!("Failed to install packages: {}", failed_pkgs.join(", ")),
+                                  Some("You may need to install these manually"));
+                }
+
+                // If we got at least some packages, consider it a partial success
+                if success_count > failed_pkgs.len() {
+                    return Ok(());
+                }
+            }
+
+            Err(e)
+        }
+    }
 }
 
 fn check_vcpkg_package_installed(vcpkg_path: &str, package: &str) -> bool {
@@ -3159,24 +3417,15 @@ fn run_vcpkg_install(
     }
 
     // Otherwise, run the install command for new packages
-    let mut cmd = Command::new(vcpkg_exe);
-    cmd.arg("install");
-    cmd.args(&to_install);
-    cmd.current_dir(vcpkg_path);
-    cmd.stdout(Stdio::piped());
-    cmd.stderr(Stdio::piped());
+    let mut cmd = vec![
+        vcpkg_exe.to_string_lossy().to_string(),
+        "install".to_string()
+    ];
+    cmd.extend(to_install.clone());
 
-    match cmd.output() {
-        Ok(output) => {
-            let status = output.status;
-
-            if !status.success() {
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                print_error("Error installing vcpkg packages:");
-                print_error(&stderr);
-                return Err("vcpkg install failed".into());
-            }
-
+    // Use the timeout version with a reasonable timeout (10 minutes)
+    match run_command_with_timeout(cmd, Some(vcpkg_path), None, 600) {
+        Ok(_) => {
             // Show the results
             if !already_installed.is_empty() && !is_quiet() {
                 print_substep("Packages already installed:");
@@ -3195,9 +3444,23 @@ fn run_vcpkg_install(
             Ok(())
         },
         Err(e) => {
-            print_error(&format!("Error running vcpkg: {}", e));
-            Err(e.into())
+            print_error(&format!("Error running vcpkg: {}", e), None, None);
+            Err(e)
         }
+    }
+}
+
+fn find_vcpkg_executable(search_path: &str) -> Option<PathBuf> {
+    let vcpkg_exe = if cfg!(windows) {
+        PathBuf::from(search_path).join("vcpkg.exe")
+    } else {
+        PathBuf::from(search_path).join("vcpkg")
+    };
+
+    if vcpkg_exe.exists() {
+        Some(vcpkg_exe)
+    } else {
+        None
     }
 }
 
@@ -3627,7 +3890,7 @@ fn install_dependencies(
     }
 
     if !dependencies_info.is_empty() {
-        print_success("Dependencies configured successfully");
+        print_success("Dependencies configured successfully", None);
     } else {
         print_substep("No dependencies configured or all dependencies are disabled");
     }
@@ -4820,8 +5083,6 @@ fn has_command_with_timeout(cmd: &str, timeout_seconds: u64) -> bool {
     }
 }
 
-
-
 // Ensure at least one generator is installed
 fn ensure_generator_available() -> Result<String, Box<dyn std::error::Error>> {
     // Try to find an available generator in order of preference
@@ -5262,7 +5523,7 @@ fn configure_project(
     let cmake_result = run_command(cmd, Some(&build_path.to_string_lossy().to_string()), env_vars.clone());
 
     if let Err(e) = cmake_result {
-        print_warning("CMake configuration failed. Attempting to fix common issues and retry...");
+        print_warning("CMake configuration failed. Attempting to fix common issues and retry...", None);
 
         if try_fix_cmake_errors(&build_path, is_msvc_style_for_config(config)) {
             // If fixes were applied, try a simpler configuration
@@ -5440,7 +5701,7 @@ fn clean_project(
     if let Some(hooks) = &config.hooks {
         if let Some(pre_hooks) = &hooks.pre_clean {
             if !pre_hooks.is_empty() {
-                print_header("Pre-clean Hooks");
+                print_header("Pre-clean Hooks", None);
                 run_hooks(&Some(pre_hooks.clone()), project_path, Some(hook_env.clone()))?;
             }
         }
@@ -5455,7 +5716,7 @@ fn clean_project(
         match fs::remove_dir_all(&build_path) {
             Ok(_) => {
                 spinner.success();
-                print_success("Clean completed");
+                print_success("Clean completed", None);
             },
             Err(e) => {
                 spinner.failure(&e.to_string());
@@ -5471,7 +5732,7 @@ fn clean_project(
     if let Some(hooks) = &config.hooks {
         if let Some(post_hooks) = &hooks.post_clean {
             if !post_hooks.is_empty() {
-                print_header("Post-clean Hooks");
+                print_header("Post-clean Hooks", None);
                 run_hooks(&Some(post_hooks.clone()), project_path, Some(hook_env))?;
             }
         }
@@ -5517,11 +5778,11 @@ fn run_project(
     let build_type = get_build_type(config, config_type);
     let bin_dir = config.output.bin_dir.as_deref().unwrap_or(DEFAULT_BIN_DIR);
 
-    print_header(&format!("Running: {}", format_project_name(project_name)));
+    print_header(&format!("Running: {}", format_project_name(project_name)), None);
 
     // Make sure the project is built
     if !build_path.exists() || !build_path.join("CMakeCache.txt").exists() {
-        print_warning("Project not built yet. Building first...");
+        print_warning("Project not built yet. Building first...", None);
         build_project(config, project_path, config_type, variant_name, None, workspace_config)?;
     }
 
@@ -5660,14 +5921,14 @@ fn run_project(
     }
 
     // Run directly showing full output
-    print_header("Program Output");
+    print_header("Program Output", None);
 
     let status = command.status()?;
 
     if !status.success() {
-        print_warning(&format!("Program exited with code {}", status.code().unwrap_or(-1)));
+        print_warning(&format!("Program exited with code {}", status.code().unwrap_or(-1)), None);
     } else {
-        print_success("Program executed successfully");
+        print_success("Program executed successfully", None);
     }
 
     // Run post-run hooks
@@ -6965,7 +7226,7 @@ fn run_command(
             } else {
                 // If build command failed, format errors instead of logging
                 if is_cmake || is_compiler_command {
-                    print_error("Build failed with the following errors:");
+                    print_error("Build failed with the following errors:", None, None);
 
                     // Extract and format errors
                     let error_count = display_syntax_errors(&stdout, &stderr);
@@ -6977,9 +7238,9 @@ fn run_command(
                 } else {
                     // For other commands, print error messages
                     if !stderr.is_empty() {
-                        print_error(&stderr);
+                        print_error(&stderr, None, None);
                     } else {
-                        print_error(&format!("Command failed with status: {}", status));
+                        print_error(&format!("Command failed with status: {}", status), None, None);
                     }
                 }
 
@@ -6991,7 +7252,7 @@ fn run_command(
             if let Some(s) = spinner {
                 s.failure(&e.to_string());
             }
-            print_error(&format!("Failed to execute command: {}", e));
+            print_error(&format!("Failed to execute command: {}", e), None, None);
             Err(e.into())
         }
     }
@@ -7991,17 +8252,17 @@ fn display_raw_errors(stdout: &str, stderr: &str) {
     for (i, line) in error_lines.iter().take(max_errors).enumerate() {
         // Clean up the line by removing ANSI escape codes and trimming
         let clean_line = line.trim();
-        print_error(&format!("[{}] {}", i+1, clean_line));
+        print_error(&format!("[{}] {}", i+1, clean_line), None, None);
     }
 
     // Show how many more errors there are
     if error_lines.len() > max_errors {
-        print_warning(&format!("... and {} more errors", error_lines.len() - max_errors));
+        print_warning(&format!("... and {} more errors", error_lines.len() - max_errors), None);
     }
 
     // If we found no errors at all, show a generic message
     if error_lines.is_empty() {
-        print_error("Build command failed but no specific errors were found");
+        print_error("Build command failed but no specific errors were found", None, None);
 
         // Try to show the last few lines of stderr or stdout as context
         if !stderr.is_empty() {
@@ -8854,7 +9115,7 @@ fn build_project(
     let build_result = run_command(cmd, Some(&build_path.to_string_lossy().to_string()), None);
 
     if let Err(e) = build_result {
-        print_error("Build failed. See above for details.");
+        print_error("Build failed. See above for details.", None, None);
         return Err(e);
     }
 
