@@ -1,4 +1,4 @@
-# CBuild
+# CForge
 
 ![Version](https://img.shields.io/badge/version-1.0.2-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
@@ -45,14 +45,14 @@
 ### From Cargo
 
 ```bash
-cargo install cbuild-tool
+cargo install cforge
 ```
 
 ### From Source
 
 ```bash
-git clone https://github.com/ChaseSunstrom/cbuild.git
-cd cbuild
+git clone https://github.com/ChaseSunstrom/cforge.git
+cd cforge
 cargo build --release
 cargo install --path .
 ```
@@ -68,9 +68,9 @@ cargo install --path .
 ## ⚡ Quick Start
 
 ```bash
-cbuild init
-cbuild build
-cbuild run
+cforge init
+cforge build
+cforge run
 ```
 
 ---
@@ -79,37 +79,37 @@ cbuild run
 
 | Command      | Description                         | Example                            |
 |--------------|-------------------------------------|------------------------------------|
-| `init`       | Create new project/workspace        | `cbuild init --template lib`       |
-| `build`      | Build the project                   | `cbuild build --config Release`    |
-| `clean`      | Clean build artifacts               | `cbuild clean`                     |
-| `run`        | Run built executable                | `cbuild run -- arg1 arg2`          |
-| `test`       | Execute tests (CTest integration)   | `cbuild test --filter MyTest`      |
-| `install`    | Install project binaries            | `cbuild install --prefix /usr/local`|
-| `deps`       | Manage dependencies                 | `cbuild deps --update`             |
-| `script`     | Execute custom scripts              | `cbuild script format`             |
-| `startup`    | Manage workspace startup project    | `cbuild startup my_app`            |
-| `ide`        | Generate IDE project files          | `cbuild ide vscode`                |
-| `package`    | Package project binaries            | `cbuild package --type zip`        |
-| `list`       | List variants, configs, or targets  | `cbuild list variants`             |
+| `init`       | Create new project/workspace        | `cforge init --template lib`       |
+| `build`      | Build the project                   | `cforge build --config Release`    |
+| `clean`      | Clean build artifacts               | `cforge clean`                     |
+| `run`        | Run built executable                | `cforge run -- arg1 arg2`          |
+| `test`       | Execute tests (CTest integration)   | `cforge test --filter MyTest`      |
+| `install`    | Install project binaries            | `cforge install --prefix /usr/local`|
+| `deps`       | Manage dependencies                 | `cforge deps --update`             |
+| `script`     | Execute custom scripts              | `cforge script format`             |
+| `startup`    | Manage workspace startup project    | `cforge startup my_app`            |
+| `ide`        | Generate IDE project files          | `cforge ide vscode`                |
+| `package`    | Package project binaries            | `cforge package --type zip`        |
+| `list`       | List variants, configs, or targets  | `cforge list variants`             |
 
 ---
 
 ## 📂 Workspace Commands
 
 ```bash
-cbuild init --workspace
-cbuild build <project>
-cbuild run <project>
-cbuild clean <project>
-cbuild startup <project>
-cbuild startup --list
+cforge init --workspace
+cforge build <project>
+cforge run <project>
+cforge clean <project>
+cforge startup <project>
+cforge startup --list
 ```
 
 ---
 
 ## ⚙️ Advanced Configuration
 
-Example `cbuild.toml`:
+Example `cforge.toml`:
 
 ```toml
 [project]
@@ -164,8 +164,8 @@ flags = ["OPTIMIZE_MAX", "LTO"]
 
 Examples:
 ```bash
-cbuild build --target android-arm64
-cbuild build --target wasm
+cforge build --target android-arm64
+cforge build --target wasm
 ```
 
 ---
@@ -175,17 +175,17 @@ cbuild build --target wasm
 Generate IDE-specific files:
 
 ```bash
-cbuild ide vscode
-cbuild ide clion
-cbuild ide xcode
-cbuild ide vs2022
+cforge ide vscode
+cforge ide clion
+cforge ide xcode
+cforge ide vs2022
 ```
 
 ---
 
 ## 📝 Scripts & Hooks
 
-Define scripts and hooks in `cbuild.toml`:
+Define scripts and hooks in `cforge.toml`:
 
 ```toml
 [scripts]
@@ -201,7 +201,7 @@ post_build = ["echo Done!"]
 Run scripts:
 
 ```bash
-cbuild script format
+cforge script format
 ```
 
 ---
@@ -210,25 +210,25 @@ cbuild script format
 
 **Simple Project**:
 ```bash
-cbuild init
-cbuild build
-cbuild run
+cforge init
+cforge build
+cforge run
 ```
 
 **External Dependencies**:
 ```bash
-# Add dependencies in cbuild.toml
-cbuild deps
-cbuild build
-cbuild run
+# Add dependencies in cforge.toml
+cforge deps
+cforge build
+cforge run
 ```
 
 **Multi-project Workspace**:
 ```bash
-cbuild init --workspace
+cforge init --workspace
 # Initialize individual projects
-cbuild build
-cbuild run app1
+cforge build
+cforge run app1
 ```
 
 ---
@@ -236,9 +236,9 @@ cbuild run app1
 ## 🔧 Troubleshooting
 
 - **CMake not found**: Ensure it's installed and in PATH.
-- **Dependency failures**: Run `cbuild deps --update`.
+- **Dependency failures**: Run `cforge deps --update`.
 - **Cross-compilation**: Check environment variables (e.g., `$ANDROID_NDK`).
-- **Compiler errors**: Use `cbuild build --verbosity verbose`.
+- **Compiler errors**: Use `cforge build --verbosity verbose`.
 
 ---
 
