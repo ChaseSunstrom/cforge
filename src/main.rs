@@ -21,7 +21,7 @@ use std::{
 };
 
 // Constants
-const cforge_FILE: &str = "cforge.toml";
+const CFORGE_FILE: &str = "cforge.toml";
 const WORKSPACE_FILE: &str = "cforge-workspace.toml";
 const DEFAULT_BUILD_DIR: &str = "build";
 const DEFAULT_BIN_DIR: &str = "bin";
