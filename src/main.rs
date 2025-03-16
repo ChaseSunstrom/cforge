@@ -1,4 +1,4 @@
-
+#![allow(warnings)]
 mod output_utils;
 
 use std::sync::mpsc::channel;
@@ -18,6 +18,8 @@ use std::time::Duration;
 const CFORGE_FILE: &str = "cforge.toml";
 const WORKSPACE_FILE: &str = "cforge-workspace.toml";
 const DEFAULT_BUILD_DIR: &str = "build";
+
+
 const DEFAULT_BIN_DIR: &str = "bin";
 const DEFAULT_LIB_DIR: &str = "lib";
 const DEFAULT_OBJ_DIR: &str = "obj";
@@ -45,6 +47,31 @@ struct Cli {
     /// Set verbosity level (quiet, normal, verbose)
     #[clap(long, global = true)]
     verbosity: Option<String>,
+}
+
+struct CommandProgressData {
+    lines_processed: usize,
+    percentage_markers: Vec<f32>,
+    last_reported_progress: f32,
+    completed: bool,
+    error_encountered: bool,
+    total_lines_estimate: usize,
+}
+
+struct BuildProgressState {
+    compiled_files: usize,
+    total_files: usize,
+    current_percentage: f32,
+    errors: Vec<String>,
+    is_linking: bool,
+}
+
+
+struct PackageInstallState {
+    current_package: String,
+    current_percentage: f32,
+    packages_completed: usize,
+    total_packages: usize,
 }
 
 #[derive(Debug, Subcommand)]
@@ -1088,7 +1115,10 @@ fn resolve_workspace_dependencies(
     }
 
     let workspace = workspace_config.unwrap();
-    println!("{}", "Resolving workspace dependencies...".blue());
+
+    if !is_quiet() {
+        println!("{}", "Resolving workspace dependencies...".blue());
+    }
 
     for dep in &config.dependencies.workspace {
         if !workspace.workspace.projects.contains(&dep.name) {
@@ -1096,7 +1126,9 @@ fn resolve_workspace_dependencies(
             continue;
         }
 
-        println!("{}", format!("Processing dependency: {}", dep.name).blue());
+        if !is_quiet() {
+            println!("{}", format!("Processing dependency: {}", dep.name).blue());
+        }
 
         // Get the absolute path to the dependency
         let dep_path = if Path::new(&dep.name).is_absolute() {
@@ -1187,14 +1219,14 @@ fn resolve_workspace_dependencies(
         // Build full library path - use an absolute path
         let lib_path = dep_path.join(&expanded_lib_dir);
 
-        println!("{}", format!("Searching for library files for '{}' in: {}", dep.name, lib_path.display()).blue());
-
-        // Use enhanced library finding function
+        // Use enhanced library finding function but without verbose logging
         let found_libraries = find_library_files(&lib_path, &dep.name, is_shared, is_msvc_style);
 
         if !found_libraries.is_empty() {
             for (lib_file, filename) in &found_libraries {
-                println!("{}", format!("Found library: {} ({})", lib_file.display(), filename).green());
+                if !is_quiet() {
+                    println!("{}", format!("Found library: {} ({})", lib_file.display(), filename).green());
+                }
 
                 // Add the library path to CMake variables
                 cmake_options.push(format!(
@@ -1208,13 +1240,17 @@ fn resolve_workspace_dependencies(
             }
         } else {
             // If no libraries found, try to search the entire project directory
-            println!("{}", format!("No libraries found in standard locations for '{}', performing deep search...", dep.name).yellow());
+            if !is_quiet() {
+                println!("{}", format!("No libraries found in standard locations for '{}', performing deep search...", dep.name).yellow());
+            }
 
             let found_libraries = find_library_files(&dep_path, &dep.name, is_shared, is_msvc_style);
 
             if !found_libraries.is_empty() {
                 for (lib_file, filename) in &found_libraries {
-                    println!("{}", format!("Found library: {} ({})", lib_file.display(), filename).green());
+                    if !is_quiet() {
+                        println!("{}", format!("Found library: {} ({})", lib_file.display(), filename).green());
+                    }
 
                     // Add the library path to CMake variables
                     cmake_options.push(format!(
@@ -1255,7 +1291,9 @@ fn resolve_workspace_dependencies(
         }
     }
 
-    println!("{}", "Workspace dependency resolution completed.".green());
+    if !is_quiet() {
+        println!("{}", "Workspace dependency resolution completed.".green());
+    }
     Ok(cmake_options)
 }
 
@@ -1406,6 +1444,12 @@ fn load_workspace_config() -> Result<WorkspaceConfig, CforgeError> {
     }
 }
 
+fn progress_bar(message: &str) -> TimedProgressBar {
+    // Create a timed progress bar with a reasonable expected duration
+    TimedProgressBar::start(message, 30) // 30 seconds default timeout
+}
+
+
 // Enhanced workspace build function with cleaner output
 fn build_workspace_with_dependency_order(
     project: Option<String>,
@@ -1447,7 +1491,7 @@ fn build_workspace_with_dependency_order(
     }
 
     // Build dependency graph
-    let spinner = ProgressSpinner::start("Analyzing dependencies");
+    let spinner = progress_bar("Analyzing dependencies");
     let dependency_graph = build_dependency_graph(&workspace_config, &project_paths)?;
 
     // Determine build order based on dependencies
@@ -1507,7 +1551,7 @@ fn build_workspace_with_dependency_order(
         }
 
         // Generate package config after build
-        let spinner = ProgressSpinner::start(&format!("Generating package config for {}", project_name));
+        let spinner = progress_bar(&format!("Generating package config for {}", project_name));
         if let Err(e) = generate_package_config(&path, project_name) {
             spinner.failure(&format!("Error: {}", e));
         } else {
@@ -1653,7 +1697,8 @@ fn generate_package_config(project_path: &Path, project_name: &str) -> Result<()
         project_path.join(&lib_dir_expanded)
     };
 
-    println!("{}", format!("Library path resolved to: {}", lib_path.display()).blue());
+    // Removed the log that was here:
+    // println!("{}", format!("Library path resolved to: {}", lib_path.display()).blue());
 
     // Determine the platform and compiler style to generate the correct library name format
     let compiler_label = get_effective_compiler_label(&config);
@@ -1701,11 +1746,12 @@ fn generate_package_config(project_path: &Path, project_name: &str) -> Result<()
 
     // Now loop over possible_filenames to see which actually exists:
     for filename in &possible_filenames {
-        let candidate = lib_path.join(filename); // Or whatever directory you want
-        println!("Checking for: {}", candidate.display());
+        let candidate = lib_path.join(filename);
+        // Removed the log that was here:
+        // println!("Checking for: {}", candidate.display());
         if candidate.exists() {
-            println!("Found: {}", candidate.display());
-            // Do something with it, e.g. store it or set a CMake variable
+            // Removed the log that was here:
+            // println!("Found: {}", candidate.display());
             lib_file = Some(candidate);
             break;
         }
@@ -1717,7 +1763,10 @@ fn generate_package_config(project_path: &Path, project_name: &str) -> Result<()
         for filename in &possible_filenames {
             let file_path = parent_dir.join(filename);
             if file_path.exists() {
-                println!("{}", format!("Found library at: {}", file_path.display()).green());
+                // Only keep this important notification about found files
+                if !is_quiet() {
+                    println!("{}", format!("Found library at: {}", file_path.display()).green());
+                }
                 lib_file = Some(file_path);
                 break;
             }
@@ -1726,7 +1775,8 @@ fn generate_package_config(project_path: &Path, project_name: &str) -> Result<()
 
     // If still not found, try to search the entire project directory
     if lib_file.is_none() {
-        println!("{}", "Searching project directory for library...".yellow());
+        // Removed the log that was here:
+        // println!("{}", "Searching project directory for library...".yellow());
         fn find_library(dir: &Path, patterns: &[String]) -> Option<PathBuf> {
             if let Ok(entries) = fs::read_dir(dir) {
                 for entry in entries.filter_map(Result::ok) {
@@ -1750,14 +1800,18 @@ fn generate_package_config(project_path: &Path, project_name: &str) -> Result<()
 
         lib_file = find_library(project_path, &possible_filenames);
         if let Some(ref path) = lib_file {
-            println!("{}", format!("Found library by search: {}", path.display()).green());
+            if !is_quiet() {
+                println!("{}", format!("Found library by search: {}", path.display()).green());
+            }
         }
     }
 
     let lib_file = match lib_file {
         Some(path) => path,
         None => {
-            println!("{}", format!("Warning: Library file not found for {}. Using placeholder.", project_name).yellow());
+            if !is_quiet() {
+                println!("{}", format!("Warning: Library file not found for {}. Using placeholder.", project_name).yellow());
+            }
             // Use a placeholder file that will be replaced at link time
             lib_path.join(if is_msvc_style {
                 format!("{}.lib", project_name)
@@ -1785,7 +1839,6 @@ fn generate_package_config(project_path: &Path, project_name: &str) -> Result<()
     } else {
         raw_include.replace("\\", "/")
     };
-
 
     // Choose the correct import target type
     let import_type = if is_shared { "SHARED" } else { "STATIC" };
@@ -1823,7 +1876,9 @@ set({}_FOUND TRUE)
     );
 
     fs::write(&config_file, config_content)?;
-    println!("{}", format!("Generated package config at {}", config_file.display()).green());
+    if !is_quiet() {
+        println!("{}", format!("Generated package config at {}", config_file.display()).green());
+    }
 
     // Also generate a version file for exact configuration matching.
     let version_file = build_path.join(format!("{}ConfigVersion.cmake", project_name));
@@ -1842,10 +1897,13 @@ endif()
 "#, config.project.version);
 
     fs::write(&version_file, version_content)?;
-    println!("{}", format!("Generated version file at {}", version_file.display()).green());
+    if !is_quiet() {
+        println!("{}", format!("Generated version file at {}", version_file.display()).green());
+    }
 
     Ok(())
 }
+
 /// Helper function to expand tokens in output directory strings.
 fn expand_output_tokens(s: &str, config: &ProjectConfig) -> String {
     let config_val = config.build.default_config.as_deref().unwrap_or("Debug");
@@ -2793,11 +2851,16 @@ fn setup_vcpkg(
     config: &ProjectConfig,
     project_path: &Path
 ) -> Result<String, Box<dyn std::error::Error>> {
+
     // Skip if vcpkg is disabled
     let vcpkg_config = &config.dependencies.vcpkg;
     if !vcpkg_config.enabled {
         return Ok(String::new());
     }
+
+    // Create a progress bar for overall vcpkg setup
+    let mut vcpkg_progress = ProgressBar::start("Setting up vcpkg");
+    vcpkg_progress.update(0.05);  // Start at 5%
 
     // Check if we've already set up vcpkg in this session
     let cache_key = "vcpkg_setup";
@@ -2806,7 +2869,11 @@ fn setup_vcpkg(
         if installed.contains(cache_key) {
             let cached_path = get_cached_vcpkg_toolchain_path();
             if !cached_path.is_empty() {
-                print_detailed("Using previously set up vcpkg");
+                if !is_quiet() {
+                    print_detailed("Using previously set up vcpkg");
+                }
+                vcpkg_progress.update(1.0);  // Complete progress
+                vcpkg_progress.success();
                 return Ok(cached_path);
             }
             false
@@ -2816,6 +2883,8 @@ fn setup_vcpkg(
     };
 
     if !should_setup {
+        vcpkg_progress.update(1.0);  // Complete progress
+        vcpkg_progress.success();
         return Ok(String::new());
     }
 
@@ -2823,8 +2892,11 @@ fn setup_vcpkg(
     let configured_path = vcpkg_config.path.as_deref().unwrap_or(VCPKG_DEFAULT_DIR);
     let configured_path = expand_tilde(configured_path);
 
-    // Try to find vcpkg location
-    let spinner = ProgressSpinner::start("Locating vcpkg");
+    // Try to find vcpkg location - 10% progress
+    if !is_quiet() {
+        print_substep("Locating vcpkg");
+    }
+    vcpkg_progress.update(0.1);
 
     // Check if vcpkg is in PATH
     let mut vcpkg_in_path = None;
@@ -2884,14 +2956,18 @@ fn setup_vcpkg(
         }
     }
 
-    spinner.success();
+    vcpkg_progress.update(0.2);  // 20% progress - finished looking for vcpkg
 
     // If vcpkg wasn't found anywhere, try to set it up in the configured path
     let vcpkg_path = if let Some(path) = found_vcpkg_path {
-        print_substep(&format!("Found existing vcpkg installation at {}", path));
+        if !is_quiet() {
+            print_substep(&format!("Found existing vcpkg installation at {}", path));
+        }
         path
     } else {
-        print_substep(&format!("vcpkg not found, attempting to set up at {}", configured_path));
+        if !is_quiet() {
+            print_substep(&format!("vcpkg not found, attempting to set up at {}", configured_path));
+        }
 
         // Create parent directory if it doesn't exist
         let vcpkg_parent_dir = Path::new(&configured_path).parent().unwrap_or_else(|| Path::new(&configured_path));
@@ -2903,8 +2979,8 @@ fn setup_vcpkg(
             print_warning(&format!("Directory {} exists but does not contain a valid vcpkg installation", configured_path), None);
         }
 
-        // Try to clone vcpkg repository
-        let clone_spinner = ProgressSpinner::start("Cloning vcpkg repository");
+        // Try to clone vcpkg repository - 20% to 40% progress
+        let mut clone_progress = ProgressBar::start("Cloning vcpkg repository");
         match run_command_with_timeout(
             vec![
                 String::from("git"),
@@ -2917,16 +2993,18 @@ fn setup_vcpkg(
             180  // 3 minute timeout for git clone
         ) {
             Ok(_) => {
-                clone_spinner.success();
+                clone_progress.success();
             },
             Err(e) => {
-                clone_spinner.failure(&e.to_string());
+                clone_progress.failure(&e.to_string());
 
                 if vcpkg_dir.exists() {
                     print_warning("Git clone failed but directory exists", None);
                 } else if !has_command("git") {
                     // Try to install git
                     print_warning("Git not found. Attempting to install git...", None);
+
+                    let mut git_install_progress = ProgressBar::start("Installing git");
 
                     let git_installed = if cfg!(windows) {
                         if has_command("winget") {
@@ -2985,8 +3063,10 @@ fn setup_vcpkg(
                     };
 
                     if git_installed && has_command("git") {
+                        git_install_progress.success();
+
                         // Try cloning again
-                        let retry_spinner = ProgressSpinner::start("Retrying vcpkg clone");
+                        let mut retry_progress = ProgressBar::start("Retrying vcpkg clone");
                         match run_command_with_timeout(
                             vec![
                                 String::from("git"),
@@ -2999,23 +3079,29 @@ fn setup_vcpkg(
                             180  // 3 minute timeout
                         ) {
                             Ok(_) => {
-                                retry_spinner.success();
+                                retry_progress.success();
                             },
                             Err(e) => {
-                                retry_spinner.failure(&e.to_string());
+                                retry_progress.failure(&e.to_string());
+                                vcpkg_progress.failure("Failed to clone vcpkg repository");
                                 return Err("Failed to clone vcpkg repository".into());
                             }
                         }
                     } else {
+                        git_install_progress.failure("Failed to install git");
+                        vcpkg_progress.failure("Git is required to set up vcpkg");
                         return Err("Git is required to set up vcpkg but could not be installed".into());
                     }
                 } else {
+                    vcpkg_progress.failure(&e.to_string());
                     return Err(e);
                 }
             }
         }
 
-        // Try to bootstrap vcpkg
+        vcpkg_progress.update(0.4);  // 40% progress - vcpkg repository cloned
+
+        // Try to bootstrap vcpkg - 40% to 60% progress
         let bootstrap_script = if cfg!(windows) {
             "bootstrap-vcpkg.bat"
         } else {
@@ -3025,13 +3111,31 @@ fn setup_vcpkg(
         // Check if compilers are available for bootstrapping
         if cfg!(windows) && !has_command("cl") && !has_command("g++") && !has_command("clang++") {
             print_warning("No C++ compiler found for bootstrapping vcpkg. Attempting to install...", None);
-            ensure_compiler_available("msvc").or_else(|_| ensure_compiler_available("gcc"))?;
+
+            let mut compiler_progress = ProgressBar::start("Installing C++ compiler");
+            match ensure_compiler_available("msvc").or_else(|_| ensure_compiler_available("gcc")) {
+                Ok(_) => compiler_progress.success(),
+                Err(e) => {
+                    compiler_progress.failure(&e.to_string());
+                    vcpkg_progress.failure("No compiler available for bootstrapping vcpkg");
+                    return Err(e);
+                }
+            }
         } else if !cfg!(windows) && !has_command("g++") && !has_command("clang++") {
             print_warning("No C++ compiler found for bootstrapping vcpkg. Attempting to install...", None);
-            ensure_compiler_available("gcc").or_else(|_| ensure_compiler_available("clang"))?;
+
+            let mut compiler_progress = ProgressBar::start("Installing C++ compiler");
+            match ensure_compiler_available("gcc").or_else(|_| ensure_compiler_available("clang")) {
+                Ok(_) => compiler_progress.success(),
+                Err(e) => {
+                    compiler_progress.failure(&e.to_string());
+                    vcpkg_progress.failure("No compiler available for bootstrapping vcpkg");
+                    return Err(e);
+                }
+            }
         }
 
-        let bootstrap_spinner = ProgressSpinner::start("Bootstrapping vcpkg");
+        let mut bootstrap_progress = ProgressBar::start("Bootstrapping vcpkg");
         match run_command_with_timeout(
             vec![String::from(bootstrap_script)],
             Some(&configured_path),
@@ -3039,13 +3143,15 @@ fn setup_vcpkg(
             300  // 5 minute timeout
         ) {
             Ok(_) => {
-                bootstrap_spinner.success();
+                bootstrap_progress.success();
             },
             Err(e) => {
-                bootstrap_spinner.failure(&e.to_string());
+                bootstrap_progress.failure(&e.to_string());
                 print_warning("Bootstrapping failed or timed out", Some("Will try to use existing vcpkg if available"));
             }
         }
+
+        vcpkg_progress.update(0.6);  // 60% progress - vcpkg bootstrapped
 
         configured_path
     };
@@ -3063,15 +3169,18 @@ fn setup_vcpkg(
 
     // Verify vcpkg executable exists
     if !vcpkg_exe.exists() {
+        vcpkg_progress.failure(&format!("vcpkg executable not found at {}", vcpkg_exe.display()));
         return Err(format!("vcpkg executable not found at {}. Please install vcpkg manually.", vcpkg_exe.display()).into());
     }
 
-    // Install configured packages
+    // Install configured packages - 60% to 90% progress
     if !vcpkg_config.packages.is_empty() {
-        print_substep("Installing dependencies with vcpkg");
+        if !is_quiet() {
+            print_substep("Installing dependencies with vcpkg");
+        }
 
-        // First update vcpkg (quietly) with timeout
-        let update_spinner = ProgressSpinner::start("Updating vcpkg");
+        // First update vcpkg with a dedicated progress bar
+        let mut update_progress = ProgressBar::start("Updating vcpkg");
         let update_result = run_command_with_timeout(
             vec![
                 vcpkg_exe.to_string_lossy().to_string(),
@@ -3083,26 +3192,31 @@ fn setup_vcpkg(
         );
 
         if update_result.is_ok() {
-            update_spinner.success();
+            update_progress.success();
         } else {
-            update_spinner.failure("Update timed out or failed");
+            update_progress.failure("Update timed out or failed");
             print_warning("vcpkg update failed or timed out", Some("Continuing with package installation"));
         }
 
-        // Install packages with timeout
-        let install_spinner = ProgressSpinner::start("Installing packages");
-        match run_vcpkg_install_with_timeout(&vcpkg_exe, &vcpkg_path, &vcpkg_config.packages, 600) { // 10 minute timeout
+        vcpkg_progress.update(0.7);  // 70% progress - vcpkg updated
+
+        // Install packages with dedicated progress bar
+        let mut install_progress = ProgressBar::start("Installing packages");
+        match run_vcpkg_install_with_progress(&vcpkg_exe, &vcpkg_path, &vcpkg_config.packages, install_progress.clone()) {
             Ok(_) => {
-                install_spinner.success();
+                install_progress.success();
             },
             Err(e) => {
-                install_spinner.failure(&e.to_string());
+                install_progress.failure(&e.to_string());
+                vcpkg_progress.failure(&e.to_string());
                 return Err(e);
             }
         }
+
+        vcpkg_progress.update(0.9);  // 90% progress - packages installed
     }
 
-    // Return the path to vcpkg.cmake for CMake integration
+
     {
         let mut installed = INSTALLED_PACKAGES.lock().unwrap();
         installed.insert(cache_key.to_string());
@@ -3114,13 +3228,19 @@ fn setup_vcpkg(
         .join("vcpkg.cmake");
 
     if !toolchain_file.exists() {
+        vcpkg_progress.failure(&format!("vcpkg toolchain file not found at {}", toolchain_file.display()));
         return Err(format!("vcpkg toolchain file not found at {}. This suggests a corrupt vcpkg installation.", toolchain_file.display()).into());
     }
 
     cache_vcpkg_toolchain_path(&toolchain_file);
 
+    // Complete progress
+    vcpkg_progress.update(1.0);
+    vcpkg_progress.success();
+
     Ok(toolchain_file.to_string_lossy().to_string())
 }
+
 
 // Implementation of run_command_with_timeout
 
@@ -3248,6 +3368,401 @@ fn run_command_with_timeout(
     }
 }
 
+fn run_command_with_progress(
+    cmd: Vec<String>,
+    cwd: Option<&str>,
+    env: Option<std::collections::HashMap<String, String>>,
+    progress: &mut ProgressBar,
+    operation: &str,
+    timeout_seconds: u64
+) -> Result<(), Box<dyn std::error::Error>> {
+    use std::process::{Command, Stdio};
+    use std::io::{BufRead, BufReader};
+    use std::sync::mpsc::channel;
+    use std::sync::{Arc, Mutex};
+    use std::thread;
+    use std::time::Duration;
+
+    // Check if this is a CMake command
+    let is_cmake_command = cmd.len() > 0 && cmd[0].contains("cmake");
+
+    // Build the Command
+    let mut command = Command::new(&cmd[0]);
+    command.args(&cmd[1..]);
+
+    if let Some(dir) = cwd {
+        command.current_dir(dir);
+    }
+    if let Some(env_vars) = env {
+        for (key, value) in env_vars {
+            command.env(key, value);
+        }
+    }
+
+    // Pipe stdout and stderr so we can read them
+    command.stdout(Stdio::piped());
+    command.stderr(Stdio::piped());
+
+    // Update progress to show we're starting the command
+    progress.update(0.05);
+
+    // Spawn the command
+    let child = match command.spawn() {
+        Ok(child) => child,
+        Err(e) => return Err(format!("Failed to execute command: {}", e).into()),
+    };
+
+    // Wrap the Child in Arc<Mutex<>> so multiple threads can access
+    let child_arc = Arc::new(Mutex::new(child));
+
+    // Take ownership of stdout/stderr handles
+    let stdout = child_arc
+        .lock().unwrap()
+        .stdout.take()
+        .ok_or("Failed to capture stdout")?;
+    let stderr = child_arc
+        .lock().unwrap()
+        .stderr.take()
+        .ok_or("Failed to capture stderr")?;
+
+    // Shared progress state
+    let progress_state = Arc::new(Mutex::new(0.05f32)); // Starting at 5%
+
+    // Buffer to collect output for error analysis
+    let output_buffer = Arc::new(Mutex::new(String::new()));
+    let output_buffer_clone = Arc::clone(&output_buffer);
+
+    // Spawn a thread to continuously read from stdout and update progress
+    let child_arc_out = Arc::clone(&child_arc);
+    let progress_state_clone = Arc::clone(&progress_state);
+    let out_handle = thread::spawn(move || {
+        let reader = BufReader::new(stdout);
+        let mut lines_read = 0;
+
+        for line in reader.lines() {
+            if let Ok(line) = line {
+                lines_read += 1;
+
+                // Update progress state
+                let mut state = progress_state_clone.lock().unwrap();
+
+                // Interpret progress from output
+                if line.contains("Installing") || line.contains("Building") ||
+                    line.contains("Downloading") || line.contains("Extracting") {
+                    // Key progress indicators
+                    if line.contains("Installing") {
+                        *state = 0.6;
+                    } else if line.contains("Building") {
+                        *state = 0.7;
+                    } else if line.contains("Downloading") {
+                        *state = 0.4;
+                    } else if line.contains("Extracting") {
+                        *state = 0.5;
+                    }
+                } else if lines_read % 20 == 0 {
+                    // Gradually increase progress based on line count
+                    *state = (*state + 0.01).min(0.9);
+                }
+
+                // Look for percentage indicators in the output
+                if let Some(percent_idx) = line.find('%') {
+                    if percent_idx > 0 {
+                        // Try to extract a percentage value
+                        let start_idx = line[..percent_idx].rfind(|c: char| !c.is_digit(10) && c != '.')
+                            .map_or(0, |pos| pos + 1);
+
+                        if let Ok(percentage) = line[start_idx..percent_idx].trim().parse::<f32>() {
+                            // Scale to the 5%-90% range
+                            let scaled = 0.05 + (percentage / 100.0) * 0.85;
+                            *state = scaled;
+                        }
+                    }
+                }
+
+                // Add line to buffer
+                {
+                    let mut buffer = output_buffer_clone.lock().unwrap();
+                    buffer.push_str(&line);
+                    buffer.push('\n');
+                }
+
+                // Filter stdout output based on command type and verbosity
+                let should_print = if is_cmake_command {
+                    // For CMake, only show output if it contains important keywords or in verbose mode
+                    is_verbose() ||
+                        line.contains("error") ||
+                        line.contains("Error") ||
+                        line.contains("WARNING") ||
+                        line.contains("Warning") ||
+                        line.contains("failed") ||
+                        line.contains("Failed")
+                } else {
+                    // Still log for debugging if in verbose mode
+                    is_verbose() ||
+                        line.contains("Installing") ||
+                        line.contains("Building") ||
+                        line.contains("Downloading") ||
+                        line.contains("Extracting")
+                };
+
+                if should_print {
+                    println!("STDOUT> {}", line);
+                }
+            }
+        }
+        drop(child_arc_out);
+    });
+
+    // Spawn a thread to continuously read from stderr
+    let child_arc_err = Arc::clone(&child_arc);
+    let progress_state_clone_err = Arc::clone(&progress_state);
+    let output_buffer_clone_err = Arc::clone(&output_buffer);
+    let err_handle = thread::spawn(move || {
+        let reader = BufReader::new(stderr);
+
+        for line in reader.lines() {
+            if let Ok(line) = line {
+                // If error lines, update progress state to show we're still working
+                let mut state = progress_state_clone_err.lock().unwrap();
+                *state = (*state + 0.005).min(0.9);
+
+                // Add line to buffer
+                {
+                    let mut buffer = output_buffer_clone_err.lock().unwrap();
+                    buffer.push_str(&line);
+                    buffer.push('\n');
+                }
+
+                // Filter stderr output similar to stdout
+                let should_print = if is_cmake_command {
+                    // For CMake stderr, only show output with important keywords or in verbose mode
+                    is_verbose() ||
+                        line.contains("error") ||
+                        line.contains("Error") ||
+                        line.contains("WARNING") ||
+                        line.contains("Warning") ||
+                        line.contains("failed") ||
+                        line.contains("Failed")
+                } else {
+                    // For other commands, always show stderr errors
+                    is_verbose() ||
+                        line.contains("error") ||
+                        line.contains("Error") ||
+                        line.contains("warning") ||
+                        line.contains("Warning")
+                };
+
+                if should_print {
+                    eprintln!("STDERR> {}", line);
+                }
+            }
+        }
+        drop(child_arc_err);
+    });
+
+    // Thread to update the progress bar
+    let progress_state_clone_bar = Arc::clone(&progress_state);
+    let progress_clone = progress.clone();
+    let update_handle = thread::spawn(move || {
+        let mut last_progress = 0.05f32;
+
+        loop {
+            thread::sleep(Duration::from_millis(100));
+
+            let current_progress = *progress_state_clone_bar.lock().unwrap();
+
+            // Only update if progress has changed meaningfully
+            if (current_progress - last_progress).abs() > 0.01 {
+                progress_clone.update(current_progress);
+                last_progress = current_progress;
+            }
+        }
+    });
+
+    // We also need a channel to receive when the process completes
+    let (tx, rx) = channel();
+    let child_arc_wait = Arc::clone(&child_arc);
+
+    // Thread to wait on the child's exit
+    thread::spawn(move || {
+        // Wait for the child to exit
+        let status = child_arc_wait.lock().unwrap().wait();
+        // Send the result back so we know the command is done
+        let _ = tx.send(status);
+    });
+
+    // Now we wait up to `timeout_seconds` for the child to finish
+    match rx.recv_timeout(Duration::from_secs(timeout_seconds)) {
+        Ok(status_result) => {
+            // The child exited (we got a status). Set progress to 100%
+            progress.update(1.0);
+
+            // No need to join the updater thread since we're finishing up
+
+            // Join reading threads
+            out_handle.join().ok();
+            err_handle.join().ok();
+
+            match status_result {
+                Ok(status) => {
+                    if status.success() {
+                        progress.success();
+                        Ok(())
+                    } else {
+                        // Get the collected output for error analysis
+                        let output = output_buffer.lock().unwrap().clone();
+
+                        // Format error output if cmake command
+                        if is_cmake_command {
+                            if !is_quiet() {
+                                let formatted_errors = format_cpp_errors_rust_style(&output);
+                                for error_line in formatted_errors {
+                                    println!("{}", error_line);
+                                }
+                            }
+                        }
+
+                        progress.failure(&format!("Command failed with exit code: {}",
+                                                  status.code().unwrap_or(-1)));
+                        Err(format!("Command failed with exit code: {}",
+                                    status.code().unwrap_or(-1)).into())
+                    }
+                },
+                Err(e) => {
+                    progress.failure(&format!("Command error: {}", e));
+                    Err(format!("Command error: {}", e).into())
+                },
+            }
+        },
+        Err(_) => {
+            // Timeout occurred: kill the child
+            progress.failure(&format!("Command timed out after {} seconds", timeout_seconds));
+
+            // Because we have Arc<Mutex<Child>>, we can kill safely
+            let mut child = child_arc.lock().unwrap();
+            let _ = child.kill();
+
+            // Optionally wait() again to reap the process
+            let _ = child.wait();
+
+            Err(format!(
+                "Command timed out after {} seconds: {}",
+                timeout_seconds,
+                cmd.join(" ")
+            ).into())
+        }
+    }
+}
+
+
+fn extract_percentage(line: &str) -> Option<f32> {
+    if let Some(percent_idx) = line.find('%') {
+        // Look backward from % for digits
+        let mut start_idx = percent_idx;
+        while start_idx > 0 {
+            let prev_char = line.chars().nth(start_idx - 1).unwrap_or(' ');
+            if prev_char.is_digit(10) || prev_char == '.' {
+                start_idx -= 1;
+            } else {
+                break;
+            }
+        }
+
+        // Try to parse the percentage
+        if start_idx < percent_idx {
+            if let Ok(percent) = line[start_idx..percent_idx].parse::<f32>() {
+                return Some(percent);
+            }
+        }
+    }
+
+    None
+}
+
+fn extract_package_name(line: &str) -> Option<String> {
+    if let Some(start_idx) = line.find("Starting package ") {
+        let start = start_idx + "Starting package ".len();
+        if let Some(end_idx) = line[start..].find(':') {
+            return Some(line[start..start+end_idx].trim().to_string());
+        }
+    }
+
+    // Try another format
+    if line.contains("Building package ") {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() >= 3 {
+            return Some(parts[2].trim_matches(|c| c == ':' || c == '[' || c == ']').to_string());
+        }
+    }
+
+    None
+}
+
+
+
+// Helper function to extract percentage from command output
+fn extract_percentage_from_output(line: &str) -> Option<f32> {
+    // Regular expressions to match common progress indicators
+
+    // Pattern: "XX% complete" or "XX % done" etc.
+    if let Some(percent_pos) = line.find('%') {
+        if percent_pos > 0 {
+            // Look backwards from % for digits
+            let mut start_pos = percent_pos;
+            while start_pos > 0 {
+                let char_before = line.chars().nth(start_pos - 1).unwrap_or(' ');
+                if char_before.is_digit(10) || char_before == '.' {
+                    start_pos -= 1;
+                } else {
+                    break;
+                }
+            }
+
+            if start_pos < percent_pos {
+                // Extract the number
+                let number_str = &line[start_pos..percent_pos];
+                if let Ok(percent) = number_str.parse::<f32>() {
+                    return Some(percent);
+                }
+            }
+        }
+    }
+
+    // Pattern: "Processing X/Y"
+    if line.contains('/') {
+        let parts: Vec<&str> = line.split('/').collect();
+        if parts.len() >= 2 {
+            // Try to extract numbers before and after the slash
+            let before_slash = parts[0].split_whitespace().last().unwrap_or("");
+            let after_slash = parts[1].split_whitespace().next().unwrap_or("");
+
+            if let (Ok(numerator), Ok(denominator)) = (before_slash.parse::<f32>(), after_slash.parse::<f32>()) {
+                if denominator > 0.0 {
+                    return Some((numerator / denominator) * 100.0);
+                }
+            }
+        }
+    }
+
+    // Progress indicators like "Stage X of Y"
+    if line.contains(" of ") {
+        let parts: Vec<&str> = line.split(" of ").collect();
+        if parts.len() >= 2 {
+            // Look for numbers in the parts
+            let current_part = parts[0].split_whitespace().last().unwrap_or("");
+            let total_part = parts[1].split_whitespace().next().unwrap_or("");
+
+            if let (Ok(current), Ok(total)) = (current_part.parse::<f32>(), total_part.parse::<f32>()) {
+                if total > 0.0 {
+                    return Some((current / total) * 100.0);
+                }
+            }
+        }
+    }
+
+    None
+}
+
 // Implementation of run_vcpkg_install with timeout
 fn run_vcpkg_install_with_timeout(
     vcpkg_exe: &Path,
@@ -3323,7 +3838,7 @@ fn run_vcpkg_install_with_timeout(
 
             // Use a reference to avoid moving to_install
             for pkg in &to_install {
-                let package_spinner = ProgressSpinner::start(&format!("Installing package {}", pkg));
+                let package_spinner = progress_bar(&format!("Installing package {}", pkg));
 
                 let single_cmd = vec![
                     vcpkg_exe.to_string_lossy().to_string(),
@@ -3809,7 +4324,7 @@ fn install_dependencies(
     if config.dependencies.vcpkg.enabled {
         print_status("Setting up vcpkg dependencies");
 
-        let spinner = ProgressSpinner::start("Configuring vcpkg");
+        let spinner = progress_bar("Configuring vcpkg");
         match setup_vcpkg(config, project_path) {
             Ok(toolchain) => {
                 if !toolchain.is_empty() {
@@ -3830,7 +4345,7 @@ fn install_dependencies(
     if config.dependencies.conan.enabled && !config.dependencies.conan.packages.is_empty() {
         print_status("Setting up Conan dependencies");
 
-        let spinner = ProgressSpinner::start("Configuring Conan");
+        let spinner = progress_bar("Configuring Conan");
         match setup_conan(config, project_path) {
             Ok(cmake_file) => {
                 if !cmake_file.is_empty() {
@@ -3851,7 +4366,7 @@ fn install_dependencies(
     if !config.dependencies.git.is_empty() {
         print_status("Setting up git dependencies");
 
-        let spinner = ProgressSpinner::start("Configuring git dependencies");
+        let spinner = progress_bar("Configuring git dependencies");
         match setup_git_dependencies(config, project_path) {
             Ok(includes) => {
                 if !includes.is_empty() {
@@ -3872,7 +4387,7 @@ fn install_dependencies(
     if !config.dependencies.custom.is_empty() {
         print_status("Setting up custom dependencies");
 
-        let spinner = ProgressSpinner::start("Configuring custom dependencies");
+        let spinner = progress_bar("Configuring custom dependencies");
         match setup_custom_dependencies(config, project_path) {
             Ok(includes) => {
                 if !includes.is_empty() {
@@ -4129,6 +4644,230 @@ fn get_build_type(config: &ProjectConfig, requested_config: Option<&str>) -> Str
         "Debug".to_string()
     } else {
         "Release".to_string()
+    }
+}
+
+
+fn parse_vcpkg_output(line: &str, state: &Arc<Mutex<PackageInstallState>>) {
+    let mut state = state.lock().unwrap();
+
+    // Check for package start
+    if line.contains("Starting package ") {
+        if let Some(pkg_name) = extract_package_name(line) {
+            state.current_package = pkg_name;
+            state.current_percentage = 0.0;
+        }
+    }
+    // Check for package completion
+    else if line.contains("Building package ") && line.contains("succeeded") {
+        state.packages_completed += 1;
+        state.current_package = String::new();
+        state.current_percentage = 0.0;
+    }
+    // Look for percentage indicators
+    else if line.contains("%") {
+        if let Some(percentage) = extract_percentage(line) {
+            if percentage > state.current_percentage {
+                state.current_percentage = percentage;
+            }
+        }
+    }
+    // Look for specific stages
+    else if line.contains("Downloading ") || line.contains("Extracting ") {
+        // These are early stages - around 10-20%
+        if state.current_percentage < 20.0 {
+            state.current_percentage = 20.0;
+        }
+    }
+    else if line.contains("Configuring ") {
+        // Configuration stage - around 30-40%
+        if state.current_percentage < 40.0 {
+            state.current_percentage = 40.0;
+        }
+    }
+    else if line.contains("Building ") {
+        // Building stage - around 50-80%
+        if state.current_percentage < 50.0 {
+            state.current_percentage = 50.0;
+        }
+    }
+    else if line.contains("Installing ") {
+        // Installing stage - around 90%
+        if state.current_percentage < 90.0 {
+            state.current_percentage = 90.0;
+        }
+    }
+}
+
+fn run_vcpkg_install_with_progress(
+    vcpkg_exe: &Path,
+    vcpkg_path: &str,
+    packages: &[String],
+    mut progress: ProgressBar // Changed from TimedProgressBar to ProgressBar
+) -> Result<(), Box<dyn std::error::Error>> {
+    // First check which packages are already installed - update progress to 10%
+    progress.update(0.1);
+
+    let mut already_installed = Vec::new();
+    let mut to_install = Vec::new();
+
+    // Calculate total packages and set initial progress
+    let total_packages = packages.len();
+    let mut checked_count = 0;
+
+    if !is_quiet() {
+        print_substep("Checking package installation status");
+    }
+
+    for pkg in packages {
+        // Update progress as we check each package
+        checked_count += 1;
+        progress.update(0.1 + 0.1 * (checked_count as f32 / total_packages as f32));
+
+        if check_vcpkg_package_installed(vcpkg_path, pkg) {
+            already_installed.push(pkg.clone());
+        } else {
+            to_install.push(pkg.clone());
+        }
+    }
+
+    // If all packages are already installed, just show that - complete progress
+    if to_install.is_empty() {
+        if !is_quiet() {
+            print_substep("Packages already installed:");
+            for pkg in &already_installed {
+                print_detailed(&format!("• {}", pkg));
+            }
+        }
+
+        // Complete progress since all packages are already installed
+        progress.update(1.0);
+        progress.success();
+        return Ok(());
+    }
+
+    // Otherwise, run the install command for new packages
+    let mut cmd = vec![
+        vcpkg_exe.to_string_lossy().to_string(),
+        "install".to_string(),
+    ];
+
+    // Add all packages to install at once
+    for pkg in &to_install {
+        cmd.push(pkg.clone());
+    }
+
+    // Update progress to show we're starting installation (20%)
+    progress.update(0.2);
+
+    if !is_quiet() {
+        print_substep(&format!("Installing {} packages", to_install.len()));
+    }
+
+    // Create shared state to track installation progress
+    let package_state = Arc::new(Mutex::new(PackageInstallState {
+        current_package: String::new(),
+        current_percentage: 0.0,
+        packages_completed: 0,
+        total_packages: to_install.len(),
+    }));
+
+    // Use improved command execution with better progress tracking
+    let result = run_command_with_pattern_tracking(
+        cmd.clone(),
+        Some(vcpkg_path),
+        None,
+        progress.clone(),
+        vec![
+            ("Downloading".to_string(), 0.3),
+            ("Extracting".to_string(), 0.4),
+            ("Configuring".to_string(), 0.5),
+            ("Building".to_string(), 0.7),
+            ("Installing".to_string(), 0.9),
+        ]
+    );
+
+    // Handle result
+    match result {
+        Ok(_) => {
+            // Show results
+            if !already_installed.is_empty() && !is_quiet() {
+                print_substep("Packages already installed:");
+                for pkg in already_installed {
+                    print_detailed(&format!("• {}", pkg));
+                }
+            }
+
+            if !to_install.is_empty() && !is_quiet() {
+                print_substep("Newly installed packages:");
+                for pkg in &to_install {
+                    print_detailed(&format!("• {}", pkg));
+                }
+            }
+
+            // Final progress update
+            progress.update(1.0);
+            progress.success();
+            Ok(())
+        },
+        Err(e) => {
+            // If batch installation failed, try individually - update to 30%
+            print_warning(&format!("Error running vcpkg: {}", e), None);
+            print_warning("Batch installation failed, trying one package at a time", None);
+            progress.update(0.3);
+
+            let mut success_count = 0;
+            let mut failed_pkgs = Vec::new();
+
+            // Try each package individually
+            for (i, pkg) in to_install.iter().enumerate() {
+                let package_progress = 0.3 + (i as f32 / to_install.len() as f32) * 0.6;
+                progress.update(package_progress);
+
+                let mut package_progress_bar = ProgressBar::start(&format!("Installing package {}", pkg));
+
+                let single_cmd = vec![
+                    vcpkg_exe.to_string_lossy().to_string(),
+                    "install".to_string(),
+                    pkg.clone(),
+                ];
+
+                match run_command_with_timeout(single_cmd, Some(vcpkg_path), None, 300) { // 5 minute timeout per package
+                    Ok(_) => {
+                        package_progress_bar.success();
+                        success_count += 1;
+                    },
+                    Err(e) => {
+                        package_progress_bar.failure(&e.to_string());
+                        failed_pkgs.push(pkg.clone());
+                    }
+                }
+            }
+
+            // Determine overall success based on how many packages succeeded
+            if success_count > 0 {
+                print_substep(&format!("Successfully installed {} out of {} packages",
+                                       success_count, to_install.len()));
+
+                if !failed_pkgs.is_empty() {
+                    print_warning(&format!("Failed to install packages: {}", failed_pkgs.join(", ")),
+                                  Some("You may need to install these manually"));
+                }
+
+                // Update progress to show partial success
+                let progress_value = 0.3 + ((success_count as f32 / to_install.len() as f32) * 0.7);
+                progress.update(progress_value);
+                progress.success();
+
+                // If we got at least some packages, consider it a partial success
+                if success_count > failed_pkgs.len() {
+                    return Ok(());
+                }
+            }
+
+            progress.failure(&e.to_string());
+            Err(e.into())
+        }
     }
 }
 
@@ -5431,7 +6170,7 @@ fn configure_project(
     };
 
     // Setup dependencies
-    let spinner = ProgressSpinner::start("Setting up dependencies");
+    let mut spinner = ProgressBar::start("Setting up dependencies");
     let deps_result = install_dependencies(config, project_path, false)?;
     spinner.success();
 
@@ -5441,7 +6180,7 @@ fn configure_project(
     // Step 4: Generate CMake files
     progress.next_step("Generating build files");
 
-    let spinner = ProgressSpinner::start("Generating CMakeLists.txt");
+    let mut spinner = ProgressBar::start("Generating CMakeLists.txt");
     generate_cmake_lists(config, project_path, variant_name, workspace_config)?;
     spinner.success();
 
@@ -5519,10 +6258,12 @@ fn configure_project(
         cmd.extend(workspace_options);
     }
 
-    // Run the CMake configuration command
-    let cmake_result = run_command(cmd, Some(&build_path.to_string_lossy().to_string()), env_vars.clone());
+    // Run the CMake configuration command with progress
+    let mut cmake_progress = ProgressBar::start("Running cmake");
+    let cmake_result = run_command_with_timeout(cmd.clone(), Some(&build_path.to_string_lossy().to_string()), env_vars.clone(), 600); // 10 minute timeout
 
     if let Err(e) = cmake_result {
+        cmake_progress.failure(&format!("CMake configuration failed: {}", e));
         print_warning("CMake configuration failed. Attempting to fix common issues and retry...", None);
 
         if try_fix_cmake_errors(&build_path, is_msvc_style_for_config(config)) {
@@ -5538,10 +6279,19 @@ fn configure_project(
             }
 
             print_status("Retrying CMake configuration with minimal options...");
-            run_command(retry_cmd, Some(&build_path.to_string_lossy().to_string()), env_vars.clone())?;
+            let retry_result = run_command_with_timeout(retry_cmd, Some(&build_path.to_string_lossy().to_string()), env_vars.clone(), 600);
+
+            if let Err(retry_err) = retry_result {
+                cmake_progress.failure(&format!("Retry failed: {}", retry_err));
+                return Err(retry_err);
+            } else {
+                cmake_progress.success();
+            }
         } else {
             return Err(e);
         }
+    } else {
+        cmake_progress.success();
     }
 
     // Run post-configure hooks
@@ -5712,7 +6462,7 @@ fn clean_project(
         print_status(&format!("Cleaning project: {}", format_project_name(&config.project.name)));
         print_substep(&format!("Removing build directory: {}", build_path.display()));
 
-        let spinner = ProgressSpinner::start("Removing build files");
+        let spinner = progress_bar("Removing build files");
         match fs::remove_dir_all(&build_path) {
             Ok(_) => {
                 spinner.success();
@@ -5787,7 +6537,7 @@ fn run_project(
     }
 
     // Generate all possible executable paths
-    let spinner = ProgressSpinner::start("Locating executable");
+    let spinner = progress_bar("Locating executable");
 
     let mut executable_paths = Vec::new();
 
@@ -7033,80 +7783,15 @@ fn list_project_items(config: &ProjectConfig, what: Option<&str>) -> Result<(), 
     let item_type = what.unwrap_or("all");
 
     match item_type {
-        "configs" | "all" => {
-            println!("{}", "Available configurations:".bold());
-
-            if let Some(configs) = &config.build.configs {
-                for (name, settings) in configs {
-                    // Fix: Store the joined string in a variable
-                    let flags_str = settings.flags.as_ref()
-                        .map(|f| f.join(" "))
-                        .unwrap_or_else(|| String::new());
-
-                    println!(" - {}: {}", name.green(), flags_str);
-                }
-            } else {
-                println!(" - {}: Default debug build", "Debug".green());
-                println!(" - {}: Optimized build", "Release".green());
-            }
-
-            if item_type == "all" {
-                println!();
-            }
-        },
-        "variants" | "all" => {
-            println!("{}", "Available build variants:".bold());
-
-            if let Some(variants) = &config.variants {
-                if let Some(default) = &variants.default {
-                    println!(" - {} (default)", default.green());
-                }
-
-                for (name, settings) in &variants.variants {
-                    if Some(name) != variants.default.as_ref() {
-                        let empty = String::new();
-                        let desc = settings.description.as_ref().unwrap_or(&empty);
-                        println!(" - {}: {}", name.green(), desc);
-                    }
-                }
-            } else {
-                println!(" - {}: Standard build", "standard".green());
-            }
-
-            if item_type == "all" {
-                println!();
-            }
-        },
-        "targets" | "all" => {
-            println!("{}", "Available cross-compile targets:".bold());
-
-            if let Some(cross) = &config.cross_compile {
-                if cross.enabled {
-                    println!(" - {}: Configured in project", cross.target.green());
-                }
-            }
-
-            // Show predefined targets
-            println!(" - {}: Android ARM64 (NDK required)", "android-arm64".green());
-            println!(" - {}: Android ARM (NDK required)", "android-arm".green());
-            println!(" - {}: iOS ARM64 (Xcode required)", "ios".green());
-            println!(" - {}: Raspberry Pi ARM (toolchain required)", "raspberry-pi".green());
-            println!(" - {}: WebAssembly (Emscripten required)", "wasm".green());
-
-            if item_type == "all" {
-                println!();
-            }
-        },
-        "scripts" | "all" => {
-            println!("{}", "Available scripts:".bold());
-
-            if let Some(scripts) = &config.scripts {
-                for (name, cmd) in &scripts.scripts {
-                    println!(" - {}: {}", name.green(), cmd);
-                }
-            } else {
-                println!(" - No custom scripts defined");
-            }
+        "configs" => list_project_configs(config)?,
+        "variants" => list_project_variants(config)?,
+        "targets" => list_project_targets(config)?,
+        "scripts" => list_project_scripts(config)?,
+        "all" => {
+            list_project_configs(config)?;
+            list_project_variants(config)?;
+            list_project_targets(config)?;
+            list_project_scripts(config)?;
         },
         _ => {
             return Err(format!("Unknown item type: {}. Valid types are: configs, variants, targets, scripts, all", item_type).into());
@@ -7116,9 +7801,87 @@ fn list_project_items(config: &ProjectConfig, what: Option<&str>) -> Result<(), 
     Ok(())
 }
 
+// Helper functions to list specific project items
+fn list_project_configs(config: &ProjectConfig) -> Result<(), Box<dyn std::error::Error>> {
+    println!("{}", "Available configurations:".bold());
+
+    if let Some(configs) = &config.build.configs {
+        for (name, settings) in configs {
+            // Fix: Store the joined string in a variable
+            let flags_str = settings.flags.as_ref()
+                .map(|f| f.join(" "))
+                .unwrap_or_else(|| String::new());
+
+            println!(" - {}: {}", name.green(), flags_str);
+        }
+    } else {
+        println!(" - {}: Default debug build", "Debug".green());
+        println!(" - {}: Optimized build", "Release".green());
+    }
+
+    println!();
+    Ok(())
+}
+
+fn list_project_variants(config: &ProjectConfig) -> Result<(), Box<dyn std::error::Error>> {
+    println!("{}", "Available build variants:".bold());
+
+    if let Some(variants) = &config.variants {
+        if let Some(default) = &variants.default {
+            println!(" - {} (default)", default.green());
+        }
+
+        for (name, settings) in &variants.variants {
+            if Some(name) != variants.default.as_ref() {
+                let empty = String::new();
+                let desc = settings.description.as_ref().unwrap_or(&empty);
+                println!(" - {}: {}", name.green(), desc);
+            }
+        }
+    } else {
+        println!(" - {}: Standard build", "standard".green());
+    }
+
+    println!();
+    Ok(())
+}
+
+fn list_project_targets(config: &ProjectConfig) -> Result<(), Box<dyn std::error::Error>> {
+    println!("{}", "Available cross-compile targets:".bold());
+
+    if let Some(cross) = &config.cross_compile {
+        if cross.enabled {
+            println!(" - {}: Configured in project", cross.target.green());
+        }
+    }
+
+    // Show predefined targets
+    println!(" - {}: Android ARM64 (NDK required)", "android-arm64".green());
+    println!(" - {}: Android ARM (NDK required)", "android-arm".green());
+    println!(" - {}: iOS ARM64 (Xcode required)", "ios".green());
+    println!(" - {}: Raspberry Pi ARM (toolchain required)", "raspberry-pi".green());
+    println!(" - {}: WebAssembly (Emscripten required)", "wasm".green());
+
+    println!();
+    Ok(())
+}
+
+fn list_project_scripts(config: &ProjectConfig) -> Result<(), Box<dyn std::error::Error>> {
+    println!("{}", "Available scripts:".bold());
+
+    if let Some(scripts) = &config.scripts {
+        for (name, cmd) in &scripts.scripts {
+            println!(" - {}: {}", name.green(), cmd);
+        }
+    } else {
+        println!(" - No custom scripts defined");
+    }
+
+    println!();
+    Ok(())
+}
+
 // Utility functions
-// Enhanced run_command function with Rust-style C++ error formatting
-// Enhanced run_command function with cleaner output
 fn run_command(
     cmd: Vec<String>,
     cwd: Option<&str>,
@@ -7128,7 +7891,7 @@ fn run_command(
         return Err("Cannot run empty command".into());
     }
 
-    // Get command type characteristics
+    // Determine if this is a CMake command
     let command_name = &cmd[0];
     let is_cmake = command_name.contains("cmake");
     let is_compiler_command = command_name.contains("cl") ||
@@ -7177,7 +7940,7 @@ fn run_command(
         } else {
             format!("Running {}", command_name)
         };
-        Some(ProgressSpinner::start(&msg))
+        Some(progress_bar(&msg))
     } else {
         None
     };
@@ -7218,10 +7981,24 @@ fn run_command(
 
             // If successful
             if status.success() {
-                // Print output in verbose mode
-                if is_verbose() && !stdout.is_empty() {
+                // For CMake commands, don't flood output with details
+                if is_cmake && !is_verbose() {
+                    // Just print a summary or important messages
+                    if stdout.contains("Configuring done") || stdout.contains("Generating done") {
+                        print_substep("CMake configuration completed");
+                    }
+
+                    // Check for warnings but don't print the full output
+                    if stderr.contains("Warning") || stderr.contains("WARNING") {
+                        print_warning("CMake reported warnings during configuration",
+                                      Some("Use verbose mode to see details"));
+                    }
+                }
+                // For non-CMake or verbose mode, print output as before
+                else if is_verbose() && !stdout.is_empty() {
                     println!("{}", stdout);
                 }
+
                 Ok(())
             } else {
                 // If build command failed, format errors instead of logging
@@ -7257,7 +8034,6 @@ fn run_command(
         }
     }
 }
-
 
 // Function to display syntax errors in a rust-like format directly in the console
 fn display_syntax_errors(stdout: &str, stderr: &str) -> usize {
@@ -9015,8 +9791,6 @@ fn analyze_cpp_errors(error_output: &str) -> Vec<String> {
     suggestions
 }
 
-// Enhanced build_project function with cleaner error reporting
-// Enhanced build_project function with cleaner output
 fn build_project(
     config: &ProjectConfig,
     project_path: &Path,
@@ -9030,9 +9804,14 @@ fn build_project(
     // Create a progress tracker for the build process
     let mut progress = BuildProgress::new(project_name, 4); // 4 main steps
 
-    // Step 1: Ensure tools
+    // Create a main progress bar for overall build progress
+    let mut main_progress = ProgressBar::start(&format!("Building {}", project_name));
+
+    // Step 1: Ensure tools (5% of progress)
     progress.next_step("Checking build tools");
+    main_progress.update(0.05);
     ensure_build_tools(config)?;
+    main_progress.update(0.1);
 
     // Calculate build paths
     let build_dir = config.build.build_dir.as_deref().unwrap_or(DEFAULT_BUILD_DIR);
@@ -9050,7 +9829,7 @@ fn build_project(
         (config.build.generator.as_deref().unwrap_or("") == "Ninja" &&
             !build_path.join("build.ninja").exists());
 
-    // Step 2: Configure if needed
+    // Step 2: Configure if needed (30% of progress)
     if needs_configure {
         progress.next_step("Configuring project");
 
@@ -9058,12 +9837,27 @@ fn build_project(
             print_status("Project not configured or build files missing, configuring...");
         }
 
-        configure_project(config, project_path, config_type, variant_name, cross_target, workspace_config)?;
+        // Creating a progress bar specifically for configuration
+        let mut config_progress = ProgressBar::start("Configuration");
+
+        // Delegate to configure_project with the progress bar
+        configure_project(
+            config,
+            project_path,
+            config_type,
+            variant_name,
+            cross_target,
+            workspace_config
+        )?;
+
+        config_progress.success();
+        main_progress.update(0.3); // Configuration complete (30%)
     } else {
         progress.next_step("Project already configured");
+        main_progress.update(0.3); // Configuration was already done
     }
 
-    // Step 3: Pre-build hooks
+    // Step 3: Pre-build hooks (35% of progress)
     progress.next_step("Running pre-build hooks");
 
     // Setup environment for hooks
@@ -9090,8 +9884,13 @@ fn build_project(
         }
     }
 
-    // Step 4: Build
+    main_progress.update(0.35); // Pre-build hooks complete
+
+    // Step 4: Build (35% to 95% of progress)
     progress.next_step("Building project");
+
+    // Count source files to get a better estimate of build size
+    let source_files_count = count_project_source_files(config, project_path)?;
 
     // Build using CMake
     let mut cmd = vec!["cmake".to_string(), "--build".to_string(), ".".to_string()];
@@ -9112,14 +9911,26 @@ fn build_project(
                               build_type));
     }
 
-    let build_result = run_command(cmd, Some(&build_path.to_string_lossy().to_string()), None);
+    // Create build progress bar
+    let build_progress = ProgressBar::start(&format!("Compiling {} source files", source_files_count));
+
+    // Execute build command with progress tracking - using our enhanced function
+    let build_result = execute_build_with_progress(
+        cmd,
+        &build_path,
+        source_files_count,
+        build_progress
+    );
 
     if let Err(e) = build_result {
+        main_progress.failure(&format!("Build failed: {}", e));
         print_error("Build failed. See above for details.", None, None);
         return Err(e);
     }
 
-    // Run post-build hooks
+    main_progress.update(0.95); // Main build complete
+
+    // Run post-build hooks (95% to 100%)
     if let Some(hooks) = &config.hooks {
         if let Some(post_hooks) = &hooks.post_build {
             if !post_hooks.is_empty() {
@@ -9130,11 +9941,563 @@ fn build_project(
     }
 
     // Complete build
+    main_progress.update(1.0); // Ensure we show 100%
+    main_progress.success();
     progress.complete();
 
     Ok(())
 }
 
+fn count_project_source_files(config: &ProjectConfig, project_path: &Path) -> Result<usize, Box<dyn std::error::Error>> {
+    let mut total_count = 0;
+
+    // Process each target and its source patterns
+    for (_, target) in &config.targets {
+        for source_pattern in &target.sources {
+            // Skip empty patterns
+            if source_pattern.is_empty() {
+                continue;
+            }
+
+            // Convert glob pattern to regex
+            let regex_pattern = glob_to_regex(source_pattern);
+            let regex = match regex::Regex::new(&regex_pattern) {
+                Ok(r) => r,
+                Err(_) => continue, // Skip invalid patterns
+            };
+
+            // Count files recursively
+            total_count += count_matching_files(project_path, &regex)?;
+        }
+    }
+
+    // If we didn't find any source files, provide a minimal default
+    if total_count == 0 {
+        total_count = 10; // Assume at least some source files
+    }
+
+    Ok(total_count)
+}
+
+fn glob_to_regex(pattern: &str) -> String {
+    let mut regex_pattern = "^".to_string();
+
+    // Split the pattern by path separators
+    let parts: Vec<&str> = pattern.split('/').collect();
+
+    for (i, part) in parts.iter().enumerate() {
+        if i > 0 {
+            regex_pattern.push_str("/");
+        }
+
+        if part == &"**" {
+            regex_pattern.push_str(".*");
+        } else {
+            // Escape regex special characters and convert glob patterns
+            let mut part_pattern = part.replace(".", "\\.")
+                .replace("*", ".*")
+                .replace("?", ".");
+
+            // Handle character classes [abc]
+            // This is simplified - a real implementation would handle ranges and negation
+            if part_pattern.contains('[') && part_pattern.contains(']') {
+                part_pattern = part_pattern; // Keep as is, regex handles character classes
+            }
+
+            regex_pattern.push_str(&part_pattern);
+        }
+    }
+
+    regex_pattern.push_str("$");
+    regex_pattern
+}
+
+// Count files matching a regex pattern recursively
+fn count_matching_files(dir: &Path, regex: &regex::Regex) -> Result<usize, Box<dyn std::error::Error>> {
+    let mut count = 0;
+
+    if !dir.exists() || !dir.is_dir() {
+        return Ok(0);
+    }
+
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        let path = entry.path();
+
+        if path.is_dir() {
+            // Recursively count files in subdirectories
+            count += count_matching_files(&path, regex)?;
+        } else if path.is_file() {
+            // Check if this file matches the pattern
+            if let Some(path_str) = path.to_str() {
+                if regex.is_match(path_str) {
+                    count += 1;
+                }
+            }
+        }
+    }
+
+    Ok(count)
+}
+
+// Execute build command with progress tracking
+fn execute_build_with_progress(
+    cmd: Vec<String>,
+    build_path: &Path,
+    source_files_count: usize,
+    mut progress: ProgressBar
+) -> Result<(), Box<dyn std::error::Error>> {
+    use std::process::{Command, Stdio};
+    use std::io::{BufRead, BufReader};
+    use std::sync::{Arc, Mutex};
+    use std::thread;
+    use std::time::Duration;
+
+    // Check if this is a CMake command
+    let is_cmake_command = cmd.len() > 0 && cmd[0].contains("cmake");
+
+    // Build the Command
+    let mut command = Command::new(&cmd[0]);
+    command.args(&cmd[1..]);
+    command.current_dir(build_path);
+
+    // Pipe stdout and stderr so we can read them
+    command.stdout(Stdio::piped());
+    command.stderr(Stdio::piped());
+
+    // Initial progress update - show we're starting
+    progress.update(0.01);
+
+    // Spawn the command
+    let mut child = match command.spawn() {
+        Ok(c) => c,
+        Err(e) => {
+            progress.failure(&format!("Failed to start build: {}", e));
+            return Err(format!("Failed to start build command: {}", e).into());
+        }
+    };
+
+    // Take ownership of stdout/stderr handles
+    let stdout = child.stdout.take().ok_or("Failed to capture stdout")?;
+    let stderr = child.stderr.take().ok_or("Failed to capture stderr")?;
+
+    // Shared state for tracking build progress
+    let build_state = Arc::new(Mutex::new(BuildProgressState {
+        compiled_files: 0,
+        total_files: source_files_count.max(1), // Ensure we don't divide by zero
+        current_percentage: 0.0,
+        errors: Vec::new(),
+        is_linking: false,
+    }));
+
+    // Buffers to collect stdout and stderr for error analysis
+    let stdout_buffer = Arc::new(Mutex::new(String::new()));
+    let stderr_buffer = Arc::new(Mutex::new(String::new()));
+
+    // Create completion flags to detect when reading is complete
+    let stdout_done = Arc::new(Mutex::new(false));
+    let stderr_done = Arc::new(Mutex::new(false));
+
+    // Clones for threads
+    let build_state_stdout = Arc::clone(&build_state);
+    let build_state_stderr = Arc::clone(&build_state);
+    let stdout_done_clone = Arc::clone(&stdout_done);
+    let stderr_done_clone = Arc::clone(&stderr_done);
+    let stdout_buffer_clone = Arc::clone(&stdout_buffer);
+    let stderr_buffer_clone = Arc::clone(&stderr_buffer);
+
+    // Thread for reading stdout
+    let stdout_handle = thread::spawn(move || {
+        let reader = BufReader::new(stdout);
+
+        for line in reader.lines().filter_map(Result::ok) {
+            // Update progress based on stdout patterns
+            update_build_progress(&build_state_stdout, &line, false);
+
+            // Append to buffer for error analysis
+            {
+                let mut buffer = stdout_buffer_clone.lock().unwrap();
+                buffer.push_str(&line);
+                buffer.push('\n');
+            }
+
+            // Filter output based on command type and verbosity
+            let should_print = if is_cmake_command {
+                // For CMake, only show output if it contains important keywords or in verbose mode
+                is_verbose() ||
+                    line.contains("error") ||
+                    line.contains("Error") ||
+                    line.contains("WARNING") ||
+                    line.contains("Warning") ||
+                    line.contains("failed") ||
+                    line.contains("Failed")
+            } else {
+                // For other commands (like compiler commands), use normal verbosity rules
+                is_verbose() ||
+                    (line.contains("error") && !line.trim().is_empty()) ||
+                    (line.contains("warning") && !line.trim().is_empty()) ||
+                    line.contains("Compiling") ||
+                    line.contains("Linking") ||
+                    line.contains("Building")
+            };
+
+            if should_print {
+                println!("{}", line);
+            }
+        }
+
+        // Mark stdout reading as complete
+        *stdout_done_clone.lock().unwrap() = true;
+    });
+
+    // Thread for reading stderr
+    let stderr_handle = thread::spawn(move || {
+        let reader = BufReader::new(stderr);
+
+        for line in reader.lines().filter_map(Result::ok) {
+            // Update progress based on stderr patterns
+            update_build_progress(&build_state_stderr, &line, true);
+
+            // Append to buffer for error analysis
+            {
+                let mut buffer = stderr_buffer_clone.lock().unwrap();
+                buffer.push_str(&line);
+                buffer.push('\n');
+            }
+
+            // Filter stderr output similar to stdout
+            let should_print = if is_cmake_command {
+                // For CMake stderr, only show output with important keywords or in verbose mode
+                is_verbose() ||
+                    line.contains("error") ||
+                    line.contains("Error") ||
+                    line.contains("WARNING") ||
+                    line.contains("Warning") ||
+                    line.contains("failed") ||
+                    line.contains("Failed")
+            } else {
+                // For other commands, always show stderr errors
+                is_verbose() ||
+                    line.contains("error") ||
+                    line.contains("Error") ||
+                    line.contains("warning") ||
+                    line.contains("Warning")
+            };
+
+            if should_print {
+                eprintln!("{}", line.red());
+            }
+        }
+
+        // Mark stderr reading as complete
+        *stderr_done_clone.lock().unwrap() = true;
+    });
+
+    // Create a thread to update the progress bar based on the build state
+    let build_state_progress = Arc::clone(&build_state);
+    let stdout_done_progress = Arc::clone(&stdout_done);
+    let stderr_done_progress = Arc::clone(&stderr_done);
+    let progress_clone = progress.clone();
+    let progress_handle = thread::spawn(move || {
+        let mut last_progress = 0.0;
+
+        // Keep updating until both stdout and stderr are done OR we reach 100%
+        while !(*stdout_done_progress.lock().unwrap() && *stderr_done_progress.lock().unwrap()) {
+            // Get current state
+            let state = build_state_progress.lock().unwrap();
+
+            // Calculate progress percentage
+            let mut progress_value = 0.0;
+
+            if state.is_linking {
+                // If we're linking, assume we're at least 80% done
+                progress_value = 0.8 + (state.current_percentage / 100.0) * 0.2;
+            } else if state.total_files > 0 {
+                // Otherwise base on compiled files
+                let files_ratio = state.compiled_files as f32 / state.total_files as f32;
+                progress_value = (files_ratio * 0.8).min(0.8); // Cap at 80% until linking starts
+            }
+
+            // Only update if progress has changed meaningfully
+            if (progress_value - last_progress).abs() > 0.005 {
+                progress_clone.update(progress_value);
+                last_progress = progress_value;
+            }
+
+            // Release the lock before sleeping
+            drop(state);
+
+            // Don't spin the CPU - check every 100ms
+            thread::sleep(Duration::from_millis(100));
+        }
+
+        // One final update to ensure we show progress
+        let state = build_state_progress.lock().unwrap();
+        if state.current_percentage >= 100.0 {
+            progress_clone.update(1.0);
+        }
+    });
+
+    // Wait for the command to complete (with watchdog to prevent hanging)
+    let mut completed = false;
+    let start_time = std::time::Instant::now();
+    let timeout = Duration::from_secs(7200); // 2 hour timeout
+
+    // Use a separate thread to wait for the process to exit
+    let (tx, rx) = std::sync::mpsc::channel();
+    let wait_handle = thread::spawn(move || {
+        let status = child.wait();
+        let _ = tx.send(status);
+    });
+
+    // Wait for completion with timeout
+    completed = match rx.recv_timeout(timeout) {
+        Ok(status_result) => {
+            match status_result {
+                Ok(status) => status.success(),
+                Err(_) => false
+            }
+        },
+        Err(_) => {
+            // Timeout occurred
+            print_warning(&format!("Build process timed out after {:?}", timeout),
+                          Some("The build may still be running in the background"));
+            false
+        }
+    };
+
+    // Wait for stdout/stderr readers to finish
+    let _ = stdout_handle.join();
+    let _ = stderr_handle.join();
+
+    // Wait for progress updater to finish, but with timeout
+    let _ = progress_handle.join();
+
+    // Get any errors that might have occurred
+    let errors = {
+        let state = build_state.lock().unwrap();
+        state.errors.clone()
+    };
+
+    // If the command succeeded and this was CMake, show a clean completion message
+    if completed && is_cmake_command {
+        // For CMake commands that succeeded, show only a simple success message
+        if !is_quiet() {
+            print_substep("CMake configuration completed successfully");
+        }
+    }
+
+    // Get the collected stdout and stderr content for error analysis if needed
+    if !completed {
+        let stdout_content = stdout_buffer.lock().unwrap().clone();
+        let stderr_content = stderr_buffer.lock().unwrap().clone();
+
+        // Combine for error analysis
+        let combined_output = format!("{}\n{}", stdout_content, stderr_content);
+
+        // Build failed - display formatted errors using existing functions
+        progress.failure("Build failed");
+
+        // Use existing functions to format the errors
+        let formatted_errors = format_cpp_errors_rust_style(&combined_output);
+
+        println!("\n{}", "Build error details:".red().bold());
+        for error_line in formatted_errors {
+            println!("{}", error_line);
+        }
+
+        // Provide additional suggestions
+        let suggestions = analyze_cpp_errors(&combined_output);
+        if !suggestions.is_empty() {
+            println!("\n{}", "Suggestions to fix the issues:".yellow().bold());
+            for suggestion in suggestions {
+                println!("  • {}", suggestion);
+            }
+        }
+
+        // Add general help for errors
+        if !errors.is_empty() {
+            if errors.len() > 5 {
+                println!("\n{}", "The build failed with multiple errors.".red().bold());
+            }
+
+            // Extract error categories to provide focused suggestions
+            let mut error_categories = HashSet::new();
+            for error in &errors {
+                let categories = categorize_error(error);
+                for category in categories {
+                    error_categories.insert(category);
+                }
+            }
+
+            // Print general suggestions
+            print_general_suggestions(&error_categories);
+        }
+
+        return Err("Build process failed - see above for detailed errors".into());
+    }
+
+    // Build succeeded
+    progress.update(1.0);
+    progress.success();
+    Ok(())
+}
+
+// Helper function to parse error lines into diagnostic structures
+fn parse_error_line(line: &str, line_buffer: &mut Vec<String>, in_error_context: &mut bool) -> Option<CompilerDiagnostic> {
+    // Check for common error message patterns
+
+    // GCC/Clang style errors (file:line:col: error/warning: message)
+    lazy_static! {
+        static ref CLANG_STYLE: Regex = Regex::new(r"(?m)(.*?):(\d+):(\d+):\s+(error|warning|note):\s+(.*)").unwrap();
+        // MSVC style errors (file(line,col): error/warning: message)
+        static ref MSVC_STYLE: Regex = Regex::new(r"(?m)(.*?)\((\d+),(\d+)\):\s+(error|warning|note)(?:\s+[A-Z]\d+)?: (.*)").unwrap();
+        // MSVC simplified (file(line): error/warning: message)
+        static ref MSVC_SIMPLE: Regex = Regex::new(r"(?m)(.*?)\((\d+)\):\s+(error|warning|note)(?:\s+[A-Z]\d+)?: (.*)").unwrap();
+    }
+
+    // Check for a new error message
+    if let Some(cap) = CLANG_STYLE.captures(line) {
+        // We have a new error message, clear the buffer
+        line_buffer.clear();
+        *in_error_context = true;
+
+        // Add the current line to the buffer
+        line_buffer.push(line.to_string());
+
+        // Create a diagnostic
+        let file = cap[1].to_string();
+        let line = cap[2].parse().unwrap_or(0);
+        let column = cap[3].parse().unwrap_or(0);
+        let level = cap[4].to_string();
+        let message = cap[5].to_string();
+
+        return Some(CompilerDiagnostic {
+            file,
+            line,
+            column,
+            level,
+            message,
+            context: line_buffer.clone(),
+        });
+    }
+    else if let Some(cap) = MSVC_STYLE.captures(line) {
+        // We have a new error message, clear the buffer
+        line_buffer.clear();
+        *in_error_context = true;
+
+        // Add the current line to the buffer
+        line_buffer.push(line.to_string());
+
+        // Create a diagnostic
+        let file = cap[1].to_string();
+        let line = cap[2].parse().unwrap_or(0);
+        let column = cap[3].parse().unwrap_or(0);
+        let level = cap[4].to_string();
+        let message = cap[5].to_string();
+
+        return Some(CompilerDiagnostic {
+            file,
+            line,
+            column,
+            level,
+            message,
+            context: line_buffer.clone(),
+        });
+    }
+    else if let Some(cap) = MSVC_SIMPLE.captures(line) {
+        // We have a new error message, clear the buffer
+        line_buffer.clear();
+        *in_error_context = true;
+
+        // Add the current line to the buffer
+        line_buffer.push(line.to_string());
+
+        // Create a diagnostic
+        let file = cap[1].to_string();
+        let line = cap[2].parse().unwrap_or(0);
+        let level = cap[3].to_string();
+        let message = cap[4].to_string();
+
+        return Some(CompilerDiagnostic {
+            file,
+            line,
+            column: 0, // No column information
+            level,
+            message,
+            context: line_buffer.clone(),
+        });
+    }
+
+    // If we're in an error context, collect additional lines
+    if *in_error_context {
+        // Check if this line could be context for the previous error
+        if !line.contains("error:") && !line.contains("warning:") && !line.trim().is_empty() {
+            line_buffer.push(line.to_string());
+
+            // Check for end of context - usually a blank line or a line with code indicators
+            if line.trim().is_empty() || line.contains("^") {
+                *in_error_context = false;
+            }
+        }
+    }
+
+    None
+}
+
+
+
+
+// Update build progress based on output line
+fn update_build_progress(state: &Arc<Mutex<BuildProgressState>>, line: &str, is_stderr: bool) {
+    let mut state = state.lock().unwrap();
+
+    // Check if this is a compiler line showing a file being compiled
+    // Improved detection of file compilation
+    if (line.contains(".cpp") || line.contains(".cc") || line.contains(".c")) &&
+        (line.contains("Compiling") || line.contains("Building") ||
+            line.contains("C++") || line.contains("CC") || line.contains("[") ||
+            line.contains("Building CXX object") || line.contains("Building C object")) {
+        state.compiled_files += 1;
+
+        // Update percentage based on files compiled
+        if state.total_files > 0 {
+            state.current_percentage = (state.compiled_files as f32 / state.total_files as f32) * 100.0;
+        }
+    }
+
+    // More robust detection of linking phase
+    if line.contains("Linking") || line.contains("Generating library") ||
+        line.contains("Building executable") || line.contains("Building shared library") ||
+        line.contains("Building static library") || line.contains("Linking CXX") {
+        state.is_linking = true;
+        state.current_percentage = 90.0;
+    }
+
+    // Check for error messages
+    if (is_stderr && (line.contains("error") || line.contains("Error"))) ||
+        (line.contains("fatal error") || line.contains("undefined reference")) {
+        state.errors.push(line.to_string());
+    }
+
+    // Look for percentage indicators
+    if let Some(percent_pos) = line.find('%') {
+        if percent_pos > 0 && percent_pos < line.len() - 1 {
+            let start = line[..percent_pos].rfind(|c: char| !c.is_digit(10) && c != '.').map_or(0, |pos| pos + 1);
+            if let Ok(percentage) = line[start..percent_pos].trim().parse::<f32>() {
+                if percentage > state.current_percentage {
+                    state.current_percentage = percentage;
+                }
+            }
+        }
+    }
+
+    // Check for build completion keywords
+    if line.contains("Built target") || line.contains("Built all targets") ||
+        line.contains("[100%]") || line.contains("build succeeded") {
+        state.current_percentage = 100.0;
+    }
+}
 
 fn analyze_build_error(error_output: &str) -> Vec<String> {
     let mut suggestions = Vec::new();
@@ -9537,5 +10900,748 @@ fn get_visual_studio_generator(requested_version: Option<&str>) -> String {
 
 
         "Visual Studio 17 2022".to_string()
+    }
+}
+
+
+// Setup Conan with progress tracking
+fn setup_conan_with_progress(
+    config: &ProjectConfig,
+    project_path: &Path,
+    progress: &mut ProgressBar
+) -> Result<String, Box<dyn std::error::Error>> {
+    let conan_config = &config.dependencies.conan;
+    if !conan_config.enabled || conan_config.packages.is_empty() {
+        progress.update(1.0);
+        return Ok(String::new());
+    }
+
+    // Initial progress
+    progress.update(0.1);
+
+    // Check if conan is installed
+    if Command::new("conan").arg("--version").stdout(Stdio::null()).stderr(Stdio::null()).status().is_err() {
+        progress.update(0.2);
+
+        // Try to install Conan
+        print_warning("Conan package manager not found. Attempting to install...", None);
+
+        let mut install_progress = ProgressBar::start("Installing Conan");
+        let install_result = if cfg!(windows) {
+            if has_command("pip") {
+                run_command_with_timeout(
+                    vec!["pip".to_string(), "install".to_string(), "conan".to_string()],
+                    None,
+                    None,
+                    180
+                )
+            } else {
+                Err("pip not found".into())
+            }
+        } else if cfg!(target_os = "macos") {
+            if has_command("brew") {
+                run_command_with_timeout(
+                    vec!["brew".to_string(), "install".to_string(), "conan".to_string()],
+                    None,
+                    None,
+                    180
+                )
+            } else {
+                Err("Homebrew not found".into())
+            }
+        } else {
+            if has_command("pip") || has_command("pip3") {
+                let pip_cmd = if has_command("pip3") { "pip3" } else { "pip" };
+                run_command_with_timeout(
+                    vec![pip_cmd.to_string(), "install".to_string(), "conan".to_string()],
+                    None,
+                    None,
+                    180
+                )
+            } else {
+                Err("pip not found".into())
+            }
+        };
+
+        if install_result.is_err() {
+            install_progress.failure("Failed to install Conan");
+            progress.failure("Failed to install Conan package manager");
+            return Err("Conan package manager not found and could not be installed. Please install it first.".into());
+        }
+
+        install_progress.success();
+    }
+
+    progress.update(0.3);
+
+    // Create conan directory in build
+    let build_dir = config.build.build_dir.as_deref().unwrap_or(DEFAULT_BUILD_DIR);
+    let conan_dir = project_path.join(build_dir).join("conan");
+    fs::create_dir_all(&conan_dir)?;
+
+    progress.update(0.4);
+
+    // Create conanfile.txt
+    let mut conanfile_content = String::from("[requires]\n");
+    for package in &conan_config.packages {
+        conanfile_content.push_str(&format!("{}\n", package));
+    }
+
+    // Add options if provided
+    if let Some(options) = &conan_config.options {
+        conanfile_content.push_str("\n[options]\n");
+        for (option, value) in options {
+            conanfile_content.push_str(&format!("{}={}\n", option, value));
+        }
+    }
+
+    // Add generators
+    conanfile_content.push_str("\n[generators]\n");
+    if let Some(generators) = &conan_config.generators {
+        for generator in generators {
+            conanfile_content.push_str(&format!("{}\n", generator));
+        }
+    } else {
+        // Default generators
+        conanfile_content.push_str("cmake\n");
+        conanfile_content.push_str("cmake_find_package\n");
+    }
+
+    // Write conanfile.txt
+    let conanfile_path = conan_dir.join("conanfile.txt");
+    fs::write(&conanfile_path, conanfile_content)?;
+
+    progress.update(0.5);
+
+    // Run conan install with a dedicated progress bar
+    let mut install_progress = ProgressBar::start("Installing Conan packages");
+
+    // Run conan install
+    let mut cmd = vec![
+        "conan".to_string(),
+        "install".to_string(),
+        conanfile_path.to_string_lossy().to_string(),
+        "--build=missing".to_string(),
+    ];
+
+    // Track installation progress by parsing output
+    let result = run_command_with_pattern_tracking(
+        cmd,
+        Some(&conan_dir.to_string_lossy().to_string()),
+        None,
+        install_progress.clone(),
+        vec![
+            ("Configuring".to_string(), 0.3),
+            ("Downloading".to_string(), 0.4),
+            ("Downloading".to_string(), 0.5),
+            ("Generating".to_string(), 0.7),
+            ("Building".to_string(), 0.8),
+            ("Generator".to_string(), 0.9),
+        ]
+    );
+
+    match result {
+        Ok(_) => install_progress.success(),
+        Err(e) => {
+            install_progress.failure(&e.to_string());
+            progress.failure("Conan installation failed");
+            return Err(e);
+        }
+    }
+
+    progress.update(0.9);
+
+    // Return the path to conan's generated CMake file
+    let cmake_file = conan_dir.join("conanbuildinfo.cmake");
+    if !cmake_file.exists() {
+        progress.failure("Conan failed to generate CMake integration files");
+        return Err("Conan failed to generate CMake integration files.".into());
+    }
+
+    progress.update(1.0);
+
+    Ok(cmake_file.to_string_lossy().to_string())
+}
+
+// Setup git dependencies with progress tracking
+fn setup_git_dependencies_with_progress(
+    config: &ProjectConfig,
+    project_path: &Path,
+    progress: &mut ProgressBar
+) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+    let git_deps = &config.dependencies.git;
+    if git_deps.is_empty() {
+        progress.update(1.0);
+        return Ok(Vec::new());
+    }
+
+    // Initial progress
+    progress.update(0.05);
+
+    // Check if git is installed
+    if Command::new("git").arg("--version").stdout(Stdio::null()).stderr(Stdio::null()).status().is_err() {
+        progress.update(0.1);
+
+        // Try to install Git
+        print_warning("Git not found. Attempting to install...", None);
+
+        let mut install_progress = ProgressBar::start("Installing Git");
+
+        let install_result = if cfg!(windows) {
+            if has_command("winget") {
+                run_command_with_timeout(
+                    vec!["winget".to_string(), "install".to_string(), "--id".to_string(), "Git.Git".to_string()],
+                    None,
+                    None,
+                    300
+                )
+            } else {
+                Err("winget not found".into())
+            }
+        } else if cfg!(target_os = "macos") {
+            if has_command("brew") {
+                run_command_with_timeout(
+                    vec!["brew".to_string(), "install".to_string(), "git".to_string()],
+                    None,
+                    None,
+                    300
+                )
+            } else {
+                Err("Homebrew not found".into())
+            }
+        } else {
+            run_command_with_timeout(
+                vec!["sudo".to_string(), "apt-get".to_string(), "install".to_string(), "-y".to_string(), "git".to_string()],
+                None,
+                None,
+                300
+            )
+        };
+
+        if install_result.is_err() {
+            install_progress.failure("Failed to install Git");
+            progress.failure("Git not found. Please install Git manually.");
+            return Err("Git not found. Please install git first.".into());
+        }
+
+        install_progress.success();
+    }
+
+    progress.update(0.2);
+
+    // Create deps directory
+    let deps_dir = project_path.join("deps");
+    fs::create_dir_all(&deps_dir)?;
+
+    let mut cmake_include_paths = Vec::new();
+
+    // Calculate progress steps for each dependency
+    let total_deps = git_deps.len();
+    let progress_per_dep = 0.7 / total_deps as f32; // Allocate 70% of progress bar for processing dependencies
+
+    // Process each git dependency
+    for (i, dep) in git_deps.iter().enumerate() {
+        let dep_path = deps_dir.join(&dep.name);
+        let base_progress = 0.2 + (i as f32 * progress_per_dep);
+
+        // Update progress to show which dependency we're working on
+        progress.update(base_progress);
+
+        if !is_quiet() {
+            print_substep(&format!("Processing git dependency: {}", dep.name));
+        }
+
+        if dep_path.exists() {
+            // If update is requested, pull latest changes
+            if dep.update.unwrap_or(false) {
+                let mut pull_progress = ProgressBar::start(&format!("Updating {}", dep.name));
+
+                let mut cmd = vec![
+                    "git".to_string(),
+                    "pull".to_string(),
+                ];
+
+                match run_command(cmd, Some(&dep_path.to_string_lossy().to_string()), None) {
+                    Ok(_) => pull_progress.success(),
+                    Err(e) => {
+                        pull_progress.failure(&e.to_string());
+                        print_warning(&format!("Failed to update {}: {}", dep.name, e), None);
+                        // Continue anyway with existing version
+                    }
+                }
+            } else if !is_quiet() {
+                print_substep(&format!("Git dependency already exists: {}", dep.name));
+            }
+        } else {
+            // Need to clone the repository
+            let mut clone_progress = ProgressBar::start(&format!("Cloning {}", dep.name));
+
+            // Build git clone command
+            let mut cmd = vec![
+                "git".to_string(),
+                "clone".to_string(),
+            ];
+
+            // Add shallow clone option if requested
+            if dep.shallow.unwrap_or(false) {
+                cmd.push("--depth=1".to_string());
+            }
+
+            // Add branch/tag/commit if specified
+            if let Some(branch) = &dep.branch {
+                cmd.push("--branch".to_string());
+                cmd.push(branch.clone());
+            } else if let Some(tag) = &dep.tag {
+                cmd.push("--branch".to_string());
+                cmd.push(tag.clone());
+            }
+
+            // Add URL and target directory
+            cmd.push(dep.url.clone());
+            cmd.push(dep_path.to_string_lossy().to_string());
+
+            // Clone the repository
+            match run_command(cmd, Some(&deps_dir.to_string_lossy().to_string()), None) {
+                Ok(_) => {
+                    clone_progress.success();
+
+                    // Checkout specific commit if requested
+                    if let Some(commit) = &dep.commit {
+                        let mut checkout_progress = ProgressBar::start(&format!("Checking out commit {}", commit));
+
+                        let mut cmd = vec![
+                            "git".to_string(),
+                            "checkout".to_string(),
+                            commit.clone(),
+                        ];
+
+                        match run_command(cmd, Some(&dep_path.to_string_lossy().to_string()), None) {
+                            Ok(_) => checkout_progress.success(),
+                            Err(e) => {
+                                checkout_progress.failure(&e.to_string());
+                                print_warning(&format!("Failed to checkout commit: {}", e), None);
+                            }
+                        }
+                    }
+                },
+                Err(e) => {
+                    clone_progress.failure(&e.to_string());
+                    progress.failure(&format!("Failed to clone {}: {}", dep.name, e));
+                    return Err(format!("Failed to clone git dependency {}: {}", dep.name, e).into());
+                }
+            }
+        }
+
+        // Update progress after cloning/updating the repository
+        progress.update(base_progress + (progress_per_dep * 0.5));
+
+        // Build dependency if it has a CMakeLists.txt
+        if dep_path.join("CMakeLists.txt").exists() {
+            let build_path = dep_path.join("build");
+            fs::create_dir_all(&build_path)?;
+
+            // Configure with CMake
+            let mut cmake_progress = ProgressBar::start(&format!("Configuring {}", dep.name));
+
+            let mut cmd = vec![
+                "cmake".to_string(),
+                "..".to_string(),
+            ];
+
+            // Add dependency-specific CMake options
+            if let Some(cmake_options) = &dep.cmake_options {
+                cmd.extend(cmake_options.clone());
+            }
+
+            match run_command(cmd, Some(&build_path.to_string_lossy().to_string()), None) {
+                Ok(_) => cmake_progress.success(),
+                Err(e) => {
+                    cmake_progress.failure(&e.to_string());
+                    print_warning(&format!("Failed to configure {}: {}", dep.name, e), Some("Will try to continue"));
+                    // Continue with build anyway, it might work with default settings
+                }
+            }
+
+            // Build
+            let mut build_progress = ProgressBar::start(&format!("Building {}", dep.name));
+
+            let mut cmd = vec![
+                "cmake".to_string(),
+                "--build".to_string(),
+                ".".to_string(),
+            ];
+
+            match run_command(cmd, Some(&build_path.to_string_lossy().to_string()), None) {
+                Ok(_) => build_progress.success(),
+                Err(e) => {
+                    build_progress.failure(&e.to_string());
+                    print_warning(&format!("Failed to build {}: {}", dep.name, e), Some("Will try to continue"));
+                    // Continue anyway, we might be able to use the dependency
+                }
+            }
+
+            // Add dependency path to CMake include paths
+            cmake_include_paths.push(format!("{}/build", dep_path.to_string_lossy()));
+        }
+
+        // Update progress after building the dependency
+        progress.update(base_progress + progress_per_dep);
+    }
+
+    // Final progress update
+    progress.update(0.95);
+
+    // Finalize progress
+    progress.update(1.0);
+
+    Ok(cmake_include_paths)
+}
+
+
+// Setup custom dependencies with progress tracking
+fn setup_custom_dependencies_with_progress(
+    config: &ProjectConfig,
+    project_path: &Path,
+    progress: &mut ProgressBar
+) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+    let custom_deps = &config.dependencies.custom;
+    if custom_deps.is_empty() {
+        progress.update(1.0);
+        return Ok(Vec::new());
+    }
+
+    // Initial progress
+    progress.update(0.05);
+
+    // Create deps directory
+    let deps_dir = project_path.join("deps");
+    fs::create_dir_all(&deps_dir)?;
+
+    let mut cmake_include_paths = Vec::new();
+
+    // Calculate progress steps for each dependency
+    let total_deps = custom_deps.len();
+    let progress_per_dep = 0.9 / total_deps as f32; // Allocate 90% of progress bar for processing dependencies
+
+    // Process each custom dependency
+    for (i, dep) in custom_deps.iter().enumerate() {
+        let dep_path = deps_dir.join(&dep.name);
+        let base_progress = 0.05 + (i as f32 * progress_per_dep);
+
+        // Update progress to show which dependency we're working on
+        progress.update(base_progress);
+
+        if !is_quiet() {
+            print_substep(&format!("Processing custom dependency: {}", dep.name));
+        }
+
+        if !dep_path.exists() {
+            if !is_quiet() {
+                print_substep(&format!("Downloading custom dependency: {}", dep.name));
+            }
+
+            // Create download directory
+            fs::create_dir_all(&dep_path)?;
+
+            // Download the dependency
+            let url = &dep.url;
+            let output_file = if url.ends_with(".zip") || url.ends_with(".tar.gz") || url.ends_with(".tgz") {
+                format!("{}.{}", dep.name, url.split('.').last().unwrap_or("zip"))
+            } else {
+                format!("{}.zip", dep.name)
+            };
+
+            let output_path = deps_dir.join(&output_file);
+
+            // Download with a dedicated progress bar
+            let mut download_progress = ProgressBar::start(&format!("Downloading {}", dep.name));
+
+            let mut cmd = if cfg!(target_os = "windows") {
+                vec![
+                    "powershell".to_string(),
+                    "-Command".to_string(),
+                    format!("Invoke-WebRequest -Uri '{}' -OutFile '{}'", url, output_path.to_string_lossy()),
+                ]
+            } else {
+                vec![
+                    "curl".to_string(),
+                    "-L".to_string(),
+                    "--output".to_string(),
+                    output_path.to_string_lossy().to_string(),
+                    url.clone(),
+                ]
+            };
+
+            match run_command(cmd, Some(&deps_dir.to_string_lossy().to_string()), None) {
+                Ok(_) => download_progress.success(),
+                Err(e) => {
+                    download_progress.failure(&e.to_string());
+                    progress.failure(&format!("Failed to download {}: {}", dep.name, e));
+                    return Err(format!("Failed to download custom dependency {}: {}", dep.name, e).into());
+                }
+            }
+
+            // Update progress after download
+            progress.update(base_progress + (progress_per_dep * 0.3));
+
+            // Extract archive with a dedicated progress bar
+            let mut extract_progress = ProgressBar::start(&format!("Extracting {}", dep.name));
+
+            let mut cmd = if output_path.to_string_lossy().ends_with(".zip") {
+                if cfg!(target_os = "windows") {
+                    vec![
+                        "powershell".to_string(),
+                        "-Command".to_string(),
+                        format!("Expand-Archive -Path '{}' -DestinationPath '{}'",
+                                output_path.to_string_lossy(), dep_path.to_string_lossy()),
+                    ]
+                } else {
+                    vec![
+                        "unzip".to_string(),
+                        output_path.to_string_lossy().to_string(),
+                        "-d".to_string(),
+                        dep_path.to_string_lossy().to_string(),
+                    ]
+                }
+            } else if output_path.to_string_lossy().ends_with(".tar.gz") || output_path.to_string_lossy().ends_with(".tgz") {
+                if cfg!(target_os = "windows") {
+                    vec![
+                        "tar".to_string(),
+                        "-xzf".to_string(),
+                        output_path.to_string_lossy().to_string(),
+                        "-C".to_string(),
+                        dep_path.to_string_lossy().to_string(),
+                    ]
+                } else {
+                    vec![
+                        "tar".to_string(),
+                        "-xzf".to_string(),
+                        output_path.to_string_lossy().to_string(),
+                        "-C".to_string(),
+                        dep_path.to_string_lossy().to_string(),
+                    ]
+                }
+            } else {
+                extract_progress.failure("Unsupported archive format");
+                progress.failure(&format!("Unsupported archive format for dependency: {}", dep.name));
+                return Err(format!("Unsupported archive format for dependency: {}", dep.name).into());
+            };
+
+            match run_command(cmd, Some(&deps_dir.to_string_lossy().to_string()), None) {
+                Ok(_) => extract_progress.success(),
+                Err(e) => {
+                    extract_progress.failure(&e.to_string());
+                    progress.failure(&format!("Failed to extract {}: {}", dep.name, e));
+                    return Err(format!("Failed to extract custom dependency {}: {}", dep.name, e).into());
+                }
+            }
+
+            // Update progress after extraction
+            progress.update(base_progress + (progress_per_dep * 0.6));
+
+            // Build if a build command is provided
+            if let Some(build_cmd) = &dep.build_command {
+                let mut build_progress = ProgressBar::start(&format!("Building {}", dep.name));
+
+                let shell = if cfg!(target_os = "windows") { "cmd" } else { "sh" };
+                let shell_arg = if cfg!(target_os = "windows") { "/C" } else { "-c" };
+
+                let mut cmd = vec![
+                    shell.to_string(),
+                    shell_arg.to_string(),
+                    build_cmd.clone(),
+                ];
+
+                match run_command(cmd, Some(&dep_path.to_string_lossy().to_string()), None) {
+                    Ok(_) => build_progress.success(),
+                    Err(e) => {
+                        build_progress.failure(&e.to_string());
+                        print_warning(&format!("Failed to build {}: {}", dep.name, e), Some("Will try to continue"));
+                        // Continue anyway, build might not be essential
+                    }
+                }
+
+                // Update progress after building
+                progress.update(base_progress + (progress_per_dep * 0.8));
+            }
+
+            // Install if an install command is provided
+            if let Some(install_cmd) = &dep.install_command {
+                let mut install_progress = ProgressBar::start(&format!("Installing {}", dep.name));
+
+                let shell = if cfg!(target_os = "windows") { "cmd" } else { "sh" };
+                let shell_arg = if cfg!(target_os = "windows") { "/C" } else { "-c" };
+
+                let mut cmd = vec![
+                    shell.to_string(),
+                    shell_arg.to_string(),
+                    install_cmd.clone(),
+                ];
+
+                match run_command(cmd, Some(&dep_path.to_string_lossy().to_string()), None) {
+                    Ok(_) => install_progress.success(),
+                    Err(e) => {
+                        install_progress.failure(&e.to_string());
+                        print_warning(&format!("Failed to install {}: {}", dep.name, e), Some("Will try to continue"));
+                        // Continue anyway, install might not be essential
+                    }
+                }
+            }
+        } else if !is_quiet() {
+            print_substep(&format!("Custom dependency already exists: {}", dep.name));
+        }
+
+        // Add include and library paths to CMake include paths
+        if let Some(include_path) = &dep.include_path {
+            let full_include_path = dep_path.join(include_path);
+            cmake_include_paths.push(format!("-DCMAKE_INCLUDE_PATH={}", full_include_path.to_string_lossy()));
+        }
+
+        if let Some(library_path) = &dep.library_path {
+            let full_library_path = dep_path.join(library_path);
+            cmake_include_paths.push(format!("-DCMAKE_LIBRARY_PATH={}", full_library_path.to_string_lossy()));
+        }
+
+        // Update progress after processing this dependency
+        progress.update(base_progress + progress_per_dep);
+    }
+
+    // Final progress update
+    progress.update(1.0);
+
+    Ok(cmake_include_paths)
+}
+
+// Helper function to run a command with pattern-based progress tracking
+fn run_command_with_pattern_tracking(
+    cmd: Vec<String>,
+    cwd: Option<&str>,
+    env: Option<HashMap<String, String>>,
+    mut progress: ProgressBar, // Take ownership instead of reference
+    patterns: Vec<(String, f32)> // Use owned Strings instead of &str references
+) -> Result<(), Box<dyn std::error::Error>> {
+    use std::process::{Command, Stdio};
+    use std::io::{BufRead, BufReader};
+    use std::sync::{Arc, Mutex};
+    use std::thread;
+
+    // Build the Command
+    let mut command = Command::new(&cmd[0]);
+    command.args(&cmd[1..]);
+
+    if let Some(dir) = cwd {
+        command.current_dir(dir);
+    }
+
+    if let Some(env_vars) = env {
+        for (key, value) in env_vars {
+            command.env(key, value);
+        }
+    }
+
+    // Pipe stdout and stderr
+    command.stdout(Stdio::piped());
+    command.stderr(Stdio::piped());
+
+    // Update progress to show we're starting (5%)
+    progress.update(0.05);
+
+    // Spawn the command
+    let mut child = command.spawn()?;
+
+    // Take ownership of stdout/stderr
+    let stdout = child.stdout.take().ok_or("Failed to capture stdout")?;
+    let stderr = child.stderr.take().ok_or("Failed to capture stderr")?;
+
+    // Create shared state to track the highest progress seen
+    let current_progress = Arc::new(Mutex::new(0.05f32));
+
+    // Create threads to process stdout and stderr
+    let patterns_arc = Arc::new(patterns);
+
+    let stdout_patterns = Arc::clone(&patterns_arc);
+    let stdout_progress = Arc::clone(&current_progress);
+    let stdout_handle = thread::spawn(move || {
+        let reader = BufReader::new(stdout);
+
+        for line in reader.lines().filter_map(Result::ok) {
+            // Check each pattern and update progress if matched
+            for (pattern, progress_value) in stdout_patterns.iter() {
+                if line.contains(pattern) {
+                    let mut current = stdout_progress.lock().unwrap();
+                    if *progress_value > *current {
+                        *current = *progress_value;
+                    }
+                }
+            }
+
+            // Print in verbose mode
+            if is_verbose() {
+                println!("{}", line);
+            }
+        }
+    });
+
+    let stderr_patterns = Arc::clone(&patterns_arc);
+    let stderr_progress = Arc::clone(&current_progress);
+    let stderr_handle = thread::spawn(move || {
+        let reader = BufReader::new(stderr);
+
+        for line in reader.lines().filter_map(Result::ok) {
+            // Check each pattern and update progress if matched
+            for (pattern, progress_value) in stderr_patterns.iter() {
+                if line.contains(pattern) {
+                    let mut current = stderr_progress.lock().unwrap();
+                    if *progress_value > *current {
+                        *current = *progress_value;
+                    }
+                }
+            }
+
+            // Print in verbose mode or if it looks like an error
+            if is_verbose() || line.contains("error") || line.contains("Error") {
+                eprintln!("{}", line);
+            }
+        }
+    });
+
+    // Fix Error 4: Create a clone of child.id() for status checks
+    // We don't move child into the thread, just create a separate wait_result variable
+    let progress_clone = progress.clone();
+    let update_progress = Arc::clone(&current_progress);
+
+    // Thread to update progress bar
+    let update_handle = thread::spawn(move || {
+        loop {
+            // Check progress value and update progress bar
+            let current = {
+                let guard = update_progress.lock().unwrap();
+                *guard
+            };
+
+            progress_clone.update(current);
+
+            // Sleep a bit
+            thread::sleep(Duration::from_millis(100));
+        }
+    });
+
+    // Wait for the command to finish
+    let status = child.wait()?;
+
+    // Wait for the threads to finish
+    stdout_handle.join().ok();
+    stderr_handle.join().ok();
+    // Don't wait for update_handle as it runs in an infinite loop
+
+    // Check if the command succeeded
+    if status.success() {
+        // Final progress update to show completion
+        progress.update(1.0);
+        progress.success();
+        Ok(())
+    } else {
+        progress.failure(&format!("Command failed with exit code: {}", status));
+        Err(format!("Command failed with exit code: {}", status).into())
     }
 }
