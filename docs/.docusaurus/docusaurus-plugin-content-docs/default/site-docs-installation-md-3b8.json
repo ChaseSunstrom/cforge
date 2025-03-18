@@ -1,0 +1,27 @@
+{
+  "id": "installation",
+  "title": "Installation",
+  "description": "📥 Installation",
+  "source": "@site/docs/installation.md",
+  "sourceDirName": ".",
+  "slug": "/installation",
+  "permalink": "/cforge/docs/installation",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/chasesunstrom/cforge/edit/main/docs/docs/installation.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "installation",
+    "title": "Installation"
+  },
+  "sidebar": "sidebar",
+  "previous": {
+    "title": "CForge",
+    "permalink": "/cforge/docs/intro"
+  },
+  "next": {
+    "title": "Quick Start",
+    "permalink": "/cforge/docs/quick-start"
+  }
+}

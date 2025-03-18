@@ -1,0 +1,27 @@
+{
+  "id": "workspace-commands",
+  "title": "Workspace Commands",
+  "description": "📂 Workspace Commands",
+  "source": "@site/docs/workspace-commands.md",
+  "sourceDirName": ".",
+  "slug": "/workspace-commands",
+  "permalink": "/cforge/docs/workspace-commands",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/chasesunstrom/cforge/edit/main/docs/docs/workspace-commands.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "workspace-commands",
+    "title": "Workspace Commands"
+  },
+  "sidebar": "sidebar",
+  "previous": {
+    "title": "Command Reference",
+    "permalink": "/cforge/docs/command-reference"
+  },
+  "next": {
+    "title": "Advanced Configuration",
+    "permalink": "/cforge/docs/advanced-configuration"
+  }
+}

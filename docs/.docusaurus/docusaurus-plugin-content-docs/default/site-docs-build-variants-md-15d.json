@@ -1,0 +1,27 @@
+{
+  "id": "build-variants",
+  "title": "Build Variants",
+  "description": "🚩 Build Variants",
+  "source": "@site/docs/build-variants.md",
+  "sourceDirName": ".",
+  "slug": "/build-variants",
+  "permalink": "/cforge/docs/build-variants",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/chasesunstrom/cforge/edit/main/docs/docs/build-variants.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "build-variants",
+    "title": "Build Variants"
+  },
+  "sidebar": "sidebar",
+  "previous": {
+    "title": "Advanced Configuration",
+    "permalink": "/cforge/docs/advanced-configuration"
+  },
+  "next": {
+    "title": "Cross-Compilation",
+    "permalink": "/cforge/docs/cross-compilation"
+  }
+}

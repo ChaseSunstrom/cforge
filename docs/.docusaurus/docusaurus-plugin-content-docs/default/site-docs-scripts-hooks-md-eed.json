@@ -1,0 +1,27 @@
+{
+  "id": "scripts-hooks",
+  "title": "Scripts & Hooks",
+  "description": "📝 Scripts & Hooks",
+  "source": "@site/docs/scripts-hooks.md",
+  "sourceDirName": ".",
+  "slug": "/scripts-hooks",
+  "permalink": "/cforge/docs/scripts-hooks",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/chasesunstrom/cforge/edit/main/docs/docs/scripts-hooks.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "scripts-hooks",
+    "title": "Scripts & Hooks"
+  },
+  "sidebar": "sidebar",
+  "previous": {
+    "title": "IDE Integration",
+    "permalink": "/cforge/docs/ide-integration"
+  },
+  "next": {
+    "title": "Examples",
+    "permalink": "/cforge/docs/examples"
+  }
+}

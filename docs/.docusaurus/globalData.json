@@ -1,0 +1,98 @@
+{
+  "docusaurus-plugin-content-docs": {
+    "default": {
+      "path": "/cforge/docs",
+      "versions": [
+        {
+          "name": "current",
+          "label": "Next",
+          "isLast": true,
+          "path": "/cforge/docs",
+          "mainDocId": "intro",
+          "docs": [
+            {
+              "id": "advanced-configuration",
+              "path": "/cforge/docs/advanced-configuration",
+              "sidebar": "sidebar"
+            },
+            {
+              "id": "build-variants",
+              "path": "/cforge/docs/build-variants",
+              "sidebar": "sidebar"
+            },
+            {
+              "id": "command-reference",
+              "path": "/cforge/docs/command-reference",
+              "sidebar": "sidebar"
+            },
+            {
+              "id": "contributing",
+              "path": "/cforge/docs/contributing",
+              "sidebar": "sidebar"
+            },
+            {
+              "id": "cross-compilation",
+              "path": "/cforge/docs/cross-compilation",
+              "sidebar": "sidebar"
+            },
+            {
+              "id": "examples",
+              "path": "/cforge/docs/examples",
+              "sidebar": "sidebar"
+            },
+            {
+              "id": "ide-integration",
+              "path": "/cforge/docs/ide-integration",
+              "sidebar": "sidebar"
+            },
+            {
+              "id": "installation",
+              "path": "/cforge/docs/installation",
+              "sidebar": "sidebar"
+            },
+            {
+              "id": "intro",
+              "path": "/cforge/docs/intro",
+              "sidebar": "sidebar"
+            },
+            {
+              "id": "license",
+              "path": "/cforge/docs/license",
+              "sidebar": "sidebar"
+            },
+            {
+              "id": "quick-start",
+              "path": "/cforge/docs/quick-start",
+              "sidebar": "sidebar"
+            },
+            {
+              "id": "scripts-hooks",
+              "path": "/cforge/docs/scripts-hooks",
+              "sidebar": "sidebar"
+            },
+            {
+              "id": "troubleshooting",
+              "path": "/cforge/docs/troubleshooting",
+              "sidebar": "sidebar"
+            },
+            {
+              "id": "workspace-commands",
+              "path": "/cforge/docs/workspace-commands",
+              "sidebar": "sidebar"
+            }
+          ],
+          "draftIds": [],
+          "sidebars": {
+            "sidebar": {
+              "link": {
+                "path": "/cforge/docs/intro",
+                "label": "intro"
+              }
+            }
+          }
+        }
+      ],
+      "breadcrumbs": true
+    }
+  }
+}
