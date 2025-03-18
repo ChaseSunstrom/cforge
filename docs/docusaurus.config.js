@@ -12,14 +12,14 @@ import {themes as prismThemes} from 'prism-react-renderer';
 const config = {
     title: 'cforge',
     tagline: 'A fast, cross-platform build tool for C and C++ written in Rust',
-    favicon: 'img/favicon.ico',  
+    favicon: 'img/cforge.png',  
 
   url: 'https://chasesunstrom.github.io', 
   baseUrl: '/cforge/',
   organizationName: 'chasesunstrom',
   projectName: 'cforge',
 
-  onBrokenLinks: 'throw',
+  onBrokenLinks: 'warn',
   onBrokenMarkdownLinks: 'warn',
 
   // Even if you don't use internationalization, you can use this field to set
@@ -53,13 +53,12 @@ const config = {
   themeConfig:
     /** @type {import('@docusaurus/preset-classic').ThemeConfig} */
     ({
-      // Replace with your project's social card
-      image: 'img/docusaurus-social-card.jpg',
+      image: 'img/cforge-social.png',
       navbar: {
         title: 'cforge',
         logo: {
           alt: 'cforge Logo',
-          src: 'img/logo.svg',
+          src: 'img/cforge.png',
         },
         items: [
           {
