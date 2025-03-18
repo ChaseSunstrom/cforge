@@ -1,8 +1,20 @@
 #![allow(warnings)]
 mod output_utils;
+mod cli;
+mod config;
+mod project;
+mod workspace;
+mod dependencies;
+mod build;
+mod tools;
+mod ide;
+mod commands;
+mod errors;
+mod utils;
+mod cross_compile;
 
 use std::sync::mpsc::channel;
-use crate::output_utils::*;
+use crate::{output_utils::*, cli::*, config::*};
 use lazy_static::lazy_static;
 use regex::Regex;
 use std::collections::VecDeque;
@@ -18,8 +30,6 @@ use std::time::Duration;
 const CFORGE_FILE: &str = "cforge.toml";
 const WORKSPACE_FILE: &str = "cforge-workspace.toml";
 const DEFAULT_BUILD_DIR: &str = "build";
-
-
 const DEFAULT_BIN_DIR: &str = "bin";
 const DEFAULT_LIB_DIR: &str = "lib";
 const DEFAULT_OBJ_DIR: &str = "obj";
@@ -34,514 +44,8 @@ lazy_static! {
 }
 
 // CLI Commands
-#[derive(Debug, Parser)]
-#[clap(
-    name = "cforge",
-    about = "A TOML-based build system for C/C++ with CMake and vcpkg integration",
-    version = env!("CARGO_PKG_VERSION"),
-)]
-struct Cli {
-    #[clap(subcommand)]
-    command: Commands,
 
-    /// Set verbosity level (quiet, normal, verbose)
-    #[clap(long, global = true)]
-    verbosity: Option<String>,
-}
 
-struct CommandProgressData {
-    lines_processed: usize,
-    percentage_markers: Vec<f32>,
-    last_reported_progress: f32,
-    completed: bool,
-    error_encountered: bool,
-    total_lines_estimate: usize,
-}
-
-struct BuildProgressState {
-    compiled_files: usize,
-    total_files: usize,
-    current_percentage: f32,
-    errors: Vec<String>,
-    is_linking: bool,
-}
-
-
-struct PackageInstallState {
-    current_package: String,
-    current_percentage: f32,
-    packages_completed: usize,
-    total_packages: usize,
-}
-
-#[derive(Debug, Subcommand)]
-enum Commands {
-    /// Initialize a new project or workspace
-    #[clap(name = "init")]
-    Init {
-        /// Create a workspace instead of a single project
-        #[clap(long)]
-        workspace: bool,
-
-        /// Create a project with a specific template
-        #[clap(long)]
-        template: Option<String>,
-    },
-
-    /// Build the project or workspace
-    #[clap(name = "build")]
-    Build {
-        /// Build specific project(s) in a workspace
-        #[clap(name = "project")]
-        project: Option<String>,
-
-        /// Build with specific configuration (Debug, Release, etc.)
-        #[clap(long)]
-        config: Option<String>,
-
-        /// Build with specific variant
-        #[clap(long)]
-        variant: Option<String>,
-
-        /// Cross-compile for specified target
-        #[clap(long)]
-        target: Option<String>,
-    },
-
-    /// Clean build artifacts
-    #[clap(name = "clean")]
-    Clean {
-        /// Clean specific project(s) in a workspace
-        #[clap(name = "project")]
-        project: Option<String>,
-
-        /// Clean specific configuration
-        #[clap(long)]
-        config: Option<String>,
-
-        /// Clean specific target
-        #[clap(long)]
-        target: Option<String>,
-    },
-
-    /// Run the built executable
-    #[clap(name = "run")]
-    Run {
-        /// Run a specific project in a workspace
-        #[clap(name = "project")]
-        project: Option<String>,
-
-        /// Run with specific configuration
-        #[clap(long)]
-        config: Option<String>,
-
-        /// Run with specific variant
-        #[clap(long)]
-        variant: Option<String>,
-
-        /// Arguments to pass to the executable
-        #[clap(trailing_var_arg = true)]
-        args: Vec<String>,
-    },
-
-    /// Run tests
-    #[clap(name = "test")]
-    Test {
-        /// Test specific project(s) in a workspace
-        #[clap(name = "project")]
-        project: Option<String>,
-
-        /// Test with specific configuration
-        #[clap(long)]
-        config: Option<String>,
-
-        /// Test with specific variant
-        #[clap(long)]
-        variant: Option<String>,
-
-        /// Test filter pattern
-        #[clap(long)]
-        filter: Option<String>,
-    },
-
-    /// Install the built project
-    #[clap(name = "install")]
-    Install {
-        /// Install specific project(s) in a workspace
-        #[clap(name = "project")]
-        project: Option<String>,
-
-        /// Install with specific configuration
-        #[clap(long)]
-        config: Option<String>,
-
-        /// Install prefix
-        #[clap(long)]
-        prefix: Option<String>,
-    },
-
-    /// Install dependencies
-    #[clap(name = "deps")]
-    Deps {
-        /// Install dependencies for specific project(s) in a workspace
-        #[clap(name = "project")]
-        project: Option<String>,
-
-        /// Update existing dependencies
-        #[clap(long)]
-        update: bool,
-    },
-
-    /// Run a custom script
-    #[clap(name = "script")]
-    Script {
-        /// Script name to run
-        #[clap(name = "name")]
-        name: String,
-
-        /// Run script for a specific project in a workspace
-        #[clap(name = "project")]
-        project: Option<String>,
-    },
-
-    #[clap(name = "startup")]
-    Startup {
-        /// Set a project as the default startup project
-        #[clap(name = "project")]
-        project: Option<String>,
-
-        /// List all available startup projects
-        #[clap(long)]
-        list: bool,
-    },
-
-    /// Generate IDE project files
-    #[clap(name = "ide")]
-    Ide {
-        /// IDE type (vscode, clion, vs, vs2022, vs2019, vs2017, etc.)
-        #[clap(name = "type")]
-        ide_type: String,
-
-        /// Generate for specific project in a workspace
-        #[clap(name = "project")]
-        project: Option<String>,
-
-        /// Target architecture (x64, Win32, ARM64, etc.) for Visual Studio
-        #[clap(long)]
-        arch: Option<String>,
-    },
-
-    /// Package the project
-    #[clap(name = "package")]
-    Package {
-        /// Package specific project(s) in a workspace
-        #[clap(name = "project")]
-        project: Option<String>,
-
-        /// Package with specific configuration
-        #[clap(long)]
-        config: Option<String>,
-
-        /// Package type (deb, rpm, zip, etc.)
-        #[clap(long)]
-        type_: Option<String>,
-    },
-
-    /// List available configurations, variants and targets
-    #[clap(name = "list")]
-    List {
-        /// List specific items (configs, variants, targets, scripts)
-        #[clap(name = "what")]
-        what: Option<String>,
-    },
-}
-
-// Configuration Models
-#[derive(Debug, Serialize, Deserialize, Clone)]
-struct WorkspaceConfig {
-    workspace: WorkspaceWithProjects,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-struct WorkspaceWithProjects {
-    name: String,
-    projects: Vec<String>,
-    startup_projects: Option<Vec<String>>, // Projects that can be set as startup
-    default_startup_project: Option<String>, // Default startup project
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
-struct PCHConfig {
-    enabled: bool,
-    header: String,
-    source: Option<String>,
-    include_directories: Option<Vec<String>>,
-    compiler_options: Option<Vec<String>>,  // Additional compiler options for PCH
-    only_for_targets: Option<Vec<String>>,  // Apply PCH only to specific targets
-    exclude_sources: Option<Vec<String>>,   // Sources to exclude from PCH
-    disable_unity_build: Option<bool>,      // Disable unity build when using PCH (can cause conflicts)
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-struct ProjectConfig {
-    project: ProjectInfo,
-    build: BuildConfig,
-    #[serde(default)]
-    dependencies: DependenciesConfig,
-    #[serde(default)]
-    targets: HashMap<String, TargetConfig>,
-    #[serde(default)]
-    platforms: Option<HashMap<String, PlatformConfig>>,
-    #[serde(default)]
-    output: OutputConfig,
-    #[serde(default)]
-    hooks: Option<BuildHooks>,
-    #[serde(default)]
-    scripts: Option<ScriptDefinitions>,
-    #[serde(default)]
-    variants: Option<BuildVariants>,
-    #[serde(default)]
-    cross_compile: Option<CrossCompileConfig>,
-    #[serde(default)]
-    pch: Option<PCHConfig>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-struct ProjectInfo {
-    name: String,
-    version: String,
-    description: String,
-    #[serde(rename = "type")]
-    project_type: String, // executable, library, static-library, header-only
-    language: String,     // c, c++
-    standard: String,     // c11, c++17, etc.
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-struct BuildConfig {
-    build_dir: Option<String>,
-    generator: Option<String>,
-    default_config: Option<String>,  // Default configuration to use (Debug, Release, etc.)
-    debug: Option<bool>,             // Legacy option, kept for backwards compatibility
-    cmake_options: Option<Vec<String>>,
-    configs: Option<HashMap<String, ConfigSettings>>,  // Configuration-specific settings
-    compiler: Option<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
-struct ConfigSettings {
-    defines: Option<Vec<String>>,
-    flags: Option<Vec<String>>,
-    link_flags: Option<Vec<String>>,
-    output_dir_suffix: Option<String>,  // Optional suffix for output directories
-    cmake_options: Option<Vec<String>>,  // Configuration-specific CMake options
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-struct DependenciesConfig {
-    #[serde(default)]
-    vcpkg: VcpkgConfig,
-    system: Option<Vec<String>>,
-    cmake: Option<Vec<String>>,
-    #[serde(default)]
-    conan: ConanConfig,       // Conan package manager support
-    #[serde(default)]
-    custom: Vec<CustomDependency>, // Custom dependencies
-    #[serde(default)]
-    git: Vec<GitDependency>,  // Git dependencies
-    #[serde(default)]
-    workspace: Vec<WorkspaceDependency>, // Dependencies on other workspace projects
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-struct WorkspaceDependency {
-    name: String,             // Name of the project in workspace
-    link_type: Option<String>, // "static", "shared", or "interface" (default: depends on target type)
-    include_paths: Option<Vec<String>>, // Additional include paths relative to the dependency
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-struct VcpkgConfig {
-    enabled: bool,
-    path: Option<String>,
-    packages: Vec<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
-struct ConanConfig {
-    enabled: bool,
-    packages: Vec<String>,
-    options: Option<HashMap<String, String>>,
-    generators: Option<Vec<String>>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-struct CustomDependency {
-    name: String,
-    url: String,
-    version: Option<String>,
-    cmake_options: Option<Vec<String>>,
-    build_command: Option<String>,
-    install_command: Option<String>,
-    include_path: Option<String>,
-    library_path: Option<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-struct GitDependency {
-    name: String,
-    url: String,
-    branch: Option<String>,
-    tag: Option<String>,
-    commit: Option<String>,
-    cmake_options: Option<Vec<String>>,
-    shallow: Option<bool>,
-    update: Option<bool>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-struct TargetConfig {
-    sources: Vec<String>,
-    include_dirs: Option<Vec<String>>,
-    defines: Option<Vec<String>>,
-    links: Option<Vec<String>>,
-    platform_links: Option<HashMap<String, Vec<String>>>, // Platform-specific links
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-struct PlatformConfig {
-    compiler: Option<String>,
-    defines: Option<Vec<String>>,
-    flags: Option<Vec<String>>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
-struct OutputConfig {
-    bin_dir: Option<String>,
-    lib_dir: Option<String>,
-    obj_dir: Option<String>,
-}
-
-#[derive(Debug, Clone)]
-struct CompilerDiagnostic {
-    file: String,
-    line: usize,
-    column: usize,
-    level: String,    // "error", "warning", "note", etc.
-    message: String,
-    context: Vec<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
-struct BuildHooks {
-    pre_configure: Option<Vec<String>>,
-    post_configure: Option<Vec<String>>,
-    pre_build: Option<Vec<String>>,
-    post_build: Option<Vec<String>>,
-    pre_clean: Option<Vec<String>>,
-    post_clean: Option<Vec<String>>,
-    pre_install: Option<Vec<String>>,
-    post_install: Option<Vec<String>>,
-    pre_run: Option<Vec<String>>,
-    post_run: Option<Vec<String>>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
-struct ScriptDefinitions {
-    scripts: HashMap<String, String>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
-struct BuildVariants {
-    default: Option<String>,
-    variants: HashMap<String, VariantSettings>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
-struct VariantSettings {
-    description: Option<String>,
-    defines: Option<Vec<String>>,
-    flags: Option<Vec<String>>,
-    dependencies: Option<Vec<String>>,
-    features: Option<Vec<String>>,
-    platforms: Option<Vec<String>>,  // Platforms this variant is valid for
-    cmake_options: Option<Vec<String>>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
-struct CrossCompileConfig {
-    enabled: bool,
-    target: String,
-    toolchain: Option<String>,
-    sysroot: Option<String>,
-    cmake_toolchain_file: Option<String>,
-    define_prefix: Option<String>,  // Prefix for CMake defines (e.g., "ANDROID")
-    flags: Option<Vec<String>>,
-    env_vars: Option<HashMap<String, String>>,
-}
-
-// System Detection
-struct SystemInfo {
-    os: String,
-    arch: String,
-    compiler: String,
-}
-
-#[derive(Debug)]
-pub struct CforgeError {
-    message: String,
-    file_path: Option<String>,
-    line_number: Option<usize>,
-    context: Option<String>,
-}
-
-impl CforgeError {
-    pub fn new(message: &str) -> Self {
-        CforgeError {
-            message: message.to_string(),
-            file_path: None,
-            line_number: None,
-            context: None,
-        }
-    }
-
-    pub fn with_file(mut self, file_path: &str) -> Self {
-        self.file_path = Some(file_path.to_string());
-        self
-    }
-
-    pub fn with_line(mut self, line_number: usize) -> Self {
-        self.line_number = Some(line_number);
-        self
-    }
-
-    pub fn with_context(mut self, context: &str) -> Self {
-        self.context = Some(context.to_string());
-        self
-    }
-}
-
-impl fmt::Display for CforgeError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "cforge Error: {}", self.message)?;
-
-        if let Some(file) = &self.file_path {
-            write!(f, " in file '{}'", file)?;
-        }
-
-        if let Some(line) = self.line_number {
-            write!(f, " at line {}", line)?;
-        }
-
-        if let Some(context) = &self.context {
-            write!(f, "\nContext: {}", context)?;
-        }
-
-        Ok(())
-    }
-}
-
-impl std::error::Error for CforgeError {}
 
 // Now add this function to convert TOML errors to your custom error type
 fn parse_toml_error(err: toml::de::Error, file_path: &str, file_content: &str) -> CforgeError {
@@ -621,29 +125,7 @@ fn parse_toml_error(err: toml::de::Error, file_path: &str, file_content: &str) -
 
     error
 }
-impl Default for DependenciesConfig {
-    fn default() -> Self {
-        DependenciesConfig {
-            vcpkg: VcpkgConfig::default(),
-            system: None,
-            cmake: None,
-            conan: ConanConfig::default(),
-            custom: Vec::new(),
-            git: Vec::new(),
-            workspace: Vec::new(),
-        }
-    }
-}
 
-impl Default for VcpkgConfig {
-    fn default() -> Self {
-        VcpkgConfig {
-            enabled: false,
-            path: None,
-            packages: Vec::new(),
-        }
-    }
-}
 
 fn run_command_once(
     cmd: Vec<String>,
@@ -2694,15 +2176,6 @@ fn create_default_config() -> ProjectConfig {
 }
 
 
-fn save_project_config(config: &ProjectConfig, path: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    let config_path = path.join(CFORGE_FILE);
-    let toml_string = toml::to_string_pretty(config)?;
-    let mut file = File::create(config_path)?;
-    file.write_all(toml_string.as_bytes())?;
-    println!("{}", format!("Configuration saved to {}", path.join(CFORGE_FILE).display()).green());
-    Ok(())
-}
-
 fn load_project_config(path: Option<&Path>) -> Result<ProjectConfig, CforgeError> {
     let project_path = path.unwrap_or_else(|| Path::new("."));
 
@@ -2845,7 +2318,6 @@ fn detect_system_info() -> SystemInfo {
     // Fallback
     SystemInfo { os, arch, compiler: "default".to_string() }
 }
-
 
 fn setup_vcpkg(
     config: &ProjectConfig,
@@ -3241,9 +2713,7 @@ fn setup_vcpkg(
     Ok(toolchain_file.to_string_lossy().to_string())
 }
 
-
 // Implementation of run_command_with_timeout
-
 fn run_command_with_timeout(
     cmd: Vec<String>,
     cwd: Option<&str>,
@@ -3653,7 +3123,6 @@ fn run_command_with_progress(
         }
     }
 }
-
 
 fn extract_percentage(line: &str) -> Option<f32> {
     if let Some(percent_idx) = line.find('%') {
