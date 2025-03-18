@@ -1,0 +1,27 @@
+{
+  "id": "quick-start",
+  "title": "Quick Start",
+  "description": "⚡ Quick Start",
+  "source": "@site/docs/quick-start.md",
+  "sourceDirName": ".",
+  "slug": "/quick-start",
+  "permalink": "/cforge/docs/quick-start",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/chasesunstrom/cforge/edit/main/docs/docs/quick-start.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "quick-start",
+    "title": "Quick Start"
+  },
+  "sidebar": "sidebar",
+  "previous": {
+    "title": "Installation",
+    "permalink": "/cforge/docs/installation"
+  },
+  "next": {
+    "title": "Command Reference",
+    "permalink": "/cforge/docs/command-reference"
+  }
+}

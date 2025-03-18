@@ -1,0 +1,27 @@
+{
+  "id": "advanced-configuration",
+  "title": "Advanced Configuration",
+  "description": "⚙️ Advanced Configuration",
+  "source": "@site/docs/advanced-configuration.md",
+  "sourceDirName": ".",
+  "slug": "/advanced-configuration",
+  "permalink": "/cforge/docs/advanced-configuration",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/chasesunstrom/cforge/edit/main/docs/docs/advanced-configuration.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "advanced-configuration",
+    "title": "Advanced Configuration"
+  },
+  "sidebar": "sidebar",
+  "previous": {
+    "title": "Workspace Commands",
+    "permalink": "/cforge/docs/workspace-commands"
+  },
+  "next": {
+    "title": "Build Variants",
+    "permalink": "/cforge/docs/build-variants"
+  }
+}

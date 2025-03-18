@@ -1,0 +1,163 @@
+{
+  "/cforge/blog-881": {
+    "__comp": "a6aa9e1f",
+    "__context": {
+      "plugin": "36994c47"
+    },
+    "sidebar": "814f3328",
+    "items": [
+      {
+        "content": "9977744e"
+      }
+    ],
+    "__props": "125de2b8"
+  },
+  "/cforge/blog/archive-6ba": {
+    "__comp": "9e4087bc",
+    "__context": {
+      "plugin": "36994c47"
+    },
+    "__props": "7394520f"
+  },
+  "/cforge/blog/release-dc9": {
+    "__comp": "ccc49370",
+    "__context": {
+      "data": {
+        "blogMetadata": "acecf23e"
+      },
+      "plugin": "36994c47"
+    },
+    "sidebar": "814f3328",
+    "content": "4ffdd8cd"
+  },
+  "/cforge/blog/tags-75b": {
+    "__comp": "01a85c17",
+    "__context": {
+      "plugin": "36994c47"
+    },
+    "sidebar": "814f3328",
+    "__props": "a93ade8a"
+  },
+  "/cforge/blog/tags/cforge-8a3": {
+    "__comp": "6875c492",
+    "__context": {
+      "plugin": "36994c47"
+    },
+    "sidebar": "814f3328",
+    "items": [
+      {
+        "content": "9977744e"
+      }
+    ],
+    "__props": "c413afb5"
+  },
+  "/cforge/blog/tags/development-c54": {
+    "__comp": "6875c492",
+    "__context": {
+      "plugin": "36994c47"
+    },
+    "sidebar": "814f3328",
+    "items": [
+      {
+        "content": "9977744e"
+      }
+    ],
+    "__props": "14d2ea03"
+  },
+  "/cforge/blog/tags/rust-ea6": {
+    "__comp": "6875c492",
+    "__context": {
+      "plugin": "36994c47"
+    },
+    "sidebar": "814f3328",
+    "items": [
+      {
+        "content": "9977744e"
+      }
+    ],
+    "__props": "2daa58cc"
+  },
+  "/cforge/markdown-page-694": {
+    "__comp": "1f391b9e",
+    "__context": {
+      "plugin": "a7456010"
+    },
+    "content": "393be207"
+  },
+  "/cforge/docs-7a0": {
+    "__comp": "5e95c892",
+    "__context": {
+      "plugin": "aba21aa0"
+    }
+  },
+  "/cforge/docs-10a": {
+    "__comp": "a7bd4aaa",
+    "__props": "5e38ca63"
+  },
+  "/cforge/docs-2ad": {
+    "__comp": "a94703ab"
+  },
+  "/cforge/docs/advanced-configuration-58d": {
+    "__comp": "17896441",
+    "content": "4f1a7bc5"
+  },
+  "/cforge/docs/build-variants-a86": {
+    "__comp": "17896441",
+    "content": "15db3679"
+  },
+  "/cforge/docs/command-reference-687": {
+    "__comp": "17896441",
+    "content": "66992f67"
+  },
+  "/cforge/docs/contributing-db8": {
+    "__comp": "17896441",
+    "content": "4d54d076"
+  },
+  "/cforge/docs/cross-compilation-4e1": {
+    "__comp": "17896441",
+    "content": "3a34d351"
+  },
+  "/cforge/docs/examples-117": {
+    "__comp": "17896441",
+    "content": "09d5ad39"
+  },
+  "/cforge/docs/ide-integration-aa8": {
+    "__comp": "17896441",
+    "content": "69f04c60"
+  },
+  "/cforge/docs/installation-f59": {
+    "__comp": "17896441",
+    "content": "3b8c55ea"
+  },
+  "/cforge/docs/intro-4e0": {
+    "__comp": "17896441",
+    "content": "0e384e19"
+  },
+  "/cforge/docs/license-b8c": {
+    "__comp": "17896441",
+    "content": "ac5280f2"
+  },
+  "/cforge/docs/quick-start-357": {
+    "__comp": "17896441",
+    "content": "72e14192"
+  },
+  "/cforge/docs/scripts-hooks-cbf": {
+    "__comp": "17896441",
+    "content": "eedadc0c"
+  },
+  "/cforge/docs/troubleshooting-373": {
+    "__comp": "17896441",
+    "content": "9d9f8394"
+  },
+  "/cforge/docs/workspace-commands-f44": {
+    "__comp": "17896441",
+    "content": "5a8f7a10"
+  },
+  "/cforge/-e22": {
+    "__comp": "c4f5d8e4",
+    "__context": {
+      "plugin": "a7456010"
+    },
+    "config": "5e9f5e1a"
+  }
+}

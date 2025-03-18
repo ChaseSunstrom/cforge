@@ -1,0 +1,27 @@
+{
+  "id": "cross-compilation",
+  "title": "Cross-Compilation",
+  "description": "🌐 Cross-Compilation",
+  "source": "@site/docs/cross-compilation.md",
+  "sourceDirName": ".",
+  "slug": "/cross-compilation",
+  "permalink": "/cforge/docs/cross-compilation",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/chasesunstrom/cforge/edit/main/docs/docs/cross-compilation.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "cross-compilation",
+    "title": "Cross-Compilation"
+  },
+  "sidebar": "sidebar",
+  "previous": {
+    "title": "Build Variants",
+    "permalink": "/cforge/docs/build-variants"
+  },
+  "next": {
+    "title": "IDE Integration",
+    "permalink": "/cforge/docs/ide-integration"
+  }
+}

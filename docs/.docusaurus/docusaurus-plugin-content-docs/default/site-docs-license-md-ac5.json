@@ -1,0 +1,23 @@
+{
+  "id": "license",
+  "title": "License",
+  "description": "📄 License",
+  "source": "@site/docs/license.md",
+  "sourceDirName": ".",
+  "slug": "/license",
+  "permalink": "/cforge/docs/license",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/chasesunstrom/cforge/edit/main/docs/docs/license.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "license",
+    "title": "License"
+  },
+  "sidebar": "sidebar",
+  "previous": {
+    "title": "Contributing",
+    "permalink": "/cforge/docs/contributing"
+  }
+}

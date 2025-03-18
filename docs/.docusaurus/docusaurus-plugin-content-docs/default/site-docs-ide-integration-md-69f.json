@@ -1,0 +1,27 @@
+{
+  "id": "ide-integration",
+  "title": "IDE Integration",
+  "description": "🖥️ IDE Integration",
+  "source": "@site/docs/ide-integration.md",
+  "sourceDirName": ".",
+  "slug": "/ide-integration",
+  "permalink": "/cforge/docs/ide-integration",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/chasesunstrom/cforge/edit/main/docs/docs/ide-integration.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "ide-integration",
+    "title": "IDE Integration"
+  },
+  "sidebar": "sidebar",
+  "previous": {
+    "title": "Cross-Compilation",
+    "permalink": "/cforge/docs/cross-compilation"
+  },
+  "next": {
+    "title": "Scripts & Hooks",
+    "permalink": "/cforge/docs/scripts-hooks"
+  }
+}

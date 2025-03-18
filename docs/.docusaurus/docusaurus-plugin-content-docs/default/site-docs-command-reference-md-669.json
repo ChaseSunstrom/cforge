@@ -1,0 +1,27 @@
+{
+  "id": "command-reference",
+  "title": "Command Reference",
+  "description": "🛠️ Command Reference",
+  "source": "@site/docs/command-reference.md",
+  "sourceDirName": ".",
+  "slug": "/command-reference",
+  "permalink": "/cforge/docs/command-reference",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/chasesunstrom/cforge/edit/main/docs/docs/command-reference.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "command-reference",
+    "title": "Command Reference"
+  },
+  "sidebar": "sidebar",
+  "previous": {
+    "title": "Quick Start",
+    "permalink": "/cforge/docs/quick-start"
+  },
+  "next": {
+    "title": "Workspace Commands",
+    "permalink": "/cforge/docs/workspace-commands"
+  }
+}

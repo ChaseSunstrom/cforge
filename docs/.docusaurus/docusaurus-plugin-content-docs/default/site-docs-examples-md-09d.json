@@ -1,0 +1,27 @@
+{
+  "id": "examples",
+  "title": "Examples",
+  "description": "🧩 Examples",
+  "source": "@site/docs/examples.md",
+  "sourceDirName": ".",
+  "slug": "/examples",
+  "permalink": "/cforge/docs/examples",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/chasesunstrom/cforge/edit/main/docs/docs/examples.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "examples",
+    "title": "Examples"
+  },
+  "sidebar": "sidebar",
+  "previous": {
+    "title": "Scripts & Hooks",
+    "permalink": "/cforge/docs/scripts-hooks"
+  },
+  "next": {
+    "title": "Troubleshooting",
+    "permalink": "/cforge/docs/troubleshooting"
+  }
+}

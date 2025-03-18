@@ -1,0 +1,27 @@
+{
+  "id": "contributing",
+  "title": "Contributing",
+  "description": "🤝 Contributing",
+  "source": "@site/docs/contributing.md",
+  "sourceDirName": ".",
+  "slug": "/contributing",
+  "permalink": "/cforge/docs/contributing",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/chasesunstrom/cforge/edit/main/docs/docs/contributing.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "contributing",
+    "title": "Contributing"
+  },
+  "sidebar": "sidebar",
+  "previous": {
+    "title": "Troubleshooting",
+    "permalink": "/cforge/docs/troubleshooting"
+  },
+  "next": {
+    "title": "License",
+    "permalink": "/cforge/docs/license"
+  }
+}
