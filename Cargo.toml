@@ -9,6 +9,12 @@ license = "MIT"
 repository = "https://github.com/ChaseSunstrom/cforge"
 keywords = ["build-system", "CPP", "cmake", "vcpkg",  "cforge"]
 categories = ["development-tools", "development-tools::build-utils"]
+exclude = [
+    "target/*",
+    "docs/*",
+    ".git/*",
+    ".github/*",
+]
 
 [dependencies]
 clap = { version = "4.3", features = ["derive"] }
