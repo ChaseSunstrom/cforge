@@ -1,14 +1,15 @@
 use crate::cross_compile::{get_cross_compilation_env, setup_cross_compilation};
 use std::collections::{HashMap, HashSet};
-use std::fs;
+use std::{fs, thread};
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 use colored::Colorize;
 use crate::config::{BuildProgressState, ProjectConfig, VariantSettings, WorkspaceConfig};
-use crate::{analyze_cpp_errors, categorize_error, ensure_build_tools, ensure_compiler_available, format_cpp_errors_rust_style, get_effective_compiler_label, glob_to_regex, has_command, is_msvc_style_for_config, map_compiler_label, parse_universal_flags, print_general_suggestions, run_command_with_timeout, try_fix_cmake_errors};
+use crate::{categorize_error, ensure_build_tools, ensure_compiler_available, get_effective_compiler_label, has_command, is_msvc_style_for_config, map_compiler_label, parse_universal_flags, print_general_suggestions, run_command_with_timeout};
 use crate::cross_compile::get_predefined_cross_target;
 use crate::dependencies::install_dependencies;
+use crate::errors::{format_compiler_errors, glob_to_regex};
 use crate::output_utils::{is_quiet, is_verbose, print_status, print_substep, print_warning, BuildProgress, ProgressBar};
 use crate::project::generate_cmake_lists;
 use crate::workspace::resolve_workspace_dependencies;
@@ -91,8 +92,7 @@ pub fn configure_project(
         fs::create_dir_all(&target_build_path)?;
 
         if !is_quiet() {
-            print_substep(&format!("Using cross-compilation target: {}",
-                                   cross_config.target));
+            print_substep(&format!("Using cross-compilation target: {}", cross_config.target));
         }
 
         target_build_path
@@ -101,10 +101,8 @@ pub fn configure_project(
         build_path
     };
 
-    // Setup dependencies
-    let mut spinner = ProgressBar::start("Setting up dependencies");
+    // Setup dependencies - use a single progress bar for this
     let deps_result = install_dependencies(config, project_path, false)?;
-    spinner.success();
 
     let vcpkg_toolchain = deps_result.get("vcpkg_toolchain").cloned().unwrap_or_default();
     let conan_cmake = deps_result.get("conan_cmake").cloned().unwrap_or_default();
@@ -112,9 +110,9 @@ pub fn configure_project(
     // Step 4: Generate CMake files
     progress.next_step("Generating build files");
 
-    let mut spinner = ProgressBar::start("Generating CMakeLists.txt");
+    let mut cmake_spinner = ProgressBar::start("Generating CMakeLists.txt");
     generate_cmake_lists(config, project_path, variant_name, workspace_config)?;
-    spinner.success();
+    cmake_spinner.success();
 
     // Step 5: Run CMake configuration
     progress.next_step("Running CMake configuration");
@@ -190,41 +188,10 @@ pub fn configure_project(
         cmd.extend(workspace_options);
     }
 
-    // Run the CMake configuration command with progress
+    // Run the CMake configuration command with our modified silent runner
     let mut cmake_progress = ProgressBar::start("Running cmake");
-    let cmake_result = run_command_with_timeout(cmd.clone(), Some(&build_path.to_string_lossy().to_string()), env_vars.clone(), 600); // 10 minute timeout
-
-    if let Err(e) = cmake_result {
-        cmake_progress.failure(&format!("CMake configuration failed: {}", e));
-        print_warning("CMake configuration failed. Attempting to fix common issues and retry...", None);
-
-        if try_fix_cmake_errors(&build_path, is_msvc_style_for_config(config)) {
-            // If fixes were applied, try a simpler configuration
-            let mut retry_cmd = vec!["cmake".to_string(), "..".to_string()];
-            retry_cmd.push("-G".to_string());
-            retry_cmd.push(generator.clone());
-            retry_cmd.push(format!("-DCMAKE_BUILD_TYPE={}", build_type));
-
-            // Add essential options only
-            if !vcpkg_toolchain.is_empty() {
-                retry_cmd.push(format!("-DCMAKE_TOOLCHAIN_FILE={}", vcpkg_toolchain));
-            }
-
-            print_status("Retrying CMake configuration with minimal options...");
-            let retry_result = run_command_with_timeout(retry_cmd, Some(&build_path.to_string_lossy().to_string()), env_vars.clone(), 600);
-
-            if let Err(retry_err) = retry_result {
-                cmake_progress.failure(&format!("Retry failed: {}", retry_err));
-                return Err(retry_err);
-            } else {
-                cmake_progress.success();
-            }
-        } else {
-            return Err(e);
-        }
-    } else {
-        cmake_progress.success();
-    }
+    let cmake_result = run_cmake_silently(cmd.clone(), &build_path, env_vars.clone())?;
+    cmake_progress.success();
 
     // Run post-configure hooks
     if let Some(hooks) = &config.hooks {
@@ -252,6 +219,107 @@ pub fn configure_project(
             print_substep(&format!("Cross-compilation target: {}", cross_config.target));
         }
     }
+
+    Ok(())
+}
+
+fn run_cmake_silently(
+    cmd: Vec<String>,
+    build_path: &Path,
+    env_vars: Option<HashMap<String, String>>
+) -> Result<(), Box<dyn std::error::Error>> {
+    use std::process::{Command, Stdio};
+    use std::io::{BufRead, BufReader};
+    use std::time::Duration;
+
+    // Build the Command
+    let mut command = Command::new(&cmd[0]);
+    command.args(&cmd[1..]);
+    command.current_dir(build_path);
+
+    // Add environment variables if provided
+    if let Some(env) = env_vars {
+        for (key, value) in env {
+            command.env(key, value);
+        }
+    }
+
+    // Pipe stdout and stderr so we can read them but not display them
+    command.stdout(Stdio::piped());
+    command.stderr(Stdio::piped());
+
+    // Spawn the command
+    let mut child = match command.spawn() {
+        Ok(c) => c,
+        Err(e) => {
+            return Err(format!("Failed to start CMake: {}", e).into());
+        }
+    };
+
+    // Take ownership of stdout/stderr handles
+    let stdout = child.stdout.take().ok_or("Failed to capture stdout")?;
+    let stderr = child.stderr.take().ok_or("Failed to capture stderr")?;
+
+    // Track cmake progress for real-time status updates (if needed)
+    let progress_tracker = Arc::new(Mutex::new(String::new()));
+    let progress_tracker_clone = Arc::clone(&progress_tracker);
+
+    // Thread for reading stdout
+    let stdout_handle = thread::spawn(move || {
+        let reader = BufReader::new(stdout);
+        for line in reader.lines().filter_map(Result::ok) {
+            // Skip normal CMake output but save important status lines
+            if line.contains("Configuring") || line.contains("Generating") {
+                let mut current = progress_tracker_clone.lock().unwrap();
+                *current = line.trim().to_string();
+            }
+
+            // Only show errors in stdout - completely silent otherwise
+            if line.contains("error:") || line.contains("Error:") {
+                println!("{}", line);
+            }
+        }
+    });
+
+    // Thread for reading stderr
+    let stderr_handle = thread::spawn(move || {
+        let reader = BufReader::new(stderr);
+        for line in reader.lines().filter_map(Result::ok) {
+            // Only show errors and warnings in stderr
+            if line.contains("error:") || line.contains("Error:") {
+                eprintln!("{}", line.red());
+            }
+        }
+    });
+
+    // Wait for the command to complete with a reasonable timeout
+    let timeout = Duration::from_secs(600); // 10 minute timeout for CMake
+    let (tx, rx) = std::sync::mpsc::channel();
+
+    thread::spawn(move || {
+        let status = child.wait();
+        let _ = tx.send(status);
+    });
+
+    match rx.recv_timeout(timeout) {
+        Ok(status_result) => {
+            match status_result {
+                Ok(status) => {
+                    if !status.success() {
+                        return Err(format!("CMake configuration failed with exit code: {}", status).into());
+                    }
+                },
+                Err(e) => return Err(format!("Command error: {}", e).into()),
+            }
+        },
+        Err(_) => {
+            return Err(format!("CMake configuration timed out after {} seconds", timeout.as_secs()).into());
+        }
+    }
+
+    // Wait for stdout/stderr readers to finish
+    let _ = stdout_handle.join();
+    let _ = stderr_handle.join();
 
     Ok(())
 }
@@ -336,27 +404,8 @@ pub fn execute_build_with_progress(
                 buffer.push('\n');
             }
 
-            // Filter output based on command type and verbosity
-            let should_print = if is_cmake_command {
-                // For CMake, only show output if it contains important keywords or in verbose mode
-                is_verbose() ||
-                    line.contains("error") ||
-                    line.contains("Error") ||
-                    line.contains("WARNING") ||
-                    line.contains("Warning") ||
-                    line.contains("failed") ||
-                    line.contains("Failed")
-            } else {
-                // For other commands (like compiler commands), use normal verbosity rules
-                is_verbose() ||
-                    (line.contains("error") && !line.trim().is_empty()) ||
-                    (line.contains("warning") && !line.trim().is_empty()) ||
-                    line.contains("Compiling") ||
-                    line.contains("Linking") ||
-                    line.contains("Building")
-            };
-
-            if should_print {
+            // We only show verbose output in verbose mode - we'll format errors later
+            if is_verbose() {
                 println!("{}", line);
             }
         }
@@ -380,26 +429,8 @@ pub fn execute_build_with_progress(
                 buffer.push('\n');
             }
 
-            // Filter stderr output similar to stdout
-            let should_print = if is_cmake_command {
-                // For CMake stderr, only show output with important keywords or in verbose mode
-                is_verbose() ||
-                    line.contains("error") ||
-                    line.contains("Error") ||
-                    line.contains("WARNING") ||
-                    line.contains("Warning") ||
-                    line.contains("failed") ||
-                    line.contains("Failed")
-            } else {
-                // For other commands, always show stderr errors
-                is_verbose() ||
-                    line.contains("error") ||
-                    line.contains("Error") ||
-                    line.contains("warning") ||
-                    line.contains("Warning")
-            };
-
-            if should_print {
+            // We'll collect all errors to format them later - only show in verbose mode now
+            if is_verbose() {
                 eprintln!("{}", line.red());
             }
         }
@@ -454,7 +485,7 @@ pub fn execute_build_with_progress(
     });
 
     // Wait for the command to complete (with watchdog to prevent hanging)
-    let mut completed = false;
+    let completed;
     let start_time = std::time::Instant::now();
     let timeout = Duration::from_secs(7200); // 2 hour timeout
 
@@ -494,59 +525,19 @@ pub fn execute_build_with_progress(
         state.errors.clone()
     };
 
-    // If the command succeeded and this was CMake, show a clean completion message
-    if completed && is_cmake_command {
-        // For CMake commands that succeeded, show only a simple success message
-        if !is_quiet() {
-            print_substep("CMake configuration completed successfully");
-        }
-    }
-
     // Get the collected stdout and stderr content for error analysis if needed
     if !completed {
         let stdout_content = stdout_buffer.lock().unwrap().clone();
         let stderr_content = stderr_buffer.lock().unwrap().clone();
 
-        // Combine for error analysis
-        let combined_output = format!("{}\n{}", stdout_content, stderr_content);
-
-        // Build failed - display formatted errors using existing functions
+        // Build failed - display formatted errors using our enhanced error formatter
         progress.failure("Build failed");
 
-        // Use existing functions to format the errors
-        let formatted_errors = format_cpp_errors_rust_style(&combined_output);
-
-        println!("\n{}", "Build error details:".red().bold());
-        for error_line in formatted_errors {
+        // Use our enhanced error formatter
+        println!();  // Add some space
+        let formatted_errors = format_compiler_errors(&stdout_content, &stderr_content);
+        for error_line in &formatted_errors {
             println!("{}", error_line);
-        }
-
-        // Provide additional suggestions
-        let suggestions = analyze_cpp_errors(&combined_output);
-        if !suggestions.is_empty() {
-            println!("\n{}", "Suggestions to fix the issues:".yellow().bold());
-            for suggestion in suggestions {
-                println!("  • {}", suggestion);
-            }
-        }
-
-        // Add general help for errors
-        if !errors.is_empty() {
-            if errors.len() > 5 {
-                println!("\n{}", "The build failed with multiple errors.".red().bold());
-            }
-
-            // Extract error categories to provide focused suggestions
-            let mut error_categories = HashSet::new();
-            for error in &errors {
-                let categories = categorize_error(error);
-                for category in categories {
-                    error_categories.insert(category);
-                }
-            }
-
-            // Print general suggestions
-            print_general_suggestions(&error_categories);
         }
 
         return Err("Build process failed - see above for detailed errors".into());
@@ -777,7 +768,7 @@ pub fn count_project_source_files(config: &ProjectConfig, project_path: &Path) -
 
     // If we didn't find any source files, provide a minimal default
     if total_count == 0 {
-        total_count = 10; // Assume at least some source files
+        total_count = 0; // Assume at least some source files
     }
 
     Ok(total_count)

@@ -5,8 +5,9 @@ use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 use colored::Colorize;
 use crate::config::{PackageInstallState, ProjectConfig};
-use crate::output_utils::{is_quiet, print_detailed, print_error, print_status, print_substep, print_success, print_warning, ProgressBar};
-use crate::{ensure_compiler_available, expand_tilde, has_command, progress_bar, run_command, run_command_with_pattern_tracking, run_command_with_timeout, CACHED_PATHS, DEFAULT_BUILD_DIR, INSTALLED_PACKAGES, VCPKG_DEFAULT_DIR};
+use crate::output_utils::{is_quiet, print_detailed, print_error, print_status, print_step, print_substep, print_success, print_warning, ProgressBar};
+use crate::{ensure_compiler_available, has_command, progress_bar, run_command, run_command_with_pattern_tracking, run_command_with_timeout, CACHED_PATHS, DEFAULT_BUILD_DIR, INSTALLED_PACKAGES, VCPKG_DEFAULT_DIR};
+use crate::errors::expand_tilde;
 
 pub fn install_dependencies(
     config: &ProjectConfig,
@@ -837,9 +838,9 @@ pub fn run_vcpkg_install_with_timeout(
     // If all packages are already installed, just show that
     if to_install.is_empty() {
         if !is_quiet() {
-            print_substep("Packages already installed:");
+            print_step("Packages already installed:", "  ");
             for pkg in &already_installed {
-                print_detailed(&format!("• {}", pkg));
+                print_substep(&format!("{}", pkg));
             }
         }
         return Ok(());
@@ -864,16 +865,16 @@ pub fn run_vcpkg_install_with_timeout(
         Ok(_) => {
             // Show the results
             if !already_installed.is_empty() && !is_quiet() {
-                print_substep("Packages already installed:");
+                print_step("Packages already installed:", "  ");
                 for pkg in already_installed {
-                    print_detailed(&format!("• {}", pkg));
+                    print_substep(&format!("{}", pkg));
                 }
             }
 
             if !to_install.is_empty() && !is_quiet() {
-                print_substep("Newly installed packages:");
+                print_step("Newly installed packages:", "  ");
                 for pkg in &to_install {
-                    print_detailed(&format!("• {}", pkg));
+                    print_substep(&format!("{}", pkg));
                 }
             }
 
@@ -975,9 +976,9 @@ pub fn run_vcpkg_install(
     // If all packages are already installed, just show that
     if to_install.is_empty() {
         if !is_quiet() {
-            print_substep("Packages already installed:");
+            print_step("Packages already installed:", "  ");
             for pkg in &already_installed {
-                print_detailed(&format!("• {}", pkg));
+                print_substep(&format!("{}", pkg));
             }
         }
         return Ok(());
@@ -995,16 +996,16 @@ pub fn run_vcpkg_install(
         Ok(_) => {
             // Show the results
             if !already_installed.is_empty() && !is_quiet() {
-                print_substep("Packages already installed:");
+                print_step("Packages already installed:", "  ");
                 for pkg in already_installed {
-                    print_detailed(&format!("• {}", pkg));
+                    print_substep(&format!("{}", pkg));
                 }
             }
 
             if !to_install.is_empty() && !is_quiet() {
-                print_substep("Newly installed packages:");
+                print_step("Newly installed packages:", "  ");
                 for pkg in to_install {
-                    print_detailed(&format!("• {}", pkg));
+                    print_substep(&format!("{}", pkg));
                 }
             }
 
@@ -1826,9 +1827,9 @@ pub fn run_vcpkg_install_with_progress(
     // If all packages are already installed, just show that - complete progress
     if to_install.is_empty() {
         if !is_quiet() {
-            print_substep("Packages already installed:");
+            print_step("Packages already installed:", "  ");
             for pkg in &already_installed {
-                print_detailed(&format!("• {}", pkg));
+                print_substep(&format!("{}", pkg));
             }
         }
 
@@ -1884,16 +1885,16 @@ pub fn run_vcpkg_install_with_progress(
         Ok(_) => {
             // Show results
             if !already_installed.is_empty() && !is_quiet() {
-                print_substep("Packages already installed:");
+                print_step("Packages already installed:", "  ");
                 for pkg in already_installed {
-                    print_detailed(&format!("• {}", pkg));
+                    print_substep(&format!("{}", pkg)); // Changed from print_detailed
                 }
             }
 
             if !to_install.is_empty() && !is_quiet() {
-                print_substep("Newly installed packages:");
+                print_step("Newly installed packages:", "  ");
                 for pkg in &to_install {
-                    print_detailed(&format!("• {}", pkg));
+                    print_substep(&format!("{}", pkg)); // Changed from print_detailed
                 }
             }
 

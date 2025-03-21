@@ -38,6 +38,52 @@ pub struct WorkspaceWithProjects {
     pub default_startup_project: Option<String>, // Default startup project
 }
 
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct TestConfig {
+    // Directory where tests are located (default: "tests")
+    pub directory: Option<String>,
+
+    // Whether to enable testing (default: true)
+    pub enabled: Option<bool>,
+
+    // Default test timeout in seconds (default: 30)
+    pub timeout: Option<u64>,
+
+    // Default test labels
+    pub labels: Option<Vec<String>>,
+
+    // Test executables
+    pub executables: Option<Vec<TestExecutable>>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct TestExecutable {
+    // Name of the test executable
+    pub name: String,
+
+    // Source files for this test executable
+    pub sources: Vec<String>,
+
+    // Include directories
+    pub includes: Option<Vec<String>>,
+
+    // Libraries to link against
+    pub links: Option<Vec<String>>,
+
+    // Preprocessor definitions
+    pub defines: Option<Vec<String>>,
+
+    // Command-line arguments to pass to the test
+    pub args: Option<Vec<String>>,
+
+    // Test timeout in seconds (overrides default)
+    pub timeout: Option<u64>,
+
+    // Test labels for filtering
+    pub labels: Option<Vec<String>>,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct PCHConfig {
     pub enabled: bool,
@@ -54,6 +100,8 @@ pub struct PCHConfig {
 pub struct ProjectConfig {
     pub project: ProjectInfo,
     pub build: BuildConfig,
+    #[serde(default)]
+    pub tests: TestConfig,
     #[serde(default)]
     pub dependencies: DependenciesConfig,
     #[serde(default)]
@@ -191,14 +239,18 @@ pub struct OutputConfig {
 }
 
 #[derive(Debug, Clone)]
-pub struct CompilerDiagnostic {
+pub struct ErrorDiagnostic {
     pub file: String,
     pub line: usize,
     pub column: usize,
-    pub level: String,    // "error", "warning", "note", etc.
+    pub level: String,    // "error", "warning", or "note"
     pub message: String,
+    pub error_code: String,  // Generated error code (e.g. E4758)
+    pub source_line: Option<String>,
+    pub suggestion: Option<String>,
     pub context: Vec<String>,
 }
+
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct BuildHooks {
@@ -591,6 +643,7 @@ pub fn create_default_config() -> ProjectConfig {
             project_type: "executable".to_string(),
             language: "c++".to_string(),
             standard: "c++17".to_string(),
+
         },
         build: BuildConfig {
             build_dir: Some(DEFAULT_BUILD_DIR.to_string()),
@@ -613,6 +666,13 @@ pub fn create_default_config() -> ProjectConfig {
             custom: vec![],
             git: vec![],
             workspace: vec![],
+        },
+        tests: TestConfig {
+            directory: None,
+            enabled: None,
+            timeout: None,
+            labels: None,
+            executables: None,
         },
         targets,
         platforms: Some(platforms),
@@ -747,6 +807,13 @@ pub fn create_simple_config() -> ProjectConfig {
             custom: vec![],
             git: vec![],
             workspace: vec![]
+        },
+        tests: TestConfig {
+            directory: None,
+            enabled: None,
+            timeout: None,
+            labels: None,
+            executables: None,
         },
         targets,
         platforms: Some(platforms),

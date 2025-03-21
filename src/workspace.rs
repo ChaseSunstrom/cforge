@@ -279,7 +279,8 @@ pub fn test_workspace(
     project: Option<String>,
     config_type: Option<&str>,
     variant: Option<&str>,
-    filter: Option<&str>
+    filter: Option<&str>,
+    label: Option<&str>
 ) -> Result<(), Box<dyn std::error::Error>> {
     let workspace_config = load_workspace_config()?;
 

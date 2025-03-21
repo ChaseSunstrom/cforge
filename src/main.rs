@@ -12,8 +12,9 @@ mod commands;
 mod errors;
 mod utils;
 mod cross_compile;
+mod ctest;
 
-use crate::{output_utils::*, cli::*, config::*, project::*, workspace::*, build::*, commands::*, dependencies::*, errors::*, ide::*, tools::*,utils::*};
+use crate::{output_utils::*, cli::*, config::*, project::*, workspace::*, build::*, commands::*, dependencies::*, errors::*, ide::*, tools::*, utils::*};
 use lazy_static::lazy_static;
 use clap::{Parser, Subcommand};
 use colored::*;

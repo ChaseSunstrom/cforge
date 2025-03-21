@@ -7,11 +7,15 @@ use std::sync::mpsc::channel;
 use std::thread;
 use std::time::Duration;
 use colored::Colorize;
-use crate::{display_raw_errors, display_syntax_errors, format_cpp_errors_rust_style, list_project_targets, progress_bar, EXECUTED_COMMANDS};
+use crate::ctest::*;
+use crate::config::*;
+use crate::output_utils::*;
+use crate::{display_syntax_errors, list_project_targets, progress_bar, EXECUTED_COMMANDS};
 use crate::build::run_script;
 use crate::cli::Commands;
 use crate::config::{auto_adjust_config, load_project_config, load_workspace_config};
 use crate::dependencies::install_dependencies;
+use crate::errors::format_cpp_errors_rust_style;
 use crate::ide::generate_ide_files;
 use crate::output_utils::{is_quiet, is_verbose, print_detailed, print_error, print_step, print_substep, print_warning, ProgressBar};
 use crate::project::{build_project, clean_project, init_project, init_workspace, install_project, list_project_items, package_project, run_project, test_project};
@@ -30,15 +34,15 @@ pub fn run_command_with_pattern_tracking(
     cmd: Vec<String>,
     cwd: Option<&str>,
     env: Option<HashMap<String, String>>,
-    mut progress: ProgressBar, // Take ownership instead of reference
-    patterns: Vec<(String, f32)> // Use owned Strings instead of &str references
+    progress: ProgressBar,
+    patterns: Vec<(String, f32)>
 ) -> Result<(), Box<dyn std::error::Error>> {
     use std::process::{Command, Stdio};
     use std::io::{BufRead, BufReader};
-    use std::sync::{Arc, Mutex};
-    use std::thread;
+    use std::sync::mpsc::channel;
+    use std::time::Duration;
 
-    // Build the Command
+    // Build the command
     let mut command = Command::new(&cmd[0]);
     command.args(&cmd[1..]);
 
@@ -56,107 +60,94 @@ pub fn run_command_with_pattern_tracking(
     command.stdout(Stdio::piped());
     command.stderr(Stdio::piped());
 
-    // Update progress to show we're starting (5%)
-    progress.update(0.05);
+    let mut child = match command.spawn() {
+        Ok(child) => child,
+        Err(e) => return Err(format!("Failed to execute command: {}", e).into()),
+    };
 
-    // Spawn the command
-    let mut child = command.spawn()?;
+    // Clone progress for threads
+    let progress_stdout = progress.clone();
+    let progress_stderr = progress.clone();
 
-    // Take ownership of stdout/stderr
-    let stdout = child.stdout.take().ok_or("Failed to capture stdout")?;
-    let stderr = child.stderr.take().ok_or("Failed to capture stderr")?;
+    // Take ownership of stdout/stderr handles
+    let stdout = child.stdout.take()
+        .ok_or("Failed to capture stdout")?;
+    let stderr = child.stderr.take()
+        .ok_or("Failed to capture stderr")?;
 
-    // Create shared state to track the highest progress seen
-    let current_progress = Arc::new(Mutex::new(0.05f32));
+    // Clone patterns for threads
+    let patterns_stdout = patterns.clone();
+    let patterns_stderr = patterns.clone();
 
-    // Create threads to process stdout and stderr
-    let patterns_arc = Arc::new(patterns);
-
-    let stdout_patterns = Arc::clone(&patterns_arc);
-    let stdout_progress = Arc::clone(&current_progress);
+    // Stdout reader thread
     let stdout_handle = thread::spawn(move || {
         let reader = BufReader::new(stdout);
-
         for line in reader.lines().filter_map(Result::ok) {
-            // Check each pattern and update progress if matched
-            for (pattern, progress_value) in stdout_patterns.iter() {
+            // Check for progress patterns
+            for (pattern, value) in &patterns_stdout {
                 if line.contains(pattern) {
-                    let mut current = stdout_progress.lock().unwrap();
-                    if *progress_value > *current {
-                        *current = *progress_value;
-                    }
+                    progress_stdout.update(*value);
+                    break;
                 }
             }
 
-            // Print in verbose mode
+            // Only show important output
             if is_verbose() {
                 println!("{}", line);
             }
         }
     });
 
-    let stderr_patterns = Arc::clone(&patterns_arc);
-    let stderr_progress = Arc::clone(&current_progress);
+    // Stderr reader thread
     let stderr_handle = thread::spawn(move || {
         let reader = BufReader::new(stderr);
-
         for line in reader.lines().filter_map(Result::ok) {
-            // Check each pattern and update progress if matched
-            for (pattern, progress_value) in stderr_patterns.iter() {
+            // Check for progress patterns
+            for (pattern, value) in &patterns_stderr {
                 if line.contains(pattern) {
-                    let mut current = stderr_progress.lock().unwrap();
-                    if *progress_value > *current {
-                        *current = *progress_value;
-                    }
+                    progress_stderr.update(*value);
+                    break;
                 }
             }
 
-            // Print in verbose mode or if it looks like an error
-            if is_verbose() || line.contains("error") || line.contains("Error") {
-                eprintln!("{}", line);
+            // Only show errors
+            if is_verbose() ||
+                line.contains("error:") || line.contains("Error:") {
+                eprintln!("{}", line.red());
             }
         }
     });
 
-    // Fix Error 4: Create a clone of child.id() for status checks
-    // We don't move child into the thread, just create a separate wait_result variable
-    let progress_clone = progress.clone();
-    let update_progress = Arc::clone(&current_progress);
-
-    // Thread to update progress bar
-    let update_handle = thread::spawn(move || {
-        loop {
-            // Check progress value and update progress bar
-            let current = {
-                let guard = update_progress.lock().unwrap();
-                *guard
-            };
-
-            progress_clone.update(current);
-
-            // Sleep a bit
-            thread::sleep(Duration::from_millis(100));
-        }
+    // Wait for the command to complete with timeout
+    let (tx, rx) = channel();
+    let wait_handle = thread::spawn(move || {
+        let status = child.wait();
+        let _ = tx.send(status);
     });
 
-    // Wait for the command to finish
-    let status = child.wait()?;
-
-    // Wait for the threads to finish
-    stdout_handle.join().ok();
-    stderr_handle.join().ok();
-    // Don't wait for update_handle as it runs in an infinite loop
-
-    // Check if the command succeeded
-    if status.success() {
-        // Final progress update to show completion
-        progress.update(1.0);
-        progress.success();
-        Ok(())
-    } else {
-        progress.failure(&format!("Command failed with exit code: {}", status));
-        Err(format!("Command failed with exit code: {}", status).into())
+    // Wait with a reasonable timeout
+    match rx.recv_timeout(Duration::from_secs(600)) {
+        Ok(status_result) => {
+            match status_result {
+                Ok(status) => {
+                    if !status.success() {
+                        return Err(format!("Command failed with exit code: {}",
+                                           status.code().unwrap_or(-1)).into());
+                    }
+                },
+                Err(e) => return Err(format!("Command error: {}", e).into()),
+            }
+        },
+        Err(_) => {
+            return Err("Command timed out after 10 minutes".into());
+        }
     }
+
+    // Wait for IO threads to finish
+    let _ = stdout_handle.join();
+    let _ = stderr_handle.join();
+
+    Ok(())
 }
 
 pub fn run_command_once(
@@ -235,15 +226,58 @@ pub fn run_command_raw(command: &Commands) -> Result<(), Box<dyn std::error::Err
             }
             Ok(())
         }
-        Commands::Test { project, config, variant, filter } => {
+        Commands::Test { project, config, variant, filter, label, report, discover, init } => {
+            if *init {
+                // Initialize test environment
+                if is_workspace() {
+                    init_workspace_tests(project.clone())?;
+                } else {
+                    let proj_config = load_project_config(None)?;
+                    init_test_directory(&proj_config, &PathBuf::from("."))?;
+                    generate_test_cmakelists(&proj_config, &PathBuf::from("."))?;
+                }
+                return Ok(());
+            }
+
+            if *discover {
+                // Discover tests and update config
+                if is_workspace() {
+                    discover_workspace_tests(project.clone())?;
+                } else {
+                    let mut proj_config = load_project_config(None)?;
+                    let discovered_tests = discover_tests(&proj_config, &PathBuf::from("."))?;
+
+                    if !discovered_tests.is_empty() {
+                        print_status(&format!("Discovered {} tests", discovered_tests.len()));
+                        update_config_with_tests(&mut proj_config, discovered_tests)?;
+                        save_project_config(&proj_config, &PathBuf::from("."))?;
+                    } else {
+                        print_warning("No tests discovered", None);
+                    }
+                }
+                return Ok(());
+            }
+
+            if report.is_some() {
+                // Generate test reports
+                if is_workspace() {
+                    generate_workspace_test_reports(project.clone(), config.as_deref(), report.as_deref())?;
+                } else {
+                    let proj_config = load_project_config(None)?;
+                    generate_test_reports(&proj_config, &PathBuf::from("."), config.as_deref(), report.as_deref())?;
+                }
+                return Ok(());
+            }
+
+            // Run tests normally
             if is_workspace() {
-                test_workspace(project.clone(), config.as_deref(), variant.as_deref(), filter.as_deref())?;
+                test_workspace(project.clone(), config.as_deref(), variant.as_deref(), filter.as_deref(), label.as_deref())?;
             } else {
                 let proj_config = load_project_config(None)?;
-                test_project(&proj_config, &PathBuf::from("."), config.as_deref(), variant.as_deref(), filter.as_deref())?;
+                run_tests(&proj_config, &PathBuf::from("."), config.as_deref(), variant.as_deref(), filter.as_deref(), label.as_deref())?;
             }
             Ok(())
-        }
+        },
         Commands::Install { project, config, prefix } => {
             if is_workspace() {
                 install_workspace(project.clone(), config.as_deref(), prefix.as_deref())?;
@@ -356,9 +390,11 @@ pub fn run_command_with_timeout(
     let out_handle = thread::spawn(move || {
         let reader = BufReader::new(stdout);
         for line in reader.lines() {
+            /*
             if let Ok(line) = line {
-                println!("STDOUT> {}", line);
+                println!("{}", line);
             }
+            */
         }
         drop(child_arc_out); // not strictly necessary, but can be explicit
     });
@@ -561,15 +597,11 @@ pub fn run_command_with_progress(
                         line.contains("Failed")
                 } else {
                     // Still log for debugging if in verbose mode
-                    is_verbose() ||
-                        line.contains("Installing") ||
-                        line.contains("Building") ||
-                        line.contains("Downloading") ||
-                        line.contains("Extracting")
+                    is_verbose()
                 };
 
-                if should_print {
-                    println!("STDOUT> {}", line);
+                if is_verbose() {
+                    println!("{}", line);  // No prefix, and only shown in verbose mode
                 }
             }
         }
@@ -722,65 +754,12 @@ pub fn run_command(
     cwd: Option<&str>,
     env: Option<HashMap<String, String>>
 ) -> Result<(), Box<dyn std::error::Error>> {
-    if cmd.is_empty() {
-        return Err("Cannot run empty command".into());
+    // Only show the command in verbose mode
+    if is_verbose() {
+        println!("{}", format!("Running: {}", cmd.join(" ")).blue());
     }
 
-    // Determine if this is a CMake command
-    let command_name = &cmd[0];
-    let is_cmake = command_name.contains("cmake");
-    let is_compiler_command = command_name.contains("cl") ||
-        command_name.contains("clang") ||
-        command_name.contains("gcc");
-    let is_verbose_command = is_cmake || is_compiler_command;
-    let is_build_command = is_cmake && cmd.len() > 1 && cmd.contains(&"--build".to_string());
-
-    // Track command using a cache key to avoid duplicates
-    let cache_key = cmd.join(" ");
-    let already_executed = {
-        let cache = EXECUTED_COMMANDS.lock().unwrap();
-        cache.contains(&cache_key)
-    };
-
-    if already_executed && !is_build_command {
-        print_detailed(&format!("Skipping already executed: {}", command_name));
-        return Ok(());
-    }
-
-    // Show appropriate message based on command type
-    if is_build_command {
-        print_step("Building", "...");
-    } else if is_verbose_command && !is_verbose() {
-        // For verbose commands, just show a simple message in normal mode
-        print_step(&format!("Running {}", command_name), "");
-    } else {
-        // For non-verbose commands or in verbose mode, show the full command
-        if is_verbose() {
-            print_step("Executing", &cmd.join(" "));
-        } else {
-            // Show a more compact representation
-            let compact_cmd = if cmd.len() > 3 {
-                format!("{} {} ...", cmd[0], cmd[1])
-            } else {
-                cmd.join(" ")
-            };
-            print_step("Executing", &compact_cmd);
-        }
-    }
-
-    // For long-running operations, show a spinner
-    let spinner = if is_build_command || is_cmake {
-        let msg = if is_build_command {
-            "Building project".to_string()
-        } else {
-            format!("Running {}", command_name)
-        };
-        Some(progress_bar(&msg))
-    } else {
-        None
-    };
-
-    // Create and execute the command
+    // Build the command
     let mut command = Command::new(&cmd[0]);
     command.args(&cmd[1..]);
 
@@ -794,78 +773,65 @@ pub fn run_command(
         }
     }
 
-    // Always capture output for processing
+    // Pipe stdout and stderr to completely suppress normal output
     command.stdout(Stdio::piped());
     command.stderr(Stdio::piped());
 
-    // Execute the command
-    match command.output() {
-        Ok(output) => {
-            let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-            let status = output.status;
+    let mut child = match command.spawn() {
+        Ok(child) => child,
+        Err(e) => return Err(format!("Failed to execute command: {}", e).into()),
+    };
 
-            // Stop spinner if any
-            if let Some(s) = spinner {
-                if status.success() {
-                    s.success();
-                } else {
-                    s.failure("Command failed");
-                }
+    // Take ownership of stdout/stderr handles
+    let stdout = child.stdout.take()
+        .ok_or("Failed to capture stdout")?;
+    let stderr = child.stderr.take()
+        .ok_or("Failed to capture stderr")?;
+
+    // Stdout reader thread - completely silent unless in verbose mode
+    let stdout_handle = thread::spawn(move || {
+        let reader = BufReader::new(stdout);
+        for line in reader.lines().filter_map(Result::ok) {
+            // In verbose mode only, show all stdout
+            if is_verbose() {
+                println!("{}", line);
             }
-
-            // If successful
-            if status.success() {
-                // For CMake commands, don't flood output with details
-                if is_cmake && !is_verbose() {
-                    // Just print a summary or important messages
-                    if stdout.contains("Configuring done") || stdout.contains("Generating done") {
-                        print_substep("CMake configuration completed");
-                    }
-
-                    // Check for warnings but don't print the full output
-                    if stderr.contains("Warning") || stderr.contains("WARNING") {
-                        print_warning("CMake reported warnings during configuration",
-                                      Some("Use verbose mode to see details"));
-                    }
-                }
-                // For non-CMake or verbose mode, print output as before
-                else if is_verbose() && !stdout.is_empty() {
-                    println!("{}", stdout);
-                }
-
-                Ok(())
-            } else {
-                // If build command failed, format errors instead of logging
-                if is_cmake || is_compiler_command {
-                    print_error("Build failed with the following errors:", None, None);
-
-                    // Extract and format errors
-                    let error_count = display_syntax_errors(&stdout, &stderr);
-
-                    // If no structured errors found, show raw errors
-                    if error_count == 0 {
-                        display_raw_errors(&stdout, &stderr);
-                    }
-                } else {
-                    // For other commands, print error messages
-                    if !stderr.is_empty() {
-                        print_error(&stderr, None, None);
-                    } else {
-                        print_error(&format!("Command failed with status: {}", status), None, None);
-                    }
-                }
-
-                Err("Command failed".into())
+            // In normal mode, only show critical errors
+            else if line.contains("fatal error:") ||
+                line.contains("FAILED") ||
+                line.contains("Critical:") {
+                println!("{}", line);
             }
-        },
-        Err(e) => {
-            // Command failed to execute
-            if let Some(s) = spinner {
-                s.failure(&e.to_string());
-            }
-            print_error(&format!("Failed to execute command: {}", e), None, None);
-            Err(e.into())
         }
+    });
+
+    // Stderr reader thread - only show actual errors
+    let stderr_handle = thread::spawn(move || {
+        let reader = BufReader::new(stderr);
+        for line in reader.lines().filter_map(Result::ok) {
+            // In verbose mode, show all stderr
+            if is_verbose() {
+                eprintln!("{}", line.red());
+            }
+            // In normal mode, show only legitimate errors (not warnings or notes)
+            else if (line.contains("error:") && !line.contains("warning:") && !line.contains("note:")) ||
+                line.contains("fatal:") ||
+                line.contains("FAILED") {
+                eprintln!("{}", line.red());
+            }
+        }
+    });
+
+    // Wait for command completion
+    let status = child.wait()?;
+    if !status.success() {
+        return Err(format!("Command failed with exit code: {}",
+                           status.code().unwrap_or(-1)).into());
     }
+
+    // Wait for IO threads to finish
+    let _ = stdout_handle.join();
+    let _ = stderr_handle.join();
+
+    Ok(())
 }

@@ -15,6 +15,8 @@ pub struct Cli {
     pub verbosity: Option<String>,
 }
 
+
+
 #[derive(Debug, Subcommand)]
 pub enum Commands {
     /// Initialize a new project or workspace
@@ -28,6 +30,8 @@ pub enum Commands {
         #[clap(long)]
         template: Option<String>,
     },
+
+
 
     /// Build the project or workspace
     #[clap(name = "build")]
@@ -103,6 +107,22 @@ pub enum Commands {
         /// Test filter pattern
         #[clap(long)]
         filter: Option<String>,
+
+        /// Test label to run
+        #[clap(long)]
+        label: Option<String>,
+
+        /// Generate test reports in a specific format
+        #[clap(long)]
+        report: Option<String>,
+
+        /// Scan for tests and update config
+        #[clap(long)]
+        discover: bool,
+
+        /// Initialize test directory with sample test
+        #[clap(long)]
+        init: bool,
     },
 
     /// Install the built project

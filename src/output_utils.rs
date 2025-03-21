@@ -10,6 +10,7 @@ use lazy_static::lazy_static;
 lazy_static! {
     static ref VERBOSITY: Mutex<Verbosity> = Mutex::new(Verbosity::Normal);
     static ref LAYOUT: Mutex<LayoutManager> = Mutex::new(LayoutManager::new());
+    static ref ACTIVE_PROGRESS_BARS: Mutex<usize> = Mutex::new(0);
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -141,6 +142,27 @@ pub fn set_theme(theme_name: &str) {
     });
 }
 
+// Acquire a progress bar if possible, returns true if we can create a new one
+pub fn can_acquire_progress_bar() -> bool {
+    let mut count = ACTIVE_PROGRESS_BARS.lock().unwrap();
+    if *count >= 1 {
+        // Only allow one active progress bar at a time
+        false
+    } else {
+        *count += 1;
+        true
+    }
+}
+
+// Release a progress bar when done
+pub fn release_progress_bar() {
+    let mut count = ACTIVE_PROGRESS_BARS.lock().unwrap();
+    if *count > 0 {
+        *count -= 1;
+    }
+}
+
+
 //==============================================================================
 // TimedProgressBar - Core for all long-running operations
 //==============================================================================
@@ -188,7 +210,8 @@ impl TimedProgressBar {
             cmp::min(layout.get_width() * 7 / 10, 60)
         };
 
-        let handle = if !is_quiet() {
+        // Only create the handle if we're not in quiet mode and we can acquire a progress bar
+        let handle = if !is_quiet() && can_acquire_progress_bar() {
             let msg = message.clone();
             Some(thread::spawn(move || {
                 let mut last_percent: f32 = 0.0;
@@ -250,6 +273,9 @@ impl TimedProgressBar {
                 let status_len = status_clone.lock().unwrap().len();
                 print!("\r{}\r", " ".repeat(msg.len() + width + status_len + 20));
                 io::stdout().flush().unwrap();
+
+                // Release the progress bar
+                release_progress_bar();
             }))
         } else {
             None
@@ -267,9 +293,8 @@ impl TimedProgressBar {
         }
     }
 
-    // Other methods remain the same
     pub fn update_status(&self, status: &str) {
-        if !is_quiet() {
+        if !is_quiet() && self.handle.is_some() {
             let _ = self.update_channel.0.send(status.to_string());
         }
     }
@@ -279,6 +304,12 @@ impl TimedProgressBar {
         *self.stop_signal.lock().unwrap() = true;
         if let Some(handle) = self.handle {
             let _ = handle.join();
+        } else {
+            // If we didn't create a handle (because of quiet mode or too many bars),
+            // we still need to release the progress bar if we acquired one
+            if !is_quiet() {
+                release_progress_bar();
+            }
         }
 
         if !is_quiet() {
@@ -294,6 +325,11 @@ impl TimedProgressBar {
         *self.stop_signal.lock().unwrap() = true;
         if let Some(handle) = self.handle {
             let _ = handle.join();
+        } else {
+            // If we didn't create a handle, release the progress bar if we acquired one
+            if !is_quiet() {
+                release_progress_bar();
+            }
         }
 
         print_error(&format!("{}: {} (after {})",
@@ -600,7 +636,8 @@ impl ProgressBar {
             cmp::min(layout.get_width() * 7 / 10, 60)
         };
 
-        let handle = if !is_quiet() {
+        // Only create the handle if we're not in quiet mode and we can acquire a progress bar
+        let handle = if !is_quiet() && can_acquire_progress_bar() {
             let msg = message.clone();
             Some(thread::spawn(move || {
                 let mut last_percent: f32 = 0.0;
@@ -644,6 +681,9 @@ impl ProgressBar {
                 // Clear the line
                 print!("\r{}\r", " ".repeat(msg.len() + width + 40));
                 io::stdout().flush().unwrap();
+
+                // Release the progress bar
+                release_progress_bar();
             }))
         } else {
             None
@@ -660,7 +700,7 @@ impl ProgressBar {
     }
 
     pub fn update(&self, percent: f32) {
-        if !is_quiet() {
+        if !is_quiet() && self.handle.is_some() {
             let mut progress = self.progress.lock().unwrap();
             *progress = percent.max(0.0).min(1.0); // Clamp between 0 and 1
         }
@@ -676,14 +716,29 @@ impl ProgressBar {
         }
 
         // Give a brief moment to see 100%
-        thread::sleep(Duration::from_millis(300));
+        thread::sleep(Duration::from_millis(100));
 
         *self.stop_signal.lock().unwrap() = true;
         if let Some(handle) = self.handle.take() {
             let _ = handle.join();
+        } else {
+            // If we didn't create a handle, release the progress bar if we acquired one
+            if !is_quiet() {
+                release_progress_bar();
+            }
         }
 
         if !is_quiet() {
+            // First clear the entire line
+            let terminal_width = {
+                let layout = LAYOUT.lock().unwrap();
+                layout.get_width()
+            };
+
+            print!("\r{}\r", " ".repeat(terminal_width));
+            io::stdout().flush().unwrap();
+
+            // Now print the completion message on a new line
             println!("{} {} (completed in {})",
                      "✓".green().bold(),
                      self.message,
@@ -696,12 +751,116 @@ impl ProgressBar {
         *self.stop_signal.lock().unwrap() = true;
         if let Some(handle) = self.handle.take() {
             let _ = handle.join();
+        } else {
+            // If we didn't create a handle, release the progress bar if we acquired one
+            if !is_quiet() {
+                release_progress_bar();
+            }
+        }
+
+        // Clear the line completely first
+        if !is_quiet() {
+            let terminal_width = {
+                let layout = LAYOUT.lock().unwrap();
+                layout.get_width()
+            };
+
+            print!("\r{}\r", " ".repeat(terminal_width));
+            io::stdout().flush().unwrap();
         }
 
         print_error(&format!("{}: {} (after {})",
                              self.message,
                              error,
                              format_duration(elapsed)), None, None);
+    }
+}
+
+
+impl Clone for ProgressBar {
+    fn clone(&self) -> Self {
+        // When cloning, we don't want to create a new progress bar thread
+        // if there's already an active one
+        let mut new_bar = Self {
+            message: self.message.clone(),
+            start_time: self.start_time,
+            width: self.width,
+            stop_signal: Arc::new(Mutex::new(false)),
+            progress: Arc::new(Mutex::new(0.0f32)),
+            handle: None,
+        };
+
+        // Copy the current progress
+        {
+            let current_progress = *self.progress.lock().unwrap();
+            *new_bar.progress.lock().unwrap() = current_progress;
+        }
+
+        // Only create a handle if we can acquire a progress bar and not in quiet mode
+        if !is_quiet() && can_acquire_progress_bar() {
+            // Now create a new handle with the same behavior
+            let msg = self.message.clone();
+            let width = self.width;
+            let progress_clone = new_bar.progress.clone();
+            let stop_clone = new_bar.stop_signal.clone();
+            let start_time = self.start_time;
+
+            // Get progress bar characters
+            let (filled_char, empty_char) = {
+                let layout = LAYOUT.lock().unwrap();
+                let (filled, empty) = layout.get_progress_chars();
+                (filled.to_string(), empty.to_string())
+            };
+
+            new_bar.handle = Some(thread::spawn(move || {
+                let mut last_percent: f32 = 0.0;
+
+                loop {
+                    {
+                        let should_stop = *stop_clone.lock().unwrap();
+                        if should_stop {
+                            break;
+                        }
+                    }
+
+                    // Get current progress
+                    let percent = *progress_clone.lock().unwrap();
+
+                    // Only redraw if percentage changed
+                    if (percent - last_percent).abs() > 0.01 {
+                        let filled_width = (width as f32 * percent) as usize;
+                        let empty_width = width - filled_width;
+
+                        // Create the progress bar
+                        let bar = filled_char.repeat(filled_width) + &empty_char.repeat(empty_width);
+
+                        // Show elapsed time as additional info
+                        let elapsed = start_time.elapsed();
+                        let elapsed_str = format!("{}s elapsed", elapsed.as_secs());
+
+                        print!("\r{} [{}] {:.1}% {} ",
+                               msg.blue().bold(),
+                               bar,
+                               percent * 100.0,
+                               elapsed_str);
+                        io::stdout().flush().unwrap();
+
+                        last_percent = percent;
+                    }
+
+                    thread::sleep(Duration::from_millis(100));
+                }
+
+                // Clear the line
+                print!("\r{}\r", " ".repeat(msg.len() + width + 40));
+                io::stdout().flush().unwrap();
+
+                // Release the progress bar
+                release_progress_bar();
+            }));
+        }
+
+        new_bar
     }
 }
 
@@ -1017,21 +1176,4 @@ pub fn has_command(cmd: &str) -> bool {
     }
 
     false
-}
-
-impl Clone for ProgressBar {
-    fn clone(&self) -> Self {
-        let mut new_bar = ProgressBar::start(&self.message);
-
-        // Copy the current progress
-        {
-            let current_progress = *self.progress.lock().unwrap();
-            *new_bar.progress.lock().unwrap() = current_progress;
-        }
-
-        // No need to clone the other fields as they're already set by start()
-        // and we don't want to clone the thread handle
-
-        new_bar
-    }
 }
