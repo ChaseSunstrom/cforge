@@ -652,11 +652,11 @@ int main() {
     std::cout << "Hello, CForge!" << std::endl;
     return 0;
 }
-``
+```
 
 ### Library with vcpkg Dependencies
 
-``toml
+```toml
 # cforge.toml
 [project]
 name = "math_lib"
