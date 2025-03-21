@@ -51,18 +51,18 @@ CForge is a modern build system designed to simplify C/C++ project management. I
 
 ### From Cargo
 
-``bash
+```bash
 cargo install cforge
-``
+```
 
 ### From Source
 
-``bash
+```bash
 git clone https://github.com/ChaseSunstrom/cforge.git
 cd cforge
 cargo build --release
 cargo install --path .
-``
+```
 
 ### Prerequisites
 - Rust
@@ -76,7 +76,7 @@ cargo install --path .
 
 ### Creating a New Project
 
-``bash
+```bash
 # Create a new project in the current directory
 cforge init
 
@@ -89,13 +89,13 @@ cforge build
 
 # Run the executable (for application projects)
 cforge run
-``
+```
 
 ### Example Project Structure
 
 After initializing a project with `cforge init`, you'll have a structure like this:
 
-``
+```
 myproject/
 ├── cforge.toml         # Project configuration
 ├── src/
@@ -103,23 +103,23 @@ myproject/
 ├── include/            # Header files
 ├── scripts/            # Custom scripts
 └── build/              # Build artifacts (generated)
-``
+```
 
 ### Example C++ Code
 
 `src/main.cpp` (generated automatically):
-``cpp
+```cpp
 #include <iostream>
 
 int main(int argc, char* argv[]) {
     std::cout << "Hello, cforge!" << std::endl;
     return 0;
 }
-``
+```
 
 ### Build and Run
 
-``bash
+```bash
 $ cforge build
 ┌──────────────────────────────────────────────────┐
 │           cforge - C/C++ Build System            │
@@ -164,7 +164,7 @@ Program Output
 Hello, cforge!
 
 ✓ Program executed successfully
-``
+```
 
 ---
 
@@ -203,7 +203,7 @@ Many commands support these options:
 
 The `cforge.toml` file is the heart of your project configuration:
 
-``toml
+```toml
 [project]
 name = "my_project"
 version = "0.1.0"
@@ -229,13 +229,13 @@ flags = ["OPTIMIZE", "OB2", "DNDEBUG"]
 sources = ["src/**/*.cpp", "src/**/*.c"]
 include_dirs = ["include"]
 links = []
-``
+```
 
 ### Target Configuration
 
 A project can have multiple targets (executables or libraries):
 
-``toml
+```toml
 [targets.main_app]
 sources = ["src/app/**/*.cpp"]
 include_dirs = ["include"]
@@ -245,11 +245,11 @@ links = ["fmt", "boost_system"]
 sources = ["src/utils/**/*.cpp"]
 include_dirs = ["include/utils"]
 links = []
-``
+```
 
 ### Platform-specific Configuration
 
-``toml
+```toml
 [platforms.windows]
 defines = ["WINDOWS", "WIN32"]
 flags = ["UNICODE"]
@@ -261,7 +261,7 @@ flags = []
 [platforms.linux]
 defines = ["LINUX"]
 flags = []
-``
+```
 
 ---
 
@@ -271,16 +271,16 @@ CForge supports multiple dependency management systems:
 
 ### vcpkg Integration
 
-``toml
+```toml
 [dependencies.vcpkg]
 enabled = true
 path = "~/.vcpkg"  # Optional, defaults to ~/.vcpkg
 packages = ["fmt", "boost", "nlohmann-json"]
-``
+```
 
 Example C++ code using vcpkg dependencies:
 
-``cpp
+```cpp
 #include <fmt/core.h>
 #include <nlohmann/json.hpp>
 
@@ -297,21 +297,21 @@ int main() {
     fmt::print("JSON: {}\n", j.dump(2));
     return 0;
 }
-``
+```
 
 ### Conan Integration
 
-``toml
+```toml
 [dependencies.conan]
 enabled = true
 packages = ["fmt/9.1.0", "spdlog/1.10.0"]
 options = { "fmt:shared": "False", "spdlog:shared": "False" }
 generators = ["cmake", "cmake_find_package"]
-``
+```
 
 ### Git Dependencies
 
-``toml
+```toml
 [[dependencies.git]]
 name = "imgui"
 url = "https://github.com/ocornut/imgui.git"
@@ -323,24 +323,24 @@ name = "glfw"
 url = "https://github.com/glfw/glfw.git"
 tag = "3.3.8"
 cmake_options = ["-DGLFW_BUILD_EXAMPLES=OFF", "-DGLFW_BUILD_TESTS=OFF"]
-``
+```
 
 ### Custom Dependencies
 
-``toml
+```toml
 [[dependencies.custom]]
 name = "my_library"
 url = "https://example.com/my_library-1.0.0.zip"
 include_path = "include"
 library_path = "lib"
-``
+```
 
 ### System Dependencies
 
-``toml
+```toml
 [dependencies]
 system = ["X11", "pthread", "dl"]
-``
+```
 
 ---
 
@@ -348,7 +348,7 @@ system = ["X11", "pthread", "dl"]
 
 Workspaces allow you to manage multiple related projects together:
 
-``bash
+```bash
 # Initialize a workspace
 cforge init --workspace
 
@@ -365,26 +365,26 @@ cforge build my_lib
 
 # Run a specific project
 cforge run my_app
-``
+```
 
 ### Workspace Configuration
 
-``toml
+```toml
 # cforge-workspace.toml
 [workspace]
 name = "my_workspace"
 projects = ["projects/app", "projects/lib"]
 default_startup_project = "projects/app"
-``
+```
 
 ### Project Dependencies within Workspace
 
-``toml
+```toml
 # projects/app/cforge.toml
 [dependencies.workspace]
 name = "lib"
 link_type = "static"  # static, shared, interface
-``
+```
 
 ---
 
@@ -392,7 +392,7 @@ link_type = "static"  # static, shared, interface
 
 Build variants allow for different build configurations beyond just Debug/Release:
 
-``toml
+```toml
 [variants]
 default = "standard"
 
@@ -408,13 +408,13 @@ flags = ["OPTIMIZE_MAX", "LTO"]
 description = "Build with memory safety checks"
 defines = ["ENABLE_MEMORY_SAFETY=1"]
 flags = ["MEMSAFE"]
-``
+```
 
 Building with variants:
 
-``bash
+```bash
 cforge build --variant performance
-``
+```
 
 ---
 
@@ -422,14 +422,14 @@ cforge build --variant performance
 
 CForge supports cross-compilation for various platforms:
 
-``toml
+```toml
 [cross_compile]
 enabled = true
 target = "android-arm64"
 sysroot = "$ANDROID_NDK/platforms/android-24/arch-arm64"
 cmake_toolchain_file = "$ANDROID_NDK/build/cmake/android.toolchain.cmake"
 flags = ["-DANDROID_ABI=arm64-v8a", "-DANDROID_PLATFORM=android-24"]
-``
+```
 
 Cross-compilation targets:
 - `android-arm64`: Android ARM64 platform
@@ -439,9 +439,9 @@ Cross-compilation targets:
 - `wasm`: WebAssembly via Emscripten
 
 Example:
-``bash
+```bash
 cforge build --target android-arm64
-``
+```
 
 ---
 
@@ -449,7 +449,7 @@ cforge build --target android-arm64
 
 Generate IDE-specific project files:
 
-``bash
+```bash
 # VS Code
 cforge ide vscode
 
@@ -462,10 +462,10 @@ cforge ide xcode
 # Visual Studio (Windows only)
 cforge ide vs2022
 cforge ide vs:x64  # With architecture specification
-``
+```
 
 Example VS Code launch configuration (generated automatically):
-``json
+```json
 {
   "version": "0.2.0",
   "configurations": [
@@ -491,7 +491,7 @@ Example VS Code launch configuration (generated automatically):
     }
   ]
 }
-``
+```
 
 ---
 
@@ -499,7 +499,7 @@ Example VS Code launch configuration (generated automatically):
 
 Define custom scripts and build hooks:
 
-``toml
+```toml
 [scripts]
 scripts = {
   "format" = "clang-format -i src/*.cpp include/*.h",
@@ -512,12 +512,12 @@ pre_build = ["echo Building...", "python scripts/version_gen.py"]
 post_build = ["echo Done!", "cp build/bin/myapp /tmp/"]
 pre_run = ["echo Starting application..."]
 post_run = ["echo Application closed."]
-``
+```
 
 Running scripts:
-``bash
+```bash
 cforge script format
-``
+```
 
 ---
 
@@ -525,7 +525,7 @@ cforge script format
 
 CForge integrates with CTest for testing:
 
-``toml
+```toml
 [tests]
 directory = "tests"
 enabled = true
@@ -537,10 +537,10 @@ sources = ["tests/math_test.cpp"]
 includes = ["include", "tests/common"]
 links = ["my_project"]
 labels = ["unit", "math"]
-``
+```
 
 Example test file (`tests/math_test.cpp`):
-``cpp
+```cpp
 #include <iostream>
 #include <cassert>
 #include "my_project.h"
@@ -561,10 +561,10 @@ int main() {
     std::cout << "All tests passed!" << std::endl;
     return 0;
 }
-``
+```
 
 Running tests:
-``bash
+```bash
 # Run all tests
 cforge test
 
@@ -582,7 +582,7 @@ cforge test --discover
 
 # Generate test reports
 cforge test --report xml
-``
+```
 
 ---
 
@@ -590,17 +590,17 @@ cforge test --report xml
 
 ### Precompiled Headers
 
-``toml
+```toml
 [pch]
 enabled = true
 header = "include/pch.h"
 source = "src/pch.cpp"  # Optional
 exclude_sources = ["src/no_pch.cpp"]
-``
+```
 
 ### Package Generation
 
-``bash
+```bash
 # Create a package (defaults to zip/tar.gz)
 cforge package
 
@@ -608,17 +608,17 @@ cforge package
 cforge package --type deb  # Linux Debian package
 cforge package --type rpm  # Linux RPM package
 cforge package --type zip  # Zip archive
-``
+```
 
 ### Installing Projects
 
-``bash
+```bash
 # Install to default location
 cforge install
 
 # Install to specific directory
 cforge install --prefix /usr/local
-``
+```
 
 ---
 
@@ -626,7 +626,7 @@ cforge install --prefix /usr/local
 
 ### Simple Application
 
-``toml
+```toml
 # cforge.toml
 [project]
 name = "hello_app"
@@ -642,9 +642,9 @@ default_config = "Debug"
 [targets.default]
 sources = ["src/**/*.cpp"]
 include_dirs = ["include"]
-``
+```
 
-``cpp
+```cpp
 // src/main.cpp
 #include <iostream>
 
@@ -673,9 +673,9 @@ packages = ["fmt", "doctest"]
 [targets.default]
 sources = ["src/**/*.cpp"]
 include_dirs = ["include"]
-``
+```
 
-``cpp
+```cpp
 // include/math_lib.h
 #pragma once
 
@@ -685,9 +685,9 @@ namespace math_lib {
     int multiply(int a, int b);
     int divide(int a, int b);
 }
-``
+```
 
-``cpp
+```cpp
 // src/math_lib.cpp
 #include "math_lib.h"
 #include <fmt/core.h>
@@ -713,19 +713,19 @@ namespace math_lib {
         return a / b;
     }
 }
-``
+```
 
 ### Multi-project Workspace
 
-``toml
+```toml
 # cforge-workspace.toml
 [workspace]
 name = "calculator"
 projects = ["projects/core", "projects/gui", "projects/cli"]
 default_startup_project = "projects/gui"
-``
+```
 
-``toml
+```toml
 # projects/core/cforge.toml
 [project]
 name = "calc_core"
@@ -738,9 +738,9 @@ standard = "c++17"
 [targets.default]
 sources = ["src/**/*.cpp"]
 include_dirs = ["include"]
-``
+```
 
-``toml
+```toml
 # projects/gui/cforge.toml
 [project]
 name = "calc_gui"
@@ -761,7 +761,7 @@ packages = ["imgui", "glfw3", "opengl"]
 [targets.default]
 sources = ["src/**/*.cpp"]
 include_dirs = ["include"]
-``
+```
 
 ---
 
@@ -776,7 +776,7 @@ include_dirs = ["include"]
 
 CForge provides enhanced error diagnostics:
 
-``
+```
 Build error details:
 ERROR[E0001]: undefined reference to 'math_lib::divide(int, int)'
  --> src/main.cpp:12:5
@@ -784,11 +784,11 @@ ERROR[E0001]: undefined reference to 'math_lib::divide(int, int)'
      ^~~~~~~~~~~~~~~~
 
 help: The function 'divide' is used but not defined. Check if the library is properly linked.
-``
+```
 
 ### Useful Commands
 
-``bash
+```bash
 # List available configurations
 cforge list configs
 
@@ -800,7 +800,7 @@ cforge list targets
 
 # List custom scripts
 cforge list scripts
-``
+```
 
 ---
 
