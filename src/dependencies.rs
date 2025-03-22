@@ -117,6 +117,17 @@ pub fn setup_vcpkg(
     // Skip if vcpkg is disabled
     let vcpkg_config = &config.dependencies.vcpkg;
     if !vcpkg_config.enabled {
+        if !is_quiet() {
+            print_substep("vcpkg is disabled in configuration, skipping setup");
+        }
+        return Ok(String::new());
+    }
+
+    // Skip if no packages are defined
+    if vcpkg_config.packages.is_empty() {
+        if !is_quiet() {
+            print_substep("No vcpkg packages defined, skipping setup");
+        }
         return Ok(String::new());
     }
 

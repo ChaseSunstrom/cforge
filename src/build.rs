@@ -232,6 +232,11 @@ fn run_cmake_silently(
     use std::io::{BufRead, BufReader};
     use std::time::Duration;
 
+    // Collect error messages to display if cmake fails
+    let error_messages = Arc::new(Mutex::new(Vec::new()));
+    let error_messages_stdout = Arc::clone(&error_messages);
+    let error_messages_stderr = Arc::clone(&error_messages);
+
     // Build the Command
     let mut command = Command::new(&cmd[0]);
     command.args(&cmd[1..]);
@@ -268,15 +273,18 @@ fn run_cmake_silently(
     let stdout_handle = thread::spawn(move || {
         let reader = BufReader::new(stdout);
         for line in reader.lines().filter_map(Result::ok) {
-            // Skip normal CMake output but save important status lines
+            // Save status lines
             if line.contains("Configuring") || line.contains("Generating") {
                 let mut current = progress_tracker_clone.lock().unwrap();
                 *current = line.trim().to_string();
             }
 
-            // Only show errors in stdout - completely silent otherwise
-            if line.contains("error:") || line.contains("Error:") {
-                println!("{}", line);
+            // Save important error messages
+            if line.contains("error:") || line.contains("Error:") || line.contains("CMake Error") ||
+                line.contains("WARNING:") || line.contains("fatal error") {
+                println!("{}", line);  // Display in real-time
+                let mut msgs = error_messages_stdout.lock().unwrap();
+                msgs.push(line);
             }
         }
     });
@@ -285,8 +293,13 @@ fn run_cmake_silently(
     let stderr_handle = thread::spawn(move || {
         let reader = BufReader::new(stderr);
         for line in reader.lines().filter_map(Result::ok) {
-            // Only show errors and warnings in stderr
-            if line.contains("error:") || line.contains("Error:") {
+            // Always capture stderr lines for error reporting
+            let mut msgs = error_messages_stderr.lock().unwrap();
+            msgs.push(line.clone());
+
+            // Display error lines in real-time
+            if line.contains("error:") || line.contains("Error:") || line.contains("CMake Error") ||
+                line.contains("WARNING:") || line.contains("fatal error") {
                 eprintln!("{}", line.red());
             }
         }
@@ -306,6 +319,29 @@ fn run_cmake_silently(
             match status_result {
                 Ok(status) => {
                     if !status.success() {
+                        // Wait for stdout/stderr readers to finish to get all messages
+                        let _ = stdout_handle.join();
+                        let _ = stderr_handle.join();
+
+                        // Get collected error messages
+                        let error_msgs = error_messages.lock().unwrap();
+
+                        // If we have error messages, display them
+                        if !error_msgs.is_empty() {
+                            println!("\n{}", "CMake configuration failed with these errors:".red().bold());
+                            for msg in error_msgs.iter().take(20) {  // Limit to 20 messages
+                                println!("  {}", msg);
+                            }
+
+                            // Provide some common solutions
+                            println!("\n{}", "Possible solutions:".yellow().bold());
+                            println!("  • Make sure you have the correct compiler installed");
+                            println!("  • Check if your C++ standard is supported by your compiler");
+                            println!("  • Verify that all dependencies are properly installed");
+                            println!("  • Try 'cforge clean' and then build again");
+                            println!("  • Run with verbose output: set CFORGE_VERBOSE=1");
+                        }
+
                         return Err(format!("CMake configuration failed with exit code: {}", status).into());
                     }
                 },
@@ -762,13 +798,25 @@ pub fn count_project_source_files(config: &ProjectConfig, project_path: &Path) -
             };
 
             // Count files recursively
-            total_count += count_matching_files(project_path, &regex)?;
+            let files_count = count_matching_files(project_path, &regex)?;
+            total_count += files_count;
+
+            // Debug output to see what's being counted
+            if is_verbose() {
+                println!("Pattern '{}' matched {} files", source_pattern, files_count);
+            }
         }
     }
 
-    // If we didn't find any source files, provide a minimal default
+    // If we didn't find any source files, assume at least a minimal default
     if total_count == 0 {
-        total_count = 0; // Assume at least some source files
+        // Instead of returning 0, return a minimum of 1 source file
+        // to avoid the "Compiling 0 source files" error
+        total_count = 1;
+
+        if is_verbose() {
+            println!("No source files found with configured patterns, assuming minimal project");
+        }
     }
 
     Ok(total_count)

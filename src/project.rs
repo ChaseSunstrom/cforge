@@ -33,29 +33,23 @@ pub fn init_project(path: Option<&Path>, template: Option<&str>) -> Result<(), B
     // Create basic directory structure
     fs::create_dir_all(project_path.join("src"))?;
     fs::create_dir_all(project_path.join("include"))?;
-    fs::create_dir_all(project_path.join("scripts"))?;
 
     // Create a simple main.cpp file for executable projects
     if config.project.project_type == "executable" {
         let main_file = project_path.join("src").join("main.cpp");
         let mut file = File::create(main_file)?;
-        file.write_all(b"#include <iostream>\n\nint main(int argc, char* argv[]) {\n    std::cout << \"Hello, cforge!\" << std::endl;\n    return 0;\n}\n")?;
+        file.write_all(b"#include <iostream>\n\nint main(int argc, char* argv[]) {\n    std::cout << \"Hello, world!\" << std::endl;\n    return 0;\n}\n")?;
     } else if config.project.project_type == "library" {
-        // Create a header file
+        // Create a simple header file
         let header_file = project_path.join("include").join(format!("{}.h", config.project.name));
         let mut file = File::create(header_file)?;
-        file.write_all(format!("#pragma once\n\nnamespace {0} {{\n\n// Library interface\nclass Library {{\npublic:\n    Library();\n    ~Library();\n    \n    int calculate(int a, int b);\n}};\n\n}} // namespace {0}\n", config.project.name).as_bytes())?;
+        file.write_all(format!("#pragma once\n\nnamespace {0} {{\n\n// Library interface\nclass Library {{\npublic:\n    int calculate(int a, int b);\n}};\n\n}} // namespace {0}\n", config.project.name).as_bytes())?;
 
         // Create a source file
         let source_file = project_path.join("src").join(format!("{}.cpp", config.project.name));
         let mut file = File::create(source_file)?;
-        file.write_all(format!("#include \"{}.h\"\n\nnamespace {} {{\n\nLibrary::Library() {{\n}}\n\nLibrary::~Library() {{\n}}\n\nint Library::calculate(int a, int b) {{\n    return a + b;\n}}\n\n}} // namespace {}\n", config.project.name, config.project.name, config.project.name).as_bytes())?;
+        file.write_all(format!("#include \"{}.h\"\n\nnamespace {} {{\n\nint Library::calculate(int a, int b) {{\n    return a + b;\n}}\n\n}} // namespace {}\n", config.project.name, config.project.name, config.project.name).as_bytes())?;
     }
-
-    // Create a version script
-    let version_script = project_path.join("scripts").join("version_gen.py");
-    let mut file = File::create(version_script)?;
-    file.write_all(b"#!/usr/bin/env python3\n\n# Generate version information\nimport os\nimport datetime\n\ndef main():\n    version_file = 'src/version.h'\n    \n    with open(version_file, 'w') as f:\n        f.write('#pragma once\\n\\n')\n        f.write(f'#define PROJECT_VERSION \"{config.project.version}\"\\n')\n        f.write(f'#define BUILD_TIMESTAMP \"{datetime.datetime.now().strftime(\"%Y-%m-%d %H:%M:%S\")}\"\\n')\n\nif __name__ == '__main__':\n    main()\n")?;
 
     println!("{}", "Project initialized successfully".green());
 
@@ -290,21 +284,43 @@ pub fn run_project(
 
     let mut executable_paths = Vec::new();
 
-    // Path from build logs
-    let bin_exe_path = build_path.join(bin_dir).join(format!("{}.exe", project_name));
-    executable_paths.push(bin_exe_path.clone());
+    // Try with combined project_target pattern (new format)
+    for target_name in config.targets.keys() {
+        let combined_name = format!("{}_{}", project_name, target_name);
 
-    // Path without .exe extension
+        // With .exe extension
+        executable_paths.push(build_path.join(bin_dir).join(format!("{}.exe", combined_name)));
+        // Without .exe extension
+        executable_paths.push(build_path.join(bin_dir).join(&combined_name));
+
+        // Standard CMake output directories
+        executable_paths.push(build_path.join(&combined_name));
+        executable_paths.push(build_path.join(format!("{}.exe", combined_name)));
+        executable_paths.push(build_path.join(&build_type).join(&combined_name));
+        executable_paths.push(build_path.join(&build_type).join(format!("{}.exe", combined_name)));
+    }
+
+    // For backward compatibility, also check old patterns
+    // Check for project name
+    executable_paths.push(build_path.join(bin_dir).join(format!("{}.exe", project_name)));
     executable_paths.push(build_path.join(bin_dir).join(project_name));
-
-    // Standard CMake output directories (VS, Xcode, etc.)
     executable_paths.push(build_path.join(project_name));
     executable_paths.push(build_path.join(format!("{}.exe", project_name)));
     executable_paths.push(build_path.join(&build_type).join(project_name));
     executable_paths.push(build_path.join(&build_type).join(format!("{}.exe", project_name)));
 
-    // Check for target name other than project name
-    if config.targets.contains_key("default") && project_name != "default" {
+    // Check for target names
+    for target_name in config.targets.keys() {
+        executable_paths.push(build_path.join(bin_dir).join(format!("{}.exe", target_name)));
+        executable_paths.push(build_path.join(bin_dir).join(target_name));
+        executable_paths.push(build_path.join(target_name));
+        executable_paths.push(build_path.join(format!("{}.exe", target_name)));
+        executable_paths.push(build_path.join(&build_type).join(target_name));
+        executable_paths.push(build_path.join(&build_type).join(format!("{}.exe", target_name)));
+    }
+
+    // Try with "default" as a fallback
+    if project_name != "default" {
         executable_paths.push(build_path.join(bin_dir).join("default.exe"));
         executable_paths.push(build_path.join(bin_dir).join("default"));
         executable_paths.push(build_path.join("default"));
@@ -1109,15 +1125,136 @@ pub fn generate_cmake_lists(config: &ProjectConfig, project_path: &Path, variant
         }
     }
 
+    for (target_name, target_config) in targets_config {
+        let target_type = &project_config.project_type;
+        let sources = &target_config.sources;
+
+        // Handle source files using CMake's file globbing with our helper function
+        cmake_content.push(format!("# Source patterns for target {}", target_name));
+
+        // Convert source patterns to CMake list
+        let source_patterns = sources.iter()
+            .map(|s| format!("\"{}\"", s))
+            .collect::<Vec<_>>()
+            .join(" ");
+
+        // Add default source if sources list is empty
+        if sources.is_empty() {
+            cmake_content.push(format!("set(SOURCE_PATTERNS \"src/main.cpp\")"));
+        } else {
+            cmake_content.push(format!("set(SOURCE_PATTERNS {})", source_patterns));
+        }
+
+        // Use our helper function to expand glob patterns
+        cmake_content.push(format!("verify_sources_exist(\"${{SOURCE_PATTERNS}}\" {}_SOURCES)", target_name.to_uppercase()));
+
+        // Add fallback for when no sources are found
+        cmake_content.push(format!("if(NOT {}_SOURCES)", target_name.to_uppercase()));
+        cmake_content.push(format!("  # No sources found, using default source"));
+        cmake_content.push(format!("  file(WRITE \"${{CMAKE_CURRENT_BINARY_DIR}}/default_main.cpp\" \"#include <iostream>\\n\\nint main(int argc, char* argv[]) {{\\n    std::cout << \\\"Hello from {target_name}\\\" << std::endl;\\n    return 0;\\n}}\\n\")"));
+        cmake_content.push(format!("  set({}_SOURCES \"${{CMAKE_CURRENT_BINARY_DIR}}/default_main.cpp\")", target_name.to_uppercase()));
+        cmake_content.push(format!("  message(STATUS \"No source files found for {}, using default main.cpp\")", target_name));
+        cmake_content.push(format!("endif()"));
+
+        // Create target using the expanded sources
+        if target_type == "executable" {
+            // Use target_name for the CMake target
+            cmake_content.push(format!("add_executable({} ${{{}_SOURCES}})", target_name, target_name.to_uppercase()));
+
+            // Set the output name to project_target pattern
+            cmake_content.push(format!("set_target_properties({} PROPERTIES OUTPUT_NAME \"{}_{}\")",
+                                       target_name, project_config.name, target_name));
+        } else if target_type == "shared-library" {
+            cmake_content.push(format!("add_library({} SHARED ${{{}_SOURCES}})", target_name, target_name.to_uppercase()));
+
+            // Set library output name to project_target pattern
+            cmake_content.push(format!("set_target_properties({} PROPERTIES OUTPUT_NAME \"{}_{}\")",
+                                       target_name, project_config.name, target_name));
+        } else if target_type == "static-library" {
+            cmake_content.push(format!("add_library({} STATIC ${{{}_SOURCES}})", target_name, target_name.to_uppercase()));
+
+            // Set library output name to project_target pattern
+            cmake_content.push(format!("set_target_properties({} PROPERTIES OUTPUT_NAME \"{}_{}\")",
+                                       target_name, project_config.name, target_name));
+        } else if target_type == "header-only" {
+            cmake_content.push(format!("add_library({} INTERFACE)", target_name));
+            // Interface libraries don't have output names
+        }
+    }
+
     // Add targets
     for (target_name, target_config) in targets_config {
         let target_type = &project_config.project_type;
         let sources = &target_config.sources;
+
+        // Handle source files using CMake's file globbing with our helper function
+        cmake_content.push(format!("# Source patterns for target {}", target_name));
+
+        // Convert source patterns to CMake list
+        let source_patterns = sources.iter()
+            .map(|s| format!("\"{}\"", s))
+            .collect::<Vec<_>>()
+            .join(" ");
+
+        // Add default source if sources list is empty
+        if sources.is_empty() {
+            cmake_content.push(format!("set(SOURCE_PATTERNS \"src/main.cpp\")"));
+        } else {
+            cmake_content.push(format!("set(SOURCE_PATTERNS {})", source_patterns));
+        }
+
+        // Use our helper function to expand glob patterns
+        cmake_content.push(format!("verify_sources_exist(\"${{SOURCE_PATTERNS}}\" {}_SOURCES)", target_name.to_uppercase()));
+
+        // Add fallback for when no sources are found
+        cmake_content.push(format!("if(NOT {}_SOURCES)", target_name.to_uppercase()));
+        cmake_content.push(format!("  # No sources found, using default source"));
+        cmake_content.push(format!("  file(WRITE \"${{CMAKE_CURRENT_BINARY_DIR}}/default_main.cpp\" \"#include <iostream>\\n\\nint main(int argc, char* argv[]) {{\\n    std::cout << \\\"Hello from {target_name}\\\" << std::endl;\\n    return 0;\\n}}\\n\")"));
+        cmake_content.push(format!("  set({}_SOURCES \"${{CMAKE_CURRENT_BINARY_DIR}}/default_main.cpp\")", target_name.to_uppercase()));
+        cmake_content.push(format!("  message(STATUS \"No source files found for {}, using default main.cpp\")", target_name));
+        cmake_content.push(format!("endif()"));
+
+        // Create target using the expanded sources
+        if target_type == "executable" {
+            // Use project name instead of target_name for executable
+            if target_name == "default" {
+                cmake_content.push(format!("add_executable({} ${{{}_SOURCES}})", project_config.name, target_name.to_uppercase()));
+            } else {
+                cmake_content.push(format!("add_executable({} ${{{}_SOURCES}})", target_name, target_name.to_uppercase()));
+            }
+        } else if target_type == "shared-library" {
+            cmake_content.push(format!("add_library({} SHARED ${{{}_SOURCES}})", target_name, target_name.to_uppercase()));
+        } else if target_type == "static-library" {
+            cmake_content.push(format!("add_library({} STATIC ${{{}_SOURCES}})", target_name, target_name.to_uppercase()));
+        } else if target_type == "header-only" {
+            cmake_content.push(format!("add_library({} INTERFACE)", target_name));
+        }
+    }
+
+    // PROPERTY SETTING PHASE
+    // Now set properties on all targets
+    for (target_name, target_config) in targets_config {
+        let target_type = &project_config.project_type;
         let empty_vec = Vec::new();
         let include_dirs = target_config.include_dirs.as_ref().unwrap_or(&empty_vec);
         let defines = target_config.defines.as_ref().unwrap_or(&empty_vec);
         let links = target_config.links.as_ref().unwrap_or(&empty_vec);
         let mut all_links = Vec::new();
+
+        // Get the actual target name (which might be project name for default executable target)
+        let actual_target_name = if target_type == "executable" && target_name == "default" {
+            project_config.name.clone()
+        } else {
+            target_name.clone()
+        };
+
+        // Enable PCH for this target if configured
+        if let Some(pch_config) = &config.pch {
+            if pch_config.enabled {
+                cmake_content.push(format!("# Enable PCH for target {}", actual_target_name));
+                cmake_content.push(format!("target_enable_pch({})", actual_target_name));
+            }
+        }
 
         if let Some(links) = &target_config.links {
             all_links.extend(links.clone());
@@ -1149,87 +1286,19 @@ pub fn generate_cmake_lists(config: &ProjectConfig, project_path: &Path, variant
             }
         }
 
-        // Handle source files using CMake's file globbing with our helper function
-        cmake_content.push(format!("# Source patterns for target {}", target_name));
-
-        // Convert source patterns to CMake list
-        let source_patterns = sources.iter()
-            .map(|s| format!("\"{}\"", s))
-            .collect::<Vec<_>>()
-            .join(" ");
-
-        // Add default source if sources list is empty
-        if sources.is_empty() {
-            cmake_content.push(format!("set(SOURCE_PATTERNS \"src/main.cpp\")"));
-        } else {
-            cmake_content.push(format!("set(SOURCE_PATTERNS {})", source_patterns));
-        }
-
-        // Use our helper function to expand glob patterns
-        cmake_content.push(format!("verify_sources_exist(\"${{SOURCE_PATTERNS}}\" {}_SOURCES)", target_name.to_uppercase()));
-
-        // Add fallback for when no sources are found
-        cmake_content.push(format!("if(NOT {}_SOURCES)", target_name.to_uppercase()));
-        cmake_content.push(format!("  # No sources found, using default source"));
-        cmake_content.push(format!("  set({}_SOURCES \"${{CMAKE_SOURCE_DIR}}/src/main.cpp\")", target_name.to_uppercase()));
-        cmake_content.push(format!("endif()"));
-
-        // Handle PCH source if present - might need to separate it from compilation
-        if let Some(pch_config) = &config.pch {
-            if pch_config.enabled && pch_config.source.is_some() {
-                let pch_source = pch_config.source.as_ref().unwrap();
-                cmake_content.push(format!("# Handle PCH source separately"));
-                cmake_content.push(format!("if(MSVC)"));
-                cmake_content.push(format!("  # Find PCH source in sources list"));
-                cmake_content.push(format!("  foreach(SRC ${{{}_SOURCES}})", target_name.to_uppercase()));
-                cmake_content.push(format!("    if(SRC MATCHES \"{}\")", regex::escape(pch_source)));
-                cmake_content.push(format!("      set(PCH_SOURCE \"${{SRC}}\")"));
-                cmake_content.push(format!("      list(REMOVE_ITEM {}_SOURCES \"${{SRC}}\")", target_name.to_uppercase()));
-                cmake_content.push(format!("    endif()"));
-                cmake_content.push(format!("  endforeach()"));
-                cmake_content.push(format!("  # Add PCH source back to sources"));
-                cmake_content.push(format!("  list(APPEND {}_SOURCES \"${{PCH_SOURCE}}\")", target_name.to_uppercase()));
-                cmake_content.push(format!("endif()"));
-            }
-        }
-
-        // Create target using the expanded sources
-        if target_type == "executable" {
-            cmake_content.push(format!("add_executable({} ${{{}_SOURCES}})", target_name, target_name.to_uppercase()));
-        } else if target_type == "shared-library" {
-            cmake_content.push(format!("add_library({} SHARED ${{{}_SOURCES}})", target_name, target_name.to_uppercase()));
-        } else if target_type == "static-library" {
-            cmake_content.push(format!("add_library({} STATIC ${{{}_SOURCES}})", target_name, target_name.to_uppercase()));
-        } else if target_type == "header-only" {
-            cmake_content.push(format!("add_library({} INTERFACE)", target_name));
-        }
-
-        // Enable PCH for this target if configured
-        if let Some(pch_config) = &config.pch {
-            if pch_config.enabled {
-                cmake_content.push(format!("# Enable PCH for target {}", target_name));
-                cmake_content.push(format!("target_enable_pch({})", target_name));
-            }
-        }
-
         // Include directories
         if !include_dirs.is_empty() {
-            let includes = include_dirs.iter()
-                .map(|s| format!("\"{}\"", s))
-                .collect::<Vec<_>>()
-                .join(" ");
-
             if target_type == "header-only" {
                 // For header-only libraries
-                cmake_content.push(format!("target_include_directories({} INTERFACE", target_name));
+                cmake_content.push(format!("target_include_directories({} INTERFACE", actual_target_name));
                 for include_dir in include_dirs {
                     cmake_content.push(format!("  \"$<BUILD_INTERFACE:${{CMAKE_CURRENT_SOURCE_DIR}}/{}>\"", include_dir));
                     cmake_content.push(format!("  \"$<INSTALL_INTERFACE:include>\""));
                 }
                 cmake_content.push(")".to_string());
             } else if target_type == "static-library" || target_type == "shared-library" {
-                // For static libraries
-                cmake_content.push(format!("target_include_directories({} PUBLIC", target_name));
+                // For libraries
+                cmake_content.push(format!("target_include_directories({} PUBLIC", actual_target_name));
                 for include_dir in include_dirs {
                     cmake_content.push(format!("  \"$<BUILD_INTERFACE:${{CMAKE_CURRENT_SOURCE_DIR}}/{}>\"", include_dir));
                     cmake_content.push(format!("  \"$<INSTALL_INTERFACE:include>\""));
@@ -1242,7 +1311,7 @@ pub fn generate_cmake_lists(config: &ProjectConfig, project_path: &Path, variant
                     .collect::<Vec<_>>()
                     .join(" ");
                 if !includes.is_empty() {
-                    cmake_content.push(format!("target_include_directories({} PRIVATE {})", target_name, includes));
+                    cmake_content.push(format!("target_include_directories({} PRIVATE {})", actual_target_name, includes));
                 }
             }
         }
@@ -1255,9 +1324,9 @@ pub fn generate_cmake_lists(config: &ProjectConfig, project_path: &Path, variant
                 .join(" ");
 
             if target_type == "header-only" {
-                cmake_content.push(format!("target_compile_definitions({} INTERFACE {})", target_name, defines_str));
+                cmake_content.push(format!("target_compile_definitions({} INTERFACE {})", actual_target_name, defines_str));
             } else {
-                cmake_content.push(format!("target_compile_definitions({} PRIVATE {})", target_name, defines_str));
+                cmake_content.push(format!("target_compile_definitions({} PRIVATE {})", actual_target_name, defines_str));
             }
         }
 
@@ -1265,10 +1334,10 @@ pub fn generate_cmake_lists(config: &ProjectConfig, project_path: &Path, variant
         if !all_links.is_empty() {
             let links_str = all_links.join(" ");
             if target_type == "header-only" {
-                cmake_content.push(format!("target_link_libraries({} INTERFACE {})", target_name, links_str));
+                cmake_content.push(format!("target_link_libraries({} INTERFACE {})", actual_target_name, links_str));
             } else {
                 // Use PUBLIC instead of PRIVATE to propagate dependencies
-                cmake_content.push(format!("target_link_libraries({} PUBLIC {})", target_name, links_str));
+                cmake_content.push(format!("target_link_libraries({} PUBLIC {})", actual_target_name, links_str));
             }
         }
 
@@ -1279,13 +1348,13 @@ pub fn generate_cmake_lists(config: &ProjectConfig, project_path: &Path, variant
             cmake_content.push("# Export targets for use by other projects".to_string());
 
             // Create a namespaced alias and export it
-            cmake_content.push(format!("add_library({0}::{0} ALIAS {0})", target_name));
+            cmake_content.push(format!("add_library({0}::{0} ALIAS {0})", actual_target_name));
 
             // Export the targets from the build tree
-            cmake_content.push(format!("export(TARGETS {0} NAMESPACE {0}:: FILE {0}Config.cmake)", target_name));
+            cmake_content.push(format!("export(TARGETS {0} NAMESPACE {0}:: FILE {0}Config.cmake)", actual_target_name));
 
             // Install the library
-            cmake_content.push(format!("install(TARGETS {0} EXPORT {0}Targets", target_name));
+            cmake_content.push(format!("install(TARGETS {0} EXPORT {0}Targets", actual_target_name));
             cmake_content.push(format!("  LIBRARY DESTINATION ${{CMAKE_INSTALL_LIBDIR}}"));
             cmake_content.push(format!("  ARCHIVE DESTINATION ${{CMAKE_INSTALL_LIBDIR}}"));
             cmake_content.push(format!("  RUNTIME DESTINATION ${{CMAKE_INSTALL_BINDIR}}"));
@@ -1297,17 +1366,17 @@ pub fn generate_cmake_lists(config: &ProjectConfig, project_path: &Path, variant
             }
 
             // Export targets for installation
-            cmake_content.push(format!("install(EXPORT {0}Targets NAMESPACE {0}:: DESTINATION ${{CMAKE_INSTALL_LIBDIR}}/cmake/{0})", target_name));
+            cmake_content.push(format!("install(EXPORT {0}Targets NAMESPACE {0}:: DESTINATION ${{CMAKE_INSTALL_LIBDIR}}/cmake/{0})", actual_target_name));
 
             // Write a basic config file directly into the build directory
             cmake_content.push(format!("# Write a basic config file for build tree usage"));
-            cmake_content.push(format!("file(WRITE \"${{CMAKE_CURRENT_BINARY_DIR}}/{0}Config.cmake\"", target_name));
-            cmake_content.push(format!("\"include(\\\"${{CMAKE_CURRENT_BINARY_DIR}}/{0}Targets.cmake\\\")\\n\"", target_name));
-            cmake_content.push(format!("\"set({0}_INCLUDE_DIR \\\"${{CMAKE_CURRENT_SOURCE_DIR}}/include\\\")\\n\"", target_name.to_uppercase()));
-            cmake_content.push(format!("\"set({0}_FOUND TRUE)\\n\")", target_name.to_uppercase()));
+            cmake_content.push(format!("file(WRITE \"${{CMAKE_CURRENT_BINARY_DIR}}/{0}Config.cmake\"", actual_target_name));
+            cmake_content.push(format!("\"include(\\\"${{CMAKE_CURRENT_BINARY_DIR}}/{0}Targets.cmake\\\")\\n\"", actual_target_name));
+            cmake_content.push(format!("\"set({0}_INCLUDE_DIR \\\"${{CMAKE_CURRENT_SOURCE_DIR}}/include\\\")\\n\"", actual_target_name.to_uppercase()));
+            cmake_content.push(format!("\"set({0}_FOUND TRUE)\\n\")", actual_target_name.to_uppercase()));
 
             // Export package for build tree
-            cmake_content.push(format!("export(PACKAGE {})", target_name));
+            cmake_content.push(format!("export(PACKAGE {})", actual_target_name));
         }
     }
 
@@ -1363,7 +1432,15 @@ pub fn generate_cmake_lists(config: &ProjectConfig, project_path: &Path, variant
     let has_install_commands = cmake_content.iter().any(|line| line.contains("install("));
     if !has_install_commands && project_config.project_type == "executable" {
         cmake_content.push("# Installation".to_string());
-        cmake_content.push("install(TARGETS default DESTINATION bin)".to_string());
+        // Use project name for installation if the target is "default"
+        if config.targets.contains_key("default") {
+            cmake_content.push(format!("install(TARGETS {} DESTINATION bin)", project_config.name));
+        } else {
+            // Otherwise use target names
+            for target_name in config.targets.keys() {
+                cmake_content.push(format!("install(TARGETS {} DESTINATION bin)", target_name));
+            }
+        }
         cmake_content.push(String::new());
     }
 
@@ -1389,7 +1466,10 @@ pub fn generate_cmake_lists(config: &ProjectConfig, project_path: &Path, variant
     let mut file = File::create(cmake_file)?;
     file.write_all(cmake_content.join("\n").as_bytes())?;
 
-    println!("{}", "Generated CMakeLists.txt".green());
+    if !is_quiet() {
+        println!("{}", "Generated CMakeLists.txt".green());
+    }
+
     Ok(())
 }
 

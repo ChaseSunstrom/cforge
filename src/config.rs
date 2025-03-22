@@ -311,7 +311,11 @@ pub struct SystemInfo {
 impl Default for DependenciesConfig {
     fn default() -> Self {
         DependenciesConfig {
-            vcpkg: VcpkgConfig::default(),
+            vcpkg: VcpkgConfig {
+                enabled: false,
+                path: None,  // Don't include this in default
+                packages: Vec::new(),
+            },
             system: None,
             cmake: None,
             conan: ConanConfig::default(),
@@ -326,8 +330,8 @@ impl Default for VcpkgConfig {
     fn default() -> Self {
         VcpkgConfig {
             enabled: false,
-             path: None,
-             packages: Vec::new(),
+            path: None,  // Changed from Some(VCPKG_DEFAULT_DIR) to None
+            packages: Vec::new(),
         }
     }
 }
@@ -335,7 +339,38 @@ impl Default for VcpkgConfig {
 
 pub fn save_project_config(config: &ProjectConfig, path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let config_path = path.join(CFORGE_FILE);
-    let toml_string = toml::to_string_pretty(config)?;
+
+    // Convert to a string, but then manually clean up the output
+    let mut toml_string = toml::to_string_pretty(config)?;
+
+    // Clean up empty sections
+    let sections_to_remove = [
+        "\n[tests]\n\n",
+        "\n[dependencies]\ncustom = []\ngit = []\nworkspace = []\n\n",
+        "\n[dependencies.vcpkg]\nenabled = false\npackages = []\n\n",
+        "\n[dependencies.conan]\nenabled = false\npackages = []\n\n",
+    ];
+
+    for section in sections_to_remove {
+        toml_string = toml_string.replace(section, "\n");
+    }
+
+    // Remove empty platforms section
+    if let Some(platforms) = &config.platforms {
+        for (os_name, platform) in platforms {
+            if platform.defines.is_none() && platform.flags.is_none() {
+                let platform_section = format!("\n[platforms.{}]\ncompiler = \"{}\"\n\n",
+                                               os_name, platform.compiler.as_ref().unwrap_or(&"".to_string()));
+                toml_string = toml_string.replace(&platform_section, "\n");
+            }
+        }
+    }
+
+    // Remove sequential newlines to clean up the file
+    while toml_string.contains("\n\n\n") {
+        toml_string = toml_string.replace("\n\n\n", "\n\n");
+    }
+
     let mut file = File::create(config_path)?;
     file.write_all(toml_string.as_bytes())?;
     println!("{}", format!("Configuration saved to {}", path.join(CFORGE_FILE).display()).green());
@@ -421,215 +456,56 @@ pub fn load_workspace_config() -> Result<WorkspaceConfig, CforgeError> {
 }
 
 pub fn create_default_config() -> ProjectConfig {
-    // First, detect the system and compiler, though we won't directly
-    // use it to pick slash/dash flags here. Instead, we store universal
-    // tokens in the config; the actual slash/dash logic occurs later.
+    // Get system info for determining defaults
     let system_info = detect_system_info();
 
-    // We’ll build up the config settings using universal tokens.
-    // Then, at build time, your code calls map_token() / parse_universal_flags().
+    // Create a simpler config settings map
     let mut configs = HashMap::new();
 
-    let default_compiler = if system_info.os == "windows" {
-        // Typically you'd do "msvc" or "clang-cl"
-        "clang-cl"
-    } else if system_info.os == "darwin" {
-        "clang"
-    } else {
-        "gcc"
-    };
-
-    //
-    // 1) Debug
-    //
-    // Example universal tokens for a debug config:
-    //  - NO_OPT => /Od or -O0
-    //  - DEBUG_INFO => /Zi or -g
-    //  - RTC1 => /RTC1 or (nothing) on GNU
+    // Debug configuration
     configs.insert("Debug".to_string(), ConfigSettings {
-        defines: Some(vec!["DEBUG".to_string(), "_DEBUG".to_string()]),
-        flags: Some(vec![
-            "NO_OPT".to_string(),
-            "DEBUG_INFO".to_string(),
-            "RTC1".to_string(),
-        ]),
+        defines: Some(vec!["DEBUG".to_string()]),
+        flags: Some(vec!["DEBUG_INFO".to_string(), "NO_OPT".to_string()]),
         link_flags: None,
         output_dir_suffix: None,
         cmake_options: None,
     });
 
-    //
-    // 2) Release
-    //
-    // Example tokens for a release config:
-    //  - OPTIMIZE => /O2 or -O2
-    //  - OB2 => /Ob2 or -finline-functions
-    //  - DNDEBUG => /DNDEBUG or -DNDEBUG
+    // Release configuration
     configs.insert("Release".to_string(), ConfigSettings {
         defines: Some(vec!["NDEBUG".to_string()]),
-        flags: Some(vec![
-            "OPTIMIZE".to_string(),
-            "OB2".to_string(),
-            "DNDEBUG".to_string(),
-        ]),
+        flags: Some(vec!["OPTIMIZE".to_string()]),
         link_flags: None,
         output_dir_suffix: None,
         cmake_options: None,
     });
 
-    //
-    // 3) RelWithDebInfo
-    //
-    // Example tokens:
-    //  - OPTIMIZE => /O2 or -O2
-    //  - OB1 => /Ob1 (MSVC) or skip on GNU
-    //  - DNDEBUG => /DNDEBUG or -DNDEBUG
-    //  - DEBUG_INFO => /Zi or -g
-    configs.insert("RelWithDebInfo".to_string(), ConfigSettings {
-        defines: Some(vec!["NDEBUG".to_string()]),
-        flags: Some(vec![
-            "OPTIMIZE".to_string(),
-            "OB1".to_string(),
-            "DNDEBUG".to_string(),
-            "DEBUG_INFO".to_string(),
-        ]),
-        link_flags: None,
-        output_dir_suffix: None,
-        cmake_options: None,
-    });
-
-    //
-    // 4) MinSizeRel
-    //
-    // Example tokens:
-    //  - MIN_SIZE => /O1 or -Os
-    //  - DNDEBUG => /DNDEBUG or -DNDEBUG
-    configs.insert("MinSizeRel".to_string(), ConfigSettings {
-        defines: Some(vec!["NDEBUG".to_string()]),
-        flags: Some(vec![
-            "MIN_SIZE".to_string(),
-            "DNDEBUG".to_string(),
-        ]),
-        link_flags: None,
-        output_dir_suffix: None,
-        cmake_options: None,
-    });
-
-    // Create a default platform config
+    // Basic platform config
     let mut platforms = HashMap::new();
-    platforms.insert(system_info.os.clone(), PlatformConfig {
+    let os_name = if cfg!(target_os = "windows") {
+        "windows"
+    } else if cfg!(target_os = "macos") {
+        "darwin"
+    } else {
+        "linux"
+    };
+    platforms.insert(os_name.to_string(), PlatformConfig {
         compiler: Some(system_info.compiler.clone()),
-        defines: Some(vec![]),
-        flags: Some(vec![]),
+        defines: None,
+        flags: None,
     });
 
-    // Create a default target config
+    // Simple target config
     let mut targets = HashMap::new();
     targets.insert("default".to_string(), TargetConfig {
-        sources: vec!["src/**/*.cpp".to_string(), "src/**/*.c".to_string()],
+        sources: vec!["src/**.cpp".to_string(), "src/**.c".to_string()],
         include_dirs: Some(vec!["include".to_string()]),
-        defines: Some(vec![]),
-        links: Some(vec![]),
-        platform_links: None, // Add this field
-    });
-
-    // Create default build variants
-    let mut variants = HashMap::new();
-
-    // Standard variant (default)
-    variants.insert("standard".to_string(), VariantSettings {
-        description: Some("Standard build with default settings".to_string()),
         defines: None,
-        flags: None,  // No special tokens here
-        dependencies: None,
-        features: None,
-        platforms: None,
-        cmake_options: None,
+        links: None,
+        platform_links: None,
     });
 
-    // Memory safety variant
-    // Store "MEMSAFE" as a token so the build can apply, e.g. /sdl /GS or -fsanitize=...
-    variants.insert("memory_safety".to_string(), VariantSettings {
-        description: Some("Build with memory safety checks".to_string()),
-        defines: Some(vec!["ENABLE_MEMORY_SAFETY=1".to_string()]),
-        flags: Some(vec![
-            "MEMSAFE".to_string(),
-        ]),
-        dependencies: None,
-        features: None,
-        platforms: None,
-        cmake_options: None,
-    });
-
-    // Performance variant
-    // We store "OPTIMIZE", "LTO", "PARALLEL" so that for MSVC we get /O2 /GL /Qpar,
-    variants.insert("performance".to_string(), VariantSettings {
-        description: Some("Optimized for maximum performance".to_string()),
-        defines: Some(vec!["OPTIMIZE_PERFORMANCE=1".to_string()]),
-        flags: Some(vec![
-            "OPTIMIZE".to_string(),
-            "LTO".to_string(),
-            "PARALLEL".to_string(),
-        ]),
-        dependencies: None,
-        features: None,
-        platforms: None,
-        cmake_options: None,
-    });
-
-    // Create default build hooks
-    let hooks = BuildHooks {
-        pre_configure: Some(vec![
-            "echo Running pre-configure hook...".to_string(),
-        ]),
-        post_configure: Some(vec![
-            "echo Configuration completed.".to_string(),
-        ]),
-        pre_build: Some(vec![
-            "echo Starting build process...".to_string(),
-        ]),
-        post_build: Some(vec![
-            "echo Build completed successfully.".to_string(),
-        ]),
-        pre_clean: None,
-        post_clean: None,
-        pre_install: None,
-        post_install: None,
-        pre_run: None,
-        post_run: None,
-    };
-
-    // Create default scripts
-    let mut scripts = HashMap::new();
-    scripts.insert(
-        "format".to_string(),
-        "find src include -name '*.cpp' -o -name '*.h' | xargs clang-format -i".to_string(),
-    );
-    scripts.insert(
-        "count_lines".to_string(),
-        "find src include -name '*.cpp' -o -name '*.h' | xargs wc -l".to_string(),
-    );
-    scripts.insert(
-        "clean_all".to_string(),
-        if cfg!(target_os = "windows") {
-            "rmdir /s /q build bin".to_string()
-        } else {
-            "rm -rf build bin".to_string()
-        },
-    );
-
-    // Create default conan config
-    let conan_config = ConanConfig {
-        enabled: false,
-        packages: vec![],
-        options: Some(HashMap::new()),
-        generators: Some(vec![
-            "cmake".to_string(),
-            "cmake_find_package".to_string(),
-        ]),
-    };
-
-    // Finally, build and return the entire ProjectConfig
+    // Create the full config
     ProjectConfig {
         project: ProjectInfo {
             name: env::current_dir()
@@ -643,37 +519,19 @@ pub fn create_default_config() -> ProjectConfig {
             project_type: "executable".to_string(),
             language: "c++".to_string(),
             standard: "c++17".to_string(),
-
         },
         build: BuildConfig {
             build_dir: Some(DEFAULT_BUILD_DIR.to_string()),
             generator: Some("default".to_string()),
             default_config: Some("Debug".to_string()),
-            debug: Some(true), // Legacy option, kept for backwards compatibility
-            cmake_options: Some(vec![]),
+            debug: Some(true),
+            cmake_options: None,
             configs: Some(configs),
-            compiler: Some(default_compiler.to_string()),
+            compiler: Some(system_info.compiler.clone()),
         },
-        dependencies: DependenciesConfig {
-            vcpkg: VcpkgConfig {
-                enabled: true,
-                path: Some(VCPKG_DEFAULT_DIR.to_string()),
-                packages: vec![],
-            },
-            system: Some(vec![]),
-            cmake: Some(vec![]),
-            conan: conan_config,
-            custom: vec![],
-            git: vec![],
-            workspace: vec![],
-        },
-        tests: TestConfig {
-            directory: None,
-            enabled: None,
-            timeout: None,
-            labels: None,
-            executables: None,
-        },
+        // Empty defaults for unneeded sections
+        dependencies: DependenciesConfig::default(),
+        tests: TestConfig::default(),
         targets,
         platforms: Some(platforms),
         output: OutputConfig {
@@ -681,13 +539,9 @@ pub fn create_default_config() -> ProjectConfig {
             lib_dir: Some(DEFAULT_LIB_DIR.to_string()),
             obj_dir: Some(DEFAULT_OBJ_DIR.to_string()),
         },
-        // If you want to retain the default hooks object, set it here:
-        hooks: Some(hooks),
-        scripts: Some(ScriptDefinitions { scripts }),
-        variants: Some(BuildVariants {
-            default: Some("standard".to_string()),
-            variants,
-        }),
+        hooks: None,
+        scripts: None,
+        variants: None,
         cross_compile: None,
         pch: None,
     }
@@ -712,118 +566,6 @@ pub fn create_header_only_config() -> ProjectConfig {
     }
 
     config
-}
-
-pub fn create_simple_config() -> ProjectConfig {
-    // Detect best available tools
-    let system_info = detect_system_info();
-
-    // Find best available generator
-    let generator = if has_command("ninja") {
-        "Ninja".to_string()
-    } else if cfg!(target_os = "windows") && has_command("mingw32-make") {
-        "MinGW Makefiles".to_string()
-    } else if cfg!(target_os = "windows") && has_command("nmake") {
-        "NMake Makefiles".to_string()
-    } else {
-        "Unix Makefiles".to_string()
-    };
-
-    // Project name from current directory
-    let project_name = env::current_dir()
-        .unwrap_or_else(|_| PathBuf::from("my_project"))
-        .file_name()
-        .unwrap_or_else(|| std::ffi::OsStr::new("my_project"))
-        .to_string_lossy()
-        .to_string();
-
-    // Create minimal configs - just Debug and Release
-    let mut configs = HashMap::new();
-    configs.insert("Debug".to_string(), ConfigSettings {
-        defines: Some(vec!["DEBUG".to_string()]),
-        flags: Some(vec!["NO_OPT".to_string(), "DEBUG_INFO".to_string()]),
-        link_flags: None,
-        output_dir_suffix: None,
-        cmake_options: None,
-    });
-
-    configs.insert("Release".to_string(), ConfigSettings {
-        defines: Some(vec!["NDEBUG".to_string()]),
-        flags: Some(vec!["OPTIMIZE".to_string()]),
-        link_flags: None,
-        output_dir_suffix: None,
-        cmake_options: None,
-    });
-
-    // Create minimal platforms config
-    let mut platforms = HashMap::new();
-    platforms.insert(system_info.os.clone(), PlatformConfig {
-        compiler: Some(system_info.compiler.clone()),
-        defines: None,
-        flags: None,
-    });
-
-    // Create minimal targets
-    let mut targets = HashMap::new();
-    targets.insert("default".to_string(), TargetConfig {
-        sources: vec!["src/**/*.cpp".to_string(), "src/**/*.c".to_string()],
-        include_dirs: Some(vec!["include".to_string()]),
-        defines: Some(vec![]),
-        links: Some(vec![]),
-        platform_links: None, // Add this field
-    });
-
-    // Use the most basic vcpkg config
-    let vcpkg_config = VcpkgConfig {
-        enabled: false,  // Disabled by default for simplicity
-        path: None,
-        packages: vec![],
-    };
-
-    // Build the minimal ProjectConfig
-    ProjectConfig {
-        project: ProjectInfo {
-            name: project_name,
-            version: "0.1.0".to_string(),
-            description: "A simple C++ project".to_string(),
-            project_type: "executable".to_string(),
-            language: "c++".to_string(),
-            standard: "c++17".to_string(),
-        },
-        build: BuildConfig {
-            build_dir: Some("build".to_string()),
-            generator: Some(generator),
-            default_config: Some("Debug".to_string()),
-            debug: Some(true),
-            cmake_options: None,
-            configs: Some(configs),
-            compiler: Some(system_info.compiler),
-        },
-        dependencies: DependenciesConfig {
-            vcpkg: vcpkg_config,
-            system: None,
-            cmake: None,
-            conan: ConanConfig::default(),
-            custom: vec![],
-            git: vec![],
-            workspace: vec![]
-        },
-        tests: TestConfig {
-            directory: None,
-            enabled: None,
-            timeout: None,
-            labels: None,
-            executables: None,
-        },
-        targets,
-        platforms: Some(platforms),
-        output: OutputConfig::default(), // Use defaults
-        hooks: None,          // No hooks
-        scripts: None,        // No scripts
-        variants: None,       // No variants
-        cross_compile: None,  // No cross-compilation
-        pch: None,
-    }
 }
 
 pub fn auto_adjust_config(config: &mut ProjectConfig) -> Result<(), Box<dyn std::error::Error>> {
@@ -975,4 +717,16 @@ pub fn auto_adjust_config(config: &mut ProjectConfig) -> Result<(), Box<dyn std:
     }
 
     Ok(())
+}
+
+fn skip_empty_vec<T>(val: &[T]) -> bool {
+    val.is_empty()
+}
+
+fn skip_empty_option<T>(val: &Option<T>) -> bool {
+    val.is_none()
+}
+
+fn skip_false(val: &bool) -> bool {
+    *val == false
 }
