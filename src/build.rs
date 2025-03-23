@@ -39,11 +39,14 @@ pub fn configure_project(
     };
     fs::create_dir_all(&build_path)?;
 
+    // Get the build type
+    let build_type = get_build_type(config, config_type);
+
     // Create environment for hooks
     let mut hook_env = HashMap::new();
     hook_env.insert("PROJECT_PATH".to_string(), project_path.to_string_lossy().to_string());
     hook_env.insert("BUILD_PATH".to_string(), build_path.to_string_lossy().to_string());
-    hook_env.insert("CONFIG_TYPE".to_string(), get_build_type(config, config_type));
+    hook_env.insert("CONFIG_TYPE".to_string(), build_type.clone());
 
     if let Some(v) = variant_name {
         hook_env.insert("VARIANT".to_string(), v.to_string());
@@ -127,9 +130,13 @@ pub fn configure_project(
     cmd.push("-G".to_string());
     cmd.push(generator.clone());
 
-    // Add build type
-    let build_type = get_build_type(config, config_type);
+    // Add build type - IMPORTANT: Ensure this is correctly set
     cmd.push(format!("-DCMAKE_BUILD_TYPE={}", build_type));
+
+    // Set this as a debug printf to check what's being used
+    if !is_quiet() {
+        print_substep(&format!("Using build configuration: {}", build_type));
+    }
 
     // Add vcpkg toolchain if available
     if !vcpkg_toolchain.is_empty() {
@@ -223,7 +230,7 @@ pub fn configure_project(
     Ok(())
 }
 
-fn run_cmake_silently(
+pub fn run_cmake_silently(
     cmd: Vec<String>,
     build_path: &Path,
     env_vars: Option<HashMap<String, String>>
@@ -236,6 +243,42 @@ fn run_cmake_silently(
     let error_messages = Arc::new(Mutex::new(Vec::new()));
     let error_messages_stdout = Arc::clone(&error_messages);
     let error_messages_stderr = Arc::clone(&error_messages);
+
+    // Debug print the command to see what's being passed to CMake
+    if !is_quiet() && is_verbose() {
+        println!("CMake command: {}", cmd.join(" "));
+    }
+
+    // Ensure we're not passing conflicting configurations
+    // This is for debugging the issue
+    let mut has_build_type = false;
+    let mut build_type_value = String::new();
+
+    for (i, arg) in cmd.iter().enumerate() {
+        if arg == "-DCMAKE_BUILD_TYPE" && i + 1 < cmd.len() {
+            if has_build_type {
+                // Found multiple CMAKE_BUILD_TYPE settings
+                if !is_quiet() {
+                    println!("{}", "Warning: Multiple CMAKE_BUILD_TYPE settings detected in CMake command".yellow());
+                    println!("First value: {}, Second value: {}", build_type_value, cmd[i+1]);
+                }
+            }
+            has_build_type = true;
+            build_type_value = cmd[i+1].clone();
+        } else if arg.starts_with("-DCMAKE_BUILD_TYPE=") {
+            if has_build_type {
+                // Found multiple CMAKE_BUILD_TYPE settings
+                if !is_quiet() {
+                    println!("{}", "Warning: Multiple CMAKE_BUILD_TYPE settings detected in CMake command".yellow());
+                    println!("First value: {}, Second value: {}",
+                             build_type_value,
+                             arg.trim_start_matches("-DCMAKE_BUILD_TYPE="));
+                }
+            }
+            has_build_type = true;
+            build_type_value = arg.trim_start_matches("-DCMAKE_BUILD_TYPE=").to_string();
+        }
+    }
 
     // Build the Command
     let mut command = Command::new(&cmd[0]);
@@ -856,7 +899,13 @@ pub fn get_config_specific_options(config: &ProjectConfig, build_type: &str) -> 
         if let Some(cfg_settings) = configs.get(build_type) {
             if let Some(defines) = &cfg_settings.defines {
                 for define in defines {
-                    options.push(format!("-D{}=1", define));
+                    // Check if the define already has a value part (contains '=')
+                    if define.contains('=') {
+                        options.push(format!("-D{}", define));
+                    } else {
+                        // Otherwise append =1 to ensure it's properly defined
+                        options.push(format!("-D{}=1", define));
+                    }
                 }
             }
 
@@ -943,10 +992,16 @@ pub fn get_platform_specific_options(config: &ProjectConfig) -> Vec<String> {
 
     if let Some(platforms) = &config.platforms {
         if let Some(platform_config) = platforms.get(current_os) {
-            // Add platform-specific defines with =1 format
+            // Add platform-specific defines with proper format
             if let Some(defines) = &platform_config.defines {
                 for define in defines {
-                    options.push(format!("-D{}=1", define));
+                    // Check if the define already has a value part (contains '=')
+                    if define.contains('=') {
+                        options.push(format!("-D{}", define));
+                    } else {
+                        // Otherwise append =1 to ensure it's properly defined
+                        options.push(format!("-D{}=1", define));
+                    }
                 }
             }
 
@@ -978,7 +1033,13 @@ pub fn apply_variant_settings(cmd: &mut Vec<String>, variant: &VariantSettings, 
     // The rest is the same
     if let Some(defines) = &variant.defines {
         for define in defines {
-            cmd.push(format!("-D{}=1", define));
+            // Check if the define already has a value part (contains '=')
+            if define.contains('=') {
+                cmd.push(format!("-D{}", define));
+            } else {
+                // Otherwise append =1 to ensure it's properly defined
+                cmd.push(format!("-D{}=1", define));
+            }
         }
     }
 

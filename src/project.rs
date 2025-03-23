@@ -8,6 +8,7 @@ use colored::Colorize;
 use crate::{configure_project, count_project_source_files, ensure_build_tools, execute_build_with_progress, expand_output_tokens, get_active_variant, get_build_type, get_effective_compiler_label, is_executable, progress_bar, prompt, run_command, run_hooks, CFORGE_FILE, CMAKE_MIN_VERSION, DEFAULT_BIN_DIR, DEFAULT_BUILD_DIR, DEFAULT_LIB_DIR, WORKSPACE_FILE};
 use crate::config::{create_default_config, create_header_only_config, create_library_config, load_project_config, load_workspace_config, save_project_config, save_workspace_config, ProjectConfig, WorkspaceConfig, WorkspaceWithProjects};
 use crate::output_utils::{format_project_name, is_quiet, print_error, print_header, print_status, print_substep, print_success, print_warning, BuildProgress, ProgressBar};
+use crate::tools::{is_msvc_style_for_config, parse_universal_flags};
 use crate::workspace::build_dependency_graph;
 
 pub fn init_project(path: Option<&Path>, template: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
@@ -132,6 +133,14 @@ pub fn build_project(
     // Ensure the build directory exists
     fs::create_dir_all(&build_path)?;
 
+    // Get the build type - make sure it matches configuration
+    let build_type = get_build_type(config, config_type);
+
+    // Print what build type is being used (for debugging)
+    if !is_quiet() {
+        print_substep(&format!("Using build configuration: {}", build_type));
+    }
+
     // Check if we need to configure
     let needs_configure = !build_path.join("CMakeCache.txt").exists() ||
         (config.build.generator.as_deref().unwrap_or("") == "Ninja" &&
@@ -152,7 +161,7 @@ pub fn build_project(
         configure_project(
             config,
             project_path,
-            config_type,
+            Some(&build_type),  // Explicitly pass the build type
             variant_name,
             cross_target,
             workspace_config
@@ -172,7 +181,7 @@ pub fn build_project(
     let mut hook_env = HashMap::new();
     hook_env.insert("PROJECT_PATH".to_string(), project_path.to_string_lossy().to_string());
     hook_env.insert("BUILD_PATH".to_string(), build_path.to_string_lossy().to_string());
-    hook_env.insert("CONFIG_TYPE".to_string(), get_build_type(config, config_type));
+    hook_env.insert("CONFIG_TYPE".to_string(), build_type.clone());
 
     if let Some(v) = variant_name {
         hook_env.insert("VARIANT".to_string(), v.to_string());
@@ -202,8 +211,8 @@ pub fn build_project(
 
     // Build using CMake
     let mut cmd = vec!["cmake".to_string(), "--build".to_string(), ".".to_string()];
-    let build_type = get_build_type(config, config_type);
 
+    // Ensure we pass the correct build configuration
     cmd.push("--config".to_string());
     cmd.push(build_type.clone());
 
@@ -273,10 +282,15 @@ pub fn run_project(
 
     print_header(&format!("Running: {}", format_project_name(project_name)), None);
 
-    // Make sure the project is built
+    // Print what build configuration we're using (for debugging)
+    if !is_quiet() {
+        print_substep(&format!("Using build configuration: {}", build_type));
+    }
+
+    // Make sure the project is built with the correct configuration
     if !build_path.exists() || !build_path.join("CMakeCache.txt").exists() {
         print_warning("Project not built yet. Building first...", None);
-        build_project(config, project_path, config_type, variant_name, None, workspace_config)?;
+        build_project(config, project_path, Some(&build_type), variant_name, None, workspace_config)?;
     }
 
     // Generate all possible executable paths
@@ -292,6 +306,10 @@ pub fn run_project(
         executable_paths.push(build_path.join(bin_dir).join(format!("{}.exe", combined_name)));
         // Without .exe extension
         executable_paths.push(build_path.join(bin_dir).join(&combined_name));
+
+        // Add config-specific paths (e.g., bin/Release/executable)
+        executable_paths.push(build_path.join(bin_dir).join(&build_type).join(format!("{}.exe", combined_name)));
+        executable_paths.push(build_path.join(bin_dir).join(&build_type).join(&combined_name));
 
         // Standard CMake output directories
         executable_paths.push(build_path.join(&combined_name));
@@ -398,7 +416,7 @@ pub fn run_project(
     let mut hook_env = HashMap::new();
     hook_env.insert("PROJECT_PATH".to_string(), project_path.to_string_lossy().to_string());
     hook_env.insert("BUILD_PATH".to_string(), build_path.to_string_lossy().to_string());
-    hook_env.insert("CONFIG_TYPE".to_string(), build_type);
+    hook_env.insert("CONFIG_TYPE".to_string(), build_type.clone());
     hook_env.insert("EXECUTABLE".to_string(), executable.to_string_lossy().to_string());
 
     if let Some(v) = variant_name {
@@ -903,7 +921,6 @@ endif()
     Ok(())
 }
 
-
 pub fn generate_cmake_lists(config: &ProjectConfig, project_path: &Path, variant_name: Option<&str>, workspace_config: Option<&WorkspaceConfig>) -> Result<(), Box<dyn std::error::Error>> {
     let project_config = &config.project;
     let targets_config = &config.targets;
@@ -953,6 +970,73 @@ pub fn generate_cmake_lists(config: &ProjectConfig, project_path: &Path, variant
     cmake_content.push("include(GNUInstallDirs)".to_string());
     cmake_content.push(String::new());
 
+    // Add configuration-specific preprocessor definitions from build.configs
+    // This is a critical part of the fix
+    if let Some(configs) = &config.build.configs {
+        cmake_content.push("# Configuration-specific definitions".to_string());
+
+        // Make sure debug info is output
+        cmake_content.push("message(STATUS \"CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}\")".to_string());
+
+        // First create clear compiler flags for each configuration
+        for (config_name, config_settings) in configs {
+            let cmake_config_name = config_name.to_uppercase();
+
+            // Initialize flags for this configuration
+            cmake_content.push(format!("# {} configuration flags", config_name));
+
+            // Clear any previous flags for this configuration
+            cmake_content.push(format!("set(CMAKE_C_FLAGS_{} \"\")", cmake_config_name));
+            cmake_content.push(format!("set(CMAKE_CXX_FLAGS_{} \"\")", cmake_config_name));
+
+            // Add defines to compiler flags
+            if let Some(defines) = &config_settings.defines {
+                if !defines.is_empty() {
+                    let define_flags = defines.iter()
+                        .map(|d| if d.contains('=') { format!("-D{}", d) } else { format!("-D{}=1", d) })
+                        .collect::<Vec<_>>()
+                        .join(" ");
+
+                    // Add defines directly to compiler flags
+                    cmake_content.push(format!("set(CMAKE_C_FLAGS_{0} \"${{CMAKE_C_FLAGS_{0}}} {1}\")",
+                                               cmake_config_name, define_flags));
+                    cmake_content.push(format!("set(CMAKE_CXX_FLAGS_{0} \"${{CMAKE_CXX_FLAGS_{0}}} {1}\")",
+                                               cmake_config_name, define_flags));
+                }
+            }
+
+            // Add flags from the configuration
+            if let Some(flags) = &config_settings.flags {
+                if !flags.is_empty() {
+                    let is_msvc_style = is_msvc_style_for_config(config);
+                    let real_flags = parse_universal_flags(flags, is_msvc_style);
+                    if !real_flags.is_empty() {
+                        let flags_str = real_flags.join(" ");
+
+                        // Add flags directly
+                        cmake_content.push(format!("set(CMAKE_C_FLAGS_{0} \"${{CMAKE_C_FLAGS_{0}}} {1}\")",
+                                                   cmake_config_name, flags_str));
+                        cmake_content.push(format!("set(CMAKE_CXX_FLAGS_{0} \"${{CMAKE_CXX_FLAGS_{0}}} {1}\")",
+                                                   cmake_config_name, flags_str));
+                    }
+                }
+            }
+
+            // Show flags for debugging - fixed the syntax error here
+            cmake_content.push(format!("message(STATUS \"{} C flags: ${{CMAKE_C_FLAGS_{}}}\")", config_name, cmake_config_name));
+            cmake_content.push(format!("message(STATUS \"{} CXX flags: ${{CMAKE_CXX_FLAGS_{}}}\")", config_name, cmake_config_name));
+        }
+
+        cmake_content.push(String::new());
+    }
+
+    // Add multi-config support
+    cmake_content.push("# Enable multi-config support".to_string());
+    cmake_content.push("if(NOT CMAKE_CONFIGURATION_TYPES)".to_string());
+    cmake_content.push("  set(CMAKE_CONFIGURATION_TYPES \"Debug;Release\" CACHE STRING \"\" FORCE)".to_string());
+    cmake_content.push("endif()".to_string());
+    cmake_content.push(String::new());
+
     let vcpkg_config = &config.dependencies.vcpkg;
     if vcpkg_config.enabled && !vcpkg_config.packages.is_empty() {
         cmake_content.push("# vcpkg dependencies".to_string());
@@ -965,6 +1049,11 @@ pub fn generate_cmake_lists(config: &ProjectConfig, project_path: &Path, variant
         }
         cmake_content.push(String::new());
     }
+
+    // For each target, we need to:
+    // 1. create the target
+    // 2. Set its properties
+    // 3. Apply configuration-specific compile definitions
 
     // TARGET CREATION PHASE
     // Process each target and create them first
@@ -993,7 +1082,7 @@ pub fn generate_cmake_lists(config: &ProjectConfig, project_path: &Path, variant
         // Use our helper function to expand glob patterns
         cmake_content.push(format!("verify_sources_exist(\"${{SOURCE_PATTERNS}}\" {}_SOURCES)", target_name.to_uppercase()));
 
-        cmake_content.push(format!("message(STATUS \"Found source files for {}: ${{CMAKE_CURRENT_SOURCE_DIR}} ${{{}}}\")",
+        cmake_content.push(format!("message(STATUS \"Found source files for {}: ${{{}}}\")",
                                    target_name, target_name.to_uppercase() + "_SOURCES"));
 
         // Add fallback for when no sources are found
@@ -1040,6 +1129,31 @@ pub fn generate_cmake_lists(config: &ProjectConfig, project_path: &Path, variant
                                        cmake_target_name, project_config.name));
         } else if target_type == "header-only" {
             cmake_content.push(format!("add_library({} INTERFACE)", cmake_target_name));
+        }
+
+        // Add configuration-specific preprocessor definitions to this target directly
+        // This is the most important part to fix
+        if let Some(configs) = &config.build.configs {
+            cmake_content.push("# Apply configuration-specific defines to target".to_string());
+
+            // Using generator expressions for multi-config support
+            for (config_name, config_settings) in configs {
+                if let Some(defines) = &config_settings.defines {
+                    if !defines.is_empty() {
+                        let cmake_config_name = config_name.to_uppercase();
+
+                        let defines_str = defines.iter()
+                            .map(|d| format!("$<$<CONFIG:{}>:{}>", cmake_config_name, d))
+                            .collect::<Vec<_>>()
+                            .join(";");
+
+                        cmake_content.push(format!("target_compile_definitions({} PRIVATE {})",
+                                                   cmake_target_name, defines_str));
+                    }
+                }
+            }
+
+            cmake_content.push(String::new());
         }
     }
 
