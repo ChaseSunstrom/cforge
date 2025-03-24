@@ -1,11 +1,12 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::{env, fs};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 use colored::Colorize;
 use crate::config::{PackageInstallState, ProjectConfig};
-use crate::output_utils::{is_quiet, print_detailed, print_error, print_status, print_step, print_substep, print_success, print_warning, ProgressBar};
+use crate::output_utils::{is_quiet, is_verbose, print_detailed, print_error, print_status, print_step, print_substep, print_success, print_warning, ProgressBar};
 use crate::{ensure_compiler_available, has_command, progress_bar, run_command, run_command_with_pattern_tracking, run_command_with_timeout, CACHED_PATHS, DEFAULT_BUILD_DIR, INSTALLED_PACKAGES, VCPKG_DEFAULT_DIR};
 use crate::errors::expand_tilde;
 
@@ -58,22 +59,19 @@ pub fn install_dependencies(
         }
     }
 
-    // Set up git dependencies
+    // Set up git dependencies - WITHOUT a progress bar wrapper
     if !config.dependencies.git.is_empty() {
         print_status("Setting up git dependencies");
 
-        let spinner = progress_bar("Configuring git dependencies");
+        // Remove the spinner/progress bar - each individual git command will show its own progress
         match setup_git_dependencies(config, project_path) {
             Ok(includes) => {
                 if !includes.is_empty() {
                     dependencies_info.insert("git_includes".to_string(), includes.join(";"));
-                    spinner.success();
-                } else {
-                    spinner.success(); // Still success but empty result
                 }
             },
             Err(e) => {
-                spinner.failure(&e.to_string());
+                print_error(&format!("Failed to set up git dependencies: {}", e), None, None);
                 return Err(e);
             }
         }
@@ -108,7 +106,6 @@ pub fn install_dependencies(
 
     Ok(dependencies_info)
 }
-
 pub fn setup_vcpkg(
     config: &ProjectConfig,
     project_path: &Path
@@ -579,7 +576,6 @@ pub fn setup_conan(config: &ProjectConfig, project_path: &Path) -> Result<String
     Ok(cmake_file.to_string_lossy().to_string())
 }
 
-// Setup git dependencies
 pub fn setup_git_dependencies(config: &ProjectConfig, project_path: &Path) -> Result<Vec<String>, Box<dyn std::error::Error>> {
     let git_deps = &config.dependencies.git;
     if git_deps.is_empty() {
@@ -592,105 +588,174 @@ pub fn setup_git_dependencies(config: &ProjectConfig, project_path: &Path) -> Re
     }
 
     // Create deps directory
+    println!("Project path: {}", project_path.display());
     let deps_dir = project_path.join("deps");
+    println!("Deps directory: {}", deps_dir.display());
     fs::create_dir_all(&deps_dir)?;
 
     let mut cmake_include_paths = Vec::new();
 
     for dep in git_deps {
         let dep_path = deps_dir.join(&dep.name);
+        println!("Checking for dependency: {}", dep.name);
+
 
         if dep_path.exists() {
-            // If update is requested, pull latest changes
-            if dep.update.unwrap_or(false) {
-                println!("{}", format!("Updating git dependency: {}", dep.name).blue());
+            println!("{}", format!("Directory for dependency {} already exists at {}",
+                                   dep.name, dep_path.display()).green());
+            println!("{}", "Skipping clone operation, using existing directory.".green());
 
-                let mut cmd = vec![
-                    "git".to_string(),
-                    "pull".to_string(),
-                ];
+            // If the directory is a git repo and update is requested, try to pull
+            let git_dir = dep_path.join(".git");
+            if git_dir.exists() && dep.update.unwrap_or(false) {
+                println!("Attempting to update existing git repository...");
+                let status = Command::new("git")
+                    .arg("pull")
+                    .current_dir(&dep_path)
+                    .status();
 
-                run_command(cmd, Some(&dep_path.to_string_lossy().to_string()), None)?;
-            } else {
-                println!("{}", format!("Git dependency already exists: {}", dep.name).green());
-            }
-        } else {
-            println!("{}", format!("Cloning git dependency: {}", dep.name).blue());
-
-            // Build git clone command
-            let mut cmd = vec![
-                "git".to_string(),
-                "clone".to_string(),
-            ];
-
-            // Add shallow clone option if requested
-            if dep.shallow.unwrap_or(false) {
-                cmd.push("--depth=1".to_string());
+                if let Ok(status) = status {
+                    if status.success() {
+                        println!("Successfully updated repository.");
+                    } else {
+                        println!("Failed to update repository, continuing with existing files.");
+                    }
+                }
             }
 
-            // Add branch/tag/commit if specified
-            if let Some(branch) = &dep.branch {
-                cmd.push("--branch".to_string());
-                cmd.push(branch.clone());
-            } else if let Some(tag) = &dep.tag {
-                cmd.push("--branch".to_string());
-                cmd.push(tag.clone());
-            }
-
-            // Add URL and target directory
-            cmd.push(dep.url.clone());
-            cmd.push(dep_path.to_string_lossy().to_string());
-
-            // Clone the repository
-            run_command(cmd, Some(&deps_dir.to_string_lossy().to_string()), None)?;
-
-            // Checkout specific commit if requested
-            if let Some(commit) = &dep.commit {
-                let mut cmd = vec![
-                    "git".to_string(),
-                    "checkout".to_string(),
-                    commit.clone(),
-                ];
-
-                run_command(cmd, Some(&dep_path.to_string_lossy().to_string()), None)?;
-            }
+            // Skip to next dependency
+            continue;
         }
 
-        // Build dependency if it has a CMakeLists.txt
-        if dep_path.join("CMakeLists.txt").exists() {
-            let build_path = dep_path.join("build");
-            fs::create_dir_all(&build_path)?;
+        // Only if the directory doesn't exist, clone the repository
+        println!("{}", format!("Cloning git dependency: {}", dep.name).blue());
 
-            // Configure with CMake
-            let mut cmd = vec![
-                "cmake".to_string(),
-                "..".to_string(),
-            ];
+        // Build git clone command - very simple approach here
+        let output = Command::new("git")
+            .arg("clone")
+            .arg(if dep.shallow.unwrap_or(true) { "--depth=1" } else { "--progress" })
+            .args(if let Some(tag) = &dep.tag {
+                vec!["--branch", tag]
+            } else if let Some(branch) = &dep.branch {
+                vec!["--branch", branch]
+            } else {
+                vec![]
+            })
+            .arg(&dep.url)
+            .arg(&dep_path)
+            .output();
 
-            // Add dependency-specific CMake options
-            if let Some(cmake_options) = &dep.cmake_options {
-                cmd.extend(cmake_options.clone());
+        match output {
+            Ok(output) => {
+                if output.status.success() {
+                    println!("{}", format!("Successfully cloned git dependency: {}", dep.name).green());
+
+                    // Checkout specific commit if requested
+                    if let Some(commit) = &dep.commit {
+                        println!("{}", format!("Checking out commit: {}", commit).blue());
+
+                        let checkout = Command::new("git")
+                            .arg("checkout")
+                            .arg(commit)
+                            .current_dir(&dep_path)
+                            .output();
+
+                        if let Ok(checkout) = checkout {
+                            if !checkout.status.success() {
+                                println!("{}", format!("Failed to checkout commit: {}",
+                                                       String::from_utf8_lossy(&checkout.stderr)).yellow());
+                            }
+                        }
+                    }
+                } else {
+                    // Clone failed
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    println!("{}", format!("Git clone failed: {}", stderr).red());
+
+                    // If it's just the "directory exists" error, we can continue
+                    if stderr.contains("already exists and is not") {
+                        println!("{}", "Directory already exists, continuing with existing files.".yellow());
+                    } else {
+                        return Err(format!("Failed to clone git dependency {}: {}", dep.name, stderr).into());
+                    }
+                }
+            },
+            Err(e) => {
+                println!("{}", format!("Failed to execute git command: {}", e).red());
+                return Err(format!("Failed to clone git dependency {}: {}", dep.name, e).into());
             }
-
-            run_command(cmd, Some(&build_path.to_string_lossy().to_string()), None)?;
-
-            // Build
-            let mut cmd = vec![
-                "cmake".to_string(),
-                "--build".to_string(),
-                ".".to_string(),
-            ];
-
-            run_command(cmd, Some(&build_path.to_string_lossy().to_string()), None)?;
-
-            // Add dependency path to CMake include paths
-            cmake_include_paths.push(format!("{}/build", dep_path.to_string_lossy()));
         }
     }
 
     Ok(cmake_include_paths)
 }
 
+// Custom function to run git commands with progress tracking
+fn run_git_command_with_progress(args: Vec<String>, cwd: &Path, description: &str) -> Result<(), Box<dyn std::error::Error>> {
+    use std::io::{BufRead, BufReader};
+    use std::process::{Command, Stdio};
+    use regex::Regex;
+
+    let mut cmd = Command::new("git");
+    cmd.args(&args);
+    cmd.current_dir(cwd);
+
+    // Make sure we capture stderr where git sends progress information
+    cmd.stderr(Stdio::piped());
+    cmd.stdout(Stdio::piped());
+
+    println!("{}", format!("Running git {}", args.join(" ")).blue());
+
+    let mut child = cmd.spawn()?;
+
+    // Get handles to the stdout and stderr
+    let stderr = child.stderr.take().ok_or("Failed to capture stderr")?;
+
+    // Set up a progress tracking regex for git output
+    // This regex matches git's progress output format (e.g., "Receiving objects: 45% (1234/2345)")
+    let progress_regex = Regex::new(r"(?i)(?:Receiving|Resolving|Checking out files|remote: Counting|Writing|Checking out|Enumerating|Compressing)(?:[^:]+): +(\d+)%").unwrap();
+
+    // Create the progress bar
+    let mut progress_bar = ProgressBar::start(description);
+    let mut current_progress = 0.0;
+
+    // Read and process stderr lines
+    let stderr_reader = BufReader::new(stderr);
+    for line in stderr_reader.lines() {
+        if let Ok(line) = line {
+            // Check for progress information
+            if let Some(captures) = progress_regex.captures(&line) {
+                if let Some(percent_str) = captures.get(1) {
+                    if let Ok(percent) = percent_str.as_str().parse::<f32>() {
+                        let new_progress = percent / 100.0;
+                        if new_progress > current_progress {
+                            current_progress = new_progress;
+                            progress_bar.update(current_progress);
+                        }
+                    }
+                }
+            }
+
+            // For verbose mode, show all output
+            if is_verbose() {
+                eprintln!("GIT> {}", line);
+            }
+        }
+    }
+
+    // Wait for the command to finish
+    let status = child.wait()?;
+
+    // Complete the progress bar
+    if status.success() {
+        progress_bar.update(1.0);
+        progress_bar.success();
+        Ok(())
+    } else {
+        progress_bar.failure(&format!("Git exited with code: {}", status.code().unwrap_or(-1)));
+        Err(format!("Git command failed with exit code: {}", status.code().unwrap_or(-1)).into())
+    }
+}
 // Setup custom dependencies
 pub fn setup_custom_dependencies(config: &ProjectConfig, project_path: &Path) -> Result<Vec<String>, Box<dyn std::error::Error>> {
     let custom_deps = &config.dependencies.custom;
@@ -1192,234 +1257,18 @@ pub fn setup_git_dependencies_with_progress(
     project_path: &Path,
     progress: &mut ProgressBar
 ) -> Result<Vec<String>, Box<dyn std::error::Error>> {
-    let git_deps = &config.dependencies.git;
-    if git_deps.is_empty() {
+    // Just call the main function - the internal progress tracking will handle it
+    let result = setup_git_dependencies(config, project_path);
+
+    // Update the outer progress bar based on the result
+    if result.is_ok() {
         progress.update(1.0);
-        return Ok(Vec::new());
+    } else {
+        progress.update(0.5);  // Show partial progress on error
     }
 
-    // Initial progress
-    progress.update(0.05);
-
-    // Check if git is installed
-    if Command::new("git").arg("--version").stdout(Stdio::null()).stderr(Stdio::null()).status().is_err() {
-        progress.update(0.1);
-
-        // Try to install Git
-        print_warning("Git not found. Attempting to install...", None);
-
-        let mut install_progress = ProgressBar::start("Installing Git");
-
-        let install_result = if cfg!(windows) {
-            if has_command("winget") {
-                run_command_with_timeout(
-                    vec!["winget".to_string(), "install".to_string(), "--id".to_string(), "Git.Git".to_string()],
-                    None,
-                    None,
-                    300
-                )
-            } else {
-                Err("winget not found".into())
-            }
-        } else if cfg!(target_os = "macos") {
-            if has_command("brew") {
-                run_command_with_timeout(
-                    vec!["brew".to_string(), "install".to_string(), "git".to_string()],
-                    None,
-                    None,
-                    300
-                )
-            } else {
-                Err("Homebrew not found".into())
-            }
-        } else {
-            run_command_with_timeout(
-                vec!["sudo".to_string(), "apt-get".to_string(), "install".to_string(), "-y".to_string(), "git".to_string()],
-                None,
-                None,
-                300
-            )
-        };
-
-        if install_result.is_err() {
-            install_progress.failure("Failed to install Git");
-            progress.failure("Git not found. Please install Git manually.");
-            return Err("Git not found. Please install git first.".into());
-        }
-
-        install_progress.success();
-    }
-
-    progress.update(0.2);
-
-    // Create deps directory
-    let deps_dir = project_path.join("deps");
-    fs::create_dir_all(&deps_dir)?;
-
-    let mut cmake_include_paths = Vec::new();
-
-    // Calculate progress steps for each dependency
-    let total_deps = git_deps.len();
-    let progress_per_dep = 0.7 / total_deps as f32; // Allocate 70% of progress bar for processing dependencies
-
-    // Process each git dependency
-    for (i, dep) in git_deps.iter().enumerate() {
-        let dep_path = deps_dir.join(&dep.name);
-        let base_progress = 0.2 + (i as f32 * progress_per_dep);
-
-        // Update progress to show which dependency we're working on
-        progress.update(base_progress);
-
-        if !is_quiet() {
-            print_substep(&format!("Processing git dependency: {}", dep.name));
-        }
-
-        if dep_path.exists() {
-            // If update is requested, pull latest changes
-            if dep.update.unwrap_or(false) {
-                let mut pull_progress = ProgressBar::start(&format!("Updating {}", dep.name));
-
-                let mut cmd = vec![
-                    "git".to_string(),
-                    "pull".to_string(),
-                ];
-
-                match run_command(cmd, Some(&dep_path.to_string_lossy().to_string()), None) {
-                    Ok(_) => pull_progress.success(),
-                    Err(e) => {
-                        pull_progress.failure(&e.to_string());
-                        print_warning(&format!("Failed to update {}: {}", dep.name, e), None);
-                        // Continue anyway with existing version
-                    }
-                }
-            } else if !is_quiet() {
-                print_substep(&format!("Git dependency already exists: {}", dep.name));
-            }
-        } else {
-            // Need to clone the repository
-            let mut clone_progress = ProgressBar::start(&format!("Cloning {}", dep.name));
-
-            // Build git clone command
-            let mut cmd = vec![
-                "git".to_string(),
-                "clone".to_string(),
-            ];
-
-            // Add shallow clone option if requested
-            if dep.shallow.unwrap_or(false) {
-                cmd.push("--depth=1".to_string());
-            }
-
-            // Add branch/tag/commit if specified
-            if let Some(branch) = &dep.branch {
-                cmd.push("--branch".to_string());
-                cmd.push(branch.clone());
-            } else if let Some(tag) = &dep.tag {
-                cmd.push("--branch".to_string());
-                cmd.push(tag.clone());
-            }
-
-            // Add URL and target directory
-            cmd.push(dep.url.clone());
-            cmd.push(dep_path.to_string_lossy().to_string());
-
-            // Clone the repository
-            match run_command(cmd, Some(&deps_dir.to_string_lossy().to_string()), None) {
-                Ok(_) => {
-                    clone_progress.success();
-
-                    // Checkout specific commit if requested
-                    if let Some(commit) = &dep.commit {
-                        let mut checkout_progress = ProgressBar::start(&format!("Checking out commit {}", commit));
-
-                        let mut cmd = vec![
-                            "git".to_string(),
-                            "checkout".to_string(),
-                            commit.clone(),
-                        ];
-
-                        match run_command(cmd, Some(&dep_path.to_string_lossy().to_string()), None) {
-                            Ok(_) => checkout_progress.success(),
-                            Err(e) => {
-                                checkout_progress.failure(&e.to_string());
-                                print_warning(&format!("Failed to checkout commit: {}", e), None);
-                            }
-                        }
-                    }
-                },
-                Err(e) => {
-                    clone_progress.failure(&e.to_string());
-                    progress.failure(&format!("Failed to clone {}: {}", dep.name, e));
-                    return Err(format!("Failed to clone git dependency {}: {}", dep.name, e).into());
-                }
-            }
-        }
-
-        // Update progress after cloning/updating the repository
-        progress.update(base_progress + (progress_per_dep * 0.5));
-
-        // Build dependency if it has a CMakeLists.txt
-        if dep_path.join("CMakeLists.txt").exists() {
-            let build_path = dep_path.join("build");
-            fs::create_dir_all(&build_path)?;
-
-            // Configure with CMake
-            let mut cmake_progress = ProgressBar::start(&format!("Configuring {}", dep.name));
-
-            let mut cmd = vec![
-                "cmake".to_string(),
-                "..".to_string(),
-            ];
-
-            // Add dependency-specific CMake options
-            if let Some(cmake_options) = &dep.cmake_options {
-                cmd.extend(cmake_options.clone());
-            }
-
-            match run_command(cmd, Some(&build_path.to_string_lossy().to_string()), None) {
-                Ok(_) => cmake_progress.success(),
-                Err(e) => {
-                    cmake_progress.failure(&e.to_string());
-                    print_warning(&format!("Failed to configure {}: {}", dep.name, e), Some("Will try to continue"));
-                    // Continue with build anyway, it might work with default settings
-                }
-            }
-
-            // Build
-            let mut build_progress = ProgressBar::start(&format!("Building {}", dep.name));
-
-            let mut cmd = vec![
-                "cmake".to_string(),
-                "--build".to_string(),
-                ".".to_string(),
-            ];
-
-            match run_command(cmd, Some(&build_path.to_string_lossy().to_string()), None) {
-                Ok(_) => build_progress.success(),
-                Err(e) => {
-                    build_progress.failure(&e.to_string());
-                    print_warning(&format!("Failed to build {}: {}", dep.name, e), Some("Will try to continue"));
-                    // Continue anyway, we might be able to use the dependency
-                }
-            }
-
-            // Add dependency path to CMake include paths
-            cmake_include_paths.push(format!("{}/build", dep_path.to_string_lossy()));
-        }
-
-        // Update progress after building the dependency
-        progress.update(base_progress + progress_per_dep);
-    }
-
-    // Final progress update
-    progress.update(0.95);
-
-    // Finalize progress
-    progress.update(1.0);
-
-    Ok(cmake_include_paths)
+    result
 }
-
 
 // Setup custom dependencies with progress tracking
 pub fn setup_custom_dependencies_with_progress(
