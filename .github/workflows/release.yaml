@@ -23,14 +23,9 @@ jobs:
             target: i686-unknown-linux-gnu
             artifact_name: cforge
             asset_name: cforge-linux-i686
-          - os: ubuntu-latest
-            target: aarch64-unknown-linux-gnu
-            artifact_name: cforge
-            asset_name: cforge-linux-arm64
-          - os: ubuntu-latest
-            target: armv7-unknown-linux-gnueabihf
-            artifact_name: cforge
-            asset_name: cforge-linux-armv7
+          # ARM targets were removed due to build failures
+          # - aarch64-unknown-linux-gnu
+          # - armv7-unknown-linux-gnueabihf
           
           # Windows targets
           - os: windows-latest
@@ -56,27 +51,13 @@ jobs:
             artifact_name: cforge
             asset_name: cforge-macos-arm64
           
-          # FreeBSD (cross-compiled from Linux)
-          - os: ubuntu-latest
-            target: x86_64-unknown-freebsd
-            artifact_name: cforge
-            asset_name: cforge-freebsd-amd64
-          
-          # Android (cross-compiled from Linux)
-          - os: ubuntu-latest
-            target: aarch64-linux-android
-            artifact_name: cforge
-            asset_name: cforge-android-arm64
-          - os: ubuntu-latest
-            target: armv7-linux-androideabi
-            artifact_name: cforge
-            asset_name: cforge-android-armv7
-          
-          # WASM
-          - os: ubuntu-latest
-            target: wasm32-wasi
-            artifact_name: cforge.wasm
-            asset_name: cforge-wasm32
+          # Additional platforms could be added here
+          # The following targets were removed due to build failures:
+          # - x86_64-unknown-freebsd
+          # - aarch64-linux-android
+          # - armv7-linux-androideabi
+          # - wasm32-wasi
+          # - aarch64-unknown-linux-gnu
     steps:
       - uses: actions/checkout@v4
       
@@ -155,15 +136,9 @@ jobs:
           files: |
             artifacts/cforge-linux-amd64/cforge-linux-amd64
             artifacts/cforge-linux-i686/cforge-linux-i686
-            artifacts/cforge-linux-arm64/cforge-linux-arm64
-            artifacts/cforge-linux-armv7/cforge-linux-armv7
             artifacts/cforge-windows-amd64.exe/cforge-windows-amd64.exe
             artifacts/cforge-windows-i686.exe/cforge-windows-i686.exe
             artifacts/cforge-windows-arm64.exe/cforge-windows-arm64.exe
             artifacts/cforge-macos-amd64/cforge-macos-amd64
             artifacts/cforge-macos-arm64/cforge-macos-arm64
-            artifacts/cforge-freebsd-amd64/cforge-freebsd-amd64
-            artifacts/cforge-android-arm64/cforge-android-arm64
-            artifacts/cforge-android-armv7/cforge-android-armv7
-            artifacts/cforge-wasm32/cforge-wasm32
           generate_release_notes: true
