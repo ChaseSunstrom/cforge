@@ -1,14 +1,11 @@
 name: Build and Release
-
 on:
   push:
     tags:
       - 'v*'
   workflow_dispatch:
-
 permissions:
   contents: write  # This is crucial for creating releases
-
 jobs:
   build:
     name: Build ${{ matrix.target }}
@@ -17,26 +14,108 @@ jobs:
       fail-fast: false  # Continue with other builds even if one fails
       matrix:
         include:
+          # Linux targets
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             artifact_name: cforge
             asset_name: cforge-linux-amd64
+          - os: ubuntu-latest
+            target: i686-unknown-linux-gnu
+            artifact_name: cforge
+            asset_name: cforge-linux-i686
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            artifact_name: cforge
+            asset_name: cforge-linux-arm64
+          - os: ubuntu-latest
+            target: armv7-unknown-linux-gnueabihf
+            artifact_name: cforge
+            asset_name: cforge-linux-armv7
+          
+          # Windows targets
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             artifact_name: cforge.exe
             asset_name: cforge-windows-amd64.exe
+          - os: windows-latest
+            target: i686-pc-windows-msvc
+            artifact_name: cforge.exe
+            asset_name: cforge-windows-i686.exe
+          - os: windows-latest
+            target: aarch64-pc-windows-msvc
+            artifact_name: cforge.exe
+            asset_name: cforge-windows-arm64.exe
+          
+          # macOS targets
           - os: macos-latest
             target: x86_64-apple-darwin
             artifact_name: cforge
             asset_name: cforge-macos-amd64
-
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            artifact_name: cforge
+            asset_name: cforge-macos-arm64
+          
+          # FreeBSD (cross-compiled from Linux)
+          - os: ubuntu-latest
+            target: x86_64-unknown-freebsd
+            artifact_name: cforge
+            asset_name: cforge-freebsd-amd64
+          
+          # Android (cross-compiled from Linux)
+          - os: ubuntu-latest
+            target: aarch64-linux-android
+            artifact_name: cforge
+            asset_name: cforge-android-arm64
+          - os: ubuntu-latest
+            target: armv7-linux-androideabi
+            artifact_name: cforge
+            asset_name: cforge-android-armv7
+          
+          # WASM
+          - os: ubuntu-latest
+            target: wasm32-wasi
+            artifact_name: cforge.wasm
+            asset_name: cforge-wasm32
     steps:
       - uses: actions/checkout@v4
       
+      - name: Install cross-compilation tools
+        if: contains(matrix.target, 'linux-gnu') || contains(matrix.target, 'android') || contains(matrix.target, 'freebsd')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-multilib g++-multilib
+          
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+          
+      - name: Install ARM Linux dependencies
+        if: contains(matrix.target, 'arm') && contains(matrix.target, 'linux')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-arm-linux-gnueabihf libc6-dev-armhf-cross
+      
+      - name: Install AArch64 Linux dependencies
+        if: contains(matrix.target, 'aarch64') && contains(matrix.target, 'linux')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu libc6-dev-arm64-cross
+          
+      - name: Setup WASM target
+        if: contains(matrix.target, 'wasm')
+        run: |
+          curl https://wasmtime.dev/install.sh -sSf | bash
+          source ~/.bashrc
+          cargo install cargo-wasi
+          
+      - name: Configure cargo for cross-compilation
+        if: contains(matrix.target, 'android') || contains(matrix.target, 'freebsd')
+        run: |
+          mkdir -p ~/.cargo
+          echo '[target.${{ matrix.target }}]' >> ~/.cargo/config
+          echo 'linker = "rust-lld"' >> ~/.cargo/config
           
       - name: Build
         run: cargo build --release --target ${{ matrix.target }}
@@ -52,7 +131,7 @@ jobs:
           fi
       
       - name: Upload artifact
-        uses: actions/upload-artifact@v4  # Updated to v4
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.asset_name }}
           path: release-artifacts/${{ matrix.asset_name }}
@@ -63,7 +142,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download all artifacts
-        uses: actions/download-artifact@v4  # Updated to v4
+        uses: actions/download-artifact@v4
         with:
           path: artifacts
         
@@ -75,6 +154,16 @@ jobs:
         with:
           files: |
             artifacts/cforge-linux-amd64/cforge-linux-amd64
+            artifacts/cforge-linux-i686/cforge-linux-i686
+            artifacts/cforge-linux-arm64/cforge-linux-arm64
+            artifacts/cforge-linux-armv7/cforge-linux-armv7
             artifacts/cforge-windows-amd64.exe/cforge-windows-amd64.exe
+            artifacts/cforge-windows-i686.exe/cforge-windows-i686.exe
+            artifacts/cforge-windows-arm64.exe/cforge-windows-arm64.exe
             artifacts/cforge-macos-amd64/cforge-macos-amd64
+            artifacts/cforge-macos-arm64/cforge-macos-arm64
+            artifacts/cforge-freebsd-amd64/cforge-freebsd-amd64
+            artifacts/cforge-android-arm64/cforge-android-arm64
+            artifacts/cforge-android-armv7/cforge-android-armv7
+            artifacts/cforge-wasm32/cforge-wasm32
           generate_release_notes: true
