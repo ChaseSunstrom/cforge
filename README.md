@@ -313,16 +313,53 @@ generators = ["cmake", "cmake_find_package"]
 
 ```toml
 [[dependencies.git]]
+name = "nlohmann_json"
+url = "https://github.com/nlohmann/json.git"
+tag = "v3.11.3"
+# Optional settings
+shallow = true  # Faster clone with reduced history
+update = false  # Whether to update the repo on builds
+
+[[dependencies.git]]
+name = "fmt"
+url = "https://github.com/fmtlib/fmt.git"
+tag = "9.1.0"
+cmake_options = ["-DFMT_TEST=OFF", "-DFMT_DOC=OFF"]  # Pass CMake options when building
+
+[[dependencies.git]]
 name = "imgui"
 url = "https://github.com/ocornut/imgui.git"
-branch = "master"
+branch = "master"  # Use a specific branch instead of tag
 shallow = true
 
 [[dependencies.git]]
-name = "glfw"
-url = "https://github.com/glfw/glfw.git"
-tag = "3.3.8"
-cmake_options = ["-DGLFW_BUILD_EXAMPLES=OFF", "-DGLFW_BUILD_TESTS=OFF"]
+name = "custom_repo"
+url = "https://example.com/repo.git"
+commit = "abc123def456"  # Use a specific commit hash
+```
+
+Git dependencies are automatically cloned into a deps directory. The libraries can be included in your project by adding their include paths to your target configuration:
+
+```toml
+[targets.default]
+include_dirs = ["include", "deps/nlohmann_json/single_include", "deps/fmt/include"]
+defines = ["FMT_HEADER_ONLY"]  # Optionally add defines for your dependencies
+```
+
+You can also use the libraries in your code immediately:
+
+```cpp
+#include <nlohmann/json.hpp>
+#include <fmt/core.h>
+
+int main() {
+    // Using nlohmann/json
+    nlohmann::json obj = {{"name", "cforge"}, {"version", "1.4.0"}};
+    
+    // Using fmt
+    fmt::print("Project: {}\n", obj["name"].get<std::string>());
+    return 0;
+}
 ```
 
 ### Custom Dependencies
