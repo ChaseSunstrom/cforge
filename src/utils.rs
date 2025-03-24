@@ -6,19 +6,69 @@ use crate::config::{PCHConfig, PackageInstallState, ProjectConfig};
 use crate::output_utils::TimedProgressBar;
 
 pub fn is_executable(path: &Path) -> bool {
+    // First check if the file exists
+    if !path.exists() || !path.is_file() {
+        return false;
+    }
+
+    // Extract extension and filename to check if this is a source file
+    // We don't want to consider source files as executables
+    let extension = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+    let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+
+    // Skip source files and CMake files
+    if extension == "c" || extension == "cpp" || extension == "h" || extension == "hpp" ||
+        file_name.contains("CMakeCCompilerId") || file_name.contains("CMakeCXXCompilerId") ||
+        file_name == "cmake_install.cmake" || file_name == "CMakeCache.txt" {
+        return false;
+    }
+
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
         if let Ok(metadata) = fs::metadata(path) {
+            // On Unix, check execute permission
             return metadata.permissions().mode() & 0o111 != 0;
         }
         false
     }
 
-    #[cfg(not(unix))]
+    #[cfg(windows)]
     {
-        // On Windows and other platforms, we consider all files executable if they exist
-        path.exists()
+        // On Windows, consider files with .exe, .bat, .cmd extensions as executable
+        // or files without an extension if they're in a standard executable location
+        if extension == "exe" || extension == "bat" || extension == "cmd" {
+            return true;
+        }
+
+        // Without extension, check if it's in a bin directory
+        if extension.is_empty() {
+            let parent = path.parent().unwrap_or(Path::new(""));
+            let parent_name = parent.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            if parent_name == "bin" || parent_name.contains("Debug") || parent_name.contains("Release") {
+                // More likely to be an executable in these directories
+                return true;
+            }
+        }
+
+        // For Windows, if we can't determine clearly, try the best guess:
+        // check if file size is reasonable for an executable and not tiny like a shell script
+        if let Ok(metadata) = fs::metadata(path) {
+            let file_size = metadata.len();
+            // An executable file is typically at least a few KB
+            return file_size > 1000;
+        }
+
+        false
+    }
+
+    #[cfg(not(any(unix, windows)))]
+    {
+        // On other platforms, check extension and location as best guess
+        if extension == "exe" || extension.is_empty() {
+            return true;
+        }
+        false
     }
 }
 

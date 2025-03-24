@@ -7,7 +7,7 @@ use std::process::Command;
 use colored::Colorize;
 use crate::{configure_project, count_project_source_files, ensure_build_tools, execute_build_with_progress, expand_output_tokens, get_active_variant, get_build_type, get_effective_compiler_label, is_executable, progress_bar, prompt, run_command, run_hooks, CFORGE_FILE, CMAKE_MIN_VERSION, DEFAULT_BIN_DIR, DEFAULT_BUILD_DIR, DEFAULT_LIB_DIR, WORKSPACE_FILE};
 use crate::config::{create_default_config, create_header_only_config, create_library_config, load_project_config, load_workspace_config, save_project_config, save_workspace_config, ProjectConfig, WorkspaceConfig, WorkspaceWithProjects};
-use crate::output_utils::{format_project_name, is_quiet, print_error, print_header, print_status, print_substep, print_success, print_warning, BuildProgress, ProgressBar};
+use crate::output_utils::{format_project_name, is_quiet, is_verbose, print_error, print_header, print_status, print_substep, print_success, print_warning, BuildProgress, ProgressBar};
 use crate::tools::{is_msvc_style_for_config, parse_universal_flags};
 use crate::workspace::build_dependency_graph;
 
@@ -122,17 +122,6 @@ pub fn build_project(
     ensure_build_tools(config)?;
     main_progress.update(0.1);
 
-    // Calculate build paths
-    let build_dir = config.build.build_dir.as_deref().unwrap_or(DEFAULT_BUILD_DIR);
-    let build_path = if let Some(target) = cross_target {
-        project_path.join(format!("{}-{}", build_dir, target))
-    } else {
-        project_path.join(build_dir)
-    };
-
-    // Ensure the build directory exists
-    fs::create_dir_all(&build_path)?;
-
     // Get the build type - make sure it matches configuration
     let build_type = get_build_type(config, config_type);
 
@@ -140,6 +129,19 @@ pub fn build_project(
     if !is_quiet() {
         print_substep(&format!("Using build configuration: {}", build_type));
     }
+
+    // Calculate build paths
+    let build_dir = config.build.build_dir.as_deref().unwrap_or(DEFAULT_BUILD_DIR);
+    // Always use build dir + config, even for default config
+    let build_type = get_build_type(config, config_type);
+    let build_path = if let Some(target) = cross_target {
+        project_path.join(format!("{}-{}-{}", build_dir, build_type.to_lowercase(), target))
+    } else {
+        project_path.join(format!("{}-{}", build_dir, build_type.to_lowercase()))
+    };
+
+    // Ensure the build directory exists
+    fs::create_dir_all(&build_path)?;
 
     // Check if we need to configure
     let needs_configure = !build_path.join("CMakeCache.txt").exists() ||
@@ -158,6 +160,7 @@ pub fn build_project(
         let mut config_progress = ProgressBar::start("Configuration");
 
         // Delegate to configure_project with the progress bar
+        // CRITICAL FIX: Explicitly pass the build type to ensure it propagates
         configure_project(
             config,
             project_path,
@@ -212,7 +215,7 @@ pub fn build_project(
     // Build using CMake
     let mut cmd = vec!["cmake".to_string(), "--build".to_string(), ".".to_string()];
 
-    // Ensure we pass the correct build configuration
+    // CRITICAL FIX: Ensure we explicitly pass the correct build configuration
     cmd.push("--config".to_string());
     cmd.push(build_type.clone());
 
@@ -221,11 +224,12 @@ pub fn build_project(
     cmd.push("--parallel".to_string());
     cmd.push(format!("{}", num_threads));
 
-    // Build with simpler output
+    // Show the exact command being executed for debugging
     if !is_quiet() {
         print_status(&format!("Building {} in {} configuration",
                               format_project_name(project_name),
                               build_type));
+        print_substep(&format!("Command: {}", cmd.join(" ")));
     }
 
     // Create build progress bar
@@ -275,7 +279,8 @@ pub fn run_project(
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Calculate paths
     let build_dir = config.build.build_dir.as_deref().unwrap_or(DEFAULT_BUILD_DIR);
-    let build_path = project_path.join(build_dir);
+    let build_type = get_build_type(config, config_type);
+    let build_path = project_path.join(format!("{}-{}", build_dir, build_type.to_lowercase()));
     let project_name = &config.project.name;
     let build_type = get_build_type(config, config_type);
     let bin_dir = config.output.bin_dir.as_deref().unwrap_or(DEFAULT_BIN_DIR);
@@ -298,104 +303,175 @@ pub fn run_project(
 
     let mut executable_paths = Vec::new();
 
-    // Try with combined project_target pattern (new format)
+    // Double underscore pattern (existing)
+    executable_paths.push(build_path.join(format!("{}__{}.exe", project_name, build_type)));
+    executable_paths.push(build_path.join(format!("{}__{}", project_name, build_type)));
+
+    // Single underscore pattern (more common)
+    executable_paths.push(build_path.join(format!("{}_{}.exe", project_name, build_type)));
+    executable_paths.push(build_path.join(format!("{}_{}", project_name, build_type)));
+
+    // Try with lowercase config name too
+    executable_paths.push(build_path.join(format!("{}__{}.exe", project_name, build_type.to_lowercase())));
+    executable_paths.push(build_path.join(format!("{}__{}", project_name, build_type.to_lowercase())));
+    executable_paths.push(build_path.join(format!("{}_{}.exe", project_name, build_type.to_lowercase())));
+    executable_paths.push(build_path.join(format!("{}_{}", project_name, build_type.to_lowercase())));
+
+    // Check in bin directory
+    executable_paths.push(build_path.join(bin_dir).join(format!("{}__{}.exe", project_name, build_type)));
+    executable_paths.push(build_path.join(bin_dir).join(format!("{}__{}", project_name, build_type)));
+    executable_paths.push(build_path.join(bin_dir).join(format!("{}_{}.exe", project_name, build_type)));
+    executable_paths.push(build_path.join(bin_dir).join(format!("{}_{}", project_name, build_type)));
+
+    // Lowercase variants in bin directory
+    executable_paths.push(build_path.join(bin_dir).join(format!("{}__{}.exe", project_name, build_type.to_lowercase())));
+    executable_paths.push(build_path.join(bin_dir).join(format!("{}__{}", project_name, build_type.to_lowercase())));
+    executable_paths.push(build_path.join(bin_dir).join(format!("{}_{}.exe", project_name, build_type.to_lowercase())));
+    executable_paths.push(build_path.join(bin_dir).join(format!("{}_{}", project_name, build_type.to_lowercase())));
+
+    // Check direct path with build type folders
+    executable_paths.push(build_path.join(bin_dir).join(&build_type).join(format!("{}.exe", project_name)));
+    executable_paths.push(build_path.join(bin_dir).join(&build_type).join(project_name));
+    executable_paths.push(build_path.join(&build_type).join(format!("{}.exe", project_name)));
+    executable_paths.push(build_path.join(&build_type).join(project_name));
+
+    // Try lowercase variant of build type folders
+    executable_paths.push(build_path.join(bin_dir).join(&build_type.to_lowercase()).join(format!("{}.exe", project_name)));
+    executable_paths.push(build_path.join(bin_dir).join(&build_type.to_lowercase()).join(project_name));
+    executable_paths.push(build_path.join(&build_type.to_lowercase()).join(format!("{}.exe", project_name)));
+    executable_paths.push(build_path.join(&build_type.to_lowercase()).join(project_name));
+
+    // Try without build type in name at all
+    executable_paths.push(build_path.join(bin_dir).join(format!("{}.exe", project_name)));
+    executable_paths.push(build_path.join(bin_dir).join(project_name));
+    executable_paths.push(build_path.join(format!("{}.exe", project_name)));
+    executable_paths.push(build_path.join(project_name));
+
+    // Try with target names
     for target_name in config.targets.keys() {
         let combined_name = format!("{}_{}", project_name, target_name);
 
-        // With .exe extension
-        executable_paths.push(build_path.join(bin_dir).join(format!("{}.exe", combined_name)));
-        // Without .exe extension
-        executable_paths.push(build_path.join(bin_dir).join(&combined_name));
+        // With config type
+        executable_paths.push(build_path.join(bin_dir).join(format!("{}__{}.exe", combined_name, build_type)));
+        executable_paths.push(build_path.join(bin_dir).join(format!("{}__{}", combined_name, build_type)));
+        executable_paths.push(build_path.join(bin_dir).join(format!("{}_{}.exe", combined_name, build_type)));
+        executable_paths.push(build_path.join(bin_dir).join(format!("{}_{}", combined_name, build_type)));
 
-        // Add config-specific paths (e.g., bin/Release/executable)
+        // Lowercase variant
+        executable_paths.push(build_path.join(bin_dir).join(format!("{}__{}.exe", combined_name, build_type.to_lowercase())));
+        executable_paths.push(build_path.join(bin_dir).join(format!("{}__{}", combined_name, build_type.to_lowercase())));
+        executable_paths.push(build_path.join(bin_dir).join(format!("{}_{}.exe", combined_name, build_type.to_lowercase())));
+        executable_paths.push(build_path.join(bin_dir).join(format!("{}_{}", combined_name, build_type.to_lowercase())));
+
+        // Without config type
+        executable_paths.push(build_path.join(bin_dir).join(format!("{}.exe", combined_name)));
+        executable_paths.push(build_path.join(bin_dir).join(&combined_name));
+        executable_paths.push(build_path.join(format!("{}.exe", combined_name)));
+        executable_paths.push(build_path.join(&combined_name));
+
+        // In config-specific subdirectory
         executable_paths.push(build_path.join(bin_dir).join(&build_type).join(format!("{}.exe", combined_name)));
         executable_paths.push(build_path.join(bin_dir).join(&build_type).join(&combined_name));
-
-        // Standard CMake output directories
-        executable_paths.push(build_path.join(&combined_name));
-        executable_paths.push(build_path.join(format!("{}.exe", combined_name)));
-        executable_paths.push(build_path.join(&build_type).join(&combined_name));
         executable_paths.push(build_path.join(&build_type).join(format!("{}.exe", combined_name)));
+        executable_paths.push(build_path.join(&build_type).join(&combined_name));
+
+        // Lowercase variant in config-specific subdirectory
+        executable_paths.push(build_path.join(bin_dir).join(&build_type.to_lowercase()).join(format!("{}.exe", combined_name)));
+        executable_paths.push(build_path.join(bin_dir).join(&build_type.to_lowercase()).join(&combined_name));
+        executable_paths.push(build_path.join(&build_type.to_lowercase()).join(format!("{}.exe", combined_name)));
+        executable_paths.push(build_path.join(&build_type.to_lowercase()).join(&combined_name));
     }
 
-    // For backward compatibility, also check old patterns
-    // Check for project name
-    executable_paths.push(build_path.join(bin_dir).join(format!("{}.exe", project_name)));
-    executable_paths.push(build_path.join(bin_dir).join(project_name));
-    executable_paths.push(build_path.join(project_name));
-    executable_paths.push(build_path.join(format!("{}.exe", project_name)));
-    executable_paths.push(build_path.join(&build_type).join(project_name));
-    executable_paths.push(build_path.join(&build_type).join(format!("{}.exe", project_name)));
-
-    // Check for target names
-    for target_name in config.targets.keys() {
-        executable_paths.push(build_path.join(bin_dir).join(format!("{}.exe", target_name)));
-        executable_paths.push(build_path.join(bin_dir).join(target_name));
-        executable_paths.push(build_path.join(target_name));
-        executable_paths.push(build_path.join(format!("{}.exe", target_name)));
-        executable_paths.push(build_path.join(&build_type).join(target_name));
-        executable_paths.push(build_path.join(&build_type).join(format!("{}.exe", target_name)));
-    }
-
-    // Try with "default" as a fallback
-    if project_name != "default" {
-        executable_paths.push(build_path.join(bin_dir).join("default.exe"));
-        executable_paths.push(build_path.join(bin_dir).join("default"));
-        executable_paths.push(build_path.join("default"));
-        executable_paths.push(build_path.join("default.exe"));
-        executable_paths.push(build_path.join(&build_type).join("default"));
-        executable_paths.push(build_path.join(&build_type).join("default.exe"));
-    }
-
-    // Find the first executable that exists
+    // Find the first executable that exists and is actually an executable (not just any file)
     let mut executable_path = None;
+
+    // Check all the explicitly listed paths first
     for path in &executable_paths {
         if path.exists() && is_executable(path) {
+            // Skip CMake/configuration files explicitly
+            let file_name = path.file_name().unwrap_or_default().to_string_lossy();
+            if file_name.ends_with(".cmake") ||
+                file_name == "CMakeCache.txt" ||
+                file_name == "build.ninja" ||
+                file_name.starts_with("CPack") {
+                // Skip these files
+                continue;
+            }
+
             executable_path = Some(path.clone());
             break;
         }
     }
 
-    // If still not found, look for any executable in bin_dir
+    // If still not found, perform a deep but careful recursive search
     if executable_path.is_none() {
-        let bin_path = build_path.join(bin_dir);
-        if bin_path.exists() {
-            if let Ok(entries) = fs::read_dir(&bin_path) {
-                for entry in entries {
-                    if let Ok(entry) = entry {
-                        let path = entry.path();
-                        if path.is_file() && is_executable(&path) {
-                            executable_path = Some(path.clone());
-                            break;
-                        }
-                    }
-                }
-            }
+        if !is_quiet() {
+            print_substep("Performing deep recursive search for executable...");
         }
-    }
 
-    // One last attempt - recursive search
-    if executable_path.is_none() {
         let mut found = None;
 
-        fn find_executables(dir: &Path, found: &mut Option<PathBuf>) {
+        fn find_executables(dir: &Path, build_type: &str, project_name: &str, found: &mut Option<PathBuf>) {
             if let Ok(entries) = fs::read_dir(dir) {
                 for entry in entries {
                     if let Ok(entry) = entry {
                         let path = entry.path();
 
                         if path.is_dir() {
-                            find_executables(&path, found);
+                            // Don't search in CMake internal directories
+                            if path.file_name().map_or(false, |n|
+                                n == "CMakeFiles" ||
+                                    n == "CMakeTmp" ||
+                                    n == "CMakeScripts") {
+                                continue;
+                            }
+                            find_executables(&path, build_type, project_name, found);
+                            if found.is_some() {
+                                return;
+                            }
                         } else if path.is_file() && is_executable(&path) {
-                            *found = Some(path.clone());
-                            return;
+                            // Get filename for checks
+                            let file_name = path.file_name()
+                                .and_then(|n| n.to_str())
+                                .unwrap_or("");
+
+                            // Skip these specific files
+                            if file_name.ends_with(".cmake") ||
+                                file_name == "CMakeCache.txt" ||
+                                file_name == "build.ninja" ||
+                                file_name.starts_with("CPack") ||
+                                file_name == "cmake_install.cmake" ||
+                                file_name.contains("CMakeCCompilerId") ||
+                                file_name.contains("CMakeCXXCompilerId") {
+                                continue;
+                            }
+
+                            // Skip source files
+                            let extension = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+                            if extension == "c" || extension == "cpp" || extension == "h" || extension == "hpp" {
+                                continue;
+                            }
+
+                            // Look for executables matching our project name
+                            if file_name.contains(project_name) {
+                                // Prefer ones that match the build type
+                                if file_name.contains(build_type) || file_name.contains(&build_type.to_lowercase()) {
+                                    *found = Some(path.clone());
+                                    return;
+                                } else if found.is_none() {
+                                    *found = Some(path.clone());
+                                }
+                            } else if found.is_none() {
+                                // As a last resort, save any executable we find
+                                *found = Some(path.clone());
+                            }
                         }
                     }
                 }
             }
         }
 
-        find_executables(&build_path, &mut found);
+        find_executables(&build_path, &build_type, project_name, &mut found);
         executable_path = found;
     }
 
@@ -485,10 +561,11 @@ pub fn clean_project(
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Calculate paths
     let build_dir = config.build.build_dir.as_deref().unwrap_or(DEFAULT_BUILD_DIR);
+    let build_type = get_build_type(config, config_type);
     let build_path = if let Some(target) = cross_target {
-        project_path.join(format!("{}-{}", build_dir, target))
+        project_path.join(format!("{}-{}-{}", build_dir, build_type.to_lowercase(), target))
     } else {
-        project_path.join(build_dir)
+        project_path.join(format!("{}-{}", build_dir, build_type.to_lowercase()))
     };
 
     // Create environment for hooks
@@ -951,6 +1028,11 @@ pub fn generate_cmake_lists(config: &ProjectConfig, project_path: &Path, variant
         String::new(),
     ];
 
+    cmake_content.push("# Handle configuration-specific defines".parse().unwrap());
+    cmake_content.push("string(TOUPPER \"${CMAKE_BUILD_TYPE}\" UPPER_CONFIG)".parse().unwrap());
+    cmake_content.push("add_compile_definitions(${UPPER_CONFIG}_BUILD=1)".parse().unwrap());
+    cmake_content.push("message(STATUS \"Building with ${CMAKE_BUILD_TYPE} configuration defines\")".parse().unwrap());
+
     // Add pkg-config support
     cmake_content.push("# Find and configure pkg-config".to_string());
     cmake_content.push("find_package(PkgConfig QUIET)".to_string());
@@ -1107,28 +1189,60 @@ pub fn generate_cmake_lists(config: &ProjectConfig, project_path: &Path, variant
         if target_type == "executable" {
             cmake_content.push(format!("add_executable({} ${{{}_SOURCES}})", cmake_target_name, target_name.to_uppercase()));
 
-            // Set the output name to project_target pattern if they're different, otherwise just project name
             if project_config.name != *target_name {
-                cmake_content.push(format!("set_target_properties({} PROPERTIES OUTPUT_NAME \"{}_{}\")",
-                                           cmake_target_name, project_config.name, target_name));
+                // Different project and target names - use PROJECT_NAME_TARGET_NAME_CONFIG pattern
+                // Fix: use single underscore instead of double underscore
+                cmake_content.push(format!("set_target_properties({} PROPERTIES", cmake_target_name));
+                cmake_content.push("  OUTPUT_NAME \"${PROJECT_NAME}_${TARGET_NAME}_${CMAKE_BUILD_TYPE}\"".parse().unwrap());
+                cmake_content.push(")".parse().unwrap());
             } else {
-                cmake_content.push(format!("set_target_properties({} PROPERTIES OUTPUT_NAME \"{}\")",
-                                           cmake_target_name, project_config.name));
+                // Same project and target name - use PROJECT_NAME_CONFIG pattern
+                // Fix: use single underscore instead of double underscore
+                cmake_content.push(format!("set_target_properties({} PROPERTIES", cmake_target_name));
+                cmake_content.push("  OUTPUT_NAME \"${PROJECT_NAME}_${CMAKE_BUILD_TYPE}\"".parse().unwrap());
+                cmake_content.push(")".parse().unwrap());
             }
-        } else if target_type == "shared-library" {
+
+            // Set the target name as a property for use in output_name
+            cmake_content.push(format!("set_property(TARGET {} PROPERTY TARGET_NAME \"{}\")", cmake_target_name, target_name));
+
+            // Set message logging for better debugging
+            cmake_content.push(format!("message(STATUS \"Executable {} will be built as ${{PROJECT_NAME}}_${{TARGET_NAME}}_${{CMAKE_BUILD_TYPE}} in ${{CMAKE_BUILD_TYPE}} mode\")", target_name));
+        }
+        else if target_type == "shared-library" {
             cmake_content.push(format!("add_library({} SHARED ${{{}_SOURCES}})", cmake_target_name, target_name.to_uppercase()));
 
-            // For libraries, set output name to just project name
-            cmake_content.push(format!("set_target_properties({} PROPERTIES OUTPUT_NAME \"{}\")",
-                                       cmake_target_name, project_config.name));
-        } else if target_type == "static-library" {
+            // For shared libraries, include config in the output name using generator expressions
+            cmake_content.push(format!("set_target_properties({} PROPERTIES", cmake_target_name));
+            cmake_content.push("  OUTPUT_NAME \"${PROJECT_NAME}_${CMAKE_BUILD_TYPE}\"".parse().unwrap());
+
+            // Version properties
+            if !project_config.version.is_empty() {
+                let version_parts: Vec<&str> = project_config.version.split('.').collect();
+                let major = version_parts.get(0).unwrap_or(&"0");
+
+                cmake_content.push(format!("  VERSION \"{}\"", project_config.version));
+                cmake_content.push(format!("  SOVERSION \"{}\"", major));
+            }
+            cmake_content.push(")".parse().unwrap());
+
+            // Set message logging
+            cmake_content.push(format!("message(STATUS \"Library {} will be built as ${{PROJECT_NAME}}_${{CMAKE_BUILD_TYPE}} in ${{CMAKE_BUILD_TYPE}} mode\")", target_name));
+        }
+        else if target_type == "static-library" {
             cmake_content.push(format!("add_library({} STATIC ${{{}_SOURCES}})", cmake_target_name, target_name.to_uppercase()));
 
-            // For libraries, set output name to just project name
-            cmake_content.push(format!("set_target_properties({} PROPERTIES OUTPUT_NAME \"{}\")",
-                                       cmake_target_name, project_config.name));
+            // For static libraries, include config in the output name
+            cmake_content.push(format!("set_target_properties({} PROPERTIES", cmake_target_name));
+            cmake_content.push("  OUTPUT_NAME \"${PROJECT_NAME}_${CMAKE_BUILD_TYPE}\"".parse().unwrap());
+            cmake_content.push(")".parse().unwrap());
+
+            // Set message logging
+            cmake_content.push(format!("message(STATUS \"Library {} will be built as ${{PROJECT_NAME}}_${{CMAKE_BUILD_TYPE}} in ${{CMAKE_BUILD_TYPE}} mode\")", target_name));
         } else if target_type == "header-only" {
             cmake_content.push(format!("add_library({} INTERFACE)", cmake_target_name));
+
+            // No output name for interface libraries as they don't produce binaries
         }
 
         // Add configuration-specific preprocessor definitions to this target directly

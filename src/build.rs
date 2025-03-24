@@ -32,14 +32,15 @@ pub fn configure_project(
     // Get compiler and build paths
     let compiler_label = get_effective_compiler_label(config);
     let build_dir = config.build.build_dir.as_deref().unwrap_or("build");
+    let build_type = get_build_type(config, config_type);
     let build_path = if let Some(target) = cross_target {
-        project_path.join(format!("{}-{}", build_dir, target))
+        project_path.join(format!("{}-{}-{}", build_dir, build_type.to_lowercase(), target))
     } else {
-        project_path.join(build_dir)
+        project_path.join(format!("{}-{}", build_dir, build_type.to_lowercase()))
     };
     fs::create_dir_all(&build_path)?;
 
-    // Get the build type
+    // Get the build type - CRITICAL FIX: Ensure it's properly propagated
     let build_type = get_build_type(config, config_type);
 
     // Create environment for hooks
@@ -130,12 +131,14 @@ pub fn configure_project(
     cmd.push("-G".to_string());
     cmd.push(generator.clone());
 
-    // Add build type - IMPORTANT: Ensure this is correctly set
+    // CRITICAL FIX: Add build type with correct case sensitivity - For single-config generators,
+    // CMAKE_BUILD_TYPE must be set explicitly
     cmd.push(format!("-DCMAKE_BUILD_TYPE={}", build_type));
 
     // Set this as a debug printf to check what's being used
     if !is_quiet() {
         print_substep(&format!("Using build configuration: {}", build_type));
+        print_substep(&format!("CMake command will set: CMAKE_BUILD_TYPE={}", build_type));
     }
 
     // Add vcpkg toolchain if available
@@ -629,8 +632,9 @@ pub fn execute_build_with_progress(
 }
 
 pub fn get_build_type(config: &ProjectConfig, requested_config: Option<&str>) -> String {
-    // If a specific configuration was requested, use that
+    // If a specific configuration was requested, use that (preserving case)
     if let Some(requested) = requested_config {
+        // Don't force uppercase, preserve original case
         return requested.to_string();
     }
 
@@ -641,9 +645,9 @@ pub fn get_build_type(config: &ProjectConfig, requested_config: Option<&str>) ->
 
     // Fallback to traditional debug/release
     if config.build.debug.unwrap_or(true) {
-        "Debug".to_string()
+        "Debug".to_string()  // Use correct case instead of "DEBUG"
     } else {
-        "Release".to_string()
+        "Release".to_string() // Use correct case instead of "RELEASE"
     }
 }
 
@@ -895,8 +899,13 @@ pub fn count_matching_files(dir: &Path, regex: &regex::Regex) -> Result<usize, B
 pub fn get_config_specific_options(config: &ProjectConfig, build_type: &str) -> Vec<String> {
     let mut options = Vec::new();
 
+    // Use the build_type as a define directly
+    options.push(format!("-D{}_BUILD=1", build_type.to_uppercase()));
+
+    // Process config-specific settings from the project config file
     if let Some(configs) = &config.build.configs {
         if let Some(cfg_settings) = configs.get(build_type) {
+            // Process user-defined defines
             if let Some(defines) = &cfg_settings.defines {
                 for define in defines {
                     // Check if the define already has a value part (contains '=')
@@ -909,62 +918,68 @@ pub fn get_config_specific_options(config: &ProjectConfig, build_type: &str) -> 
                 }
             }
 
-            // 2) parse universal tokens for flags
+            // Process flags
             let is_msvc_style = is_msvc_style_for_config(config);
 
             if let Some(token_list) = &cfg_settings.flags {
                 let real_flags = parse_universal_flags(token_list, is_msvc_style);
                 if !real_flags.is_empty() {
-                    let joined = real_flags.join(" ");
+                    // Convert flags to a properly formatted string for CMake
+                    // Important: Don't mix format styles and don't use quotes improperly
+                    let flags_str = real_flags.join(" ");
+
                     if is_msvc_style {
+                        // MSVC-style - use :STRING to ensure proper quoting
+                        // Remove the double-quotes around the flags and let CMake handle it
                         options.push(format!(
                             "-DCMAKE_CXX_FLAGS_{}:STRING={}",
                             build_type.to_uppercase(),
-                            joined
+                            flags_str
                         ));
                         options.push(format!(
                             "-DCMAKE_C_FLAGS_{}:STRING={}",
                             build_type.to_uppercase(),
-                            joined
+                            flags_str
                         ));
                     } else {
+                        // GCC/Clang style - avoid single quotes which can cause issues
                         options.push(format!(
-                            "-DCMAKE_CXX_FLAGS_{}='{}'",
+                            "-DCMAKE_CXX_FLAGS_{}={}",
                             build_type.to_uppercase(),
-                            joined
+                            flags_str
                         ));
                         options.push(format!(
-                            "-DCMAKE_C_FLAGS_{}='{}'",
+                            "-DCMAKE_C_FLAGS_{}={}",
                             build_type.to_uppercase(),
-                            joined
+                            flags_str
                         ));
                     }
                 }
             }
 
-            // 3) handle link_flags, cmake_options, etc. as before
+            // Rest of the config options (linker flags, CMake options)
             if let Some(link_flags) = &cfg_settings.link_flags {
                 if !link_flags.is_empty() {
                     let link_str = link_flags.join(" ");
-                    if cfg!(windows) {
+                    if is_msvc_style {
                         options.push(format!(
-                            "-DCMAKE_EXE_LINKER_FLAGS_{}=\"{}\"",
+                            "-DCMAKE_EXE_LINKER_FLAGS_{}:STRING={}",
                             build_type.to_uppercase(),
                             link_str
                         ));
                         options.push(format!(
-                            "-DCMAKE_SHARED_LINKER_FLAGS_{}=\"{}\"",
+                            "-DCMAKE_SHARED_LINKER_FLAGS_{}:STRING={}",
                             build_type.to_uppercase(),
                             link_str
                         ));
                     } else {
                         options.push(format!(
-                            "-DCMAKE_EXE_LINKER_FLAGS_{}='{}'",
+                            "-DCMAKE_EXE_LINKER_FLAGS_{}={}",
                             build_type.to_uppercase(),
                             link_str
                         ));
                         options.push(format!(
-                            "-DCMAKE_SHARED_LINKER_FLAGS_{}='{}'",
+                            "-DCMAKE_SHARED_LINKER_FLAGS_{}={}",
                             build_type.to_uppercase(),
                             link_str
                         ));
@@ -976,6 +991,18 @@ pub fn get_config_specific_options(config: &ProjectConfig, build_type: &str) -> 
             }
         }
     }
+
+    // Add some verbose logging options for debugging
+    options.push("-DCMAKE_MESSAGE_LOG_LEVEL=STATUS".to_string());
+
+    // Debug output
+    if is_verbose() {
+        println!("Configuration options for build type {}: ", build_type);
+        for opt in &options {
+            println!("  {}", opt);
+        }
+    }
+
     options
 }
 
