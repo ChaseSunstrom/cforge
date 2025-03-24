@@ -9,6 +9,7 @@ use crate::{configure_project, count_project_source_files, ensure_build_tools, e
 use crate::config::{create_default_config, create_header_only_config, create_library_config, load_project_config, load_workspace_config, save_project_config, save_workspace_config, ProjectConfig, WorkspaceConfig, WorkspaceWithProjects};
 use crate::output_utils::{format_project_name, is_quiet, is_verbose, print_error, print_header, print_status, print_substep, print_success, print_warning, BuildProgress, ProgressBar};
 use crate::tools::{is_msvc_style_for_config, parse_universal_flags};
+use crate::utils::add_pch_support;
 use crate::workspace::build_dependency_graph;
 
 pub fn init_project(path: Option<&Path>, template: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
@@ -1287,8 +1288,7 @@ pub fn generate_cmake_lists(config: &ProjectConfig, project_path: &Path, variant
         // Enable PCH for this target if configured
         if let Some(pch_config) = &config.pch {
             if pch_config.enabled {
-                cmake_content.push(format!("# Enable PCH for target {}", cmake_target_name));
-                cmake_content.push(format!("target_enable_pch({})", cmake_target_name));
+                add_pch_support(&mut cmake_content, config, pch_config);
             }
         }
 
