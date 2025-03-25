@@ -5,6 +5,8 @@ use std::sync::{Arc, Mutex};
 use crate::config::{PCHConfig, PackageInstallState, ProjectConfig};
 use crate::output_utils::TimedProgressBar;
 
+
+
 pub fn is_executable(path: &Path) -> bool {
     // First check if the file exists
     if !path.exists() || !path.is_file() {

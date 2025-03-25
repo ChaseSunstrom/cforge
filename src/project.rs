@@ -1,13 +1,14 @@
 use std::collections::HashMap;
-use std::fs;
+use std::{env, fs};
 use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use colored::Colorize;
 use crate::{configure_project, count_project_source_files, ensure_build_tools, execute_build_with_progress, expand_output_tokens, get_active_variant, get_build_type, get_effective_compiler_label, is_executable, progress_bar, prompt, run_command, run_hooks, CFORGE_FILE, CMAKE_MIN_VERSION, DEFAULT_BIN_DIR, DEFAULT_BUILD_DIR, DEFAULT_LIB_DIR, WORKSPACE_FILE};
+use crate::commands::run_command_with_timeout;
 use crate::config::{create_default_config, create_header_only_config, create_library_config, load_project_config, load_workspace_config, save_project_config, save_workspace_config, ProjectConfig, WorkspaceConfig, WorkspaceWithProjects};
-use crate::output_utils::{format_project_name, is_quiet, is_verbose, print_error, print_header, print_status, print_substep, print_success, print_warning, BuildProgress, ProgressBar};
+use crate::output_utils::{format_project_name, has_command, is_quiet, is_verbose, print_error, print_header, print_status, print_substep, print_success, print_warning, BuildProgress, ProgressBar};
 use crate::tools::{is_msvc_style_for_config, parse_universal_flags};
 use crate::utils::add_pch_support;
 use crate::workspace::build_dependency_graph;
@@ -751,9 +752,6 @@ pub fn package_project(
         build_project(config, project_path, config_type, None, None, None)?;
     }
 
-    // Create packaging progress bar
-    let mut package_progress = ProgressBar::start("Creating package");
-
     // Run CPack to create package
     let mut cmd = vec!["cpack".to_string()];
 
@@ -768,6 +766,9 @@ pub fn package_project(
         cmd.push(pkg_upper.clone());
         pkg_upper
     } else {
+        // Explicitly set ZIP as the default format
+        cmd.push("-G".to_string());
+        cmd.push("ZIP".to_string());
         "ZIP".to_string() // Default format
     };
 
@@ -776,60 +777,342 @@ pub fn package_project(
         print_substep(&format!("Running: {}", cmd.join(" ")));
     }
 
+    print_status("Creating package...");
+
     // Run cpack with output capture
-    let output = Command::new(&cmd[0])
-        .args(&cmd[1..])
-        .current_dir(&build_path)
-        .output()?;
+    let mut attempts = 0;
+    let max_attempts = 2; // Allow one retry after installing NSIS
 
-    // Parse the output to find the generated package filename
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    let combined_output = format!("{}{}", stdout, stderr);
+    while attempts < max_attempts {
+        attempts += 1;
 
-    // Update progress based on cpack output
-    package_progress.update(0.8);
+        let output = Command::new(&cmd[0])
+            .args(&cmd[1..])
+            .current_dir(&build_path)
+            .output()?;
 
-    // Find the package filename from CPack output
-    let package_file = combined_output
-        .lines()
-        .find_map(|line| {
-            if line.contains("package:") && line.contains("generated") {
-                line.split_whitespace()
-                    .find(|word| word.contains(&config.project.name) &&
-                        (word.ends_with(".zip") ||
-                            word.ends_with(".deb") ||
-                            word.ends_with(".rpm") ||
-                            word.ends_with(".tar.gz")))
-            } else {
-                None
+        // Parse the output to find the generated package filename
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let combined_output = format!("{}{}", stdout, stderr);
+
+        // Check if we need to install NSIS
+        if !output.status.success() &&
+            (combined_output.contains("Cannot find NSIS compiler") ||
+                combined_output.contains("Please install NSIS")) &&
+            attempts < max_attempts &&
+            (package_format == "NSIS" || package_format == "ZIP") {
+
+            // Try to install NSIS
+            print_warning("NSIS is required for packaging but not installed",
+                          Some("Attempting to install NSIS automatically"));
+
+            let install_success = install_nsis()?;
+
+            if !install_success {
+                if package_format == "NSIS" {
+                    // If we explicitly requested NSIS, fail
+                    print_error("Failed to install NSIS", None,
+                                Some("Please install it manually from http://nsis.sourceforge.net"));
+                    return Err("Failed to install NSIS. Please install it manually.".into());
+                } else {
+                    // Otherwise, fall back to ZIP format
+                    print_warning("Failed to install NSIS, falling back to ZIP format", None);
+                    // Remove the -G option and replace with ZIP
+                    if let Some(g_index) = cmd.iter().position(|arg| arg == "-G") {
+                        if g_index + 1 < cmd.len() {
+                            cmd[g_index + 1] = "ZIP".to_string();
+                        }
+                    } else {
+                        cmd.push("-G".to_string());
+                        cmd.push("ZIP".to_string());
+                    }
+                }
             }
-        })
-        .unwrap_or_else(|| "package file");
 
-    // Complete the progress bar
-    if output.status.success() {
-        package_progress.success();
+            // Continue to the next attempt
+            print_status("Retrying package creation...");
+            continue;
+        }
 
-        // Show success info in CForge style
-        print_success(&format!("Package created successfully"), None);
-        print_substep(&format!("Format: {}", package_format));
-        print_substep(&format!("File: {}", package_file));
+        // Find the package filename from CPack output
+        let package_file = combined_output
+            .lines()
+            .find_map(|line| {
+                if line.contains("package:") && line.contains("generated") {
+                    line.split_whitespace()
+                        .find(|word| word.contains(&config.project.name) &&
+                            (word.ends_with(".zip") ||
+                                word.ends_with(".exe") ||
+                                word.ends_with(".deb") ||
+                                word.ends_with(".rpm") ||
+                                word.ends_with(".tar.gz")))
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_else(|| "package file");
 
-        Ok(())
-    } else {
-        package_progress.failure("Packaging failed");
+        // Complete the operation
+        if output.status.success() {
+            print_success("Package created successfully", None);
+            print_substep(&format!("Format: {}", package_format));
+            print_substep(&format!("File: {}", package_file));
 
-        // Show full output for debugging in verbose mode
-        if is_verbose() {
-            print_substep("CPack output:");
-            for line in combined_output.lines() {
-                println!("  {}", line);
+            return Ok(());
+        } else if attempts >= max_attempts {
+            print_error("Packaging failed", None, None);
+
+            // Show full output for debugging in verbose mode
+            if is_verbose() {
+                print_substep("CPack output:");
+                for line in combined_output.lines() {
+                    println!("  {}", line);
+                }
+            }
+
+            return Err(format!("CPack failed with exit code: {}", output.status).into());
+        }
+    }
+
+    // This should not be reached, but just in case
+    print_error("Packaging failed after retries", None, None);
+    Err("Packaging failed after all attempts".into())
+}
+
+fn install_nsis() -> Result<bool, Box<dyn std::error::Error>> {
+    print_header("Installing NSIS Package Creator", None);
+
+    // Different install methods based on platform
+    if cfg!(target_os = "windows") {
+        // For Windows, try to use Winget first
+        if has_command("winget") {
+            print_status("Attempting to install NSIS using Windows Package Manager (winget)");
+
+            let result = run_command_with_timeout(
+                vec![
+                    "winget".to_string(),
+                    "install".to_string(),
+                    "--id".to_string(),
+                    "NSIS.NSIS".to_string()
+                ],
+                None,
+                None,
+                180  // 3 minute timeout for download and install
+            );
+
+            match result {
+                Ok(_) => {
+                    print_success("Successfully installed NSIS using winget", None);
+                    return Ok(true);
+                },
+                Err(e) => {
+                    print_warning(&format!("Failed to install NSIS using winget: {}", e),
+                                  Some("Trying alternative installation methods"));
+                    // Fall through to alternative methods
+                }
             }
         }
 
-        Err(format!("CPack failed with exit code: {}", output.status).into())
+        // Try chocolatey if available
+        if has_command("choco") {
+            print_status("Attempting to install NSIS using Chocolatey");
+
+            let result = run_command_with_timeout(
+                vec![
+                    "choco".to_string(),
+                    "install".to_string(),
+                    "nsis".to_string(),
+                    "-y".to_string()
+                ],
+                None,
+                None,
+                180
+            );
+
+            match result {
+                Ok(_) => {
+                    print_success("Successfully installed NSIS using Chocolatey", None);
+                    return Ok(true);
+                },
+                Err(e) => {
+                    print_warning(&format!("Failed to install NSIS using Chocolatey: {}", e),
+                                  Some("Trying direct download as last resort"));
+                    // Fall through to direct download as last resort
+                }
+            }
+        }
+
+        // Direct download as last resort - we'll use PowerShell
+        print_status("Downloading NSIS installer directly");
+
+        // Create temp directory for download
+        let temp_dir = env::temp_dir().join("cforge_nsis_install");
+        fs::create_dir_all(&temp_dir)?;
+
+        // PowerShell command to download
+        let download_script = format!(
+            "$ProgressPreference = 'SilentlyContinue'; \
+             Invoke-WebRequest -Uri 'https://sourceforge.net/projects/nsis/files/NSIS%203/3.08/nsis-3.08-setup.exe/download' \
+             -OutFile '{}'",
+            temp_dir.join("nsis-setup.exe").to_string_lossy()
+        );
+
+        print_substep("Downloading NSIS from SourceForge");
+        let result = run_command_with_timeout(
+            vec![
+                "powershell".to_string(),
+                "-Command".to_string(),
+                download_script
+            ],
+            None,
+            None,
+            120
+        );
+
+        if result.is_err() {
+            print_error("Failed to download NSIS installer", None,
+                        Some("Check your internet connection or try manual installation"));
+            return Ok(false);
+        }
+
+        print_substep("Download completed successfully");
+
+        // Now run the installer
+        print_status("Installing NSIS (this may take a moment)");
+
+        // Run the installer silently
+        let result = run_command_with_timeout(
+            vec![
+                temp_dir.join("nsis-setup.exe").to_string_lossy().to_string(),
+                "/S".to_string() // Silent install
+            ],
+            None,
+            None,
+            180
+        );
+
+        match result {
+            Ok(_) => {
+                print_success("NSIS installation completed successfully", None);
+
+                // Update PATH to include NSIS - this won't affect the current process
+                // but we'll inform the user
+                print_warning(
+                    "NSIS installed, but PATH may need to be updated",
+                    Some("You may need to restart your terminal for NSIS to be available")
+                );
+
+                // Try to add to PATH for current process
+                if let Ok(program_files) = env::var("ProgramFiles(x86)") {
+                    let nsis_path = Path::new(&program_files).join("NSIS");
+                    if nsis_path.exists() {
+                        if let Ok(old_path) = env::var("PATH") {
+                            env::set_var("PATH", format!("{};{}", old_path, nsis_path.to_string_lossy()));
+                            print_substep(&format!("Added {} to current PATH", nsis_path.display()));
+                        }
+                    }
+                }
+
+                return Ok(true);
+            },
+            Err(e) => {
+                print_error(&format!("Failed to install NSIS: {}", e), None,
+                            Some("Try installing manually from http://nsis.sourceforge.net"));
+                return Ok(false);
+            }
+        }
+    } else if cfg!(target_os = "macos") {
+        // For macOS, try Homebrew
+        if has_command("brew") {
+            print_status("Installing NSIS using Homebrew");
+
+            let result = run_command_with_timeout(
+                vec!["brew".to_string(), "install".to_string(), "makensis".to_string()],
+                None,
+                None,
+                180
+            );
+
+            match result {
+                Ok(_) => {
+                    print_success("Successfully installed NSIS using Homebrew", None);
+                    return Ok(true);
+                },
+                Err(e) => {
+                    print_error(&format!("Failed to install NSIS: {}", e), None,
+                                Some("Try installing manually from http://nsis.sourceforge.net"));
+                    return Ok(false);
+                }
+            }
+        } else {
+            print_warning("Homebrew not found", Some("Please install Homebrew or NSIS manually"));
+        }
+    } else {
+        // For Linux
+        print_status("Installing NSIS on Linux");
+
+        // Try apt first
+        print_substep("Trying apt package manager");
+        let apt_update = run_command_with_timeout(
+            vec!["sudo".to_string(), "apt-get".to_string(), "update".to_string()],
+            None,
+            None,
+            60
+        );
+
+        if apt_update.is_ok() {
+            let result = run_command_with_timeout(
+                vec!["sudo".to_string(), "apt-get".to_string(), "install".to_string(), "-y".to_string(), "nsis".to_string()],
+                None,
+                None,
+                180
+            );
+
+            match result {
+                Ok(_) => {
+                    print_success("Successfully installed NSIS using apt", None);
+                    return Ok(true);
+                },
+                Err(e) => {
+                    print_warning(&format!("apt installation failed: {}", e), Some("Trying alternative package managers"));
+                    // Try other package managers
+                }
+            }
+        }
+
+        // Try dnf/yum for Red Hat based systems
+        if has_command("dnf") {
+            print_substep("Trying dnf package manager");
+
+            let result = run_command_with_timeout(
+                vec!["sudo".to_string(), "dnf".to_string(), "install".to_string(), "-y".to_string(), "nsis".to_string()],
+                None,
+                None,
+                180
+            );
+
+            match result {
+                Ok(_) => {
+                    print_success("Successfully installed NSIS using dnf", None);
+                    return Ok(true);
+                },
+                Err(e) => {
+                    print_error(&format!("Failed to install NSIS using dnf: {}", e), None,
+                                Some("Try installing manually from http://nsis.sourceforge.net"));
+                    return Ok(false);
+                }
+            }
+        }
     }
+
+    // If we got here, we couldn't install NSIS
+    print_warning(
+        "Could not install NSIS automatically",
+        Some("Please install it manually from http://nsis.sourceforge.net")
+    );
+
+    Ok(false)
 }
 
 pub fn generate_package_config(project_path: &Path, project_name: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -1499,28 +1782,53 @@ pub fn generate_cmake_lists(config: &ProjectConfig, project_path: &Path, variant
 
     // Add installation instructions if not already added
     // Add installation instructions if not already added
+    // Add installation instructions if not already added
     let has_install_commands = cmake_content.iter().any(|line| line.contains("install("));
     if !has_install_commands && project_config.project_type == "executable" {
         cmake_content.push("# Installation".to_string());
-        // Use the modified target names for installation
+
+        // For CPack to work, we need to install the actual targets, not just files
         for target_name in config.targets.keys() {
             let cmake_target_name = target_name_map.get(target_name).unwrap_or(target_name);
 
-            // Use generator expressions to get correct config-specific binary
-            cmake_content.push(format!("install(TARGETS {} DESTINATION bin", cmake_target_name));
-            cmake_content.push("  CONFIGURATIONS $<CONFIG>".to_string());
+            // Install the target directly with COMPONENT specification for CPack
+            cmake_content.push(format!("install(TARGETS {}", cmake_target_name));
+            cmake_content.push("  RUNTIME DESTINATION bin".to_string());
+            cmake_content.push("  COMPONENT Runtime".to_string());
             cmake_content.push(")".to_string());
         }
+
+        // Also install any additional resources the project might have
+        cmake_content.push("# Install additional resources".to_string());
+        cmake_content.push("install(DIRECTORY \"${CMAKE_SOURCE_DIR}/resources\"".to_string());
+        cmake_content.push("  DESTINATION share/${PROJECT_NAME}".to_string());
+        cmake_content.push("  OPTIONAL".to_string());
+        cmake_content.push("  COMPONENT Resources".to_string());
+        cmake_content.push(")".to_string());
+
         cmake_content.push(String::new());
     }
 
-    // Add CPack configuration for packaging
+    // Enhance CPack configuration for proper packaging
     cmake_content.push("# Packaging with CPack".to_string());
     cmake_content.push("include(CPack)".to_string());
     cmake_content.push("set(CPACK_PACKAGE_NAME \"${PROJECT_NAME}\")".to_string());
     cmake_content.push("set(CPACK_PACKAGE_VERSION \"${PROJECT_VERSION}\")".to_string());
     cmake_content.push("set(CPACK_PACKAGE_VENDOR \"cforge User\")".to_string());
     cmake_content.push("set(CPACK_PACKAGE_DESCRIPTION_SUMMARY \"${PROJECT_NAME} - ${PROJECT_DESCRIPTION}\")".to_string());
+
+    // Add more specific CPack configuration
+    cmake_content.push("set(CPACK_ARCHIVE_COMPONENT_INSTALL ON)".to_string());
+    cmake_content.push("set(CPACK_COMPONENTS_ALL Runtime Resources)".to_string());
+    cmake_content.push("set(CPACK_COMPONENT_RUNTIME_DISPLAY_NAME \"Runtime\")".to_string());
+    cmake_content.push("set(CPACK_COMPONENT_RESOURCES_DISPLAY_NAME \"Resources\")".to_string());
+    cmake_content.push("set(CPACK_PACKAGING_INSTALL_PREFIX \"/\")".to_string());
+
+    // For libraries, install headers as well
+    if project_config.project_type != "executable" {
+        cmake_content.push("set(CPACK_COMPONENT_HEADERS_DISPLAY_NAME \"C++ Development Headers\")".to_string());
+        cmake_content.push("set(CPACK_COMPONENTS_ALL Runtime Headers)".to_string());
+    }
 
     // Write the CMakeLists.txt file
     let cmake_file = project_path.join("CMakeLists.txt");
