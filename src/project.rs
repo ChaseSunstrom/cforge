@@ -738,32 +738,98 @@ pub fn package_project(
     package_type: Option<&str>
 ) -> Result<(), Box<dyn std::error::Error>> {
     let build_dir = config.build.build_dir.as_deref().unwrap_or(DEFAULT_BUILD_DIR);
-    let build_path = project_path.join(build_dir);
+    let build_type = get_build_type(config, config_type);
+
+    // Use the correct build path with configuration
+    let build_path = project_path.join(format!("{}-{}", build_dir, build_type.to_lowercase()));
+
+    print_header(&format!("Packaging: {}", format_project_name(&config.project.name)), None);
 
     // Make sure the project is built
     if !build_path.exists() || !build_path.join("CMakeCache.txt").exists() {
+        print_warning("Project not built yet. Building first...", None);
         build_project(config, project_path, config_type, None, None, None)?;
     }
+
+    // Create packaging progress bar
+    let mut package_progress = ProgressBar::start("Creating package");
 
     // Run CPack to create package
     let mut cmd = vec!["cpack".to_string()];
 
     // Add configuration (Debug/Release)
-    let build_type = get_build_type(config, config_type);
     cmd.push("-C".to_string());
-    cmd.push(build_type);
+    cmd.push(build_type.clone());
 
-    // Add package type if specified
-    if let Some(pkg_type) = package_type {
+    // Add package type if specified - convert to uppercase
+    let package_format = if let Some(pkg_type) = package_type {
+        let pkg_upper = pkg_type.to_uppercase();
         cmd.push("-G".to_string());
-        cmd.push(pkg_type.to_string());
+        cmd.push(pkg_upper.clone());
+        pkg_upper
+    } else {
+        "ZIP".to_string() // Default format
+    };
+
+    // For verbose logging, show the command
+    if is_verbose() {
+        print_substep(&format!("Running: {}", cmd.join(" ")));
     }
 
-    // Run cpack
-    run_command(cmd, Some(&build_path.to_string_lossy().to_string()), None)?;
+    // Run cpack with output capture
+    let output = Command::new(&cmd[0])
+        .args(&cmd[1..])
+        .current_dir(&build_path)
+        .output()?;
 
-    println!("{}", "Project packaged successfully".green());
-    Ok(())
+    // Parse the output to find the generated package filename
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let combined_output = format!("{}{}", stdout, stderr);
+
+    // Update progress based on cpack output
+    package_progress.update(0.8);
+
+    // Find the package filename from CPack output
+    let package_file = combined_output
+        .lines()
+        .find_map(|line| {
+            if line.contains("package:") && line.contains("generated") {
+                line.split_whitespace()
+                    .find(|word| word.contains(&config.project.name) &&
+                        (word.ends_with(".zip") ||
+                            word.ends_with(".deb") ||
+                            word.ends_with(".rpm") ||
+                            word.ends_with(".tar.gz")))
+            } else {
+                None
+            }
+        })
+        .unwrap_or_else(|| "package file");
+
+    // Complete the progress bar
+    if output.status.success() {
+        package_progress.success();
+
+        // Show success info in CForge style
+        print_success(&format!("Package created successfully"), None);
+        print_substep(&format!("Format: {}", package_format));
+        print_substep(&format!("File: {}", package_file));
+
+        Ok(())
+    } else {
+        package_progress.failure("Packaging failed");
+
+        // Show full output for debugging in verbose mode
+        if is_verbose() {
+            print_substep("CPack output:");
+            for line in combined_output.lines() {
+                println!("  {}", line);
+            }
+        }
+
+        Err(format!("CPack failed with exit code: {}", output.status).into())
+    }
 }
 
 pub fn generate_package_config(project_path: &Path, project_name: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -1432,13 +1498,18 @@ pub fn generate_cmake_lists(config: &ProjectConfig, project_path: &Path, variant
     }
 
     // Add installation instructions if not already added
+    // Add installation instructions if not already added
     let has_install_commands = cmake_content.iter().any(|line| line.contains("install("));
     if !has_install_commands && project_config.project_type == "executable" {
         cmake_content.push("# Installation".to_string());
         // Use the modified target names for installation
         for target_name in config.targets.keys() {
             let cmake_target_name = target_name_map.get(target_name).unwrap_or(target_name);
-            cmake_content.push(format!("install(TARGETS {} DESTINATION bin)", cmake_target_name));
+
+            // Use generator expressions to get correct config-specific binary
+            cmake_content.push(format!("install(TARGETS {} DESTINATION bin", cmake_target_name));
+            cmake_content.push("  CONFIGURATIONS $<CONFIG>".to_string());
+            cmake_content.push(")".to_string());
         }
         cmake_content.push(String::new());
     }
