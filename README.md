@@ -1,3 +1,18 @@
+<div align="center">
+
+# ⚠️ WARNING: BETA VERSION ⚠️
+
+</div>
+
+> 🚨 **This software is currently in BETA.** Features may be incomplete, contain bugs, or change without notice. Use at your own risk.
+>
+> - Not recommended for production environments
+> - Data loss or corruption may occur
+> - APIs are subject to change without warning
+> - Limited support available
+>
+> Please report any bugs or issues in the [Issues](https://github.com/ChaseSunstrom/cforge/issues) section.
+
 # CForge
 
 ![Version](https://img.shields.io/badge/version-1.4.0-blue.svg)
