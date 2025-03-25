@@ -4,7 +4,7 @@
 
 </div>
 
-> 🚨 **This software is currently in BETA.** Features may be incomplete, contain bugs, or change without notice. Use at your own risk.
+> 🚨 **This software is currently in BETA.** Features may be incomplete, contain bugs, or change without notice. As well as be frequently updated. Use at your own risk.
 >
 > - Not recommended for production environments
 > - Data loss or corruption may occur
