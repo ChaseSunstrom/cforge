@@ -1,0 +1,27 @@
+{
+  "id": "testing",
+  "title": "Testing",
+  "description": "🧪 Testing",
+  "source": "@site/docs/testing.md",
+  "sourceDirName": ".",
+  "slug": "/testing",
+  "permalink": "/cforge/docs/testing",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/chasesunstrom/cforge/edit/main/docs/docs/testing.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "testing",
+    "title": "Testing"
+  },
+  "sidebar": "sidebar",
+  "previous": {
+    "title": "Scripts & Hooks",
+    "permalink": "/cforge/docs/scripts-hooks"
+  },
+  "next": {
+    "title": "Advanced Topics",
+    "permalink": "/cforge/docs/advanced-topics"
+  }
+}

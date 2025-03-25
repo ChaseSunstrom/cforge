@@ -93,11 +93,15 @@ const config = {
             items: [
               {
                 label: 'GitHub Discussions',
-                href: 'https://github.com/chasesunstrom/cforge/discussions',
+                href: 'https://github.com/ChaseSunstrom/cforge/discussions',
               },
               {
                 label: 'Discord',
-                href: 'https://discord.gg/your-server', // Add if you have one
+                href: 'https://discord.gg/2pMEZGNwaN',
+              },
+              {
+                label: 'Twitter',
+                href: 'https://twitter.com/chasesunstrom',
               },
             ],
           },
@@ -107,10 +111,6 @@ const config = {
               {
                 label: 'Blog',
                 to: '/blog',
-              },
-              {
-                label: 'GitHub',
-                href: 'https://github.com/chasesunstrom/cforge',
               },
             ],
           },

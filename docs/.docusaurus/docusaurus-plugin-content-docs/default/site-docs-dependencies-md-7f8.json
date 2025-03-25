@@ -1,0 +1,27 @@
+{
+  "id": "dependencies",
+  "title": "Working with Dependencies",
+  "description": "📦 Working with Dependencies",
+  "source": "@site/docs/dependencies.md",
+  "sourceDirName": ".",
+  "slug": "/dependencies",
+  "permalink": "/cforge/docs/dependencies",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/chasesunstrom/cforge/edit/main/docs/docs/dependencies.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "dependencies",
+    "title": "Working with Dependencies"
+  },
+  "sidebar": "sidebar",
+  "previous": {
+    "title": "Project Configuration",
+    "permalink": "/cforge/docs/project-configuration"
+  },
+  "next": {
+    "title": "Workspaces",
+    "permalink": "/cforge/docs/workspaces"
+  }
+}

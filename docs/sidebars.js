@@ -13,7 +13,7 @@
  Create as many sidebars as you want.
 
  */
-const sidebars = {
+ const sidebars = {
   sidebar: [
     {
       type: 'category',
@@ -24,12 +24,15 @@ const sidebars = {
         'installation',
         'quick-start',
         'command-reference',
-        'workspace-commands',
-        'advanced-configuration',
+        'project-configuration',
+        'dependencies',
+        'workspaces',
         'build-variants',
         'cross-compilation',
         'ide-integration',
         'scripts-hooks',
+        'testing',
+        'advanced-topics',
         'examples',
         'troubleshooting',
         'contributing',

@@ -1,0 +1,27 @@
+{
+  "id": "advanced-topics",
+  "title": "Advanced Topics",
+  "description": "🧩 Advanced Topics",
+  "source": "@site/docs/advanced-topics.md",
+  "sourceDirName": ".",
+  "slug": "/advanced-topics",
+  "permalink": "/cforge/docs/advanced-topics",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/chasesunstrom/cforge/edit/main/docs/docs/advanced-topics.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "advanced-topics",
+    "title": "Advanced Topics"
+  },
+  "sidebar": "sidebar",
+  "previous": {
+    "title": "Testing",
+    "permalink": "/cforge/docs/testing"
+  },
+  "next": {
+    "title": "Examples",
+    "permalink": "/cforge/docs/examples"
+  }
+}

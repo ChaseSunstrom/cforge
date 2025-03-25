@@ -1,5 +1,5 @@
 {
-  "/cforge/blog-881": {
+  "/cforge/blog-1d1": {
     "__comp": "a6aa9e1f",
     "__context": {
       "plugin": "36994c47"
@@ -7,19 +7,12 @@
     "sidebar": "814f3328",
     "items": [
       {
-        "content": "9977744e"
+        "content": "e0e2aafe"
       }
     ],
     "__props": "125de2b8"
   },
-  "/cforge/blog/archive-6ba": {
-    "__comp": "9e4087bc",
-    "__context": {
-      "plugin": "36994c47"
-    },
-    "__props": "7394520f"
-  },
-  "/cforge/blog/release-dc9": {
+  "/cforge/blog/announcing-cforge-beta-v1-4-0-9f9": {
     "__comp": "ccc49370",
     "__context": {
       "data": {
@@ -28,7 +21,14 @@
       "plugin": "36994c47"
     },
     "sidebar": "814f3328",
-    "content": "4ffdd8cd"
+    "content": "8802e98e"
+  },
+  "/cforge/blog/archive-6ba": {
+    "__comp": "9e4087bc",
+    "__context": {
+      "plugin": "36994c47"
+    },
+    "__props": "7394520f"
   },
   "/cforge/blog/tags-75b": {
     "__comp": "01a85c17",
@@ -38,7 +38,7 @@
     "sidebar": "814f3328",
     "__props": "a93ade8a"
   },
-  "/cforge/blog/tags/cforge-8a3": {
+  "/cforge/blog/tags/beta-988": {
     "__comp": "6875c492",
     "__context": {
       "plugin": "36994c47"
@@ -46,12 +46,25 @@
     "sidebar": "814f3328",
     "items": [
       {
-        "content": "9977744e"
+        "content": "e0e2aafe"
+      }
+    ],
+    "__props": "ac226e25"
+  },
+  "/cforge/blog/tags/cforge-b02": {
+    "__comp": "6875c492",
+    "__context": {
+      "plugin": "36994c47"
+    },
+    "sidebar": "814f3328",
+    "items": [
+      {
+        "content": "e0e2aafe"
       }
     ],
     "__props": "c413afb5"
   },
-  "/cforge/blog/tags/development-c54": {
+  "/cforge/blog/tags/release-adb": {
     "__comp": "6875c492",
     "__context": {
       "plugin": "36994c47"
@@ -59,47 +72,27 @@
     "sidebar": "814f3328",
     "items": [
       {
-        "content": "9977744e"
+        "content": "e0e2aafe"
       }
     ],
-    "__props": "14d2ea03"
+    "__props": "a79a15bf"
   },
-  "/cforge/blog/tags/rust-ea6": {
-    "__comp": "6875c492",
-    "__context": {
-      "plugin": "36994c47"
-    },
-    "sidebar": "814f3328",
-    "items": [
-      {
-        "content": "9977744e"
-      }
-    ],
-    "__props": "2daa58cc"
-  },
-  "/cforge/markdown-page-694": {
-    "__comp": "1f391b9e",
-    "__context": {
-      "plugin": "a7456010"
-    },
-    "content": "393be207"
-  },
-  "/cforge/docs-7a0": {
+  "/cforge/docs-955": {
     "__comp": "5e95c892",
     "__context": {
       "plugin": "aba21aa0"
     }
   },
-  "/cforge/docs-10a": {
+  "/cforge/docs-21a": {
     "__comp": "a7bd4aaa",
     "__props": "5e38ca63"
   },
-  "/cforge/docs-2ad": {
+  "/cforge/docs-1cc": {
     "__comp": "a94703ab"
   },
-  "/cforge/docs/advanced-configuration-58d": {
+  "/cforge/docs/advanced-topics-029": {
     "__comp": "17896441",
-    "content": "4f1a7bc5"
+    "content": "5d250c2b"
   },
   "/cforge/docs/build-variants-a86": {
     "__comp": "17896441",
@@ -116,6 +109,10 @@
   "/cforge/docs/cross-compilation-4e1": {
     "__comp": "17896441",
     "content": "3a34d351"
+  },
+  "/cforge/docs/dependencies-dc4": {
+    "__comp": "17896441",
+    "content": "7f85490b"
   },
   "/cforge/docs/examples-117": {
     "__comp": "17896441",
@@ -137,6 +134,10 @@
     "__comp": "17896441",
     "content": "ac5280f2"
   },
+  "/cforge/docs/project-configuration-c32": {
+    "__comp": "17896441",
+    "content": "449695dd"
+  },
   "/cforge/docs/quick-start-357": {
     "__comp": "17896441",
     "content": "72e14192"
@@ -145,13 +146,17 @@
     "__comp": "17896441",
     "content": "eedadc0c"
   },
+  "/cforge/docs/testing-bb3": {
+    "__comp": "17896441",
+    "content": "fbe93038"
+  },
   "/cforge/docs/troubleshooting-373": {
     "__comp": "17896441",
     "content": "9d9f8394"
   },
-  "/cforge/docs/workspace-commands-f44": {
+  "/cforge/docs/workspaces-546": {
     "__comp": "17896441",
-    "content": "5a8f7a10"
+    "content": "9b4cd6e8"
   },
   "/cforge/-e22": {
     "__comp": "c4f5d8e4",

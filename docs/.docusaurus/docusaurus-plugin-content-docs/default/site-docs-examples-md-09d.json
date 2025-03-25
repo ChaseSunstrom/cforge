@@ -1,7 +1,7 @@
 {
   "id": "examples",
   "title": "Examples",
-  "description": "🧩 Examples",
+  "description": "📚 Examples",
   "source": "@site/docs/examples.md",
   "sourceDirName": ".",
   "slug": "/examples",
@@ -17,8 +17,8 @@
   },
   "sidebar": "sidebar",
   "previous": {
-    "title": "Scripts & Hooks",
-    "permalink": "/cforge/docs/scripts-hooks"
+    "title": "Advanced Topics",
+    "permalink": "/cforge/docs/advanced-topics"
   },
   "next": {
     "title": "Troubleshooting",

@@ -4,25 +4,28 @@
         <title>cforge Blog</title>
         <link>https://chasesunstrom.github.io/cforge/blog</link>
         <description>cforge Blog</description>
-        <lastBuildDate>Tue, 18 Mar 2025 00:00:00 GMT</lastBuildDate>
+        <lastBuildDate>Tue, 25 Mar 2025 00:00:00 GMT</lastBuildDate>
         <docs>https://validator.w3.org/feed/docs/rss2.html</docs>
         <generator>https://github.com/jpmonette/feed</generator>
         <language>en</language>
         <item>
-            <title><![CDATA[CForge Release]]></title>
-            <link>https://chasesunstrom.github.io/cforge/blog/release</link>
-            <guid>https://chasesunstrom.github.io/cforge/blog/release</guid>
-            <pubDate>Tue, 18 Mar 2025 00:00:00 GMT</pubDate>
-            <description><![CDATA[📌 Features of CForge]]></description>
-            <content:encoded><![CDATA[<h2 class="anchor anchorWithStickyNavbar_LWe7" id="-features-of-cforge">📌 Features of CForge<a href="https://chasesunstrom.github.io/cforge/blog/release#-features-of-cforge" class="hash-link" aria-label="Direct link to 📌 Features of CForge" title="Direct link to 📌 Features of CForge">​</a></h2>
+            <title><![CDATA[Announcing CForge Beta-v1.4.0]]></title>
+            <link>https://chasesunstrom.github.io/cforge/blog/announcing-cforge-beta-v1-4-0</link>
+            <guid>https://chasesunstrom.github.io/cforge/blog/announcing-cforge-beta-v1-4-0</guid>
+            <pubDate>Tue, 25 Mar 2025 00:00:00 GMT</pubDate>
+            <description><![CDATA[Today we're excited to announce the beta release of CForge, a TOML-based build system for C/C++ projects!]]></description>
+            <content:encoded><![CDATA[<p>Today we're excited to announce the beta release of CForge, a TOML-based build system for C/C++ projects!</p>
+<h2 class="anchor anchorWithStickyNavbar_LWe7" id="whats-included">What's Included<a href="https://chasesunstrom.github.io/cforge/blog/announcing-cforge-beta-v1-4-0#whats-included" class="hash-link" aria-label="Direct link to What's Included" title="Direct link to What's Included">​</a></h2>
 <ul>
-<li>TOML-based configuration</li>
-<li>CMake and vcpkg integration</li>
-<li>Cross-platform support</li>
-</ul>]]></content:encoded>
+<li>Simple TOML Configuration</li>
+<li>Multi-platform support</li>
+<li>Dependency Management</li>
+<li>And much more...</li>
+</ul>
+<p>Give it a try and let us know what you think!</p>]]></content:encoded>
             <category>cforge</category>
-            <category>development</category>
-            <category>rust</category>
+            <category>release</category>
+            <category>beta</category>
         </item>
     </channel>
 </rss>

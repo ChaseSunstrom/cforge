@@ -11,8 +11,8 @@
           "mainDocId": "intro",
           "docs": [
             {
-              "id": "advanced-configuration",
-              "path": "/cforge/docs/advanced-configuration",
+              "id": "advanced-topics",
+              "path": "/cforge/docs/advanced-topics",
               "sidebar": "sidebar"
             },
             {
@@ -33,6 +33,11 @@
             {
               "id": "cross-compilation",
               "path": "/cforge/docs/cross-compilation",
+              "sidebar": "sidebar"
+            },
+            {
+              "id": "dependencies",
+              "path": "/cforge/docs/dependencies",
               "sidebar": "sidebar"
             },
             {
@@ -61,6 +66,11 @@
               "sidebar": "sidebar"
             },
             {
+              "id": "project-configuration",
+              "path": "/cforge/docs/project-configuration",
+              "sidebar": "sidebar"
+            },
+            {
               "id": "quick-start",
               "path": "/cforge/docs/quick-start",
               "sidebar": "sidebar"
@@ -71,13 +81,18 @@
               "sidebar": "sidebar"
             },
             {
+              "id": "testing",
+              "path": "/cforge/docs/testing",
+              "sidebar": "sidebar"
+            },
+            {
               "id": "troubleshooting",
               "path": "/cforge/docs/troubleshooting",
               "sidebar": "sidebar"
             },
             {
-              "id": "workspace-commands",
-              "path": "/cforge/docs/workspace-commands",
+              "id": "workspaces",
+              "path": "/cforge/docs/workspaces",
               "sidebar": "sidebar"
             }
           ],

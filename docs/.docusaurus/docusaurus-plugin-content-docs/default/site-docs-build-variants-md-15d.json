@@ -17,8 +17,8 @@
   },
   "sidebar": "sidebar",
   "previous": {
-    "title": "Advanced Configuration",
-    "permalink": "/cforge/docs/advanced-configuration"
+    "title": "Workspaces",
+    "permalink": "/cforge/docs/workspaces"
   },
   "next": {
     "title": "Cross-Compilation",

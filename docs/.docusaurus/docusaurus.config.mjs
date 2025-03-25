@@ -26,7 +26,7 @@ export default {
       "classic",
       {
         "docs": {
-          "sidebarPath": "C:\\Users\\casun\\cforge\\docs\\sidebars.js",
+          "sidebarPath": "C:\\cforge\\docs\\sidebars.js",
           "editUrl": "https://github.com/chasesunstrom/cforge/edit/main/docs/"
         },
         "blog": {
@@ -35,7 +35,7 @@ export default {
           "authorsMapPath": "blog/authors.yml"
         },
         "theme": {
-          "customCss": "C:\\Users\\casun\\cforge\\docs\\src\\css\\custom.css"
+          "customCss": "C:\\cforge\\docs\\src\\css\\custom.css"
         }
       }
     ]
@@ -85,11 +85,15 @@ export default {
           "items": [
             {
               "label": "GitHub Discussions",
-              "href": "https://github.com/chasesunstrom/cforge/discussions"
+              "href": "https://github.com/ChaseSunstrom/cforge/discussions"
             },
             {
               "label": "Discord",
-              "href": "https://discord.gg/your-server"
+              "href": "https://discord.gg/2pMEZGNwaN"
+            },
+            {
+              "label": "Twitter",
+              "href": "https://twitter.com/chasesunstrom"
             }
           ]
         },
@@ -99,10 +103,6 @@ export default {
             {
               "label": "Blog",
               "to": "/blog"
-            },
-            {
-              "label": "GitHub",
-              "href": "https://github.com/chasesunstrom/cforge"
             }
           ]
         }

@@ -1,0 +1,27 @@
+{
+  "id": "project-configuration",
+  "title": "Project Configuration",
+  "description": "📋 Project Configuration",
+  "source": "@site/docs/project-configuration.md",
+  "sourceDirName": ".",
+  "slug": "/project-configuration",
+  "permalink": "/cforge/docs/project-configuration",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/chasesunstrom/cforge/edit/main/docs/docs/project-configuration.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "project-configuration",
+    "title": "Project Configuration"
+  },
+  "sidebar": "sidebar",
+  "previous": {
+    "title": "Command Reference",
+    "permalink": "/cforge/docs/command-reference"
+  },
+  "next": {
+    "title": "Working with Dependencies",
+    "permalink": "/cforge/docs/dependencies"
+  }
+}

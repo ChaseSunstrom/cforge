@@ -5,7 +5,7 @@ title: Build Variants
 
 ## 🚩 Build Variants
 
-Define variants to optimize builds:
+Build variants allow for different build configurations beyond just Debug/Release:
 
 ```toml
 [variants]
@@ -18,3 +18,13 @@ description = "Standard build"
 description = "Optimized build"
 defines = ["HIGH_PERF=1"]
 flags = ["OPTIMIZE_MAX", "LTO"]
+
+[variants.variants.memory_safety]
+description = "Build with memory safety checks"
+defines = ["ENABLE_MEMORY_SAFETY=1"]
+flags = ["MEMSAFE"] 
+```
+
+Building with variants:
+
+`` cforge build --variant performance ``

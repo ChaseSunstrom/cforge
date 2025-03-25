@@ -1,0 +1,27 @@
+{
+  "id": "workspaces",
+  "title": "Workspaces",
+  "description": "🗂️ Workspaces",
+  "source": "@site/docs/workspaces.md",
+  "sourceDirName": ".",
+  "slug": "/workspaces",
+  "permalink": "/cforge/docs/workspaces",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/chasesunstrom/cforge/edit/main/docs/docs/workspaces.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "workspaces",
+    "title": "Workspaces"
+  },
+  "sidebar": "sidebar",
+  "previous": {
+    "title": "Working with Dependencies",
+    "permalink": "/cforge/docs/dependencies"
+  },
+  "next": {
+    "title": "Build Variants",
+    "permalink": "/cforge/docs/build-variants"
+  }
+}
