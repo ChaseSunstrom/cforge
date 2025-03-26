@@ -68,7 +68,8 @@ CForge is a modern build system designed to simplify C/C++ project management. I
 ### From Cargo
 
 ```bash
-cargo install cforge
+cargo install cforge@version-beta
+# For example cforge@1.4.2-beta
 ```
 
 ### From Source
