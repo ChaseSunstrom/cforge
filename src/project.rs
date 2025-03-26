@@ -752,12 +752,23 @@ pub fn package_project(
         build_project(config, project_path, config_type, None, None, None)?;
     }
 
+    let description_filename = "CPack.GenericDescription.txt";
+    let description_file = build_path.join(description_filename);
+
+    fs::write(&description_file, "DESCRIPTION\n===========\n\nThis package was created by CForge.")?;
+
+    if !is_quiet() {
+        print_substep(&format!("Created description file at: {}", description_file.display()));
+    }
+
     // Run CPack to create package
     let mut cmd = vec!["cpack".to_string()];
 
     // Add configuration (Debug/Release)
     cmd.push("-C".to_string());
     cmd.push(build_type.clone());
+    cmd.push("-D".to_string());
+    cmd.push(format!("CPACK_PACKAGE_DESCRIPTION_FILE=CPack.GenericDescription.txt"));
 
     // Add package type if specified - convert to uppercase
     let package_format = if let Some(pkg_type) = package_type {
@@ -1810,12 +1821,19 @@ pub fn generate_cmake_lists(config: &ProjectConfig, project_path: &Path, variant
     }
 
     // Enhance CPack configuration for proper packaging
+    // In your generate_cmake_lists function, in the CPack section:
     cmake_content.push("# Packaging with CPack".to_string());
     cmake_content.push("include(CPack)".to_string());
     cmake_content.push("set(CPACK_PACKAGE_NAME \"${PROJECT_NAME}\")".to_string());
     cmake_content.push("set(CPACK_PACKAGE_VERSION \"${PROJECT_VERSION}\")".to_string());
     cmake_content.push("set(CPACK_PACKAGE_VENDOR \"cforge User\")".to_string());
     cmake_content.push("set(CPACK_PACKAGE_DESCRIPTION_SUMMARY \"${PROJECT_NAME} - ${PROJECT_DESCRIPTION}\")".to_string());
+
+    // Create the description file early in CMake configuration
+    cmake_content.push("# Create a default description file for CPack".to_string());
+    cmake_content.push("file(WRITE \"${CMAKE_CURRENT_BINARY_DIR}/CPack.GenericDescription.txt\"".to_string());
+    cmake_content.push("\"DESCRIPTION\\n===========\\n\\nThis package was created by CForge.\")".to_string());
+    cmake_content.push("set(CPACK_PACKAGE_DESCRIPTION_FILE \"${CMAKE_CURRENT_BINARY_DIR}/CPack.GenericDescription.txt\")".to_string());
 
     // Add more specific CPack configuration
     cmake_content.push("set(CPACK_ARCHIVE_COMPONENT_INSTALL ON)".to_string());
