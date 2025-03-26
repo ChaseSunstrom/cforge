@@ -1,6 +1,6 @@
 use crate::cross_compile::{get_cross_compilation_env, setup_cross_compilation};
 use std::collections::{HashMap, HashSet};
-use std::{fs, thread};
+use std::{env, fs, thread};
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
@@ -38,6 +38,13 @@ pub fn configure_project(
     } else {
         project_path.join(format!("{}-{}", build_dir, build_type.to_lowercase()))
     };
+    let build_path_rel = if build_path.is_absolute() {
+        // Convert to a path relative to the current directory if possible
+        build_path.strip_prefix(env::current_dir().unwrap_or(project_path.to_path_buf()))
+            .unwrap_or(&build_path)
+    } else {
+        &build_path
+    };
     fs::create_dir_all(&build_path)?;
 
     // Get the build type - CRITICAL FIX: Ensure it's properly propagated
@@ -46,7 +53,7 @@ pub fn configure_project(
     // Create environment for hooks
     let mut hook_env = HashMap::new();
     hook_env.insert("PROJECT_PATH".to_string(), project_path.to_string_lossy().to_string());
-    hook_env.insert("BUILD_PATH".to_string(), build_path.to_string_lossy().to_string());
+    hook_env.insert("BUILD_PATH".to_string(), build_path_rel.to_string_lossy().to_string());
     hook_env.insert("CONFIG_TYPE".to_string(), build_type.clone());
 
     if let Some(v) = variant_name {
