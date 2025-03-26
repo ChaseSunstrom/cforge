@@ -12,7 +12,7 @@ import {themes as prismThemes} from 'prism-react-renderer';
 const config = {
     title: 'cforge',
     tagline: 'A fast, cross-platform build tool for C and C++ written in Rust',
-    favicon: 'img/cforge.png',  
+    favicon: 'img/logo.svg',  
 
   url: 'https://chasesunstrom.github.io', 
   baseUrl: '/cforge/',
@@ -53,7 +53,7 @@ const config = {
   themeConfig:
     /** @type {import('@docusaurus/preset-classic').ThemeConfig} */
     ({
-      image: 'img/cforge-social.png',
+      image: 'img/cforge.png',
       navbar: {
         title: 'cforge',
         logo: {
@@ -112,6 +112,10 @@ const config = {
                 label: 'Blog',
                 to: '/blog',
               },
+              {
+                label: 'Crate',
+                href: 'https://crates.io/crates/cforge'
+              }
             ],
           },
         ],

@@ -6,7 +6,7 @@
 export default {
   "title": "cforge",
   "tagline": "A fast, cross-platform build tool for C and C++ written in Rust",
-  "favicon": "img/cforge.png",
+  "favicon": "img/logo.svg",
   "url": "https://chasesunstrom.github.io",
   "baseUrl": "/cforge/",
   "organizationName": "chasesunstrom",
@@ -41,7 +41,7 @@ export default {
     ]
   ],
   "themeConfig": {
-    "image": "img/cforge-social.png",
+    "image": "img/cforge.png",
     "navbar": {
       "title": "cforge",
       "logo": {
@@ -103,6 +103,10 @@ export default {
             {
               "label": "Blog",
               "to": "/blog"
+            },
+            {
+              "label": "Crate",
+              "href": "https://crates.io/crates/cforge"
             }
           ]
         }
