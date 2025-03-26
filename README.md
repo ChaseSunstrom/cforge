@@ -40,8 +40,9 @@ CForge is a modern build system designed to simplify C/C++ project management. I
 13. [Advanced Topics](#-advanced-topics)
 14. [Examples](#-examples)
 15. [Troubleshooting](#-troubleshooting)
-16. [Contributing](#-contributing)
-17. [License](#-license)
+16. [Goals & Roadmap](#-goals-roadmap)
+17. [Contributing](#-contributing)
+18. [License](#-license)
 
 ---
 
@@ -855,6 +856,73 @@ cforge list scripts
 ```
 
 ---
+
+## 🚀 Goals & Roadmap
+
+CForge is continuously evolving to simplify C/C++ project management while providing powerful features. Here's what we've accomplished and where we're headed next:
+
+### ✅ Completed Features
+
+- **Simple TOML Configuration**: Easy project setup without complex CMake syntax
+- **Multi-platform Support**: Windows, macOS, Linux compatibility
+- **Core Dependency Management**: Integrated vcpkg and git dependencies
+- **Workspace Support**: Basic multi-project management
+- **Cross-compilation**: Support for Android, iOS, Raspberry Pi, WebAssembly
+- **IDE Integration**: VS Code, CLion support
+- **Testing**: CTest integration
+- **Custom Scripts & Hooks**: Run tasks at various build stages
+- **Build Variants**: Multiple configuration support
+- **Package Generation**: Create distributable packages
+
+### 🚧 In Progress
+
+- **Enhanced Workspace Dependencies**: Improving library detection and linking
+- **Precompiled Header Optimization**: Better build performance
+- **Diagnostic Improvements**: Clearer error messages and suggestions
+- **Documentation Expansion**: More examples and quick-start guides
+
+### 📝 Planned Features
+
+- **Enhanced IDE Support**
+  - Better Visual Studio project generation
+  - QtCreator integration
+  - Eclipse CDT support
+  - Xcode project improvements
+
+- **Plugin System**
+  - Custom build steps via plugins
+  - Language server integration
+  - Code generation tools
+
+- **Documentation Features**
+  - Automatic API documentation generation
+  - Doxygen integration
+
+- **Advanced Testing**
+  - Code coverage reports
+  - Benchmark framework integration
+  - Sanitizer integrations
+
+- **CI/CD Pipeline Integration**
+  - GitHub Actions templates
+  - GitLab CI templates
+  - Azure DevOps integration
+
+- **Mobile Development**
+  - Improved Android/iOS workflows
+  - Mobile-specific templates
+
+- **Cloud Development**
+  - Remote build capabilities
+  - Container-based builds
+  - Package registry integration
+
+- **Package Manager Enhancements**
+  - Complete Conan 2.0 support
+  - Lock file management
+  - Recipe generation
+
+We welcome contributions to help achieve these goals! If you're interested in working on a specific feature or have suggestions, please open an issue or submit a pull request.
 
 ## 🤝 Contributing
 
