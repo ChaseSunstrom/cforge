@@ -8,7 +8,7 @@ use colored::Colorize;
 use crate::{configure_project, count_project_source_files, ensure_build_tools, execute_build_with_progress, expand_output_tokens, get_active_variant, get_build_type, get_effective_compiler_label, is_executable, progress_bar, prompt, run_command, run_hooks, CFORGE_FILE, CMAKE_MIN_VERSION, DEFAULT_BIN_DIR, DEFAULT_BUILD_DIR, DEFAULT_LIB_DIR, WORKSPACE_FILE};
 use crate::commands::run_command_with_timeout;
 use crate::config::{create_default_config, create_header_only_config, create_library_config, load_project_config, load_workspace_config, save_project_config, save_workspace_config, ProjectConfig, WorkspaceConfig, WorkspaceWithProjects};
-use crate::output_utils::{format_project_name, has_command, is_quiet, is_verbose, print_error, print_header, print_status, print_substep, print_success, print_warning, BuildProgress, ProgressBar};
+use crate::output_utils::{format_project_name, has_command, is_quiet, is_verbose, print_error, print_header, print_status, print_substep, print_success, print_warning, BuildProgress, SpinningWheel};
 use crate::tools::{is_msvc_style_for_config, parse_universal_flags};
 use crate::utils::add_pch_support;
 use crate::workspace::build_dependency_graph;
@@ -116,13 +116,11 @@ pub fn build_project(
     let mut progress = BuildProgress::new(project_name, 4); // 4 main steps
 
     // Create a main progress bar for overall build progress
-    let mut main_progress = ProgressBar::start(&format!("Building {}", project_name));
+    let mut main_progress = SpinningWheel::start(&format!("Building {}", project_name));
 
     // Step 1: Ensure tools (5% of progress)
     progress.next_step("Checking build tools");
-    main_progress.update(0.05);
     ensure_build_tools(config)?;
-    main_progress.update(0.1);
 
     // Get the build type - make sure it matches configuration
     let build_type = get_build_type(config, config_type);
@@ -159,7 +157,7 @@ pub fn build_project(
         }
 
         // Creating a progress bar specifically for configuration
-        let mut config_progress = ProgressBar::start("Configuration");
+        let mut config_progress = SpinningWheel::start("Configuration");
 
         // Delegate to configure_project with the progress bar
         // CRITICAL FIX: Explicitly pass the build type to ensure it propagates
@@ -173,10 +171,8 @@ pub fn build_project(
         )?;
 
         config_progress.success();
-        main_progress.update(0.3); // Configuration complete (30%)
     } else {
         progress.next_step("Project already configured");
-        main_progress.update(0.3); // Configuration was already done
     }
 
     // Step 3: Pre-build hooks (35% of progress)
@@ -206,9 +202,6 @@ pub fn build_project(
         }
     }
 
-    main_progress.update(0.35); // Pre-build hooks complete
-
-    // Step 4: Build (35% to 95% of progress)
     progress.next_step("Building project");
 
     // Count source files to get a better estimate of build size
@@ -235,7 +228,7 @@ pub fn build_project(
     }
 
     // Create build progress bar
-    let build_progress = ProgressBar::start(&format!("Compiling {} source files", source_files_count));
+    let build_progress = SpinningWheel::start(&format!("Compiling {} source files", source_files_count));
 
     // Execute build command with progress tracking - using our enhanced function
     let build_result = execute_build_with_progress(
@@ -251,8 +244,6 @@ pub fn build_project(
         return Err(e);
     }
 
-    main_progress.update(0.95); // Main build complete
-
     // Run post-build hooks (95% to 100%)
     if let Some(hooks) = &config.hooks {
         if let Some(post_hooks) = &hooks.post_build {
@@ -264,7 +255,6 @@ pub fn build_project(
     }
 
     // Complete build
-    main_progress.update(1.0); // Ensure we show 100%
     main_progress.success();
     progress.complete();
 

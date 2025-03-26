@@ -10,7 +10,7 @@ use crate::{categorize_error, ensure_build_tools, ensure_compiler_available, get
 use crate::cross_compile::get_predefined_cross_target;
 use crate::dependencies::install_dependencies;
 use crate::errors::{format_compiler_errors, glob_to_regex};
-use crate::output_utils::{is_quiet, is_verbose, print_status, print_substep, print_warning, BuildProgress, ProgressBar};
+use crate::output_utils::{is_quiet, is_verbose, print_status, print_substep, print_warning, BuildProgress, SpinningWheel};
 use crate::project::generate_cmake_lists;
 use crate::workspace::resolve_workspace_dependencies;
 
@@ -121,7 +121,7 @@ pub fn configure_project(
     // Step 4: Generate CMake files
     progress.next_step("Generating build files");
 
-    let mut cmake_spinner = ProgressBar::start("Generating CMakeLists.txt");
+    let mut cmake_spinner = SpinningWheel::start("Generating CMakeLists.txt");
     generate_cmake_lists(config, project_path, variant_name, workspace_config)?;
     cmake_spinner.success();
 
@@ -138,8 +138,6 @@ pub fn configure_project(
     cmd.push("-G".to_string());
     cmd.push(generator.clone());
 
-    // CRITICAL FIX: Add build type with correct case sensitivity - For single-config generators,
-    // CMAKE_BUILD_TYPE must be set explicitly
     cmd.push(format!("-DCMAKE_BUILD_TYPE={}", build_type));
 
     // Set this as a debug printf to check what's being used
@@ -206,7 +204,7 @@ pub fn configure_project(
     }
 
     // Run the CMake configuration command with our modified silent runner
-    let mut cmake_progress = ProgressBar::start("Running cmake");
+    let mut cmake_progress = SpinningWheel::start("Running cmake");
     let cmake_result = run_cmake_silently(cmd.clone(), &build_path, env_vars.clone())?;
     cmake_progress.success();
 
@@ -417,7 +415,7 @@ pub fn execute_build_with_progress(
     cmd: Vec<String>,
     build_path: &Path,
     source_files_count: usize,
-    mut progress: ProgressBar
+    mut progress: SpinningWheel
 ) -> Result<(), Box<dyn std::error::Error>> {
     use std::process::{Command, Stdio};
     use std::io::{BufRead, BufReader};
@@ -438,7 +436,7 @@ pub fn execute_build_with_progress(
     command.stderr(Stdio::piped());
 
     // Initial progress update - show we're starting
-    progress.update(0.01);
+    progress.update_status("Starting build process");
 
     // Spawn the command
     let mut child = match command.spawn() {
@@ -528,112 +526,75 @@ pub fn execute_build_with_progress(
         *stderr_done_clone.lock().unwrap() = true;
     });
 
-    // Create a thread to update the progress bar based on the build state
+    // Create a thread to update the progress based on the build state
     let build_state_progress = Arc::clone(&build_state);
     let stdout_done_progress = Arc::clone(&stdout_done);
     let stderr_done_progress = Arc::clone(&stderr_done);
     let progress_clone = progress.clone();
     let progress_handle = thread::spawn(move || {
-        let mut last_progress = 0.0;
-
         // Keep updating until both stdout and stderr are done OR we reach 100%
         while !(*stdout_done_progress.lock().unwrap() && *stderr_done_progress.lock().unwrap()) {
             // Get current state
             let state = build_state_progress.lock().unwrap();
 
-            // Calculate progress percentage
-            let mut progress_value = 0.0;
+            // Update status message based on build state
+            let status_message = if state.is_linking {
+                "Linking...".to_string()
+            } else if state.compiled_files > 0 {
+                format!("Compiled {} of {} files", state.compiled_files, state.total_files)
+            } else {
+                "Starting compilation...".to_string()
+            };
 
-            if state.is_linking {
-                // If we're linking, assume we're at least 80% done
-                progress_value = 0.8 + (state.current_percentage / 100.0) * 0.2;
-            } else if state.total_files > 0 {
-                // Otherwise base on compiled files
-                let files_ratio = state.compiled_files as f32 / state.total_files as f32;
-                progress_value = (files_ratio * 0.8).min(0.8); // Cap at 80% until linking starts
-            }
-
-            // Only update if progress has changed meaningfully
-            if (progress_value - last_progress).abs() > 0.005 {
-                progress_clone.update(progress_value);
-                last_progress = progress_value;
-            }
-
-            // Release the lock before sleeping
+            // Release the lock before updating status
             drop(state);
+
+            // Update the spinning wheel with our current status
+            progress_clone.update_status(&status_message);
 
             // Don't spin the CPU - check every 100ms
             thread::sleep(Duration::from_millis(100));
         }
-
-        // One final update to ensure we show progress
-        let state = build_state_progress.lock().unwrap();
-        if state.current_percentage >= 100.0 {
-            progress_clone.update(1.0);
-        }
     });
 
-    // Wait for the command to complete (with watchdog to prevent hanging)
-    let completed;
-    let start_time = std::time::Instant::now();
-    let timeout = Duration::from_secs(7200); // 2 hour timeout
+    // Wait for the command to complete
+    match child.wait() {
+        Ok(status) => {
+            if !status.success() {
+                // Wait for stdout/stderr readers to finish
+                let _ = stdout_handle.join();
+                let _ = stderr_handle.join();
 
-    // Use a separate thread to wait for the process to exit
-    let (tx, rx) = std::sync::mpsc::channel();
-    let wait_handle = thread::spawn(move || {
-        let status = child.wait();
-        let _ = tx.send(status);
-    });
+                // Get the collected stdout and stderr content for error analysis
+                let stdout_content = stdout_buffer.lock().unwrap().clone();
+                let stderr_content = stderr_buffer.lock().unwrap().clone();
 
-    // Wait for completion with timeout
-    completed = match rx.recv_timeout(timeout) {
-        Ok(status_result) => {
-            match status_result {
-                Ok(status) => status.success(),
-                Err(_) => false
+                // Build failed - display formatted errors using our enhanced error formatter
+                progress.failure("Build failed");
+
+                // Use our enhanced error formatter
+                println!();  // Add some space
+                let formatted_errors = format_compiler_errors(&stdout_content, &stderr_content);
+                for error_line in &formatted_errors {
+                    println!("{}", error_line);
+                }
+
+                return Err("Build process failed - see above for detailed errors".into());
             }
         },
-        Err(_) => {
-            // Timeout occurred
-            print_warning(&format!("Build process timed out after {:?}", timeout),
-                          Some("The build may still be running in the background"));
-            false
+        Err(e) => {
+            // Command failed to execute properly
+            progress.failure(&format!("Command failed: {}", e));
+            return Err(e.into());
         }
-    };
+    }
 
     // Wait for stdout/stderr readers to finish
     let _ = stdout_handle.join();
     let _ = stderr_handle.join();
-
-    // Wait for progress updater to finish, but with timeout
     let _ = progress_handle.join();
 
-    // Get any errors that might have occurred
-    let errors = {
-        let state = build_state.lock().unwrap();
-        state.errors.clone()
-    };
-
-    // Get the collected stdout and stderr content for error analysis if needed
-    if !completed {
-        let stdout_content = stdout_buffer.lock().unwrap().clone();
-        let stderr_content = stderr_buffer.lock().unwrap().clone();
-
-        // Build failed - display formatted errors using our enhanced error formatter
-        progress.failure("Build failed");
-
-        // Use our enhanced error formatter
-        println!();  // Add some space
-        let formatted_errors = format_compiler_errors(&stdout_content, &stderr_content);
-        for error_line in &formatted_errors {
-            println!("{}", error_line);
-        }
-
-        return Err("Build process failed - see above for detailed errors".into());
-    }
-
     // Build succeeded
-    progress.update(1.0);
     progress.success();
     Ok(())
 }

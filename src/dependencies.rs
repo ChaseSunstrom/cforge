@@ -6,7 +6,7 @@ use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 use colored::Colorize;
 use crate::config::{PackageInstallState, ProjectConfig};
-use crate::output_utils::{is_quiet, is_verbose, print_detailed, print_error, print_status, print_step, print_substep, print_success, print_warning, ProgressBar};
+use crate::output_utils::{is_quiet, is_verbose, print_detailed, print_error, print_status, print_step, print_substep, print_success, print_warning, SpinningWheel};
 use crate::{ensure_compiler_available, has_command, progress_bar, run_command, run_command_with_pattern_tracking, run_command_with_timeout, CACHED_PATHS, DEFAULT_BUILD_DIR, INSTALLED_PACKAGES, VCPKG_DEFAULT_DIR};
 use crate::errors::expand_tilde;
 
@@ -129,8 +129,7 @@ pub fn setup_vcpkg(
     }
 
     // Create a progress bar for overall vcpkg setup
-    let mut vcpkg_progress = ProgressBar::start("Setting up vcpkg");
-    vcpkg_progress.update(0.05);  // Start at 5%
+    let mut vcpkg_progress = SpinningWheel::start("Setting up vcpkg");
 
     // Check if we've already set up vcpkg in this session
     let cache_key = "vcpkg_setup";
@@ -142,7 +141,6 @@ pub fn setup_vcpkg(
                 if !is_quiet() {
                     print_detailed("Using previously set up vcpkg");
                 }
-                vcpkg_progress.update(1.0);  // Complete progress
                 vcpkg_progress.success();
                 return Ok(cached_path);
             }
@@ -153,7 +151,6 @@ pub fn setup_vcpkg(
     };
 
     if !should_setup {
-        vcpkg_progress.update(1.0);  // Complete progress
         vcpkg_progress.success();
         return Ok(String::new());
     }
@@ -166,7 +163,6 @@ pub fn setup_vcpkg(
     if !is_quiet() {
         print_substep("Locating vcpkg");
     }
-    vcpkg_progress.update(0.1);
 
     // Check if vcpkg is in PATH
     let mut vcpkg_in_path = None;
@@ -226,8 +222,6 @@ pub fn setup_vcpkg(
         }
     }
 
-    vcpkg_progress.update(0.2);  // 20% progress - finished looking for vcpkg
-
     // If vcpkg wasn't found anywhere, try to set it up in the configured path
     let vcpkg_path = if let Some(path) = found_vcpkg_path {
         if !is_quiet() {
@@ -250,7 +244,7 @@ pub fn setup_vcpkg(
         }
 
         // Try to clone vcpkg repository - 20% to 40% progress
-        let mut clone_progress = ProgressBar::start("Cloning vcpkg repository");
+        let mut clone_progress = SpinningWheel::start("Cloning vcpkg repository");
         match run_command_with_timeout(
             vec![
                 String::from("git"),
@@ -274,7 +268,7 @@ pub fn setup_vcpkg(
                     // Try to install git
                     print_warning("Git not found. Attempting to install git...", None);
 
-                    let mut git_install_progress = ProgressBar::start("Installing git");
+                    let mut git_install_progress = SpinningWheel::start("Installing git");
 
                     let git_installed = if cfg!(windows) {
                         if has_command("winget") {
@@ -336,7 +330,7 @@ pub fn setup_vcpkg(
                         git_install_progress.success();
 
                         // Try cloning again
-                        let mut retry_progress = ProgressBar::start("Retrying vcpkg clone");
+                        let mut retry_progress = SpinningWheel::start("Retrying vcpkg clone");
                         match run_command_with_timeout(
                             vec![
                                 String::from("git"),
@@ -369,8 +363,6 @@ pub fn setup_vcpkg(
             }
         }
 
-        vcpkg_progress.update(0.4);  // 40% progress - vcpkg repository cloned
-
         // Try to bootstrap vcpkg - 40% to 60% progress
         let bootstrap_script = if cfg!(windows) {
             "bootstrap-vcpkg.bat"
@@ -382,7 +374,7 @@ pub fn setup_vcpkg(
         if cfg!(windows) && !has_command("cl") && !has_command("g++") && !has_command("clang++") {
             print_warning("No C++ compiler found for bootstrapping vcpkg. Attempting to install...", None);
 
-            let mut compiler_progress = ProgressBar::start("Installing C++ compiler");
+            let mut compiler_progress = SpinningWheel::start("Installing C++ compiler");
             match ensure_compiler_available("msvc").or_else(|_| ensure_compiler_available("gcc")) {
                 Ok(_) => compiler_progress.success(),
                 Err(e) => {
@@ -394,7 +386,7 @@ pub fn setup_vcpkg(
         } else if !cfg!(windows) && !has_command("g++") && !has_command("clang++") {
             print_warning("No C++ compiler found for bootstrapping vcpkg. Attempting to install...", None);
 
-            let mut compiler_progress = ProgressBar::start("Installing C++ compiler");
+            let mut compiler_progress = SpinningWheel::start("Installing C++ compiler");
             match ensure_compiler_available("gcc").or_else(|_| ensure_compiler_available("clang")) {
                 Ok(_) => compiler_progress.success(),
                 Err(e) => {
@@ -405,7 +397,7 @@ pub fn setup_vcpkg(
             }
         }
 
-        let mut bootstrap_progress = ProgressBar::start("Bootstrapping vcpkg");
+        let mut bootstrap_progress = SpinningWheel::start("Bootstrapping vcpkg");
         match run_command_with_timeout(
             vec![String::from(bootstrap_script)],
             Some(&configured_path),
@@ -420,8 +412,6 @@ pub fn setup_vcpkg(
                 print_warning("Bootstrapping failed or timed out", Some("Will try to use existing vcpkg if available"));
             }
         }
-
-        vcpkg_progress.update(0.6);  // 60% progress - vcpkg bootstrapped
 
         configured_path
     };
@@ -450,7 +440,7 @@ pub fn setup_vcpkg(
         }
 
         // First update vcpkg with a dedicated progress bar
-        let mut update_progress = ProgressBar::start("Updating vcpkg");
+        let mut update_progress = SpinningWheel::start("Updating vcpkg");
         let update_result = run_command_with_timeout(
             vec![
                 vcpkg_exe.to_string_lossy().to_string(),
@@ -468,10 +458,8 @@ pub fn setup_vcpkg(
             print_warning("vcpkg update failed or timed out", Some("Continuing with package installation"));
         }
 
-        vcpkg_progress.update(0.7);  // 70% progress - vcpkg updated
-
         // Install packages with dedicated progress bar
-        let mut install_progress = ProgressBar::start("Installing packages");
+        let mut install_progress = SpinningWheel::start("Installing packages");
         match run_vcpkg_install_with_progress(&vcpkg_exe, &vcpkg_path, &vcpkg_config.packages, install_progress.clone()) {
             Ok(_) => {
                 install_progress.success();
@@ -483,7 +471,6 @@ pub fn setup_vcpkg(
             }
         }
 
-        vcpkg_progress.update(0.9);  // 90% progress - packages installed
     }
 
 
@@ -505,7 +492,6 @@ pub fn setup_vcpkg(
     cache_vcpkg_toolchain_path(&toolchain_file);
 
     // Complete progress
-    vcpkg_progress.update(1.0);
     vcpkg_progress.success();
 
     Ok(toolchain_file.to_string_lossy().to_string())
@@ -716,7 +702,7 @@ fn run_git_command_with_progress(args: Vec<String>, cwd: &Path, description: &st
     let progress_regex = Regex::new(r"(?i)(?:Receiving|Resolving|Checking out files|remote: Counting|Writing|Checking out|Enumerating|Compressing)(?:[^:]+): +(\d+)%").unwrap();
 
     // Create the progress bar
-    let mut progress_bar = ProgressBar::start(description);
+    let mut progress_bar = SpinningWheel::start(description);
     let mut current_progress = 0.0;
 
     // Read and process stderr lines
@@ -730,7 +716,6 @@ fn run_git_command_with_progress(args: Vec<String>, cwd: &Path, description: &st
                         let new_progress = percent / 100.0;
                         if new_progress > current_progress {
                             current_progress = new_progress;
-                            progress_bar.update(current_progress);
                         }
                     }
                 }
@@ -748,7 +733,6 @@ fn run_git_command_with_progress(args: Vec<String>, cwd: &Path, description: &st
 
     // Complete the progress bar
     if status.success() {
-        progress_bar.update(1.0);
         progress_bar.success();
         Ok(())
     } else {
@@ -1097,25 +1081,20 @@ pub fn run_vcpkg_install(
 pub fn setup_conan_with_progress(
     config: &ProjectConfig,
     project_path: &Path,
-    progress: &mut ProgressBar
+    progress: &mut SpinningWheel
 ) -> Result<String, Box<dyn std::error::Error>> {
     let conan_config = &config.dependencies.conan;
     if !conan_config.enabled || conan_config.packages.is_empty() {
-        progress.update(1.0);
         return Ok(String::new());
     }
 
-    // Initial progress
-    progress.update(0.1);
-
     // Check if conan is installed
     if Command::new("conan").arg("--version").stdout(Stdio::null()).stderr(Stdio::null()).status().is_err() {
-        progress.update(0.2);
 
         // Try to install Conan
         print_warning("Conan package manager not found. Attempting to install...", None);
 
-        let mut install_progress = ProgressBar::start("Installing Conan");
+        let mut install_progress = SpinningWheel::start("Installing Conan");
         let install_result = if cfg!(windows) {
             if has_command("pip") {
                 run_command_with_timeout(
@@ -1154,21 +1133,17 @@ pub fn setup_conan_with_progress(
 
         if install_result.is_err() {
             install_progress.failure("Failed to install Conan");
-            progress.failure("Failed to install Conan package manager");
+            progress.clone().failure("Failed to install Conan package manager");
             return Err("Conan package manager not found and could not be installed. Please install it first.".into());
         }
 
         install_progress.success();
     }
 
-    progress.update(0.3);
-
     // Create conan directory in build
     let build_dir = config.build.build_dir.as_deref().unwrap_or(DEFAULT_BUILD_DIR);
     let conan_dir = project_path.join(build_dir).join("conan");
     fs::create_dir_all(&conan_dir)?;
-
-    progress.update(0.4);
 
     // Create conanfile.txt
     let mut conanfile_content = String::from("[requires]\n");
@@ -1200,10 +1175,8 @@ pub fn setup_conan_with_progress(
     let conanfile_path = conan_dir.join("conanfile.txt");
     fs::write(&conanfile_path, conanfile_content)?;
 
-    progress.update(0.5);
-
     // Run conan install with a dedicated progress bar
-    let mut install_progress = ProgressBar::start("Installing Conan packages");
+    let mut install_progress = SpinningWheel::start("Installing Conan packages");
 
     // Run conan install
     let mut cmd = vec![
@@ -1233,21 +1206,17 @@ pub fn setup_conan_with_progress(
         Ok(_) => install_progress.success(),
         Err(e) => {
             install_progress.failure(&e.to_string());
-            progress.failure("Conan installation failed");
+            progress.clone().failure("Conan installation failed");
             return Err(e);
         }
     }
 
-    progress.update(0.9);
-
     // Return the path to conan's generated CMake file
     let cmake_file = conan_dir.join("conanbuildinfo.cmake");
     if !cmake_file.exists() {
-        progress.failure("Conan failed to generate CMake integration files");
+        progress.clone().failure("Conan failed to generate CMake integration files");
         return Err("Conan failed to generate CMake integration files.".into());
     }
-
-    progress.update(1.0);
 
     Ok(cmake_file.to_string_lossy().to_string())
 }
@@ -1255,17 +1224,10 @@ pub fn setup_conan_with_progress(
 pub fn setup_git_dependencies_with_progress(
     config: &ProjectConfig,
     project_path: &Path,
-    progress: &mut ProgressBar
+    progress: &mut SpinningWheel
 ) -> Result<Vec<String>, Box<dyn std::error::Error>> {
     // Just call the main function - the internal progress tracking will handle it
     let result = setup_git_dependencies(config, project_path);
-
-    // Update the outer progress bar based on the result
-    if result.is_ok() {
-        progress.update(1.0);
-    } else {
-        progress.update(0.5);  // Show partial progress on error
-    }
 
     result
 }
@@ -1274,16 +1236,12 @@ pub fn setup_git_dependencies_with_progress(
 pub fn setup_custom_dependencies_with_progress(
     config: &ProjectConfig,
     project_path: &Path,
-    progress: &mut ProgressBar
+    progress: &mut SpinningWheel
 ) -> Result<Vec<String>, Box<dyn std::error::Error>> {
     let custom_deps = &config.dependencies.custom;
     if custom_deps.is_empty() {
-        progress.update(1.0);
         return Ok(Vec::new());
     }
-
-    // Initial progress
-    progress.update(0.05);
 
     // Create deps directory
     let deps_dir = project_path.join("deps");
@@ -1293,15 +1251,10 @@ pub fn setup_custom_dependencies_with_progress(
 
     // Calculate progress steps for each dependency
     let total_deps = custom_deps.len();
-    let progress_per_dep = 0.9 / total_deps as f32; // Allocate 90% of progress bar for processing dependencies
 
     // Process each custom dependency
     for (i, dep) in custom_deps.iter().enumerate() {
         let dep_path = deps_dir.join(&dep.name);
-        let base_progress = 0.05 + (i as f32 * progress_per_dep);
-
-        // Update progress to show which dependency we're working on
-        progress.update(base_progress);
 
         if !is_quiet() {
             print_substep(&format!("Processing custom dependency: {}", dep.name));
@@ -1326,7 +1279,7 @@ pub fn setup_custom_dependencies_with_progress(
             let output_path = deps_dir.join(&output_file);
 
             // Download with a dedicated progress bar
-            let mut download_progress = ProgressBar::start(&format!("Downloading {}", dep.name));
+            let mut download_progress = SpinningWheel::start(&format!("Downloading {}", dep.name));
 
             let mut cmd = if cfg!(target_os = "windows") {
                 vec![
@@ -1348,16 +1301,13 @@ pub fn setup_custom_dependencies_with_progress(
                 Ok(_) => download_progress.success(),
                 Err(e) => {
                     download_progress.failure(&e.to_string());
-                    progress.failure(&format!("Failed to download {}: {}", dep.name, e));
+                    progress.clone().failure(&format!("Failed to download {}: {}", dep.name, e));
                     return Err(format!("Failed to download custom dependency {}: {}", dep.name, e).into());
                 }
             }
 
-            // Update progress after download
-            progress.update(base_progress + (progress_per_dep * 0.3));
-
             // Extract archive with a dedicated progress bar
-            let mut extract_progress = ProgressBar::start(&format!("Extracting {}", dep.name));
+            let mut extract_progress = SpinningWheel::start(&format!("Extracting {}", dep.name));
 
             let mut cmd = if output_path.to_string_lossy().ends_with(".zip") {
                 if cfg!(target_os = "windows") {
@@ -1395,7 +1345,7 @@ pub fn setup_custom_dependencies_with_progress(
                 }
             } else {
                 extract_progress.failure("Unsupported archive format");
-                progress.failure(&format!("Unsupported archive format for dependency: {}", dep.name));
+                progress.clone().failure(&format!("Unsupported archive format for dependency: {}", dep.name));
                 return Err(format!("Unsupported archive format for dependency: {}", dep.name).into());
             };
 
@@ -1403,17 +1353,14 @@ pub fn setup_custom_dependencies_with_progress(
                 Ok(_) => extract_progress.success(),
                 Err(e) => {
                     extract_progress.failure(&e.to_string());
-                    progress.failure(&format!("Failed to extract {}: {}", dep.name, e));
+                    progress.clone().failure(&format!("Failed to extract {}: {}", dep.name, e));
                     return Err(format!("Failed to extract custom dependency {}: {}", dep.name, e).into());
                 }
             }
 
-            // Update progress after extraction
-            progress.update(base_progress + (progress_per_dep * 0.6));
-
             // Build if a build command is provided
             if let Some(build_cmd) = &dep.build_command {
-                let mut build_progress = ProgressBar::start(&format!("Building {}", dep.name));
+                let mut build_progress = SpinningWheel::start(&format!("Building {}", dep.name));
 
                 let shell = if cfg!(target_os = "windows") { "cmd" } else { "sh" };
                 let shell_arg = if cfg!(target_os = "windows") { "/C" } else { "-c" };
@@ -1433,13 +1380,11 @@ pub fn setup_custom_dependencies_with_progress(
                     }
                 }
 
-                // Update progress after building
-                progress.update(base_progress + (progress_per_dep * 0.8));
             }
 
             // Install if an install command is provided
             if let Some(install_cmd) = &dep.install_command {
-                let mut install_progress = ProgressBar::start(&format!("Installing {}", dep.name));
+                let mut install_progress = SpinningWheel::start(&format!("Installing {}", dep.name));
 
                 let shell = if cfg!(target_os = "windows") { "cmd" } else { "sh" };
                 let shell_arg = if cfg!(target_os = "windows") { "/C" } else { "-c" };
@@ -1475,11 +1420,7 @@ pub fn setup_custom_dependencies_with_progress(
         }
 
         // Update progress after processing this dependency
-        progress.update(base_progress + progress_per_dep);
     }
-
-    // Final progress update
-    progress.update(1.0);
 
     Ok(cmake_include_paths)
 }
@@ -1656,10 +1597,9 @@ pub fn run_vcpkg_install_with_progress(
     vcpkg_exe: &Path,
     vcpkg_path: &str,
     packages: &[String],
-    mut progress: ProgressBar // Changed from TimedProgressBar to ProgressBar
+    mut progress: SpinningWheel
 ) -> Result<(), Box<dyn std::error::Error>> {
     // First check which packages are already installed - update progress to 10%
-    progress.update(0.1);
 
     let mut already_installed = Vec::new();
     let mut to_install = Vec::new();
@@ -1675,7 +1615,6 @@ pub fn run_vcpkg_install_with_progress(
     for pkg in packages {
         // Update progress as we check each package
         checked_count += 1;
-        progress.update(0.1 + 0.1 * (checked_count as f32 / total_packages as f32));
 
         if check_vcpkg_package_installed(vcpkg_path, pkg) {
             already_installed.push(pkg.clone());
@@ -1694,7 +1633,6 @@ pub fn run_vcpkg_install_with_progress(
         }
 
         // Complete progress since all packages are already installed
-        progress.update(1.0);
         progress.success();
         return Ok(());
     }
@@ -1711,7 +1649,6 @@ pub fn run_vcpkg_install_with_progress(
     }
 
     // Update progress to show we're starting installation (20%)
-    progress.update(0.2);
 
     if !is_quiet() {
         print_substep(&format!("Installing {} packages", to_install.len()));
@@ -1759,7 +1696,6 @@ pub fn run_vcpkg_install_with_progress(
             }
 
             // Final progress update
-            progress.update(1.0);
             progress.success();
             Ok(())
         },
@@ -1767,17 +1703,13 @@ pub fn run_vcpkg_install_with_progress(
             // If batch installation failed, try individually - update to 30%
             print_warning(&format!("Error running vcpkg: {}", e), None);
             print_warning("Batch installation failed, trying one package at a time", None);
-            progress.update(0.3);
 
             let mut success_count = 0;
             let mut failed_pkgs = Vec::new();
 
             // Try each package individually
             for (i, pkg) in to_install.iter().enumerate() {
-                let package_progress = 0.3 + (i as f32 / to_install.len() as f32) * 0.6;
-                progress.update(package_progress);
-
-                let mut package_progress_bar = ProgressBar::start(&format!("Installing package {}", pkg));
+                let mut package_progress_bar = SpinningWheel::start(&format!("Installing package {}", pkg));
 
                 let single_cmd = vec![
                     vcpkg_exe.to_string_lossy().to_string(),
@@ -1808,9 +1740,7 @@ pub fn run_vcpkg_install_with_progress(
                 }
 
                 // Update progress to show partial success
-                let progress_value = 0.3 + ((success_count as f32 / to_install.len() as f32) * 0.7);
-                progress.update(progress_value);
-                progress.success();
+                progress.clone().success();
 
                 // If we got at least some packages, consider it a partial success
                 if success_count > failed_pkgs.len() {

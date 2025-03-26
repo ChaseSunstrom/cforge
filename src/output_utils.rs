@@ -29,6 +29,196 @@ pub enum Theme {
     Forest,
 }
 
+// Spinning wheel for all long-running operations
+pub struct SpinningWheel {
+    pub message: String,
+    pub start_time: Instant,
+    pub stop_signal: Arc<Mutex<bool>>,
+    pub handle: Option<thread::JoinHandle<()>>,
+    pub update_channel: (std::sync::mpsc::Sender<String>, Arc<Mutex<String>>),
+}
+
+impl SpinningWheel {
+    pub fn start(message: &str) -> Self {
+        let message = message.to_string();
+        let start_time = Instant::now();
+        let stop_signal = Arc::new(Mutex::new(false));
+        let stop_clone = stop_signal.clone();
+
+        // Channel for status updates
+        let (tx, rx) = std::sync::mpsc::channel::<String>();
+        let status_message = Arc::new(Mutex::new(String::new()));
+        let status_clone = status_message.clone();
+
+        // Only create the handle if we're not in quiet mode
+        let handle = if !is_quiet() {
+            let msg = message.clone();
+            Some(thread::spawn(move || {
+                let spinner_chars = vec!["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+                let mut i = 0;
+
+                loop {
+                    {
+                        let should_stop = *stop_clone.lock().unwrap();
+                        if should_stop {
+                            break;
+                        }
+                    }
+
+                    // Get status message if available
+                    let status = match rx.try_recv() {
+                        Ok(new_status) => {
+                            *status_clone.lock().unwrap() = new_status.clone();
+                            new_status
+                        },
+                        Err(_) => {
+                            // Show elapsed time if no status updates
+                            let elapsed = start_time.elapsed();
+                            format!("{}s elapsed", elapsed.as_secs())
+                        }
+                    };
+
+                    // Update spinner animation
+                    let spinner_char = spinner_chars[i % spinner_chars.len()];
+                    i = (i + 1) % spinner_chars.len();
+
+                    print!("\r{} {} {} ",
+                           spinner_char.cyan().bold(),
+                           msg.blue().bold(),
+                           status);
+                    io::stdout().flush().unwrap();
+
+                    thread::sleep(Duration::from_millis(80));
+                }
+
+                // Clear the line
+                let status_len = status_clone.lock().unwrap().len();
+                print!("\r{}\r", " ".repeat(msg.len() + status_len + 20));
+                io::stdout().flush().unwrap();
+            }))
+        } else {
+            None
+        };
+
+        Self {
+            message,
+            start_time,
+            stop_signal,
+            handle,
+            update_channel: (tx, status_message),
+        }
+    }
+
+    pub fn update_status(&self, status: &str) {
+        if !is_quiet() && self.handle.is_some() {
+            let _ = self.update_channel.0.send(status.to_string());
+        }
+    }
+
+    pub fn success(self) {
+        let elapsed = self.start_time.elapsed();
+        *self.stop_signal.lock().unwrap() = true;
+        if let Some(handle) = self.handle {
+            let _ = handle.join();
+        }
+
+        if !is_quiet() {
+            println!("{} {} (completed in {})",
+                     "✓".green().bold(),
+                     self.message,
+                     format_duration(elapsed).yellow());
+        }
+    }
+
+    pub fn failure(self, error: &str) {
+        let elapsed = self.start_time.elapsed();
+        *self.stop_signal.lock().unwrap() = true;
+        if let Some(handle) = self.handle {
+            let _ = handle.join();
+        }
+
+        print_error(&format!("{}: {} (after {})",
+                             self.message,
+                             error,
+                             format_duration(elapsed)), None, None);
+    }
+}
+
+// Manual implementation of Clone for SpinningWheel
+impl Clone for SpinningWheel {
+    fn clone(&self) -> Self {
+        // Create a new spinning wheel with the same message and start time
+        let message = self.message.clone();
+        let start_time = self.start_time;
+        let stop_signal = Arc::new(Mutex::new(false));
+
+        // Create a new channel
+        let (tx, rx) = std::sync::mpsc::channel::<String>();
+        let status_message = Arc::new(Mutex::new(String::new()));
+
+        // Only create a new handle if we're not in quiet mode
+        let handle = if !is_quiet() {
+            let msg = message.clone();
+            let stop_clone = stop_signal.clone();
+            let status_clone = status_message.clone();
+
+            Some(thread::spawn(move || {
+                let spinner_chars = vec!["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+                let mut i = 0;
+
+                loop {
+                    {
+                        let should_stop = *stop_clone.lock().unwrap();
+                        if should_stop {
+                            break;
+                        }
+                    }
+
+                    // Get status message if available
+                    let status = match rx.try_recv() {
+                        Ok(new_status) => {
+                            *status_clone.lock().unwrap() = new_status.clone();
+                            new_status
+                        },
+                        Err(_) => {
+                            // Show elapsed time if no status updates
+                            let elapsed = start_time.elapsed();
+                            format!("{}s elapsed", elapsed.as_secs())
+                        }
+                    };
+
+                    // Update spinner animation
+                    let spinner_char = spinner_chars[i % spinner_chars.len()];
+                    i = (i + 1) % spinner_chars.len();
+
+                    print!("\r{} {} {} ",
+                           spinner_char.cyan().bold(),
+                           msg.blue().bold(),
+                           status);
+                    io::stdout().flush().unwrap();
+
+                    thread::sleep(Duration::from_millis(80));
+                }
+
+                // Clear the line
+                let status_len = status_clone.lock().unwrap().len();
+                print!("\r{}\r", " ".repeat(msg.len() + status_len + 20));
+                io::stdout().flush().unwrap();
+            }))
+        } else {
+            None
+        };
+
+        Self {
+            message,
+            start_time,
+            stop_signal,
+            handle,
+            update_channel: (tx, status_message),
+        }
+    }
+}
+
 // Terminal capabilities and layout management
 pub struct LayoutManager {
     width: usize,
@@ -888,8 +1078,6 @@ impl BuildProgress {
         }
     }
 
-
-
     pub fn next_step(&mut self, step_name: &str) {
         self.current_step += 1;
         if !is_quiet() {
@@ -898,10 +1086,11 @@ impl BuildProgress {
                      self.total_steps,
                      step_name);
 
-            // Show progress bar to visualize overall progress
-            let mut progress = ProgressBar::start("Overall progress");
-            progress.update(self.current_step as f32 / self.total_steps as f32);
-            progress.success();
+            // Show a spinning wheel to indicate overall progress
+            let wheel = SpinningWheel::start("Overall progress");
+            wheel.update_status(&format!("Step {} of {}", self.current_step, self.total_steps));
+            thread::sleep(Duration::from_millis(500)); // Show wheel briefly
+            wheel.success();
         }
     }
 

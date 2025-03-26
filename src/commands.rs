@@ -34,7 +34,7 @@ pub fn run_command_with_pattern_tracking(
     cmd: Vec<String>,
     cwd: Option<&str>,
     env: Option<HashMap<String, String>>,
-    progress: ProgressBar,
+    mut spinner: SpinningWheel,
     patterns: Vec<(String, f32)>
 ) -> Result<(), Box<dyn std::error::Error>> {
     use std::process::{Command, Stdio};
@@ -65,9 +65,9 @@ pub fn run_command_with_pattern_tracking(
         Err(e) => return Err(format!("Failed to execute command: {}", e).into()),
     };
 
-    // Clone progress for threads
-    let progress_stdout = progress.clone();
-    let progress_stderr = progress.clone();
+    // Clone spinner for threads
+    let spinner_out = spinner.update_channel.0.clone();
+    let spinner_err = spinner.update_channel.0.clone();
 
     // Take ownership of stdout/stderr handles
     let stdout = child.stdout.take()
@@ -86,7 +86,8 @@ pub fn run_command_with_pattern_tracking(
             // Check for progress patterns
             for (pattern, value) in &patterns_stdout {
                 if line.contains(pattern) {
-                    progress_stdout.update(*value);
+                    // Update spinner status instead of updating a progress percentage
+                    let _ = spinner_out.send(format!("{} ({}%)", pattern, (value * 100.0) as i32));
                     break;
                 }
             }
@@ -105,7 +106,8 @@ pub fn run_command_with_pattern_tracking(
             // Check for progress patterns
             for (pattern, value) in &patterns_stderr {
                 if line.contains(pattern) {
-                    progress_stderr.update(*value);
+                    // Update spinner status instead of updating a progress percentage
+                    let _ = spinner_err.send(format!("{} ({}%)", pattern, (value * 100.0) as i32));
                     break;
                 }
             }
@@ -131,14 +133,20 @@ pub fn run_command_with_pattern_tracking(
             match status_result {
                 Ok(status) => {
                     if !status.success() {
+                        spinner.failure(&format!("Command failed with exit code: {}",
+                                                 status.code().unwrap_or(-1)));
                         return Err(format!("Command failed with exit code: {}",
                                            status.code().unwrap_or(-1)).into());
                     }
                 },
-                Err(e) => return Err(format!("Command error: {}", e).into()),
+                Err(e) => {
+                    spinner.failure(&format!("Command error: {}", e));
+                    return Err(format!("Command error: {}", e).into());
+                }
             }
         },
         Err(_) => {
+            spinner.failure("Command timed out after 10 minutes");
             return Err("Command timed out after 10 minutes".into());
         }
     }
@@ -147,6 +155,7 @@ pub fn run_command_with_pattern_tracking(
     let _ = stdout_handle.join();
     let _ = stderr_handle.join();
 
+    spinner.success();
     Ok(())
 }
 
@@ -471,19 +480,13 @@ pub fn run_command_with_progress(
     cmd: Vec<String>,
     cwd: Option<&str>,
     env: Option<std::collections::HashMap<String, String>>,
-    progress: &mut ProgressBar,
+    progress: &mut SpinningWheel,
     operation: &str,
     timeout_seconds: u64
 ) -> Result<(), Box<dyn std::error::Error>> {
     use std::process::{Command, Stdio};
     use std::io::{BufRead, BufReader};
     use std::sync::mpsc::channel;
-    use std::sync::{Arc, Mutex};
-    use std::thread;
-    use std::time::Duration;
-
-    // Check if this is a CMake command
-    let is_cmake_command = cmd.len() > 0 && cmd[0].contains("cmake");
 
     // Build the Command
     let mut command = Command::new(&cmd[0]);
@@ -503,7 +506,7 @@ pub fn run_command_with_progress(
     command.stderr(Stdio::piped());
 
     // Update progress to show we're starting the command
-    progress.update(0.05);
+    progress.update_status(&format!("Starting: {}", operation));
 
     // Spawn the command
     let child = match command.spawn() {
@@ -524,16 +527,9 @@ pub fn run_command_with_progress(
         .stderr.take()
         .ok_or("Failed to capture stderr")?;
 
-    // Shared progress state
-    let progress_state = Arc::new(Mutex::new(0.05f32)); // Starting at 5%
-
-    // Buffer to collect output for error analysis
-    let output_buffer = Arc::new(Mutex::new(String::new()));
-    let output_buffer_clone = Arc::clone(&output_buffer);
-
     // Spawn a thread to continuously read from stdout and update progress
     let child_arc_out = Arc::clone(&child_arc);
-    let progress_state_clone = Arc::clone(&progress_state);
+    let progress_clone = progress.update_channel.0.clone();
     let out_handle = thread::spawn(move || {
         let reader = BufReader::new(stdout);
         let mut lines_read = 0;
@@ -542,66 +538,18 @@ pub fn run_command_with_progress(
             if let Ok(line) = line {
                 lines_read += 1;
 
-                // Update progress state
-                let mut state = progress_state_clone.lock().unwrap();
-
-                // Interpret progress from output
+                // Send interesting output to progress spinner
                 if line.contains("Installing") || line.contains("Building") ||
                     line.contains("Downloading") || line.contains("Extracting") {
-                    // Key progress indicators
-                    if line.contains("Installing") {
-                        *state = 0.6;
-                    } else if line.contains("Building") {
-                        *state = 0.7;
-                    } else if line.contains("Downloading") {
-                        *state = 0.4;
-                    } else if line.contains("Extracting") {
-                        *state = 0.5;
-                    }
+                    let _ = progress_clone.send(line.clone());
                 } else if lines_read % 20 == 0 {
-                    // Gradually increase progress based on line count
-                    *state = (*state + 0.01).min(0.9);
+                    // Every 20 lines, update with a status
+                    let _ = progress_clone.send(format!("Processing... ({} lines)", lines_read));
                 }
 
-                // Look for percentage indicators in the output
-                if let Some(percent_idx) = line.find('%') {
-                    if percent_idx > 0 {
-                        // Try to extract a percentage value
-                        let start_idx = line[..percent_idx].rfind(|c: char| !c.is_digit(10) && c != '.')
-                            .map_or(0, |pos| pos + 1);
-
-                        if let Ok(percentage) = line[start_idx..percent_idx].trim().parse::<f32>() {
-                            // Scale to the 5%-90% range
-                            let scaled = 0.05 + (percentage / 100.0) * 0.85;
-                            *state = scaled;
-                        }
-                    }
-                }
-
-                // Add line to buffer
-                {
-                    let mut buffer = output_buffer_clone.lock().unwrap();
-                    buffer.push_str(&line);
-                    buffer.push('\n');
-                }
-
-                // Filter stdout output based on command type and verbosity
-                let should_print = if is_cmake_command {
-                    // For CMake, only show output if it contains important keywords or in verbose mode
-                    is_verbose() ||
-                        line.contains("error") ||
-                        line.contains("Error") ||
-                        line.contains("WARNING") ||
-                        line.contains("Warning") ||
-                        line.contains("failed") ||
-                        line.contains("Failed")
-                } else {
-                    // Still log for debugging if in verbose mode
-                    is_verbose()
-                };
-
+                // Still log for debugging if in verbose mode
                 if is_verbose() {
-                    println!("{}", line);  // No prefix, and only shown in verbose mode
+                    println!("STDOUT> {}", line);
                 }
             }
         }
@@ -610,68 +558,25 @@ pub fn run_command_with_progress(
 
     // Spawn a thread to continuously read from stderr
     let child_arc_err = Arc::clone(&child_arc);
-    let progress_state_clone_err = Arc::clone(&progress_state);
-    let output_buffer_clone_err = Arc::clone(&output_buffer);
+    let progress_clone_err = progress.update_channel.0.clone();
     let err_handle = thread::spawn(move || {
         let reader = BufReader::new(stderr);
 
         for line in reader.lines() {
             if let Ok(line) = line {
-                // If error lines, update progress state to show we're still working
-                let mut state = progress_state_clone_err.lock().unwrap();
-                *state = (*state + 0.005).min(0.9);
-
-                // Add line to buffer
-                {
-                    let mut buffer = output_buffer_clone_err.lock().unwrap();
-                    buffer.push_str(&line);
-                    buffer.push('\n');
+                // Only send error-looking lines to progress
+                if line.contains("Error") || line.contains("error") ||
+                    line.contains("Failed") || line.contains("failed") {
+                    let _ = progress_clone_err.send(format!("Error: {}", line));
                 }
 
-                // Filter stderr output similar to stdout
-                let should_print = if is_cmake_command {
-                    // For CMake stderr, only show output with important keywords or in verbose mode
-                    is_verbose() ||
-                        line.contains("error") ||
-                        line.contains("Error") ||
-                        line.contains("WARNING") ||
-                        line.contains("Warning") ||
-                        line.contains("failed") ||
-                        line.contains("Failed")
-                } else {
-                    // For other commands, always show stderr errors
-                    is_verbose() ||
-                        line.contains("error") ||
-                        line.contains("Error") ||
-                        line.contains("warning") ||
-                        line.contains("Warning")
-                };
-
-                if should_print {
+                // Still log for debugging if in verbose mode
+                if is_verbose() {
                     eprintln!("STDERR> {}", line);
                 }
             }
         }
         drop(child_arc_err);
-    });
-
-    // Thread to update the progress bar
-    let progress_state_clone_bar = Arc::clone(&progress_state);
-    let progress_clone = progress.clone();
-    let update_handle = thread::spawn(move || {
-        let mut last_progress = 0.05f32;
-
-        loop {
-            thread::sleep(Duration::from_millis(100));
-
-            let current_progress = *progress_state_clone_bar.lock().unwrap();
-
-            // Only update if progress has changed meaningfully
-            if (current_progress - last_progress).abs() > 0.01 {
-                progress_clone.update(current_progress);
-                last_progress = current_progress;
-            }
-        }
     });
 
     // We also need a channel to receive when the process completes
@@ -689,49 +594,26 @@ pub fn run_command_with_progress(
     // Now we wait up to `timeout_seconds` for the child to finish
     match rx.recv_timeout(Duration::from_secs(timeout_seconds)) {
         Ok(status_result) => {
-            // The child exited (we got a status). Set progress to 100%
-            progress.update(1.0);
-
-            // No need to join the updater thread since we're finishing up
-
-            // Join reading threads
+            // The child exited (we got a status). Join reading threads
             out_handle.join().ok();
             err_handle.join().ok();
 
             match status_result {
                 Ok(status) => {
                     if status.success() {
-                        progress.success();
+                        progress.update_status(&format!("Completed: {}", operation));
                         Ok(())
                     } else {
-                        // Get the collected output for error analysis
-                        let output = output_buffer.lock().unwrap().clone();
-
-                        // Format error output if cmake command
-                        if is_cmake_command {
-                            if !is_quiet() {
-                                let formatted_errors = format_cpp_errors_rust_style(&output);
-                                for error_line in formatted_errors {
-                                    println!("{}", error_line);
-                                }
-                            }
-                        }
-
-                        progress.failure(&format!("Command failed with exit code: {}",
-                                                  status.code().unwrap_or(-1)));
-                        Err(format!("Command failed with exit code: {}",
-                                    status.code().unwrap_or(-1)).into())
+                        return Err(format!("Command failed with exit code: {}",
+                                           status.code().unwrap_or(-1)).into())
                     }
                 },
-                Err(e) => {
-                    progress.failure(&format!("Command error: {}", e));
-                    Err(format!("Command error: {}", e).into())
-                },
+                Err(e) => Err(format!("Command error: {}", e).into()),
             }
         },
         Err(_) => {
             // Timeout occurred: kill the child
-            progress.failure(&format!("Command timed out after {} seconds", timeout_seconds));
+            progress.update_status(&format!("Command timed out after {} seconds", timeout_seconds));
 
             // Because we have Arc<Mutex<Child>>, we can kill safely
             let mut child = child_arc.lock().unwrap();

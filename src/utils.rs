@@ -3,7 +3,7 @@ use std::io::Write;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use crate::config::{PCHConfig, PackageInstallState, ProjectConfig};
-use crate::output_utils::TimedProgressBar;
+use crate::output_utils::{SpinningWheel, TimedProgressBar};
 
 
 
@@ -98,9 +98,15 @@ pub fn prompt(message: &str) -> Result<String, Box<dyn std::error::Error>> {
     Ok(input)
 }
 
-pub fn progress_bar(message: &str) -> TimedProgressBar {
-    // Create a timed progress bar with a reasonable expected duration
-    TimedProgressBar::start(message, 30) // 30 seconds default timeout
+pub fn spinning_wheel(message: &str) -> SpinningWheel {
+    // Create a spinning wheel with a given message
+    SpinningWheel::start(message)
+}
+
+// Maintain backward compatibility by renaming the function
+pub fn progress_bar(message: &str) -> SpinningWheel {
+    // Delegate to spinning_wheel to maintain existing API
+    spinning_wheel(message)
 }
 
 pub fn ensure_cmake_directory(project_path: &Path, project_name: &str) -> Result<(), Box<dyn std::error::Error>> {
