@@ -40,7 +40,7 @@ CForge is a modern build system designed to simplify C/C++ project management. I
 13. [Advanced Topics](#-advanced-topics)
 14. [Examples](#-examples)
 15. [Troubleshooting](#-troubleshooting)
-16. [Goals & Roadmap](#-goals-roadmap)
+16. [Goals & Roadmap](#-goals--roadmap)
 17. [Contributing](#-contributing)
 18. [License](#-license)
 
