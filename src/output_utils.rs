@@ -5,6 +5,7 @@ use std::time::{Duration, Instant};
 use std::thread;
 use std::cmp;
 use lazy_static::lazy_static;
+use regex::Regex;
 
 // Global verbosity control
 lazy_static! {
@@ -82,18 +83,18 @@ impl SpinningWheel {
                     let spinner_char = spinner_chars[i % spinner_chars.len()];
                     i = (i + 1) % spinner_chars.len();
 
+                    // Use carriage return to rewrite the line
                     print!("\r{} {} {} ",
-                           spinner_char.cyan().bold(),
-                           msg.blue().bold(),
+                           spinner_char.cyan(),
+                           msg.blue(),
                            status);
                     io::stdout().flush().unwrap();
 
                     thread::sleep(Duration::from_millis(80));
                 }
 
-                // Clear the line
-                let status_len = status_clone.lock().unwrap().len();
-                print!("\r{}\r", " ".repeat(msg.len() + status_len + 20));
+                // Important: clear the line completely on exit
+                print!("\r{}\r", " ".repeat(120));
                 io::stdout().flush().unwrap();
             }))
         } else {
@@ -111,6 +112,7 @@ impl SpinningWheel {
 
     pub fn update_status(&self, status: &str) {
         if !is_quiet() && self.handle.is_some() {
+            // Send the new status through the channel
             let _ = self.update_channel.0.send(status.to_string());
         }
     }
@@ -123,9 +125,9 @@ impl SpinningWheel {
         }
 
         if !is_quiet() {
-            println!("{} {} (completed in {})",
-                     "✓".green().bold(),
-                     self.message,
+            // The spinner thread already cleared the line
+            println!("✓ {} (completed in {})",
+                     self.message.green(),
                      format_duration(elapsed).yellow());
         }
     }
@@ -137,10 +139,13 @@ impl SpinningWheel {
             let _ = handle.join();
         }
 
-        print_error(&format!("{}: {} (after {})",
-                             self.message,
-                             error,
-                             format_duration(elapsed)), None, None);
+        // The spinner thread already cleared the line
+        println!("✗ {}: {}",
+                 self.message.red().bold(),
+                 error.red());
+
+        // Add a newline after failure messages to improve readability
+        println!();
     }
 }
 
@@ -699,50 +704,46 @@ pub fn print_header(message: &str, icon: Option<&str>) {
         return;
     }
 
-    let layout = LAYOUT.lock().unwrap();
-    let width = layout.get_width();
-    let adjusted_width = cmp::min(width, 100);
-
-    // Get box drawing characters based on terminal capabilities
-    let (tl, tr, bl, br, v, h) = layout.get_box_chars();
+    println!(); // Only one line before header
 
     let prefix = match icon {
         Some(i) => format!("{} ", i),
         None => "".to_string(),
     };
 
-    println!("\n{}", format!("{}{}", prefix, message).bold().blue());
-    println!("{}", h.repeat(message.len() + prefix.len()).blue());
+    println!("{}{}", prefix, message.bold().blue());
+    println!("{}", "─".repeat(message.len() + prefix.len()).blue());
 }
 
 // Standard status message
+// Standard status message with consistent color
 pub fn print_status(message: &str) {
     if is_quiet() {
         return;
     }
-    println!("{}", message.blue());
+    println!("{}", message.blue().bold());
 }
 
-// Success message with optional details
+// Success message with proper coloring
 pub fn print_success(message: &str, details: Option<&str>) {
     if is_quiet() {
         return;
     }
 
-    println!("{}", format!("✓ {}", message).green().bold());
+    println!("✓ {}", message.green().bold());
 
     if let Some(d) = details {
         println!("  {}", d.green());
     }
 }
 
-// Warning message with optional solution
+// Warning message with consistent color
 pub fn print_warning(message: &str, solution: Option<&str>) {
     // Always print warnings, even in quiet mode
-    println!("{}", format!("⚠ {}", message).yellow().bold());
+    println!("⚠ {}", message.yellow().bold());
 
     if let Some(s) = solution {
-        println!("  {}", format!("Suggestion: {}", s).yellow());
+        println!("  Suggestion: {}", s.yellow());
     }
 }
 
@@ -754,10 +755,10 @@ pub fn print_error(message: &str, code: Option<&str>, solution: Option<&str>) {
         None => "✗ ".to_string(),
     };
 
-    println!("{}", format!("{}{}", error_prefix, message).red().bold());
+    println!("{}{}", error_prefix.red().bold(), message.red().bold());
 
     if let Some(s) = solution {
-        println!("  {}", format!("Solution: {}", s).yellow());
+        println!("  Solution: {}", s.yellow());
     }
 }
 
@@ -766,7 +767,7 @@ pub fn print_step(action: &str, target: &str) {
     if is_quiet() {
         return;
     }
-    println!("→ {} {}", action.bold().blue(), target);
+    println!("\n→ {} {}", action.bold().blue(), target);
 }
 
 // Print a substep with bullet point
@@ -1078,6 +1079,7 @@ impl BuildProgress {
         }
     }
 
+    // For BuildProgress next_step method
     pub fn next_step(&mut self, step_name: &str) {
         self.current_step += 1;
         if !is_quiet() {
@@ -1088,7 +1090,6 @@ impl BuildProgress {
 
             // Show a spinning wheel to indicate overall progress
             let wheel = SpinningWheel::start("Overall progress");
-            wheel.update_status(&format!("Step {} of {}", self.current_step, self.total_steps));
             thread::sleep(Duration::from_millis(500)); // Show wheel briefly
             wheel.success();
         }
@@ -1099,8 +1100,7 @@ impl BuildProgress {
             let duration = self.start_time.elapsed();
             let formatted_time = format_duration(duration);
 
-            println!("\n{} {} {}",
-                     "✓".green().bold(),
+            println!("✓ {} {}",
                      format!("{} completed in", self.project_name).green().bold(),
                      formatted_time.yellow().bold());
 
@@ -1131,7 +1131,7 @@ impl TaskList {
             return;
         }
 
-        println!("Tasks:");
+        println!("\nTasks:");
         for (i, task) in self.tasks.iter().enumerate() {
             let prefix = if Some(i) == self.current_task {
                 "→".blue().bold()
@@ -1140,9 +1140,10 @@ impl TaskList {
             } else {
                 "○".normal().dimmed()
             };
-            println!(" {} {}", prefix, task);
+            println!("  {} {}", prefix, task);
         }
-        println!();
+
+        println!();  // Add spacing after the list
     }
 
     pub fn start_task(&mut self, index: usize) {
@@ -1152,6 +1153,7 @@ impl TaskList {
 
         self.current_task = Some(index);
         if !is_quiet() {
+            println!(); // Add a line break before starting a new task
             print_step("Starting", &self.tasks[index]);
             self.display();
         }
@@ -1164,7 +1166,7 @@ impl TaskList {
 
         self.completed_tasks[index] = true;
         if !is_quiet() {
-            print_success(&format!("Completed: {}", self.tasks[index]), None);
+            println!("✓ Completed: {}", self.tasks[index].green());
         }
     }
 
@@ -1177,104 +1179,71 @@ impl TaskList {
 // UI Components
 //==============================================================================
 
-// Project info and summary boxes
 pub fn print_project_box(project_name: &str, version: &str, build_type: &str) {
     if is_quiet() {
         return;
     }
 
-    let layout = LAYOUT.lock().unwrap();
-    let (tl, tr, bl, br, v, h) = layout.get_box_chars();
-    let width = cmp::min(layout.get_width(), 100);
-
-    let title = if !version.is_empty() {
-        format!(" {} v{} ", project_name.bold(), version)
-    } else {
-        format!(" {} ", project_name.bold())
-    };
-
-    let subtitle = if !build_type.is_empty() {
-        format!(" {} build ", build_type)
-    } else {
-        String::new()
-    };
-
-    // Calculate spacing
-    let inner_width = width - 2;
-    let available_width = inner_width - title.len() - subtitle.len();
+    // Set a fixed width for consistency - make it wider
+    let width = 80;
 
     // Top border
-    println!("{}{}{}",
-             tl.cyan(),
-             h.repeat(inner_width).cyan(),
-             tr.cyan()
-    );
+    println!("╭{}╮", "─".repeat(width - 2));
 
-    // Title line
-    if subtitle.is_empty() {
-        println!("{} {}{} {}",
-                 v.cyan(),
-                 title.bright_white().on_blue(),
-                 " ".repeat(inner_width - title.len() - 2),
-                 v.cyan()
-        );
-    } else {
-        println!("{} {}{}{} {}",
-                 v.cyan(),
-                 title.bright_white().on_blue(),
-                 " ".repeat(available_width),
-                 subtitle.black().on_white(),
-                 v.cyan()
-        );
+    // Title line with better padding calculation
+    let mut title = format!("  {}  ", project_name);
+    if !version.is_empty() {
+        title = format!("  {} v{}  ", project_name, version);
     }
 
+    // Get the visible length without ANSI codes
+    let visible_length = strip_ansi_codes(&title).len();
+    let padding = width - 2 - visible_length;
+
+    println!("│{}{}│", title.bold(), " ".repeat(padding));
+
     // Bottom border
-    println!("{}{}{}",
-             bl.cyan(),
-             h.repeat(inner_width).cyan(),
-             br.cyan()
-    );
+    println!("╰{}╯", "─".repeat(width - 2));
+
+    // Add a newline after the box for better spacing
+    println!();
 }
 
-// Print a build summary box
+// Helper function to calculate visual width by removing ANSI codes
+fn strip_ansi_codes(s: &str) -> String {
+    let ansi_regex = Regex::new(r"\x1B\[[0-9;]*[a-zA-Z]").unwrap();
+    ansi_regex.replace_all(s, "").to_string()
+}
+
 pub fn print_build_summary(project: &str, duration: Duration) {
     if is_quiet() {
         return;
     }
 
-    let layout = LAYOUT.lock().unwrap();
-    let (tl, tr, bl, br, v, h) = layout.get_box_chars();
-    let width = cmp::min(layout.get_width(), 100);
-
-    let inner_width = width - 2;
+    let width = 80;
     let title = " BUILD SUMMARY ";
-    let title_padding = (inner_width - title.len()) / 2;
+    let title_padding = (width - 2 - strip_ansi_codes(title).len()) / 2;
 
-    println!("{}{}{}{}{}",
-             tl.cyan(),
-             h.repeat(title_padding).cyan(),
-             title.white().on_blue().bold(),
-             h.repeat(inner_width - title.len() - title_padding).cyan(),
-             tr.cyan()
-    );
+    println!("╭{}{}{}╮",
+             "─".repeat(title_padding),
+             title.blue().bold(),
+             "─".repeat(width - 2 - strip_ansi_codes(title).len() - title_padding));
 
-    println!("{} {:<42} {}",
-             v.cyan(),
-             format!("Project: {}", project.cyan().bold()),
-             v.cyan()
-    );
+    // Project line with proper padding
+    let project_text = format!(" Project: {} ", project);
+    let padding = width - 2 - strip_ansi_codes(&project_text).len();
+    println!("│{}{}│", project_text.cyan(), " ".repeat(padding));
 
-    println!("{} {:<42} {}",
-             v.cyan(),
-             format!("Time: {}", format_duration(duration).yellow()),
-             v.cyan()
-    );
+    // Time line with proper padding
+    let time_text = format!(" Time: {} ", format_duration(duration).yellow());
+    let time_padding = width - 2 - strip_ansi_codes(&time_text).len();
+    println!("│{}{}│", time_text, " ".repeat(time_padding));
 
-    println!("{}{}{}",
-             bl.cyan(),
-             h.repeat(inner_width).cyan(),
-             br.cyan()
-    );
+    // Bottom border
+    println!("╰{}╯", "─".repeat(width - 2));
+
+    // Add a newline after the summary for better spacing
+    println!();
 }
 
 //==============================================================================
