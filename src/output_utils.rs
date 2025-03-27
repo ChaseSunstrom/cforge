@@ -14,6 +14,27 @@ lazy_static! {
     static ref ACTIVE_PROGRESS_BARS: Mutex<usize> = Mutex::new(0);
 }
 
+lazy_static! {
+    static ref OUTPUT_MUTEX: Mutex<()> = Mutex::new(());
+    static ref SPINNER_ACTIVE: Mutex<bool> = Mutex::new(false);
+    static ref LAST_LINE_WAS_NEWLINE: Mutex<bool> = Mutex::new(true);
+}
+
+// Helper to ensure we don't print too many newlines
+fn ensure_single_newline() {
+    let mut was_newline = LAST_LINE_WAS_NEWLINE.lock().unwrap();
+    if !*was_newline {
+        println!();
+        *was_newline = true;
+    }
+}
+
+// Helper to mark that we printed something
+fn mark_line_printed() {
+    let mut was_newline = LAST_LINE_WAS_NEWLINE.lock().unwrap();
+    *was_newline = false;
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Verbosity {
     Quiet,
@@ -51,12 +72,24 @@ impl SpinningWheel {
         let status_message = Arc::new(Mutex::new(String::new()));
         let status_clone = status_message.clone();
 
+        // Mark that we're showing a spinner
+        {
+            let mut spinner_active = SPINNER_ACTIVE.lock().unwrap();
+            *spinner_active = true;
+        }
+
         // Only create the handle if we're not in quiet mode
         let handle = if !is_quiet() {
             let msg = message.clone();
             Some(thread::spawn(move || {
                 let spinner_chars = vec!["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
                 let mut i = 0;
+
+                // Acquire output lock to ensure we're not interrupted
+                let _guard = OUTPUT_MUTEX.lock().unwrap();
+
+                // Ensure we start on a new line
+                ensure_single_newline();
 
                 loop {
                     {
@@ -93,9 +126,19 @@ impl SpinningWheel {
                     thread::sleep(Duration::from_millis(80));
                 }
 
-                // Important: clear the line completely on exit
+                // Clear the line completely on exit
                 print!("\r{}\r", " ".repeat(120));
                 io::stdout().flush().unwrap();
+
+                // Mark spinner as done
+                let mut spinner_active = SPINNER_ACTIVE.lock().unwrap();
+                *spinner_active = false;
+
+                // Mark that the line is empty now
+                let mut was_newline = LAST_LINE_WAS_NEWLINE.lock().unwrap();
+                *was_newline = true;
+
+                // Release the output lock
             }))
         } else {
             None
@@ -119,33 +162,50 @@ impl SpinningWheel {
 
     pub fn success(self) {
         let elapsed = self.start_time.elapsed();
+
+        // Signal the spinner to stop
         *self.stop_signal.lock().unwrap() = true;
+
+        // Wait for spinner thread to finish
         if let Some(handle) = self.handle {
             let _ = handle.join();
         }
 
         if !is_quiet() {
-            // The spinner thread already cleared the line
+            // Acquire output lock
+            let _guard = OUTPUT_MUTEX.lock().unwrap();
+
+            // Print success message
             println!("✓ {} (completed in {})",
                      self.message.green(),
                      format_duration(elapsed).yellow());
+
+            // Mark that we printed something
+            mark_line_printed();
         }
     }
 
     pub fn failure(self, error: &str) {
         let elapsed = self.start_time.elapsed();
+
+        // Signal the spinner to stop
         *self.stop_signal.lock().unwrap() = true;
+
+        // Wait for spinner thread to finish
         if let Some(handle) = self.handle {
             let _ = handle.join();
         }
 
-        // The spinner thread already cleared the line
+        // Acquire output lock
+        let _guard = OUTPUT_MUTEX.lock().unwrap();
+
+        // Print failure message
         println!("✗ {}: {}",
                  self.message.red().bold(),
                  error.red());
 
-        // Add a newline after failure messages to improve readability
-        println!();
+        // Mark that we printed something
+        mark_line_printed();
     }
 }
 
@@ -704,65 +764,30 @@ pub fn print_header(message: &str, icon: Option<&str>) {
         return;
     }
 
-    println!(); // Only one line before header
+    // Acquire output lock
+    let _guard = OUTPUT_MUTEX.lock().unwrap();
+
+    // If a spinner is active, make sure we're on a new line
+    if *SPINNER_ACTIVE.lock().unwrap() {
+        println!();
+        *LAST_LINE_WAS_NEWLINE.lock().unwrap() = true;
+    }
+
+    // Ensure we have exactly one blank line before header
+    ensure_single_newline();
 
     let prefix = match icon {
         Some(i) => format!("{} ", i),
         None => "".to_string(),
     };
 
-    println!("{}{}", prefix, message.bold().blue());
+    println!("{}{}", prefix, message.blue().bold());
     println!("{}", "─".repeat(message.len() + prefix.len()).blue());
+
+    // Mark that we printed something
+    mark_line_printed();
 }
 
-// Standard status message
-// Standard status message with consistent color
-pub fn print_status(message: &str) {
-    if is_quiet() {
-        return;
-    }
-    println!("{}", message.blue().bold());
-}
-
-// Success message with proper coloring
-pub fn print_success(message: &str, details: Option<&str>) {
-    if is_quiet() {
-        return;
-    }
-
-    println!("✓ {}", message.green().bold());
-
-    if let Some(d) = details {
-        println!("  {}", d.green());
-    }
-}
-
-// Warning message with consistent color
-pub fn print_warning(message: &str, solution: Option<&str>) {
-    // Always print warnings, even in quiet mode
-    println!("⚠ {}", message.yellow().bold());
-
-    if let Some(s) = solution {
-        println!("  Suggestion: {}", s.yellow());
-    }
-}
-
-// Error message with optional code and solution
-pub fn print_error(message: &str, code: Option<&str>, solution: Option<&str>) {
-    // Always print errors, even in quiet mode
-    let error_prefix = match code {
-        Some(c) => format!("✗ [{}] ", c),
-        None => "✗ ".to_string(),
-    };
-
-    println!("{}{}", error_prefix.red().bold(), message.red().bold());
-
-    if let Some(s) = solution {
-        println!("  Solution: {}", s.yellow());
-    }
-}
-
-// Print a step with an action and a target
 pub fn print_step(action: &str, target: &str) {
     if is_quiet() {
         return;
@@ -770,13 +795,86 @@ pub fn print_step(action: &str, target: &str) {
     println!("\n→ {} {}", action.bold().blue(), target);
 }
 
-// Print a substep with bullet point
+pub fn print_status(message: &str) {
+    if is_quiet() {
+        return;
+    }
+
+    // Acquire output lock
+    let _guard = OUTPUT_MUTEX.lock().unwrap();
+
+    // If a spinner is active, make sure we're on a new line
+    if *SPINNER_ACTIVE.lock().unwrap() {
+        println!();
+        *LAST_LINE_WAS_NEWLINE.lock().unwrap() = true;
+    }
+
+    println!("    → {}", message.blue().bold());
+
+    // Mark that we printed something
+    mark_line_printed();
+}
+
 pub fn print_substep(message: &str) {
     if is_quiet() {
         return;
     }
-    println!("  • {}", message);
+
+    // Acquire output lock
+    let _guard = OUTPUT_MUTEX.lock().unwrap();
+
+    // If a spinner is active, make sure we're on a new line
+    if *SPINNER_ACTIVE.lock().unwrap() {
+        println!();
+        *LAST_LINE_WAS_NEWLINE.lock().unwrap() = true;
+    }
+
+    println!("       • {}", message);
+
+    // Mark that we printed something
+    mark_line_printed();
 }
+
+pub fn print_success(message: &str, details: Option<&str>) {
+    if is_quiet() {
+        return;
+    }
+
+    // Ensure we're not interrupting a spinner
+    ensure_single_newline();
+
+    println!("    ✓ {}", message.green().bold());
+
+    if let Some(d) = details {
+        println!("       {}", d.green());
+    }
+}
+
+// Update print_warning for consistent styling
+pub fn print_warning(message: &str, solution: Option<&str>) {
+    // Always print warnings, even in quiet mode
+    println!("    {} {}", "⚠".yellow().bold(), message.yellow().bold());
+
+    if let Some(s) = solution {
+        println!("       Suggestion: {}", s.yellow());
+    }
+}
+
+// Update print_error for consistent styling
+pub fn print_error(message: &str, code: Option<&str>, solution: Option<&str>) {
+    // Always print errors, even in quiet mode
+    let error_prefix = match code {
+        Some(c) => format!("✗ [{}]", c),
+        None => "✗".to_string(),
+    };
+
+    println!("    {} {}", error_prefix.red().bold(), message.red().bold());
+
+    if let Some(s) = solution {
+        println!("       Solution: {}", s.yellow());
+    }
+}
+
 
 // Print detailed information (only in verbose mode)
 pub fn print_detailed(message: &str) {
@@ -789,6 +887,43 @@ pub fn print_detailed(message: &str) {
 // Format a project name with appropriate styling
 pub fn format_project_name(name: &str) -> ColoredString {
     name.cyan().bold()
+}
+
+pub fn print_box(title: &str, width: usize) {
+    if is_quiet() {
+        return;
+    }
+
+    // Acquire output lock
+    let _guard = OUTPUT_MUTEX.lock().unwrap();
+
+    // If a spinner is active, make sure we're on a new line
+    if *SPINNER_ACTIVE.lock().unwrap() {
+        println!();
+        *LAST_LINE_WAS_NEWLINE.lock().unwrap() = true;
+    }
+
+    // Ensure single space before box
+    ensure_single_newline();
+
+    // Box characters
+    println!("┌{}┐", "─".repeat(width - 2));
+
+    // Center the title
+    let title_len = title.len();
+    let padding = width - 2 - title_len;
+    let left_pad = padding / 2;
+    let right_pad = padding - left_pad;
+
+    println!("│{}{}{}│",
+             " ".repeat(left_pad),
+             title,
+             " ".repeat(right_pad));
+
+    println!("└{}┘", "─".repeat(width - 2));
+
+    // Mark that we printed something
+    mark_line_printed();
 }
 
 //==============================================================================
@@ -1067,7 +1202,8 @@ pub struct BuildProgress {
 impl BuildProgress {
     pub fn new(project_name: &str, total_steps: usize) -> Self {
         if !is_quiet() {
-            print_project_box(project_name, "", "");
+            // Print a simpler project box
+            print_box(&format!("  {}  ", project_name), 80);
         }
 
         Self {
@@ -1079,32 +1215,31 @@ impl BuildProgress {
         }
     }
 
-    // For BuildProgress next_step method
     pub fn next_step(&mut self, step_name: &str) {
         self.current_step += 1;
         if !is_quiet() {
+            // Ensure we're not interrupting a spinner
+            ensure_single_newline();
+
             println!("[{}/{}] {}",
                      self.current_step.to_string().cyan().bold(),
                      self.total_steps,
-                     step_name);
-
-            // Show a spinning wheel to indicate overall progress
-            let wheel = SpinningWheel::start("Overall progress");
-            thread::sleep(Duration::from_millis(500)); // Show wheel briefly
-            wheel.success();
+                     step_name.bold());
         }
     }
 
     pub fn complete(&self) {
         if !is_quiet() {
             let duration = self.start_time.elapsed();
-            let formatted_time = format_duration(duration);
+
+            // Ensure we're not interrupting a spinner
+            ensure_single_newline();
 
             println!("✓ {} {}",
                      format!("{} completed in", self.project_name).green().bold(),
-                     formatted_time.yellow().bold());
+                     format_duration(duration).yellow().bold());
 
-            print_build_summary(&self.project_name, duration);
+            print_summary(&self.project_name, duration);
         }
     }
 }
@@ -1215,34 +1350,19 @@ fn strip_ansi_codes(s: &str) -> String {
     ansi_regex.replace_all(s, "").to_string()
 }
 
-pub fn print_build_summary(project: &str, duration: Duration) {
+pub fn print_summary(title: &str, duration: Duration) {
     if is_quiet() {
         return;
     }
 
-    let width = 80;
-    let title = " BUILD SUMMARY ";
-    let title_padding = (width - 2 - strip_ansi_codes(title).len()) / 2;
+    // Ensure we're not interrupting a spinner
+    ensure_single_newline();
 
-    println!("╭{}{}{}╮",
-             "─".repeat(title_padding),
-             title.blue().bold(),
-             "─".repeat(width - 2 - strip_ansi_codes(title).len() - title_padding));
-
-    // Project line with proper padding
-    let project_text = format!(" Project: {} ", project);
-    let padding = width - 2 - strip_ansi_codes(&project_text).len();
-    println!("│{}{}│", project_text.cyan(), " ".repeat(padding));
-
-    // Time line with proper padding
-    let time_text = format!(" Time: {} ", format_duration(duration).yellow());
-    let time_padding = width - 2 - strip_ansi_codes(&time_text).len();
-    println!("│{}{}│", time_text, " ".repeat(time_padding));
-
-    // Bottom border
-    println!("╰{}╯", "─".repeat(width - 2));
-
-    // Add a newline after the summary for better spacing
+    // Print a simpler, cleaner summary
+    println!();
+    println!("    ✓ {} in {}",
+             title.green().bold(),
+             format_duration(duration).yellow().bold());
     println!();
 }
 

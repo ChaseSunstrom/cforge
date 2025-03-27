@@ -1379,6 +1379,26 @@ pub fn generate_cmake_lists(config: &ProjectConfig, project_path: &Path, variant
         String::new(),
     ];
 
+    let language = &project_config.language;
+    let standard = &project_config.standard;
+
+    // Code to set C/C++ standard
+    if !standard.is_empty() {
+        // For C++
+        if language.to_lowercase() == "c++" {
+            cmake_content.push(format!("set(CMAKE_CXX_STANDARD {})", standard.trim_start_matches("c++").trim()));
+            cmake_content.push("set(CMAKE_CXX_STANDARD_REQUIRED ON)".to_string());
+            cmake_content.push("set(CMAKE_CXX_EXTENSIONS OFF)".to_string());
+        }
+        // For C
+        else if language.to_lowercase() == "c" {
+            cmake_content.push(format!("set(CMAKE_C_STANDARD {})", standard.trim_start_matches("c").trim()));
+            cmake_content.push("set(CMAKE_C_STANDARD_REQUIRED ON)".to_string());
+            cmake_content.push("set(CMAKE_C_EXTENSIONS OFF)".to_string());
+        }
+        cmake_content.push(String::new());
+    }
+
     cmake_content.push("# Handle configuration-specific defines".parse().unwrap());
     cmake_content.push("string(TOUPPER \"${CMAKE_BUILD_TYPE}\" UPPER_CONFIG)".parse().unwrap());
     cmake_content.push("add_compile_definitions(${UPPER_CONFIG}_BUILD=1)".parse().unwrap());
