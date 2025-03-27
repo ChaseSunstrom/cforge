@@ -3,7 +3,7 @@ use std::io::Write;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use crate::config::{PCHConfig, PackageInstallState, ProjectConfig};
-use crate::output_utils::{SpinningWheel, TimedProgressBar};
+use crate::output_utils::{SpinningWheel};
 
 
 

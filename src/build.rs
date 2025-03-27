@@ -6,11 +6,11 @@ use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 use colored::Colorize;
 use crate::config::{BuildProgressState, ProjectConfig, VariantSettings, WorkspaceConfig};
-use crate::{categorize_error, ensure_build_tools, ensure_compiler_available, get_effective_compiler_label, has_command, is_msvc_style_for_config, map_compiler_label, parse_universal_flags, print_general_suggestions, run_command_with_timeout};
+use crate::{categorize_error, ensure_build_tools, ensure_compiler_available, get_effective_compiler_label, is_msvc_style_for_config, map_compiler_label, parse_universal_flags, print_general_suggestions, run_command_with_timeout};
 use crate::cross_compile::get_predefined_cross_target;
 use crate::dependencies::install_dependencies;
 use crate::errors::{format_compiler_errors, glob_to_regex};
-use crate::output_utils::{is_quiet, is_verbose, print_status, print_substep, print_warning, BuildProgress, SpinningWheel};
+use crate::output_utils::{has_command, is_quiet, is_verbose, print_detailed, print_status, print_substep, print_success, print_warning, BuildProgress, SpinningWheel};
 use crate::project::generate_cmake_lists;
 use crate::workspace::resolve_workspace_dependencies;
 
@@ -267,7 +267,7 @@ pub fn run_cmake_silently(
             if has_build_type {
                 // Found multiple CMAKE_BUILD_TYPE settings
                 if !is_quiet() {
-                    println!("{}", "Warning: Multiple CMAKE_BUILD_TYPE settings detected in CMake command".yellow());
+                    print_warning("Multiple CMAKE_BUILD_TYPE settings detected in CMake command", None);
                     println!("First value: {}, Second value: {}", build_type_value, cmd[i+1]);
                 }
             }
@@ -277,7 +277,7 @@ pub fn run_cmake_silently(
             if has_build_type {
                 // Found multiple CMAKE_BUILD_TYPE settings
                 if !is_quiet() {
-                    println!("{}", "Warning: Multiple CMAKE_BUILD_TYPE settings detected in CMake command".yellow());
+                    print_warning("Multiple CMAKE_BUILD_TYPE settings detected in CMake command", None);
                     println!("First value: {}, Second value: {}",
                              build_type_value,
                              arg.trim_start_matches("-DCMAKE_BUILD_TYPE="));
@@ -419,183 +419,41 @@ pub fn execute_build_with_progress(
 ) -> Result<(), Box<dyn std::error::Error>> {
     use std::process::{Command, Stdio};
     use std::io::{BufRead, BufReader};
-    use std::sync::{Arc, Mutex};
-    use std::thread;
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
-    // Check if this is a CMake command
-    let is_cmake_command = cmd.len() > 0 && cmd[0].contains("cmake");
+    // Show what command we're running
+    print_detailed(&format!("Running command: {}", cmd.join(" ")));
 
-    // Build the Command
+    // Initial progress update
+    progress.update_status("Starting build");
+
+    // Build the Command with direct output
     let mut command = Command::new(&cmd[0]);
     command.args(&cmd[1..]);
     command.current_dir(build_path);
 
-    // Pipe stdout and stderr so we can read them
-    command.stdout(Stdio::piped());
-    command.stderr(Stdio::piped());
+    // Important: Use inherit for stdout/stderr so output is visible
+    // This prevents the hanging appearance by showing all output directly
+    command.stdout(Stdio::inherit());
+    command.stderr(Stdio::inherit());
 
-    // Initial progress update - show we're starting
-    progress.update_status("Starting build process");
+    // Start a timer
+    let start_time = Instant::now();
 
-    // Spawn the command
-    let mut child = match command.spawn() {
-        Ok(c) => c,
-        Err(e) => {
-            progress.failure(&format!("Failed to start build: {}", e));
-            return Err(format!("Failed to start build command: {}", e).into());
-        }
-    };
+    // Run command and wait for it to complete
+    let status = command.status()?;
 
-    // Take ownership of stdout/stderr handles
-    let stdout = child.stdout.take().ok_or("Failed to capture stdout")?;
-    let stderr = child.stderr.take().ok_or("Failed to capture stderr")?;
-
-    // Shared state for tracking build progress
-    let build_state = Arc::new(Mutex::new(BuildProgressState {
-        compiled_files: 0,
-        total_files: source_files_count.max(1), // Ensure we don't divide by zero
-        current_percentage: 0.0,
-        errors: Vec::new(),
-        is_linking: false,
-    }));
-
-    // Buffers to collect stdout and stderr for error analysis
-    let stdout_buffer = Arc::new(Mutex::new(String::new()));
-    let stderr_buffer = Arc::new(Mutex::new(String::new()));
-
-    // Create completion flags to detect when reading is complete
-    let stdout_done = Arc::new(Mutex::new(false));
-    let stderr_done = Arc::new(Mutex::new(false));
-
-    // Clones for threads
-    let build_state_stdout = Arc::clone(&build_state);
-    let build_state_stderr = Arc::clone(&build_state);
-    let stdout_done_clone = Arc::clone(&stdout_done);
-    let stderr_done_clone = Arc::clone(&stderr_done);
-    let stdout_buffer_clone = Arc::clone(&stdout_buffer);
-    let stderr_buffer_clone = Arc::clone(&stderr_buffer);
-
-    // Thread for reading stdout
-    let stdout_handle = thread::spawn(move || {
-        let reader = BufReader::new(stdout);
-
-        for line in reader.lines().filter_map(Result::ok) {
-            // Update progress based on stdout patterns
-            update_build_progress(&build_state_stdout, &line, false);
-
-            // Append to buffer for error analysis
-            {
-                let mut buffer = stdout_buffer_clone.lock().unwrap();
-                buffer.push_str(&line);
-                buffer.push('\n');
-            }
-
-            // We only show verbose output in verbose mode - we'll format errors later
-            if is_verbose() {
-                println!("{}", line);
-            }
-        }
-
-        // Mark stdout reading as complete
-        *stdout_done_clone.lock().unwrap() = true;
-    });
-
-    // Thread for reading stderr
-    let stderr_handle = thread::spawn(move || {
-        let reader = BufReader::new(stderr);
-
-        for line in reader.lines().filter_map(Result::ok) {
-            // Update progress based on stderr patterns
-            update_build_progress(&build_state_stderr, &line, true);
-
-            // Append to buffer for error analysis
-            {
-                let mut buffer = stderr_buffer_clone.lock().unwrap();
-                buffer.push_str(&line);
-                buffer.push('\n');
-            }
-
-            // We'll collect all errors to format them later - only show in verbose mode now
-            if is_verbose() {
-                eprintln!("{}", line.red());
-            }
-        }
-
-        // Mark stderr reading as complete
-        *stderr_done_clone.lock().unwrap() = true;
-    });
-
-    // Create a thread to update the progress based on the build state
-    let build_state_progress = Arc::clone(&build_state);
-    let stdout_done_progress = Arc::clone(&stdout_done);
-    let stderr_done_progress = Arc::clone(&stderr_done);
-    let progress_clone = progress.clone();
-    let progress_handle = thread::spawn(move || {
-        // Keep updating until both stdout and stderr are done OR we reach 100%
-        while !(*stdout_done_progress.lock().unwrap() && *stderr_done_progress.lock().unwrap()) {
-            // Get current state
-            let state = build_state_progress.lock().unwrap();
-
-            // Update status message based on build state
-            let status_message = if state.is_linking {
-                "Linking...".to_string()
-            } else if state.compiled_files > 0 {
-                format!("Compiled {} of {} files", state.compiled_files, state.total_files)
-            } else {
-                "Starting compilation...".to_string()
-            };
-
-            // Release the lock before updating status
-            drop(state);
-
-            // Update the spinning wheel with our current status
-            progress_clone.update_status(&status_message);
-
-            // Don't spin the CPU - check every 100ms
-            thread::sleep(Duration::from_millis(100));
-        }
-    });
-
-    // Wait for the command to complete
-    match child.wait() {
-        Ok(status) => {
-            if !status.success() {
-                // Wait for stdout/stderr readers to finish
-                let _ = stdout_handle.join();
-                let _ = stderr_handle.join();
-
-                // Get the collected stdout and stderr content for error analysis
-                let stdout_content = stdout_buffer.lock().unwrap().clone();
-                let stderr_content = stderr_buffer.lock().unwrap().clone();
-
-                // Build failed - display formatted errors using our enhanced error formatter
-                progress.failure("Build failed");
-
-                // Use our enhanced error formatter
-                println!();  // Add some space
-                let formatted_errors = format_compiler_errors(&stdout_content, &stderr_content);
-                for error_line in &formatted_errors {
-                    println!("{}", error_line);
-                }
-
-                return Err("Build process failed - see above for detailed errors".into());
-            }
-        },
-        Err(e) => {
-            // Command failed to execute properly
-            progress.failure(&format!("Command failed: {}", e));
-            return Err(e.into());
-        }
+    // Check if the build was successful
+    if !status.success() {
+        progress.failure(&format!("Build failed with exit code {}", status.code().unwrap_or(-1)));
+        return Err("Build process failed - see above for detailed errors".into());
     }
 
-    // Wait for stdout/stderr readers to finish
-    let _ = stdout_handle.join();
-    let _ = stderr_handle.join();
-    let _ = progress_handle.join();
-
-    // Build succeeded
+    // Success!
+    let duration = start_time.elapsed();
     progress.success();
+    print_success(&format!("Build completed in {:.2}s", duration.as_secs_f32()), None);
+
     Ok(())
 }
 

@@ -17,7 +17,7 @@ use crate::config::{auto_adjust_config, load_project_config, load_workspace_conf
 use crate::dependencies::install_dependencies;
 use crate::errors::format_cpp_errors_rust_style;
 use crate::ide::generate_ide_files;
-use crate::output_utils::{is_quiet, is_verbose, print_detailed, print_error, print_step, print_substep, print_warning, ProgressBar};
+use crate::output_utils::{is_quiet, is_verbose, print_detailed, print_error, print_substep, print_warning};
 use crate::project::{build_project, clean_project, init_project, init_workspace, install_project, list_project_items, package_project, run_project, test_project};
 use crate::workspace::{build_workspace_with_dependency_order, clean_workspace, generate_workspace_ide_files, install_workspace, install_workspace_deps, is_workspace, list_startup_projects, list_workspace_items, package_workspace, run_workspace, run_workspace_script, set_startup_project, show_current_startup, test_workspace};
 
