@@ -23,7 +23,7 @@ pub fn configure_project(
     workspace_config: Option<&WorkspaceConfig>
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Create a progress tracker for configuration
-    let mut progress = BuildProgress::new(&format!("Configuring {}", config.project.name), 5);
+    let mut progress = BuildProgress::new(&format!("Configuring {}", config.project.name), 3);
 
     // Step 1: Ensure tools
     progress.next_step("Checking required tools");
@@ -38,6 +38,7 @@ pub fn configure_project(
     } else {
         project_path.join(format!("{}-{}", build_dir, build_type.to_lowercase()))
     };
+
     let build_path_rel = if build_path.is_absolute() {
         // Convert to a path relative to the current directory if possible
         build_path.strip_prefix(env::current_dir().unwrap_or(project_path.to_path_buf()))
@@ -45,10 +46,8 @@ pub fn configure_project(
     } else {
         &build_path
     };
-    fs::create_dir_all(&build_path)?;
 
-    // Get the build type - CRITICAL FIX: Ensure it's properly propagated
-    let build_type = get_build_type(config, config_type);
+    fs::create_dir_all(&build_path)?;
 
     // Create environment for hooks
     let mut hook_env = HashMap::new();
@@ -61,7 +60,7 @@ pub fn configure_project(
     }
 
     // Step 2: Run pre-configure hooks
-    progress.next_step("Running pre-configure hooks");
+    progress.next_step("Running hooks");
     if let Some(hooks) = &config.hooks {
         if let Some(pre_hooks) = &hooks.pre_configure {
             if !pre_hooks.is_empty() {
@@ -71,7 +70,7 @@ pub fn configure_project(
     }
 
     // Step 3: Setup dependencies
-    progress.next_step("Setting up dependencies");
+    progress.next_step("Configuring build");
 
     // Check for cross-compilation config
     let cross_config = if let Some(target) = cross_target {
@@ -119,14 +118,12 @@ pub fn configure_project(
     let conan_cmake = deps_result.get("conan_cmake").cloned().unwrap_or_default();
 
     // Step 4: Generate CMake files
-    progress.next_step("Generating build files");
-
     let mut cmake_spinner = SpinningWheel::start("Generating CMakeLists.txt");
     generate_cmake_lists(config, project_path, variant_name, workspace_config)?;
     cmake_spinner.success();
 
     // Step 5: Run CMake configuration
-    progress.next_step("Running CMake configuration");
+    let mut cmake_progress = SpinningWheel::start("Running cmake");
 
     // Get CMake generator
     let generator = get_cmake_generator(config)?;
@@ -143,7 +140,6 @@ pub fn configure_project(
     // Set this as a debug printf to check what's being used
     if !is_quiet() {
         print_substep(&format!("Using build configuration: {}", build_type));
-        print_substep(&format!("CMake command will set: CMAKE_BUILD_TYPE={}", build_type));
     }
 
     // Add vcpkg toolchain if available
@@ -203,10 +199,36 @@ pub fn configure_project(
         cmd.extend(workspace_options);
     }
 
-    // Run the CMake configuration command with our modified silent runner
-    let mut cmake_progress = SpinningWheel::start("Running cmake");
-    let cmake_result = run_cmake_silently(cmd.clone(), &build_path, env_vars.clone())?;
-    cmake_progress.success();
+    // If in verbose mode, show the command
+    if is_verbose() {
+        print_substep(&format!("CMake command: {}", cmd.join(" ")));
+    }
+
+    // Run the CMake configuration command with a timeout to prevent hanging
+    let cmake_result = run_command_with_timeout(
+        cmd.clone(),
+        Some(&build_path.to_string_lossy()),
+        env_vars.clone(),
+        180 // 3 minute timeout
+    );
+
+    match cmake_result {
+        Ok(_) => cmake_progress.success(),
+        Err(e) => {
+            cmake_progress.failure(&format!("CMake configuration failed: {}", e));
+
+            // Check for common CMake errors and provide helpful hints
+            if e.to_string().contains("could not find") || e.to_string().contains("not found") {
+                print_warning("Missing dependencies or tools required by CMake",
+                              Some("Check if all dependencies are installed correctly"));
+            } else if e.to_string().contains("timed out") {
+                print_warning("CMake configuration timed out",
+                              Some("The operation might be stuck waiting for user input or a network resource"));
+            }
+
+            return Err(e);
+        }
+    }
 
     // Run post-configure hooks
     if let Some(hooks) = &config.hooks {
@@ -223,8 +245,7 @@ pub fn configure_project(
 
     // Show configuration summary
     if !is_quiet() {
-        print_status(&format!("Project configured with generator: {} ({})",
-                              generator, build_type));
+        print_status(&format!("Project configured with generator: {}", generator));
 
         if let Some(variant_name) = variant_name {
             print_substep(&format!("Using build variant: {}", variant_name));
@@ -245,47 +266,16 @@ pub fn run_cmake_silently(
 ) -> Result<(), Box<dyn std::error::Error>> {
     use std::process::{Command, Stdio};
     use std::io::{BufRead, BufReader};
+    use std::sync::mpsc::channel;
     use std::time::Duration;
 
     // Collect error messages to display if cmake fails
     let error_messages = Arc::new(Mutex::new(Vec::new()));
-    let error_messages_stdout = Arc::clone(&error_messages);
-    let error_messages_stderr = Arc::clone(&error_messages);
+    let error_messages_clone = Arc::clone(&error_messages);
 
     // Debug print the command to see what's being passed to CMake
     if !is_quiet() && is_verbose() {
         println!("CMake command: {}", cmd.join(" "));
-    }
-
-    // Ensure we're not passing conflicting configurations
-    // This is for debugging the issue
-    let mut has_build_type = false;
-    let mut build_type_value = String::new();
-
-    for (i, arg) in cmd.iter().enumerate() {
-        if arg == "-DCMAKE_BUILD_TYPE" && i + 1 < cmd.len() {
-            if has_build_type {
-                // Found multiple CMAKE_BUILD_TYPE settings
-                if !is_quiet() {
-                    print_warning("Multiple CMAKE_BUILD_TYPE settings detected in CMake command", None);
-                    println!("First value: {}, Second value: {}", build_type_value, cmd[i+1]);
-                }
-            }
-            has_build_type = true;
-            build_type_value = cmd[i+1].clone();
-        } else if arg.starts_with("-DCMAKE_BUILD_TYPE=") {
-            if has_build_type {
-                // Found multiple CMAKE_BUILD_TYPE settings
-                if !is_quiet() {
-                    print_warning("Multiple CMAKE_BUILD_TYPE settings detected in CMake command", None);
-                    println!("First value: {}, Second value: {}",
-                             build_type_value,
-                             arg.trim_start_matches("-DCMAKE_BUILD_TYPE="));
-                }
-            }
-            has_build_type = true;
-            build_type_value = arg.trim_start_matches("-DCMAKE_BUILD_TYPE=").to_string();
-        }
     }
 
     // Build the Command
@@ -300,11 +290,10 @@ pub fn run_cmake_silently(
         }
     }
 
-    // Pipe stdout and stderr so we can read them but not display them
+    // Pipe stdout and stderr
     command.stdout(Stdio::piped());
     command.stderr(Stdio::piped());
 
-    // Spawn the command
     let mut child = match command.spawn() {
         Ok(c) => c,
         Err(e) => {
@@ -313,102 +302,174 @@ pub fn run_cmake_silently(
     };
 
     // Take ownership of stdout/stderr handles
-    let stdout = child.stdout.take().ok_or("Failed to capture stdout")?;
-    let stderr = child.stderr.take().ok_or("Failed to capture stderr")?;
+    let stdout = match child.stdout.take() {
+        Some(out) => out,
+        None => return Err("Failed to capture stdout".into()),
+    };
 
-    // Track cmake progress for real-time status updates (if needed)
-    let progress_tracker = Arc::new(Mutex::new(String::new()));
-    let progress_tracker_clone = Arc::clone(&progress_tracker);
+    let stderr = match child.stderr.take() {
+        Some(err) => err,
+        None => return Err("Failed to capture stderr".into()),
+    };
+
+    // Thread-safe collections for collecting output
+    let stdout_messages = Arc::new(Mutex::new(Vec::new()));
+    let stderr_messages = Arc::new(Mutex::new(Vec::new()));
+
+    let stdout_clone = Arc::clone(&stdout_messages);
+    let stderr_clone = Arc::clone(&stderr_messages);
 
     // Thread for reading stdout
     let stdout_handle = thread::spawn(move || {
         let reader = BufReader::new(stdout);
         for line in reader.lines().filter_map(Result::ok) {
-            // Save status lines
+            if is_verbose() {
+                println!("CMAKE: {}", line);
+            }
+
+            // Store important messages
             if line.contains("Configuring") || line.contains("Generating") {
-                let mut current = progress_tracker_clone.lock().unwrap();
-                *current = line.trim().to_string();
+                let mut msgs = stdout_clone.lock().unwrap();
+                msgs.push(line.clone());
             }
 
             // Save important error messages
             if line.contains("error:") || line.contains("Error:") || line.contains("CMake Error") ||
                 line.contains("WARNING:") || line.contains("fatal error") {
-                println!("{}", line);  // Display in real-time
-                let mut msgs = error_messages_stdout.lock().unwrap();
+
+                if !is_quiet() {
+                    println!("{}", line);  // Display in real-time
+                }
+
+                let mut msgs = error_messages_clone.lock().unwrap();
                 msgs.push(line);
             }
         }
     });
 
+    let error_messages_stderr = Arc::clone(&error_messages);
+
     // Thread for reading stderr
     let stderr_handle = thread::spawn(move || {
         let reader = BufReader::new(stderr);
         for line in reader.lines().filter_map(Result::ok) {
-            // Always capture stderr lines for error reporting
-            let mut msgs = error_messages_stderr.lock().unwrap();
+            // Store all stderr messages
+            let mut msgs = stderr_clone.lock().unwrap();
             msgs.push(line.clone());
 
-            // Display error lines in real-time
+            // Also store error messages for display
             if line.contains("error:") || line.contains("Error:") || line.contains("CMake Error") ||
                 line.contains("WARNING:") || line.contains("fatal error") {
-                eprintln!("{}", line.red());
+
+                if !is_quiet() {
+                    eprintln!("{}", line.red());  // Display errors in real-time
+                }
+
+                let mut error_msgs = error_messages_stderr.lock().unwrap();
+                error_msgs.push(line);
             }
         }
     });
 
-    // Wait for the command to complete with a reasonable timeout
-    let timeout = Duration::from_secs(600); // 10 minute timeout for CMake
-    let (tx, rx) = std::sync::mpsc::channel();
+    // Set up a channel for the exit status
+    let (tx, rx) = channel();
+
+    // Thread to wait for process completion
+    let child_mutex = Arc::new(Mutex::new(child));
+    let child_clone = Arc::clone(&child_mutex);
+    let tx_watchdog = tx.clone();
 
     thread::spawn(move || {
-        let status = child.wait();
-        let _ = tx.send(status);
+        // Get a lock on the child process
+        if let Ok(mut child) = child_clone.lock() {
+            // Wait for the process to complete
+            match child.wait() {
+                Ok(status) => {
+                    let _ = tx.send(Ok(status));
+                },
+                Err(e) => {
+                    let _ = tx.send(Err(e));
+                }
+            }
+        } else {
+            // Failed to get lock - abnormal condition
+            let _ = tx.send(Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "Failed to get lock on child process"
+            )));
+        }
     });
 
-    match rx.recv_timeout(timeout) {
-        Ok(status_result) => {
-            match status_result {
-                Ok(status) => {
-                    if !status.success() {
-                        // Wait for stdout/stderr readers to finish to get all messages
-                        let _ = stdout_handle.join();
-                        let _ = stderr_handle.join();
+    // Set up a watchdog thread to kill the process if it hangs
+    let child_watchdog = Arc::clone(&child_mutex);
 
-                        // Get collected error messages
-                        let error_msgs = error_messages.lock().unwrap();
+    thread::spawn(move || {
+        // Sleep for 3 minutes (reasonable timeout for CMake configuration)
+        thread::sleep(Duration::from_secs(180));
 
-                        // If we have error messages, display them
-                        if !error_msgs.is_empty() {
-                            println!("\n{}", "CMake configuration failed with these errors:".red().bold());
-                            for msg in error_msgs.iter().take(20) {  // Limit to 20 messages
-                                println!("  {}", msg);
-                            }
+        // Check if the process is still running
+        if let Ok(mut child) = child_watchdog.try_lock() {
+            // Try to get status without waiting (None means still running)
+            match child.try_wait() {
+                Ok(None) => {
+                    // Process is still running after timeout - kill it
+                    println!("CMake configuration timed out after 3 minutes - terminating");
+                    let _ = child.kill();
 
-                            // Provide some common solutions
-                            println!("\n{}", "Possible solutions:".yellow().bold());
-                            println!("  • Make sure you have the correct compiler installed");
-                            println!("  • Check if your C++ standard is supported by your compiler");
-                            println!("  • Verify that all dependencies are properly installed");
-                            println!("  • Try 'cforge clean' and then build again");
-                            println!("  • Run with verbose output: set CFORGE_VERBOSE=1");
-                        }
-
-                        return Err(format!("CMake configuration failed with exit code: {}", status).into());
-                    }
+                    // Send timeout status
+                    let _ = tx_watchdog.send(Err(std::io::Error::new(
+                        std::io::ErrorKind::TimedOut,
+                        "CMake configuration timed out after 3 minutes"
+                    )));
                 },
-                Err(e) => return Err(format!("Command error: {}", e).into()),
+                _ => () // Process already completed or failed to check
             }
-        },
-        Err(_) => {
-            return Err(format!("CMake configuration timed out after {} seconds", timeout.as_secs()).into());
         }
-    }
+    });
+
+    // Wait for result with a timeout
+    let result = match rx.recv_timeout(Duration::from_secs(185)) { // 3 minutes + 5 seconds buffer
+        Ok(result) => result,
+        Err(_) => {
+            // Timeout or channel error
+            return Err("CMake configuration timed out or channel error occurred".into());
+        }
+    };
 
     // Wait for stdout/stderr readers to finish
     let _ = stdout_handle.join();
     let _ = stderr_handle.join();
 
-    Ok(())
+    // Process result
+    match result {
+        Ok(status) => {
+            if !status.success() {
+                // Get collected error messages
+                let error_msgs = error_messages.lock().unwrap();
+
+                // If we have error messages, display them
+                if !error_msgs.is_empty() {
+                    println!("\n{}", "CMake configuration failed with these errors:".red().bold());
+                    for msg in error_msgs.iter().take(20) {  // Limit to 20 messages
+                        println!("  {}", msg);
+                    }
+
+                    // Provide some common solutions
+                    println!("\n{}", "Possible solutions:".yellow().bold());
+                    println!("  • Make sure you have the correct compiler installed");
+                    println!("  • Check if your C++ standard is supported by your compiler");
+                    println!("  • Verify that all dependencies are properly installed");
+                    println!("  • Try 'cforge clean' and then build again");
+                    println!("  • Run with verbose output: set CFORGE_VERBOSE=1");
+                }
+
+                return Err(format!("CMake configuration failed with exit code: {}", status).into());
+            }
+
+            Ok(())
+        },
+        Err(e) => Err(format!("CMake error: {}", e).into()),
+    }
 }
 
 pub fn execute_build_with_progress(
@@ -419,42 +480,239 @@ pub fn execute_build_with_progress(
 ) -> Result<(), Box<dyn std::error::Error>> {
     use std::process::{Command, Stdio};
     use std::io::{BufRead, BufReader};
-    use std::time::{Duration, Instant};
+    use std::sync::{Arc, Mutex};
+    use std::thread;
+    use std::time::Duration;
 
-    // Show what command we're running
-    print_detailed(&format!("Running command: {}", cmd.join(" ")));
+    let is_cmake_command = cmd.len() > 0 && cmd[0].contains("cmake");
 
-    // Initial progress update
-    progress.update_status("Starting build");
-
-    // Build the Command with direct output
+    // Build the Command
     let mut command = Command::new(&cmd[0]);
     command.args(&cmd[1..]);
     command.current_dir(build_path);
+    command.stdout(Stdio::piped());
+    command.stderr(Stdio::piped());
 
-    // Important: Use inherit for stdout/stderr so output is visible
-    // This prevents the hanging appearance by showing all output directly
-    command.stdout(Stdio::inherit());
-    command.stderr(Stdio::inherit());
+    // Initial progress update
+    progress.update_status("Starting build process");
 
-    // Start a timer
-    let start_time = Instant::now();
+    // Spawn the command with better error handling
+    let mut child = match command.spawn() {
+        Ok(c) => c,
+        Err(e) => {
+            progress.failure(&format!("Failed to start build: {}", e));
+            return Err(format!("Failed to start build command: {}", e).into());
+        }
+    };
 
-    // Run command and wait for it to complete
-    let status = command.status()?;
+    // Take ownership of stdout/stderr handles with proper error handling
+    let stdout = match child.stdout.take() {
+        Some(out) => out,
+        None => {
+            progress.failure("Failed to capture stdout");
+            return Err("Failed to capture stdout".into());
+        }
+    };
 
-    // Check if the build was successful
-    if !status.success() {
-        progress.failure(&format!("Build failed with exit code {}", status.code().unwrap_or(-1)));
-        return Err("Build process failed - see above for detailed errors".into());
+    let stderr = match child.stderr.take() {
+        Some(err) => err,
+        None => {
+            progress.failure("Failed to capture stderr");
+            return Err("Failed to capture stderr".into());
+        }
+    };
+
+    // Shared state for tracking build progress
+    let build_state = Arc::new(Mutex::new(BuildProgressState {
+        compiled_files: 0,
+        total_files: source_files_count.max(1), // Ensure we don't divide by zero
+        current_percentage: 0.0,
+        errors: Vec::new(),
+        is_linking: false,
+    }));
+
+    // Buffers to collect stdout and stderr for error analysis
+    let stdout_buffer = Arc::new(Mutex::new(String::new()));
+    let stderr_buffer = Arc::new(Mutex::new(String::new()));
+
+    // Create completion flags to detect when reading is complete
+    let stdout_done = Arc::new(Mutex::new(false));
+    let stderr_done = Arc::new(Mutex::new(false));
+
+    // Clones for threads
+    let build_state_stdout = Arc::clone(&build_state);
+    let build_state_stderr = Arc::clone(&build_state);
+    let stdout_done_clone = Arc::clone(&stdout_done);
+    let stderr_done_clone = Arc::clone(&stderr_done);
+    let stdout_buffer_clone = Arc::clone(&stdout_buffer);
+    let stderr_buffer_clone = Arc::clone(&stderr_buffer);
+
+    // Thread for reading stdout
+    let stdout_handle = thread::spawn(move || {
+        let reader = BufReader::new(stdout);
+
+        for line in reader.lines().filter_map(Result::ok) {
+            // Update progress based on stdout patterns
+            update_build_progress(&build_state_stdout, &line, false);
+
+            // Append to buffer for error analysis
+            {
+                let mut buffer = stdout_buffer_clone.lock().unwrap();
+                buffer.push_str(&line);
+                buffer.push('\n');
+            }
+
+            // We only show verbose output in verbose mode - we'll format errors later
+            if is_verbose() {
+                println!("{}", line);
+            }
+        }
+
+        // Mark stdout reading as complete
+        *stdout_done_clone.lock().unwrap() = true;
+    });
+
+    // Thread for reading stderr
+    let stderr_handle = thread::spawn(move || {
+        let reader = BufReader::new(stderr);
+
+        for line in reader.lines().filter_map(Result::ok) {
+            // Update progress based on stderr patterns
+            update_build_progress(&build_state_stderr, &line, true);
+
+            // Append to buffer for error analysis
+            {
+                let mut buffer = stderr_buffer_clone.lock().unwrap();
+                buffer.push_str(&line);
+                buffer.push('\n');
+            }
+
+            // We'll collect all errors to format them later - only show in verbose mode now
+            if is_verbose() {
+                eprintln!("{}", line.red());
+            }
+        }
+
+        // Mark stderr reading as complete
+        *stderr_done_clone.lock().unwrap() = true;
+    });
+
+    // Create a thread to update the progress based on the build state
+    let build_state_progress = Arc::clone(&build_state);
+    let stdout_done_progress = Arc::clone(&stdout_done);
+    let stderr_done_progress = Arc::clone(&stderr_done);
+    let progress_clone = progress.clone();
+
+    // Add a timeout mechanism to avoid hanging
+    let timeout_monitor = Arc::new(Mutex::new(false));
+    let timeout_monitor_clone = Arc::clone(&timeout_monitor);
+
+    let progress_handle = thread::spawn(move || {
+        let start_time = std::time::Instant::now();
+        let max_duration = Duration::from_secs(600); // 10 minute max timeout
+
+        // Keep updating until both stdout and stderr are done OR we reach 100% OR timeout
+        while !(*stdout_done_progress.lock().unwrap() && *stderr_done_progress.lock().unwrap()) {
+            // Check for timeout
+            if start_time.elapsed() > max_duration {
+                *timeout_monitor_clone.lock().unwrap() = true;
+                break;
+            }
+
+            // Get current state
+            let state = build_state_progress.lock().unwrap();
+
+            // Update status message based on build state
+            let status_message = if state.is_linking {
+                "Linking...".to_string()
+            } else if state.compiled_files > 0 {
+                format!("{}/{} files", state.compiled_files, state.total_files)
+            } else {
+                "Starting compilation...".to_string()
+            };
+
+            // Release the lock before updating status
+            drop(state);
+
+            // Update the spinning wheel with our current status
+            progress_clone.update_status(&status_message);
+
+            // Don't spin the CPU - check every 100ms
+            thread::sleep(Duration::from_millis(100));
+        }
+    });
+
+    // Wait for the command to complete with timeout
+    let timeout = Duration::from_secs(600); // 10 minute timeout for the build
+    let (tx, rx) = std::sync::mpsc::channel();
+
+    thread::spawn(move || {
+        let status = child.wait();
+        let _ = tx.send(status);
+    });
+
+    let progress_clone = progress.clone();
+
+    let result = match rx.recv_timeout(timeout) {
+        Ok(status_result) => {
+            match status_result {
+                Ok(status) => {
+                    if !status.success() {
+                        // Wait for stdout/stderr readers to finish
+                        let _ = stdout_handle.join();
+                        let _ = stderr_handle.join();
+
+                        // Get the collected stdout and stderr content for error analysis
+                        let stdout_content = stdout_buffer.lock().unwrap().clone();
+                        let stderr_content = stderr_buffer.lock().unwrap().clone();
+
+                        // Build failed - display formatted errors using our enhanced error formatter
+                        progress_clone.failure("Build failed");
+
+                        // Use our enhanced error formatter
+                        println!();  // Add some space
+                        let formatted_errors = format_compiler_errors(&stdout_content, &stderr_content);
+                        for error_line in &formatted_errors {
+                            println!("{}", error_line);
+                        }
+
+                        return Err("Build process failed - see above for detailed errors".into());
+                    }
+                    Ok(())
+                },
+                Err(e) => Err(e.into()),
+            }
+        },
+        Err(_) => {
+            // Timeout occurred - force terminate the child process
+            progress_clone.failure("Build timed out after 10 minutes");
+            Err("Build process timed out after 10 minutes".into())
+        }
+    };
+
+    // Check if our internal timeout was triggered
+    if *timeout_monitor.lock().unwrap() {
+        progress.failure("Build timed out after 10 minutes");
+        return Err("Build process timed out after 10 minutes - possible hanging".into());
     }
 
-    // Success!
-    let duration = start_time.elapsed();
-    progress.success();
-    print_success(&format!("Build completed in {:.2}s", duration.as_secs_f32()), None);
+    // Wait for stdout/stderr readers to finish
+    let _ = stdout_handle.join();
+    let _ = stderr_handle.join();
+    let _ = progress_handle.join();
 
-    Ok(())
+    match result {
+        Ok(_) => {
+            // Build succeeded
+            progress.success();
+            Ok(())
+        },
+        Err(e) => {
+            // Command failed to execute properly
+            progress.failure(&format!("Command failed: {}", e));
+            Err(e)
+        }
+    }
 }
 
 pub fn get_build_type(config: &ProjectConfig, requested_config: Option<&str>) -> String {
@@ -605,9 +863,8 @@ pub fn run_hooks(hooks: &Option<Vec<String>>, project_path: &Path, env_vars: Opt
 pub fn update_build_progress(state: &Arc<Mutex<BuildProgressState>>, line: &str, is_stderr: bool) {
     let mut state = state.lock().unwrap();
 
-    // Check if this is a compiler line showing a file being compiled
-    // Improved detection of file compilation
-    if (line.contains(".cpp") || line.contains(".cc") || line.contains(".c")) &&
+    // Check if this is a compiler line showing a file being compiled - improved regex pattern
+    if (line.contains(".cpp") || line.contains(".cc") || line.contains(".c") || line.contains(".cxx")) &&
         (line.contains("Compiling") || line.contains("Building") ||
             line.contains("C++") || line.contains("CC") || line.contains("[") ||
             line.contains("Building CXX object") || line.contains("Building C object")) {

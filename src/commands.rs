@@ -356,7 +356,14 @@ pub fn run_command_with_timeout(
     env: Option<HashMap<String, String>>,
     timeout_seconds: u64
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // Build the Command as before
+    use std::process::{Command, Stdio};
+    use std::io::{BufRead, BufReader};
+    use std::sync::{Arc, Mutex};
+    use std::thread;
+    use std::time::Duration;
+    use std::sync::mpsc::channel;
+
+    // Build the Command
     let mut command = Command::new(&cmd[0]);
     command.args(&cmd[1..]);
 
@@ -373,108 +380,175 @@ pub fn run_command_with_timeout(
     command.stdout(Stdio::piped());
     command.stderr(Stdio::piped());
 
-    // Spawn the command
-    let child = command.spawn()
-        .map_err(|e| format!("Failed to execute command: {}", e))?;
+    if is_verbose() {
+        println!("Executing command: {}", cmd.join(" "));
+    }
 
-    // Wrap the Child in Arc<Mutex<>> so multiple threads can access
-    let child_arc = Arc::new(Mutex::new(child));
+    // Spawn the command with better error handling
+    let mut child = match command.spawn() {
+        Ok(child) => child,
+        Err(e) => return Err(format!("Failed to execute command: {}", e).into()),
+    };
 
-    // Take ownership of stdout/stderr handles *before* the wait thread
-    let stdout = child_arc
-        .lock()
-        .unwrap()
-        .stdout
-        .take()
-        .ok_or("Failed to capture child stdout")?;
-    let stderr = child_arc
-        .lock()
-        .unwrap()
-        .stderr
-        .take()
-        .ok_or("Failed to capture child stderr")?;
+    // Take ownership of stdout/stderr handles
+    let stdout = match child.stdout.take() {
+        Some(out) => out,
+        None => return Err("Failed to capture stdout".into()),
+    };
 
-    // Spawn a thread to continuously read from stdout
-    let child_arc_out = Arc::clone(&child_arc);
-    let out_handle = thread::spawn(move || {
+    let stderr = match child.stderr.take() {
+        Some(err) => err,
+        None => return Err("Failed to capture stderr".into()),
+    };
+
+    // Thread-safe child process handle
+    let child_mutex = Arc::new(Mutex::new(child));
+
+    // Flag to indicate if we've already handled process termination
+    let terminated = Arc::new(Mutex::new(false));
+    let terminated_stdout = Arc::clone(&terminated);
+    let terminated_stderr = Arc::clone(&terminated);
+
+    // Thread for reading stdout
+    let stdout_handle = thread::spawn(move || {
         let reader = BufReader::new(stdout);
         for line in reader.lines() {
-            /*
-            if let Ok(line) = line {
-                println!("{}", line);
+            // Check if we should stop processing
+            if *terminated_stdout.lock().unwrap() {
+                break;
             }
-            */
+
+            if let Ok(line) = line {
+                if is_verbose() {
+                    println!("{}", line);
+                }
+            }
         }
-        drop(child_arc_out); // not strictly necessary, but can be explicit
     });
 
-    // Spawn a thread to continuously read from stderr
-    let child_arc_err = Arc::clone(&child_arc);
-    let err_handle = thread::spawn(move || {
+    // Thread for reading stderr
+    let stderr_handle = thread::spawn(move || {
         let reader = BufReader::new(stderr);
         for line in reader.lines() {
+            // Check if we should stop processing
+            if *terminated_stderr.lock().unwrap() {
+                break;
+            }
+
             if let Ok(line) = line {
-                eprintln!("STDERR> {}", line);
+                if is_verbose() || line.contains("error") || line.contains("Error") {
+                    eprintln!("{}", line.red());
+                }
             }
         }
-        drop(child_arc_err);
     });
 
-    // We also need a channel to receive when the process completes
+    // Set up a channel for the exit status
     let (tx, rx) = channel();
-    let child_arc_wait = Arc::clone(&child_arc);
 
-    // Thread to wait on the child's exit
+    // Thread to wait for process completion
+    let child_clone = Arc::clone(&child_mutex);
+    let terminated_wait = Arc::clone(&terminated);
+    let tx_watchdog = tx.clone();
+
     thread::spawn(move || {
-        // Wait for the child to exit
-        let status = child_arc_wait.lock().unwrap().wait();
-        // Send the result back so we know the command is done
-        let _ = tx.send(status);
+        // Get a lock on the child process
+        if let Ok(mut child) = child_clone.lock() {
+            // Wait for the process to complete
+            match child.wait() {
+                Ok(status) => {
+                    // Mark as terminated
+                    *terminated_wait.lock().unwrap() = true;
+                    let _ = tx.send(Ok(status));
+                },
+                Err(e) => {
+                    // Mark as terminated
+                    *terminated_wait.lock().unwrap() = true;
+                    let _ = tx.send(Err(e));
+                }
+            }
+        } else {
+            // Failed to get lock - abnormal condition
+            let _ = tx.send(Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "Failed to get lock on child process"
+            )));
+        }
     });
 
-    // Now we wait up to `timeout_seconds` for the child to finish
-    match rx.recv_timeout(Duration::from_secs(timeout_seconds)) {
-        Ok(status_result) => {
-            // The child exited (we got a status). Join reading threads
-            out_handle.join().ok();
-            err_handle.join().ok();
+    // Set up a watchdog thread to kill the process if it hangs
+    let child_watchdog = Arc::clone(&child_mutex);
+    let terminated_watchdog = Arc::clone(&terminated);
 
-            match status_result {
-                Ok(status) => {
-                    if status.success() {
-                        Ok(())
-                    } else {
-                        Err(format!("Command failed with exit code: {}",
-                                    status.code().unwrap_or(-1)).into())
+    thread::spawn(move || {
+        // Sleep for the timeout duration
+        thread::sleep(Duration::from_secs(timeout_seconds));
+
+        // Check if the process was already terminated
+        if *terminated_watchdog.lock().unwrap() {
+            return; // Process already completed
+        }
+
+        // Attempt to kill the process if it's still running
+        if let Ok(mut child) = child_watchdog.try_lock() {
+            // Try to get status without waiting (None means still running)
+            match child.try_wait() {
+                Ok(None) => {
+                    // Process is still running after timeout - kill it
+                    if !is_quiet() {
+                        println!("Command timed out after {} seconds - terminating", timeout_seconds);
                     }
+
+                    // Try to kill the process
+                    let _ = child.kill();
+
+                    // Mark as terminated
+                    *terminated_watchdog.lock().unwrap() = true;
+
+                    // Send timeout status
+                    let _ = tx_watchdog.send(Err(std::io::Error::new(
+                        std::io::ErrorKind::TimedOut,
+                        format!("Command timed out after {} seconds", timeout_seconds)
+                    )));
                 },
-                Err(e) => Err(format!("Command error: {}", e).into()),
+                _ => () // Process already completed or failed to check
+            }
+        }
+    });
+
+    // Wait for result with a small buffer on top of the timeout
+    let result = match rx.recv_timeout(Duration::from_secs(timeout_seconds + 5)) {
+        Ok(result) => result,
+        Err(_) => {
+            // Channel timeout - something went very wrong
+            // Force terminate the process as a last resort
+            if let Ok(mut child) = child_mutex.try_lock() {
+                let _ = child.kill();
+            }
+
+            return Err(format!("Command execution timed out or channel error occurred after {} seconds",
+                               timeout_seconds).into());
+        }
+    };
+
+    // Wait for stdout/stderr readers to finish with a short timeout
+    let _ = stdout_handle.join();
+    let _ = stderr_handle.join();
+
+    // Process result
+    match result {
+        Ok(status) => {
+            if status.success() {
+                Ok(())
+            } else {
+                Err(format!("Command failed with exit code: {}",
+                            status.code().unwrap_or(-1)).into())
             }
         },
-        Err(_) => {
-            // Timeout occurred: kill the child
-            eprintln!(
-                "Command timed out after {} seconds: {}",
-                timeout_seconds,
-                cmd.join(" ")
-            );
-
-            // Because we have Arc<Mutex<Child>>, we can kill safely
-            let mut child = child_arc.lock().unwrap();
-            let _ = child.kill();
-
-            // Optionally wait() again to reap the process
-            let _ = child.wait();
-
-            Err(format!(
-                "Command timed out after {} seconds: {}",
-                timeout_seconds,
-                cmd.join(" ")
-            )
-                .into())
-        }
+        Err(e) => Err(format!("Command error: {}", e).into()),
     }
 }
+
 
 pub fn run_command_with_progress(
     cmd: Vec<String>,
@@ -638,7 +712,7 @@ pub fn run_command(
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Only show the command in verbose mode
     if is_verbose() {
-        println!("{}", format!("Running: {}", cmd.join(" ")).blue());
+        println!("Running: {}", cmd.join(" "));
     }
 
     // Build the command
@@ -655,7 +729,7 @@ pub fn run_command(
         }
     }
 
-    // Pipe stdout and stderr to completely suppress normal output
+    // Pipe stdout and stderr
     command.stdout(Stdio::piped());
     command.stderr(Stdio::piped());
 
@@ -664,56 +738,53 @@ pub fn run_command(
         Err(e) => return Err(format!("Failed to execute command: {}", e).into()),
     };
 
-    // Take ownership of stdout/stderr handles
-    let stdout = child.stdout.take()
-        .ok_or("Failed to capture stdout")?;
-    let stderr = child.stderr.take()
-        .ok_or("Failed to capture stderr")?;
+    // Take ownership of stdout/stderr handles with proper error handling
+    let stdout = match child.stdout.take() {
+        Some(out) => out,
+        None => return Err("Failed to capture stdout".into()),
+    };
 
-    // Stdout reader thread - completely silent unless in verbose mode
+    let stderr = match child.stderr.take() {
+        Some(err) => err,
+        None => return Err("Failed to capture stderr".into()),
+    };
+
+    // Thread for stdout - only show in verbose mode
     let stdout_handle = thread::spawn(move || {
         let reader = BufReader::new(stdout);
         for line in reader.lines().filter_map(Result::ok) {
-            // In verbose mode only, show all stdout
             if is_verbose() {
-                println!("{}", line);
-            }
-            // In normal mode, only show critical errors
-            else if line.contains("fatal error:") ||
-                line.contains("FAILED") ||
-                line.contains("Critical:") {
                 println!("{}", line);
             }
         }
     });
 
-    // Stderr reader thread - only show actual errors
+    // Thread for stderr - show errors always
     let stderr_handle = thread::spawn(move || {
         let reader = BufReader::new(stderr);
         for line in reader.lines().filter_map(Result::ok) {
-            // In verbose mode, show all stderr
-            if is_verbose() {
-                eprintln!("{}", line.red());
-            }
-            // In normal mode, show only legitimate errors (not warnings or notes)
-            else if (line.contains("error:") && !line.contains("warning:") && !line.contains("note:")) ||
-                line.contains("fatal:") ||
-                line.contains("FAILED") {
+            if is_verbose() || line.contains("error:") || line.contains("Error:") {
                 eprintln!("{}", line.red());
             }
         }
     });
 
-    // Wait for command completion
-    let status = child.wait()?;
-    if !status.success() {
-        return Err(format!("Command failed with exit code: {}",
-                           status.code().unwrap_or(-1)).into());
-    }
+    // Wait with a reasonable timeout
+    match child.wait() {
+        Ok(status) => {
+            // Wait for IO threads with a short timeout
+            let _ = stdout_handle.join();
+            let _ = stderr_handle.join();
 
-    // Wait for IO threads to finish
-    let _ = stdout_handle.join();
-    let _ = stderr_handle.join();
+            if !status.success() {
+                return Err(format!("Command failed with exit code: {}",
+                                   status.code().unwrap_or(-1)).into());
+            }
+        },
+        Err(e) => {
+            return Err(format!("Failed to wait for command: {}", e).into());
+        }
+    }
 
     Ok(())
 }

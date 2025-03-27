@@ -29,12 +29,16 @@ pub fn build_workspace_with_dependency_order(
             vec![proj.clone()]
         },
         None => {
-            if !is_quiet() {
-                print_status("Building all workspace projects");
-            }
+            print_status("Building all workspace projects");
             workspace_config.workspace.projects.clone()
         }
     };
+
+    // Exit early if there are no projects
+    if projects.is_empty() {
+        print_warning("No projects found in workspace", None);
+        return Ok(());
+    }
 
     // Build project paths
     let mut project_paths = Vec::new();
@@ -52,10 +56,30 @@ pub fn build_workspace_with_dependency_order(
 
     // Build dependency graph
     let spinner = progress_bar("Analyzing dependencies");
-    let dependency_graph = build_dependency_graph(&workspace_config, &project_paths)?;
+    let dependency_graph = match build_dependency_graph(&workspace_config, &project_paths) {
+        Ok(graph) => graph,
+        Err(e) => {
+            spinner.failure(&format!("Failed to build dependency graph: {}", e));
+            return Err(e);
+        }
+    };
 
     // Determine build order based on dependencies
-    let build_order = resolve_build_order(&dependency_graph, &projects)?;
+    let build_order = match resolve_build_order(&dependency_graph, &projects) {
+        Ok(order) => order,
+        Err(e) => {
+            spinner.failure(&format!("Failed to resolve build order: {}", e));
+            return Err(e);
+        }
+    };
+
+    // Early return if build order is empty
+    if build_order.is_empty() {
+        spinner.success();
+        print_warning("No buildable projects found", None);
+        return Ok(());
+    }
+
     spinner.success();
 
     // Show build order
@@ -69,7 +93,11 @@ pub fn build_workspace_with_dependency_order(
 
     // Create task list
     let mut task_list = TaskList::new(build_order.clone());
-    task_list.display();
+
+    // Only display task list if we have projects to build
+    if !build_order.is_empty() {
+        task_list.display();
+    }
 
     // Build projects in order
     for (i, project_name) in build_order.iter().enumerate() {

@@ -170,10 +170,10 @@ impl SpinningWheel {
             // Acquire output lock
             let _guard = OUTPUT_MUTEX.lock().unwrap();
 
-            // Print success message in a clean format
-            println!("{}  {}  {}", "✓".green().bold(),
-                     self.message.bold(),
-                     format!("({:.2}s)", elapsed.as_secs_f32()).dimmed());
+            // Print success message - more compact with elapsed time in parentheses
+            println!("✓ {} ({})",
+                     self.message.green(),
+                     format_duration(elapsed).yellow());
 
             // Mark that we printed something
             mark_line_printed();
@@ -194,9 +194,9 @@ impl SpinningWheel {
         // Acquire output lock
         let _guard = OUTPUT_MUTEX.lock().unwrap();
 
-        // Print failure message with consistency
-        println!("{}  {}  {}", "✗".red().bold(),
-                 self.message.bold(),
+        // Print failure message - more compact
+        println!("✗ {}: {}",
+                 self.message.red(),
                  error.red());
 
         // Mark that we printed something
@@ -423,15 +423,6 @@ pub fn print_message(msg_type: MessageType, message: &str, details: Option<&str>
     mark_line_printed();
 }
 
-// Updated interface functions that use the unified print_message
-pub fn print_header(message: &str, _icon: Option<&str>) {
-    print_message(MessageType::Header, message, None);
-}
-
-pub fn print_status(message: &str) {
-    print_message(MessageType::Status, message, None);
-}
-
 pub fn print_step(action: &str, target: &str) {
     if is_quiet() {
         return;
@@ -455,20 +446,128 @@ pub fn print_step(action: &str, target: &str) {
     mark_line_printed();
 }
 
+pub fn print_header(message: &str, icon: Option<&str>) {
+    if is_quiet() {
+        return;
+    }
+
+    // Acquire output lock
+    let _guard = OUTPUT_MUTEX.lock().unwrap();
+
+    // If a spinner is active, make sure we're on a new line
+    if *SPINNER_ACTIVE.lock().unwrap() {
+        println!();
+        *LAST_LINE_WAS_NEWLINE.lock().unwrap() = true;
+    }
+
+    // Don't add extra blank line before header
+    if !*LAST_LINE_WAS_NEWLINE.lock().unwrap() {
+        println!();
+    }
+
+    let prefix = match icon {
+        Some(i) => format!("{} ", i),
+        None => "".to_string(),
+    };
+
+    println!("{}{}", prefix, message.blue().bold());
+    println!("{}", "─".repeat(message.len() + prefix.len()).blue());
+
+    // Mark that we printed something
+    mark_line_printed();
+}
+
+pub fn print_status(message: &str) {
+    if is_quiet() {
+        return;
+    }
+
+    // Acquire output lock
+    let _guard = OUTPUT_MUTEX.lock().unwrap();
+
+    // If a spinner is active, make sure we're on a new line
+    if *SPINNER_ACTIVE.lock().unwrap() {
+        println!();
+        *LAST_LINE_WAS_NEWLINE.lock().unwrap() = true;
+    }
+
+    // More compact prefix - just a simple arrow
+    println!("→ {}", message.blue());
+
+    // Mark that we printed something
+    mark_line_printed();
+}
+
 pub fn print_substep(message: &str) {
-    print_message(MessageType::SubStep, message, None);
+    if is_quiet() {
+        return;
+    }
+
+    // Acquire output lock
+    let _guard = OUTPUT_MUTEX.lock().unwrap();
+
+    // If a spinner is active, make sure we're on a new line
+    if *SPINNER_ACTIVE.lock().unwrap() {
+        println!();
+        *LAST_LINE_WAS_NEWLINE.lock().unwrap() = true;
+    }
+
+    // More compact bullet style
+    println!("  • {}", message);
+
+    // Mark that we printed something
+    mark_line_printed();
 }
 
 pub fn print_success(message: &str, details: Option<&str>) {
-    print_message(MessageType::Success, message, details);
+    if is_quiet() {
+        return;
+    }
+
+    // Don't add extra newline before success message
+    let _guard = OUTPUT_MUTEX.lock().unwrap();
+
+    println!("✓ {}", message.green());
+
+    if let Some(d) = details {
+        println!("  {}", d.green());
+    }
+
+    // Mark that we printed something
+    mark_line_printed();
 }
 
 pub fn print_warning(message: &str, solution: Option<&str>) {
-    print_message(MessageType::Warning, message, solution);
+    // Always print warnings, even in quiet mode
+    let _guard = OUTPUT_MUTEX.lock().unwrap();
+
+    println!("⚠ {}", message.yellow());
+
+    if let Some(s) = solution {
+        println!("  Suggestion: {}", s.yellow());
+    }
+
+    // Mark that we printed something
+    mark_line_printed();
 }
 
-pub fn print_error(message: &str, _code: Option<&str>, solution: Option<&str>) {
-    print_message(MessageType::Error, message, solution);
+pub fn print_error(message: &str, code: Option<&str>, solution: Option<&str>) {
+    // Always print errors, even in quiet mode
+    let _guard = OUTPUT_MUTEX.lock().unwrap();
+
+    let error_prefix = match code {
+        Some(c) => format!("✗ [{}]", c),
+        None => "✗".to_string(),
+    };
+
+    println!("{} {}", error_prefix.red().bold(), message.red());
+
+    if let Some(s) = solution {
+        println!("  Solution: {}", s.yellow());
+    }
+
+    // Mark that we printed something
+    mark_line_printed();
 }
 
 pub fn print_detailed(message: &str) {
@@ -487,12 +586,14 @@ pub struct BuildProgress {
     current_step: usize,
     project_name: String,
     start_time: Instant,
+    steps: Vec<usize>
 }
 
 impl BuildProgress {
     pub fn new(project_name: &str, total_steps: usize) -> Self {
         if !is_quiet() {
-            print_header(&format!("Building {}", project_name), None);
+            // Print a simpler project header
+            println!(":: Building {} ::", project_name.cyan().bold());
         }
 
         Self {
@@ -500,25 +601,32 @@ impl BuildProgress {
             current_step: 0,
             project_name: project_name.to_string(),
             start_time: Instant::now(),
+            steps: Vec::with_capacity(total_steps),
         }
     }
 
     pub fn next_step(&mut self, step_name: &str) {
         self.current_step += 1;
         if !is_quiet() {
-            // Clean, consistent format
-            print_status(&format!("[{}/{}] {}",
-                                  self.current_step,
-                                  self.total_steps,
-                                  step_name));
+            // Ensure we're not interrupting a spinner
+            ensure_single_newline();
+
+            // More compact step display
+            println!("[{}/{}] {}",
+                     self.current_step.to_string().cyan(),
+                     self.total_steps,
+                     step_name);
         }
     }
 
     pub fn complete(&self) {
         if !is_quiet() {
             let duration = self.start_time.elapsed();
-            print_success(&format!("{} completed", self.project_name),
-                          Some(&format!("in {:.2}s", duration.as_secs_f32())));
+
+            // More compact completion message
+            println!("✓ {} completed in {}",
+                     self.project_name.green(),
+                     format_duration(duration).yellow());
         }
     }
 }
@@ -532,11 +640,11 @@ pub struct TaskList {
 
 impl TaskList {
     pub fn new(tasks: Vec<String>) -> Self {
-        let len = tasks.len();
+        let tasks_len = tasks.len();
         Self {
             tasks,
             current_task: None,
-            completed_tasks: vec![false; len],
+            completed_tasks: vec![false; tasks_len], // Initialize with false values based on tasks length
         }
     }
 
@@ -545,18 +653,17 @@ impl TaskList {
             return;
         }
 
-        println!();
+        println!("Tasks:");
         for (i, task) in self.tasks.iter().enumerate() {
             let prefix = if Some(i) == self.current_task {
-                "→".blue().bold()
-            } else if self.completed_tasks[i] {
-                "✓".green().bold()
+                "→".blue()
+            } else if i < self.completed_tasks.len() && self.completed_tasks[i] {
+                "✓".green()
             } else {
                 "○".normal().dimmed()
             };
-            println!("  {}  {}", prefix, task);
+            println!("{} {}", prefix, task);
         }
-        println!();
     }
 
     pub fn start_task(&mut self, index: usize) {
@@ -566,7 +673,7 @@ impl TaskList {
 
         self.current_task = Some(index);
         if !is_quiet() {
-            println!();
+            // No extra line break
             print_status(&format!("Starting {}", self.tasks[index]));
             self.display();
         }
@@ -577,13 +684,21 @@ impl TaskList {
             return;
         }
 
+        // Ensure the completed_tasks vector has enough elements
+        while self.completed_tasks.len() <= index {
+            self.completed_tasks.push(false);
+        }
+
         self.completed_tasks[index] = true;
         if !is_quiet() {
-            print_success(&format!("Completed {}", self.tasks[index]), None);
+            println!("✓ {}", self.tasks[index].green());
         }
     }
 
     pub fn all_completed(&self) -> bool {
+        if self.completed_tasks.len() != self.tasks.len() {
+            return false;
+        }
         self.completed_tasks.iter().all(|&completed| completed)
     }
 }

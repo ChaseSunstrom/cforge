@@ -112,28 +112,21 @@ pub fn build_project(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let project_name = &config.project.name;
 
-    // Create a progress tracker for the build process
-    let mut progress = BuildProgress::new(project_name, 4); // 4 main steps
+    // More compact progress tracking - fewer steps
+    let mut progress = BuildProgress::new(project_name, 3); // Reduced to 3 main steps
 
     // Create a main progress bar for overall build progress
     let mut main_progress = SpinningWheel::start(&format!("Building {}", project_name));
 
-    // Step 1: Ensure tools (5% of progress)
-    progress.next_step("Checking build tools");
+    // Step 1: Ensure tools and setup
+    progress.next_step("Setup");
     ensure_build_tools(config)?;
 
     // Get the build type - make sure it matches configuration
     let build_type = get_build_type(config, config_type);
 
-    // Print what build type is being used (for debugging)
-    if !is_quiet() {
-        print_substep(&format!("Using build configuration: {}", build_type));
-    }
-
     // Calculate build paths
     let build_dir = config.build.build_dir.as_deref().unwrap_or(DEFAULT_BUILD_DIR);
-    // Always use build dir + config, even for default config
-    let build_type = get_build_type(config, config_type);
     let build_path = if let Some(target) = cross_target {
         project_path.join(format!("{}-{}-{}", build_dir, build_type.to_lowercase(), target))
     } else {
@@ -148,23 +141,22 @@ pub fn build_project(
         (config.build.generator.as_deref().unwrap_or("") == "Ninja" &&
             !build_path.join("build.ninja").exists());
 
-    // Step 2: Configure if needed (30% of progress)
+    // Step 2: Configure if needed
     if needs_configure {
-        progress.next_step("Configuring project");
+        progress.next_step("Configure");
 
         if !is_quiet() {
-            print_status("Project not configured or build files missing, configuring...");
+            print_substep("Configuring project");
         }
 
         // Creating a progress bar specifically for configuration
         let mut config_progress = SpinningWheel::start("Configuration");
 
         // Delegate to configure_project with the progress bar
-        // CRITICAL FIX: Explicitly pass the build type to ensure it propagates
         configure_project(
             config,
             project_path,
-            Some(&build_type),  // Explicitly pass the build type
+            Some(&build_type),
             variant_name,
             cross_target,
             workspace_config
@@ -172,11 +164,11 @@ pub fn build_project(
 
         config_progress.success();
     } else {
-        progress.next_step("Project already configured");
+        progress.next_step("Configure");
+        if !is_quiet() {
+            print_substep("Already configured");
+        }
     }
-
-    // Step 3: Pre-build hooks (35% of progress)
-    progress.next_step("Running pre-build hooks");
 
     // Setup environment for hooks
     let mut hook_env = HashMap::new();
@@ -196,13 +188,16 @@ pub fn build_project(
     if let Some(hooks) = &config.hooks {
         if let Some(pre_hooks) = &hooks.pre_build {
             if !pre_hooks.is_empty() {
-                print_substep("Running pre-build hooks");
+                if !is_quiet() {
+                    print_substep("Running pre-build hooks");
+                }
                 run_hooks(&Some(pre_hooks.clone()), project_path, Some(hook_env.clone()))?;
             }
         }
     }
 
-    progress.next_step("Building project");
+    // Step 3: Build
+    progress.next_step("Compile");
 
     // Count source files to get a better estimate of build size
     let source_files_count = count_project_source_files(config, project_path)?;
@@ -210,7 +205,6 @@ pub fn build_project(
     // Build using CMake
     let mut cmd = vec!["cmake".to_string(), "--build".to_string(), ".".to_string()];
 
-    // CRITICAL FIX: Ensure we explicitly pass the correct build configuration
     cmd.push("--config".to_string());
     cmd.push(build_type.clone());
 
@@ -219,16 +213,13 @@ pub fn build_project(
     cmd.push("--parallel".to_string());
     cmd.push(format!("{}", num_threads));
 
-    // Show the exact command being executed for debugging
-    if !is_quiet() {
-        print_status(&format!("Building {} in {} configuration",
-                              format_project_name(project_name),
-                              build_type));
+    // Show the exact command being executed only in verbose mode
+    if is_verbose() {
         print_substep(&format!("Command: {}", cmd.join(" ")));
     }
 
     // Create build progress bar
-    let build_progress = SpinningWheel::start(&format!("Compiling {} source files", source_files_count));
+    let build_progress = SpinningWheel::start(&format!("Compiling {} files", source_files_count));
 
     // Execute build command with progress tracking - using our enhanced function
     let build_result = execute_build_with_progress(
@@ -244,11 +235,13 @@ pub fn build_project(
         return Err(e);
     }
 
-    // Run post-build hooks (95% to 100%)
+    // Run post-build hooks
     if let Some(hooks) = &config.hooks {
         if let Some(post_hooks) = &hooks.post_build {
             if !post_hooks.is_empty() {
-                print_substep("Running post-build hooks");
+                if !is_quiet() {
+                    print_substep("Running post-build hooks");
+                }
                 run_hooks(&Some(post_hooks.clone()), project_path, Some(hook_env))?;
             }
         }
