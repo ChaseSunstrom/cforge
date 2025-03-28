@@ -550,16 +550,14 @@ pub fn print_status(message: &str) {
     // Acquire output lock
     let _guard = OUTPUT_MUTEX.lock().unwrap();
 
-    // If a spinner is active, make sure we're on a new line
+    // Handle spinner active case without redundant logging
     if *SPINNER_ACTIVE.lock().unwrap() {
         println!();
         *LAST_LINE_WAS_NEWLINE.lock().unwrap() = true;
     }
 
-    // More compact prefix - just a simple arrow
+    // Simple, consistent prefix
     println!("→ {}", message.blue());
-
-    // Mark that we printed something
     mark_line_printed();
 }
 
@@ -570,12 +568,6 @@ pub fn print_substep(message: &str) {
 
     // Acquire output lock
     let _guard = OUTPUT_MUTEX.lock().unwrap();
-
-    // If a spinner is active, make sure we're on a new line
-    if *SPINNER_ACTIVE.lock().unwrap() {
-        println!();
-        *LAST_LINE_WAS_NEWLINE.lock().unwrap() = true;
-    }
 
     // More compact bullet style
     println!("  • {}", message);

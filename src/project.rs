@@ -222,8 +222,12 @@ pub fn build_project(
     );
 
     if let Err(e) = build_result {
-        main_progress.failure(&format!("Build failed: {}", e));
-        print_error("Build failed. See above for details.", None, None);
+        if e.to_string().is_empty() {
+            main_progress.failure(&format!("Building failed!"));
+        }
+        else {
+            main_progress.failure(&format!("Building failed: {}", e));
+        }
         return Err(e);
     }
 
@@ -1193,10 +1197,6 @@ pub fn generate_package_config(project_path: &Path, project_name: &str) -> Resul
         for filename in &possible_filenames {
             let file_path = parent_dir.join(filename);
             if file_path.exists() {
-                // Only keep this important notification about found files
-                if !is_quiet() {
-                    println!("{}", format!("Found library at: {}", file_path.display()).green());
-                }
                 lib_file = Some(file_path);
                 break;
             }
@@ -1229,18 +1229,13 @@ pub fn generate_package_config(project_path: &Path, project_name: &str) -> Resul
         }
 
         lib_file = find_library(project_path, &possible_filenames);
-        if let Some(ref path) = lib_file {
-            if !is_quiet() {
-                println!("{}", format!("Found library by search: {}", path.display()).green());
-            }
-        }
     }
 
     let lib_file = match lib_file {
         Some(path) => path,
         None => {
             if !is_quiet() {
-                println!("{}", format!("Warning: Library file not found for {}. Using placeholder.", project_name).yellow());
+                print_warning(format!("Library file not found for {}", project_name).as_str(), None);
             }
             // Use a placeholder file that will be replaced at link time
             lib_path.join(if is_msvc_style {
@@ -1306,9 +1301,6 @@ set({}_FOUND TRUE)
     );
 
     fs::write(&config_file, config_content)?;
-    if !is_quiet() {
-        println!("{}", format!("Generated package config at {}", config_file.display()).green());
-    }
 
     // Also generate a version file for exact configuration matching.
     let version_file = build_path.join(format!("{}ConfigVersion.cmake", project_name));
@@ -1327,10 +1319,6 @@ endif()
 "#, config.project.version);
 
     fs::write(&version_file, version_content)?;
-    if !is_quiet() {
-        println!("{}", format!("Generated version file at {}", version_file.display()).green());
-    }
-
     Ok(())
 }
 
