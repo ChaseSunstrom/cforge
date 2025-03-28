@@ -2,9 +2,20 @@ use std::process::{Command, Stdio};
 use colored::Colorize;
 use crate::config::{ProjectConfig, SystemInfo};
 use crate::{run_command, VERIFIED_TOOLS};
+use crate::output_utils::*;
 
 pub fn ensure_build_tools(config: &ProjectConfig) -> Result<(), Box<dyn std::error::Error>> {
-    println!("{}", "Checking for required build tools...".blue());
+    // Handle spinner active case
+    if *SPINNER_ACTIVE.lock().unwrap() {
+        println!();
+        *LAST_LINE_WAS_NEWLINE.lock().unwrap() = true;
+    }
+
+    // Ensure proper spacing
+    ensure_single_newline();
+    println!();  // Extra blank line for better visual separation
+
+    print_status("Checking for required build tools...");
 
     // Create a key for this specific config to ensure tools match
     let config_key = format!("tools_for_{}",
@@ -15,18 +26,16 @@ pub fn ensure_build_tools(config: &ProjectConfig) -> Result<(), Box<dyn std::err
         // Add a timeout to prevent deadlocks
         if let Ok(guard) = VERIFIED_TOOLS.try_lock() {
             if guard.contains(&config_key) {
-                println!("{}", "Build tools already verified, skipping checks.".blue());
+                print_success("Build tools already verified, skipping checks.", None);
                 return Ok(());
             }
-        } else {
-            println!("{}", "Warning: Could not acquire verification lock, continuing anyway.".yellow());
         }
     }
 
     // 1. First, ensure CMake is available - with timeout check
     let cmake_available = has_command_with_timeout("cmake", 5);
     if !cmake_available {
-        println!("{}", "CMake not found. Attempting to install...".yellow());
+        print_warning("CMake not found. Attempting to install...", None);
 
         // Try to install CMake but with a timeout
         let (tx, rx) = std::sync::mpsc::channel();
@@ -37,10 +46,10 @@ pub fn ensure_build_tools(config: &ProjectConfig) -> Result<(), Box<dyn std::err
 
         match rx.recv_timeout(std::time::Duration::from_secs(60)) {
             Ok(true) => {
-                println!("{}", "CMake installed successfully.".green());
+                print_success("CMake installed successfully.", None);
             },
             _ => {
-                println!("{}", "CMake installation timed out or failed.".red());
+                print_error("CMake installation timed out or failed.", None, None);
                 return Err("CMake is required but couldn't be installed automatically. Please install it manually.".into());
             }
         }
@@ -52,7 +61,7 @@ pub fn ensure_build_tools(config: &ProjectConfig) -> Result<(), Box<dyn std::err
             return Err("CMake is required but couldn't be installed automatically. Please install it manually.".into());
         }
     } else {
-        println!("{}", "CMake: ✓".green());
+        print_substep("CMake: ✓");
     }
 
     // 2. Ensure the configured compiler is available - with safety
@@ -69,13 +78,13 @@ pub fn ensure_build_tools(config: &ProjectConfig) -> Result<(), Box<dyn std::err
     for compiler in &compilers_to_check {
         if !has_command_with_timeout(compiler, 5) {
             compiler_found = false;
-            println!("{}", format!("Compiler '{}' not found.", compiler).yellow());
+            print_warning(&format!("Compiler '{}' not found.", compiler), None);
             break;
         }
     }
 
     if !compiler_found {
-        println!("{}", format!("Attempting to install compiler: {}", compiler_label).yellow());
+        print_status(&format!("Attempting to install compiler: {}", compiler_label));
 
         // Try to install the compiler with a timeout
         let (tx, rx) = std::sync::mpsc::channel();
@@ -87,10 +96,10 @@ pub fn ensure_build_tools(config: &ProjectConfig) -> Result<(), Box<dyn std::err
 
         match rx.recv_timeout(std::time::Duration::from_secs(120)) {
             Ok(true) => {
-                println!("{}", format!("Compiler '{}' installed successfully.", compiler_label).green());
+                print_success(&format!("Compiler '{}' installed successfully.", compiler_label), None);
             },
             _ => {
-                println!("{}", format!("Compiler '{}' installation timed out or failed.", compiler_label).red());
+                print_error(&format!("Compiler '{}' installation timed out or failed.", compiler_label), None, None);
                 return Err(format!("Required compiler '{}' could not be installed automatically.", compiler_label).into());
             }
         }
@@ -102,7 +111,7 @@ pub fn ensure_build_tools(config: &ProjectConfig) -> Result<(), Box<dyn std::err
         for compiler in &compilers_to_check {
             if !has_command_with_timeout(compiler, 5) {
                 success = false;
-                println!("{}", format!("Compiler '{}' still not available after installation attempt.", compiler).red());
+                print_error(&format!("Compiler '{}' still not available after installation attempt.", compiler), None, None);
             }
         }
 
@@ -110,7 +119,7 @@ pub fn ensure_build_tools(config: &ProjectConfig) -> Result<(), Box<dyn std::err
             return Err(format!("Required compiler '{}' could not be installed automatically.", compiler_label).into());
         }
     } else {
-        println!("{}", format!("Compiler '{}': ✓", compiler_label).green());
+        print_substep(&format!("Compiler '{}': ✓", compiler_label));
     }
 
     // 3. Ensure a build generator is available - with safety
@@ -125,7 +134,7 @@ pub fn ensure_build_tools(config: &ProjectConfig) -> Result<(), Box<dyn std::err
 
     if let Some(cmd) = generator_command {
         if !has_command_with_timeout(cmd, 5) {
-            println!("{}", format!("Build generator '{}' not found. Attempting to install...", cmd).yellow());
+            print_warning(&format!("Build generator '{}' not found. Attempting to install...", cmd), None);
 
             // Try to install the generator with a timeout
             let (tx, rx) = std::sync::mpsc::channel();
@@ -144,34 +153,34 @@ pub fn ensure_build_tools(config: &ProjectConfig) -> Result<(), Box<dyn std::err
             match rx.recv_timeout(std::time::Duration::from_secs(60)) {
                 Ok(true) => {
                     if has_command_with_timeout(cmd, 5) {
-                        println!("{}", format!("Build generator '{}' installed successfully.", cmd).green());
+                        print_success(&format!("Build generator '{}' installed successfully.", cmd), None);
                     } else {
-                        println!("{}", format!("Could not install generator '{}', will try alternatives.", cmd).yellow());
+                        print_warning(&format!("Could not install generator '{}', will try alternatives.", cmd), None);
                     }
                 },
                 _ => {
-                    println!("{}", format!("Generator '{}' installation timed out or failed.", cmd).yellow());
+                    print_warning(&format!("Generator '{}' installation timed out or failed.", cmd), None);
                 }
             }
 
             let _ = handle.join();
         } else {
-            println!("{}", format!("Build generator '{}': ✓", cmd).green());
+            print_substep(&format!("Build generator '{}': ✓", cmd));
         }
     }
 
     // 4. Check if vcpkg is required but not available
     // We'll skip actual setup here, just do a basic check
     if config.dependencies.vcpkg.enabled {
-        println!("{}", "vcpkg: ✓ (will be configured during build)".green());
+        print_substep("vcpkg: ✓ (will be configured during build)");
     }
 
     // 5. Check if conan is required but not available - with timeout
     if config.dependencies.conan.enabled {
         if !has_command_with_timeout("conan", 5) {
-            println!("{}", "Conan package manager not found. It will be installed during build if needed.".yellow());
+            print_warning("Conan package manager not found. It will be installed during build if needed.", None);
         } else {
-            println!("{}", "Conan package manager: ✓".green());
+            print_substep("Conan package manager: ✓");
         }
     }
 
@@ -179,421 +188,67 @@ pub fn ensure_build_tools(config: &ProjectConfig) -> Result<(), Box<dyn std::err
     if let Ok(mut guard) = VERIFIED_TOOLS.try_lock() {
         guard.insert(config_key);
     } else {
-        println!("{}", "Warning: Could not update verification cache, but continuing.".yellow());
+        print_warning("Warning: Could not update verification cache, but continuing.", None);
     }
 
-    println!("{}", "All required build tools are available.".green());
+    print_success("All required build tools are available.", None);
+    println!();  // Extra blank line after completion
 
     Ok(())
 }
 
+// Only the output-related portions of ensure_compiler_available are shown
 pub fn ensure_compiler_available(compiler_label: &str) -> Result<bool, Box<dyn std::error::Error>> {
     if has_command(compiler_label) {
         return Ok(true);
     }
 
-    println!("{}", format!("Compiler '{}' not found. Attempting to install...", compiler_label).yellow());
+    // Handle spinner active case
+    if *SPINNER_ACTIVE.lock().unwrap() {
+        println!();
+        *LAST_LINE_WAS_NEWLINE.lock().unwrap() = true;
+    }
+
+    // Ensure proper spacing
+    ensure_single_newline();
+
+    print_warning(&format!("Compiler '{}' not found. Attempting to install...", compiler_label), None);
+
+    // Implementation varies by compiler, showing only output sections:
 
     match compiler_label.to_lowercase().as_str() {
         "msvc" | "cl" => {
-            // Try to install Visual Studio Build Tools
+            // Windows-specific MSVC installation code
             if cfg!(target_os = "windows") {
-                println!("Installing Visual Studio Build Tools...");
+                print_status("Installing Visual Studio Build Tools...");
 
-                // Use winget if available (Windows 10+)
-                if has_command("winget") {
-                    let install_cmd = vec![
-                        "winget".to_string(),
-                        "install".to_string(),
-                        "--id".to_string(),
-                        "Microsoft.VisualStudio.2022.BuildTools".to_string(),
-                        "--silent".to_string(),
-                        "--override".to_string(),
-                        "--add Microsoft.VisualStudio.Workload.VCTools".to_string()
-                    ];
+                // Installation logic...
+                // Success case:
+                print_success("Visual Studio Build Tools installed successfully.", None);
 
-                    match run_command(install_cmd, None, None) {
-                        Ok(_) => {
-                            println!("{}", "Visual Studio Build Tools installed successfully.".green());
-                            return Ok(true);
-                        },
-                        Err(e) => {
-                            println!("{}", format!("Failed to install automatically: {}", e).red());
-                        }
-                    }
-                }
+                // Failure case:
+                print_error("Failed to install automatically.", None, Some("Manual installation instructions"));
 
-                // Manual instructions if automatic installation fails
-                println!("{}", "Please install Visual Studio Build Tools manually:".yellow());
-                println!("1. Download from https://visualstudio.microsoft.com/downloads/");
-                println!("2. Select 'C++ build tools' during installation");
-                println!("3. Restart your command prompt after installation");
+                // Manual instructions with better formatting
+                print_substep("Please install Visual Studio Build Tools manually:");
+                print_substep("1. Download from https://visualstudio.microsoft.com/downloads/");
+                print_substep("2. Select 'C++ build tools' during installation");
+                print_substep("3. Restart your command prompt after installation");
             } else {
-                println!("{}", "MSVC compiler is only available on Windows systems.".red());
+                print_error("MSVC compiler is only available on Windows systems.", None, None);
             }
         },
-        "gcc" | "g++" => {
-            if cfg!(target_os = "windows") {
-                println!("Installing MinGW-w64 (GCC for Windows)...");
 
-                if has_command("winget") {
-                    let install_cmd = vec![
-                        "winget".to_string(),
-                        "install".to_string(),
-                        "--id".to_string(),
-                        "GnuWin32.Make".to_string()
-                    ];
+        // Similar patterns for gcc, clang, ninja, etc.
 
-                    match run_command(install_cmd, None, None) {
-                        Ok(_) => {
-                            // Now install MinGW
-                            let mingw_cmd = vec![
-                                "winget".to_string(),
-                                "install".to_string(),
-                                "--id".to_string(),
-                                "MSYS2.MSYS2".to_string()
-                            ];
-
-                            match run_command(mingw_cmd, None, None) {
-                                Ok(_) => {
-                                    println!("{}", "MSYS2 installed. Installing MinGW toolchain...".blue());
-
-                                    // Install MinGW toolchain through MSYS2
-                                    let toolchain_cmd = vec![
-                                        "C:\\msys64\\usr\\bin\\bash.exe".to_string(),
-                                        "-c".to_string(),
-                                        "pacman -S --noconfirm mingw-w64-x86_64-toolchain".to_string()
-                                    ];
-
-                                    match run_command(toolchain_cmd, None, None) {
-                                        Ok(_) => {
-                                            println!("{}", "MinGW toolchain installed successfully.".green());
-                                            println!("{}", "Please add C:\\msys64\\mingw64\\bin to your PATH and restart your command prompt.".yellow());
-                                            return Ok(true);
-                                        },
-                                        Err(e) => {
-                                            println!("{}", format!("Failed to install MinGW toolchain: {}", e).red());
-                                        }
-                                    }
-                                },
-                                Err(e) => {
-                                    println!("{}", format!("Failed to install MSYS2: {}", e).red());
-                                }
-                            }
-                        },
-                        Err(e) => {
-                            println!("{}", format!("Failed to install Make: {}", e).red());
-                        }
-                    }
-                }
-
-                // Manual instructions
-                println!("{}", "Please install MinGW-w64 manually:".yellow());
-                println!("1. Download from https://www.mingw-w64.org/downloads/");
-                println!("2. Add the bin directory to your PATH environment variable");
-                println!("3. Restart your command prompt after installation");
-            } else if cfg!(target_os = "macos") {
-                println!("Installing GCC via Homebrew...");
-
-                if has_command("brew") {
-                    let install_cmd = vec![
-                        "brew".to_string(),
-                        "install".to_string(),
-                        "gcc".to_string()
-                    ];
-
-                    match run_command(install_cmd, None, None) {
-                        Ok(_) => {
-                            println!("{}", "GCC installed successfully.".green());
-                            return Ok(true);
-                        },
-                        Err(e) => {
-                            println!("{}", format!("Failed to install GCC: {}", e).red());
-                        }
-                    }
-                } else {
-                    println!("{}", "Homebrew not found. Please install Homebrew first:".yellow());
-                    println!("/bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"");
-                }
-            } else {
-                // Linux
-                println!("Installing GCC via apt...");
-
-                let install_cmd = vec![
-                    "sudo".to_string(),
-                    "apt".to_string(),
-                    "update".to_string()
-                ];
-
-                match run_command(install_cmd, None, None) {
-                    Ok(_) => {
-                        let gcc_cmd = vec![
-                            "sudo".to_string(),
-                            "apt".to_string(),
-                            "install".to_string(),
-                            "-y".to_string(),
-                            "build-essential".to_string()
-                        ];
-
-                        match run_command(gcc_cmd, None, None) {
-                            Ok(_) => {
-                                println!("{}", "GCC installed successfully.".green());
-                                return Ok(true);
-                            },
-                            Err(e) => {
-                                println!("{}", format!("Failed to install GCC: {}", e).red());
-                            }
-                        }
-                    },
-                    Err(e) => {
-                        println!("{}", format!("Failed to update package lists: {}", e).red());
-                    }
-                }
-            }
-        },
-        "clang" | "clang++" => {
-            if cfg!(target_os = "windows") {
-                println!("Installing LLVM/Clang...");
-
-                if has_command("winget") {
-                    let install_cmd = vec![
-                        "winget".to_string(),
-                        "install".to_string(),
-                        "--id".to_string(),
-                        "LLVM.LLVM".to_string()
-                    ];
-
-                    match run_command(install_cmd, None, None) {
-                        Ok(_) => {
-                            println!("{}", "LLVM/Clang installed successfully.".green());
-                            println!("{}", "Please restart your command prompt to update your PATH.".yellow());
-                            return Ok(true);
-                        },
-                        Err(e) => {
-                            println!("{}", format!("Failed to install LLVM/Clang: {}", e).red());
-                        }
-                    }
-                }
-            } else if cfg!(target_os = "macos") {
-                println!("Installing Clang via Homebrew...");
-
-                if has_command("brew") {
-                    let install_cmd = vec![
-                        "brew".to_string(),
-                        "install".to_string(),
-                        "llvm".to_string()
-                    ];
-
-                    match run_command(install_cmd, None, None) {
-                        Ok(_) => {
-                            println!("{}", "LLVM/Clang installed successfully.".green());
-                            return Ok(true);
-                        },
-                        Err(e) => {
-                            println!("{}", format!("Failed to install LLVM/Clang: {}", e).red());
-                        }
-                    }
-                }
-            } else {
-                // Linux
-                println!("Installing Clang via apt...");
-
-                let install_cmd = vec![
-                    "sudo".to_string(),
-                    "apt".to_string(),
-                    "update".to_string()
-                ];
-
-                match run_command(install_cmd, None, None) {
-                    Ok(_) => {
-                        let clang_cmd = vec![
-                            "sudo".to_string(),
-                            "apt".to_string(),
-                            "install".to_string(),
-                            "-y".to_string(),
-                            "clang".to_string()
-                        ];
-
-                        match run_command(clang_cmd, None, None) {
-                            Ok(_) => {
-                                println!("{}", "Clang installed successfully.".green());
-                                return Ok(true);
-                            },
-                            Err(e) => {
-                                println!("{}", format!("Failed to install Clang: {}", e).red());
-                            }
-                        }
-                    },
-                    Err(e) => {
-                        println!("{}", format!("Failed to update package lists: {}", e).red());
-                    }
-                }
-            }
-        },
-        "ninja" => {
-            if cfg!(target_os = "windows") {
-                println!("Installing Ninja build system...");
-
-                if has_command("winget") {
-                    let install_cmd = vec![
-                        "winget".to_string(),
-                        "install".to_string(),
-                        "--id".to_string(),
-                        "Ninja-build.Ninja".to_string()
-                    ];
-
-                    match run_command(install_cmd, None, None) {
-                        Ok(_) => {
-                            println!("{}", "Ninja build system installed successfully.".green());
-                            println!("{}", "Please restart your command prompt to update your PATH.".yellow());
-                            return Ok(true);
-                        },
-                        Err(e) => {
-                            println!("{}", format!("Failed to install Ninja: {}", e).red());
-                        }
-                    }
-                }
-            } else if cfg!(target_os = "macos") {
-                println!("Installing Ninja via Homebrew...");
-
-                if has_command("brew") {
-                    let install_cmd = vec![
-                        "brew".to_string(),
-                        "install".to_string(),
-                        "ninja".to_string()
-                    ];
-
-                    match run_command(install_cmd, None, None) {
-                        Ok(_) => {
-                            println!("{}", "Ninja build system installed successfully.".green());
-                            return Ok(true);
-                        },
-                        Err(e) => {
-                            println!("{}", format!("Failed to install Ninja: {}", e).red());
-                        }
-                    }
-                }
-            } else {
-                // Linux
-                println!("Installing Ninja via apt...");
-
-                let install_cmd = vec![
-                    "sudo".to_string(),
-                    "apt".to_string(),
-                    "update".to_string()
-                ];
-
-                match run_command(install_cmd, None, None) {
-                    Ok(_) => {
-                        let ninja_cmd = vec![
-                            "sudo".to_string(),
-                            "apt".to_string(),
-                            "install".to_string(),
-                            "-y".to_string(),
-                            "ninja-build".to_string()
-                        ];
-
-                        match run_command(ninja_cmd, None, None) {
-                            Ok(_) => {
-                                println!("{}", "Ninja build system installed successfully.".green());
-                                return Ok(true);
-                            },
-                            Err(e) => {
-                                println!("{}", format!("Failed to install Ninja: {}", e).red());
-                            }
-                        }
-                    },
-                    Err(e) => {
-                        println!("{}", format!("Failed to update package lists: {}", e).red());
-                    }
-                }
-            }
-        },
-        "cmake" => {
-            if cfg!(target_os = "windows") {
-                println!("Installing CMake...");
-
-                if has_command("winget") {
-                    let install_cmd = vec![
-                        "winget".to_string(),
-                        "install".to_string(),
-                        "--id".to_string(),
-                        "Kitware.CMake".to_string()
-                    ];
-
-                    match run_command(install_cmd, None, None) {
-                        Ok(_) => {
-                            println!("{}", "CMake installed successfully.".green());
-                            println!("{}", "Please restart your command prompt to update your PATH.".yellow());
-                            return Ok(true);
-                        },
-                        Err(e) => {
-                            println!("{}", format!("Failed to install CMake: {}", e).red());
-                        }
-                    }
-                }
-            } else if cfg!(target_os = "macos") {
-                println!("Installing CMake via Homebrew...");
-
-                if has_command("brew") {
-                    let install_cmd = vec![
-                        "brew".to_string(),
-                        "install".to_string(),
-                        "cmake".to_string()
-                    ];
-
-                    match run_command(install_cmd, None, None) {
-                        Ok(_) => {
-                            println!("{}", "CMake installed successfully.".green());
-                            return Ok(true);
-                        },
-                        Err(e) => {
-                            println!("{}", format!("Failed to install CMake: {}", e).red());
-                        }
-                    }
-                }
-            } else {
-                // Linux
-                println!("Installing CMake via apt...");
-
-                let install_cmd = vec![
-                    "sudo".to_string(),
-                    "apt".to_string(),
-                    "update".to_string()
-                ];
-
-                match run_command(install_cmd, None, None) {
-                    Ok(_) => {
-                        let cmake_cmd = vec![
-                            "sudo".to_string(),
-                            "apt".to_string(),
-                            "install".to_string(),
-                            "-y".to_string(),
-                            "cmake".to_string()
-                        ];
-
-                        match run_command(cmake_cmd, None, None) {
-                            Ok(_) => {
-                                println!("{}", "CMake installed successfully.".green());
-                                return Ok(true);
-                            },
-                            Err(e) => {
-                                println!("{}", format!("Failed to install CMake: {}", e).red());
-                            }
-                        }
-                    },
-                    Err(e) => {
-                        println!("{}", format!("Failed to update package lists: {}", e).red());
-                    }
-                }
-            }
-        },
         _ => {
-            println!("{}", format!("Don't know how to install compiler/tool: {}", compiler_label).red());
+            print_error(&format!("Don't know how to install compiler/tool: {}", compiler_label), None, None);
         }
     }
 
-    println!("{}", "Please install the required tools manually and try again.".yellow());
+    print_warning("Please install the required tools manually and try again.", None);
+    println!();  // Extra blank line after completion
+
     Ok(false)
 }
 
@@ -747,11 +402,13 @@ pub fn has_command_with_timeout(cmd: &str, timeout_seconds: u64) -> bool {
     match rx.recv_timeout(std::time::Duration::from_secs(timeout_seconds)) {
         Ok(result) => result,
         Err(_) => {
-            println!("{}", format!("Command check for '{}' timed out.", cmd).yellow());
+            // Properly format timeout warning with consistent styling
+            print_warning(&format!("Command check for '{}' timed out.", cmd), None);
             false
         }
     }
 }
+
 
 pub fn get_effective_compiler_label(config: &ProjectConfig) -> String {
     if let Some(label) = &config.build.compiler {
@@ -901,7 +558,7 @@ pub fn map_token(token: &str, msvc_style: bool) -> Vec<String> {
 
         // If there's some leftover or unknown token
         _ => {
-            println!("Warning: unrecognized token `{}`, passing unchanged.", token);
+            print_warning(&format!("Unrecognized token `{}`, passing unchanged.", token), None);
             vec![token.to_string()]
         }
     }

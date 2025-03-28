@@ -11,12 +11,12 @@ use regex::Regex;
 
 // Global verbosity control
 lazy_static! {
-    static ref VERBOSITY: Mutex<Verbosity> = Mutex::new(Verbosity::Normal);
-    static ref LAYOUT: Mutex<LayoutManager> = Mutex::new(LayoutManager::new());
-    static ref ACTIVE_PROGRESS_BARS: Mutex<usize> = Mutex::new(0);
-    static ref OUTPUT_MUTEX: Mutex<()> = Mutex::new(());
-    static ref SPINNER_ACTIVE: Mutex<bool> = Mutex::new(false);
-    static ref LAST_LINE_WAS_NEWLINE: Mutex<bool> = Mutex::new(true);
+    pub static ref VERBOSITY: Mutex<Verbosity> = Mutex::new(Verbosity::Normal);
+    pub static ref LAYOUT: Mutex<LayoutManager> = Mutex::new(LayoutManager::new());
+    pub static ref ACTIVE_PROGRESS_BARS: Mutex<usize> = Mutex::new(0);
+    pub static ref OUTPUT_MUTEX: Mutex<()> = Mutex::new(());
+    pub static ref SPINNER_ACTIVE: Mutex<bool> = Mutex::new(false);
+    pub static ref LAST_LINE_WAS_NEWLINE: Mutex<bool> = Mutex::new(true);
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -344,7 +344,7 @@ impl Clone for SpinningWheel {
 }
 
 // Helper to ensure we don't print too many newlines
-fn ensure_single_newline() {
+pub fn ensure_single_newline() {
     let mut was_newline = LAST_LINE_WAS_NEWLINE.lock().unwrap();
     if !*was_newline {
         println!();
@@ -353,7 +353,7 @@ fn ensure_single_newline() {
 }
 
 // Helper to mark that we printed something
-fn mark_line_printed() {
+pub fn mark_line_printed() {
     let mut was_newline = LAST_LINE_WAS_NEWLINE.lock().unwrap();
     *was_newline = false;
 }
