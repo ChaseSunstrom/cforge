@@ -23,8 +23,6 @@ pub fn configure_project(
     cross_target: Option<&str>,
     workspace_config: Option<&WorkspaceConfig>
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // Create a progress tracker for configuration
-
     print_status(&format!("Configuring {}", config.project.name));
 
     // Step 1: Ensure tools
@@ -477,6 +475,7 @@ pub fn run_cmake_silently(
     }
 }
 
+// Improved execute_build_with_progress function with better output handling
 pub fn execute_build_with_progress(
     cmd: Vec<String>,
     build_path: &Path,
@@ -720,6 +719,55 @@ pub fn execute_build_with_progress(
     }
 }
 
+pub fn update_build_progress(state: &Arc<Mutex<BuildProgressState>>, line: &str, is_stderr: bool) {
+    let mut state = state.lock().unwrap();
+
+    // Check if this is a compiler line showing a file being compiled - improved regex pattern
+    if (line.contains(".cpp") || line.contains(".cc") || line.contains(".c") || line.contains(".cxx")) &&
+        (line.contains("Compiling") || line.contains("Building") ||
+            line.contains("C++") || line.contains("CC") || line.contains("[") ||
+            line.contains("Building CXX object") || line.contains("Building C object")) {
+        state.compiled_files += 1;
+
+        // Update percentage based on files compiled
+        if state.total_files > 0 {
+            state.current_percentage = (state.compiled_files as f32 / state.total_files as f32) * 100.0;
+        }
+    }
+
+    // More robust detection of linking phase
+    if line.contains("Linking") || line.contains("Generating library") ||
+        line.contains("Building executable") || line.contains("Building shared library") ||
+        line.contains("Building static library") || line.contains("Linking CXX") {
+        state.is_linking = true;
+        state.current_percentage = 90.0;
+    }
+
+    // Check for error messages
+    if (is_stderr && (line.contains("error") || line.contains("Error"))) ||
+        (line.contains("fatal error") || line.contains("undefined reference")) {
+        state.errors.push(line.to_string());
+    }
+
+    // Look for percentage indicators
+    if let Some(percent_pos) = line.find('%') {
+        if percent_pos > 0 && percent_pos < line.len() - 1 {
+            let start = line[..percent_pos].rfind(|c: char| !c.is_digit(10) && c != '.').map_or(0, |pos| pos + 1);
+            if let Ok(percentage) = line[start..percent_pos].trim().parse::<f32>() {
+                if percentage > state.current_percentage {
+                    state.current_percentage = percentage;
+                }
+            }
+        }
+    }
+
+    // Check for build completion keywords
+    if line.contains("Built target") || line.contains("Built all targets") ||
+        line.contains("[100%]") || line.contains("build succeeded") {
+        state.current_percentage = 100.0;
+    }
+}
+
 pub fn get_build_type(config: &ProjectConfig, requested_config: Option<&str>) -> String {
     // If a specific configuration was requested, use that (preserving case)
     if let Some(requested) = requested_config {
@@ -863,55 +911,6 @@ pub fn run_hooks(hooks: &Option<Vec<String>>, project_path: &Path, env_vars: Opt
     }
 
     Ok(())
-}
-
-pub fn update_build_progress(state: &Arc<Mutex<BuildProgressState>>, line: &str, is_stderr: bool) {
-    let mut state = state.lock().unwrap();
-
-    // Check if this is a compiler line showing a file being compiled - improved regex pattern
-    if (line.contains(".cpp") || line.contains(".cc") || line.contains(".c") || line.contains(".cxx")) &&
-        (line.contains("Compiling") || line.contains("Building") ||
-            line.contains("C++") || line.contains("CC") || line.contains("[") ||
-            line.contains("Building CXX object") || line.contains("Building C object")) {
-        state.compiled_files += 1;
-
-        // Update percentage based on files compiled
-        if state.total_files > 0 {
-            state.current_percentage = (state.compiled_files as f32 / state.total_files as f32) * 100.0;
-        }
-    }
-
-    // More robust detection of linking phase
-    if line.contains("Linking") || line.contains("Generating library") ||
-        line.contains("Building executable") || line.contains("Building shared library") ||
-        line.contains("Building static library") || line.contains("Linking CXX") {
-        state.is_linking = true;
-        state.current_percentage = 90.0;
-    }
-
-    // Check for error messages
-    if (is_stderr && (line.contains("error") || line.contains("Error"))) ||
-        (line.contains("fatal error") || line.contains("undefined reference")) {
-        state.errors.push(line.to_string());
-    }
-
-    // Look for percentage indicators
-    if let Some(percent_pos) = line.find('%') {
-        if percent_pos > 0 && percent_pos < line.len() - 1 {
-            let start = line[..percent_pos].rfind(|c: char| !c.is_digit(10) && c != '.').map_or(0, |pos| pos + 1);
-            if let Ok(percentage) = line[start..percent_pos].trim().parse::<f32>() {
-                if percentage > state.current_percentage {
-                    state.current_percentage = percentage;
-                }
-            }
-        }
-    }
-
-    // Check for build completion keywords
-    if line.contains("Built target") || line.contains("Built all targets") ||
-        line.contains("[100%]") || line.contains("build succeeded") {
-        state.current_percentage = 100.0;
-    }
 }
 
 pub fn count_project_source_files(config: &ProjectConfig, project_path: &Path) -> Result<usize, Box<dyn std::error::Error>> {

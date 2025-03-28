@@ -102,6 +102,7 @@ pub fn init_workspace() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+
 pub fn build_project(
     config: &ProjectConfig,
     project_path: &Path,
@@ -112,8 +113,8 @@ pub fn build_project(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let project_name = &config.project.name;
 
-    // More compact progress tracking - fewer steps
-    let mut progress = BuildProgress::new(project_name, 3); // Reduced to 3 main steps
+    // More compact progress tracking with proper spacing
+    let mut progress = BuildProgress::new(project_name, 3);
 
     // Create a main progress bar for overall build progress
     let mut main_progress = SpinningWheel::start(&format!("Building {}", project_name));
@@ -145,25 +146,19 @@ pub fn build_project(
             !build_path.join("build.ninja").exists());
 
     // Step 2: Configure if needed
+    progress.next_step("Configure");
+
     if needs_configure {
-        progress.next_step("Configure");
-
-        if !is_quiet() {
-            print_substep("Configuring project");
-        }
-
         // Creating a progress bar specifically for configuration
         let mut config_progress = SpinningWheel::start("Configuration");
 
         // Delegate to configure_project with the progress bar
         configure_project(config, project_path, config_type, variant_name, cross_target, workspace_config)?;
 
-
         config_progress.success();
     } else {
-        progress.next_step("Configure");
         if !is_quiet() {
-            print_substep("Already configured");
+            print_success("Already configured", None);
         }
     }
 
@@ -193,7 +188,7 @@ pub fn build_project(
         }
     }
 
-    // Step 3: Build
+    // Step 3: Compile
     progress.next_step("Compile");
 
     // Count source files to get a better estimate of build size
@@ -1853,9 +1848,6 @@ pub fn generate_cmake_lists(config: &ProjectConfig, project_path: &Path, variant
     let mut file = File::create(cmake_file)?;
     file.write_all(cmake_content.join("\n").as_bytes())?;
 
-    if !is_quiet() {
-        println!("{}", "Generated CMakeLists.txt".green());
-    }
     Ok(())
 }
 
