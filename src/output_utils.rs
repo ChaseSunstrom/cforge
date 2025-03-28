@@ -19,6 +19,8 @@ lazy_static! {
     pub static ref LAST_LINE_WAS_NEWLINE: Mutex<bool> = Mutex::new(true);
 }
 
+static ANSI_ERASE_LINE: &str = "\x1b[2K";  // ANSI escape code to erase the entire line
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Verbosity {
     Quiet,
@@ -85,7 +87,7 @@ impl SpinningWheel {
                 let spinner_chars = vec!["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
                 let mut i = 0;
 
-                // Ensure we start on a new line - with a temporary guard
+                // Ensure we start on a new line
                 {
                     let _guard = OUTPUT_MUTEX.lock().unwrap();
                     ensure_single_newline();
@@ -119,7 +121,9 @@ impl SpinningWheel {
                     // Acquire lock just for printing, then release it
                     {
                         let _guard = OUTPUT_MUTEX.lock().unwrap();
-                        print!("\r{} {} {} ",
+                        // Use ANSI escape code to clear the line first
+                        print!("{}\r{} {} {} ",
+                               ANSI_ERASE_LINE,
                                spinner_char.cyan(),
                                msg.blue().bold(),
                                status.dimmed());
@@ -132,8 +136,8 @@ impl SpinningWheel {
                 // Final cleanup with lock
                 {
                     let _guard = OUTPUT_MUTEX.lock().unwrap();
-                    // Clear the line completely on exit
-                    print!("\r{}\r", " ".repeat(120));
+                    // Use ANSI escape code to completely clear the line
+                    print!("{}\r", ANSI_ERASE_LINE);
                     io::stdout().flush().unwrap();
                 }
 
@@ -168,68 +172,41 @@ impl SpinningWheel {
     pub fn success(self) {
         let elapsed = self.start_time.elapsed();
 
-        // Signal the spinner to stop - use try_lock with a fallback
-        match self.stop_signal.try_lock() {
-            Ok(mut guard) => {
-                *guard = true;
-            },
-            Err(_) => {
-                // If we can't get the lock, print directly without waiting for spinner
-                println!("✓ {} ({})", self.message.green(), format_duration(elapsed).yellow());
-                return;
-            }
-        }
+        // Signal the spinner to stop and clear immediately
+        *self.stop_signal.lock().unwrap() = true;
 
-        // Use a timeout for joining the thread
+        // Wait for spinner thread to finish - use a hard join here
         if let Some(handle) = self.handle {
-            let thread_join_timeout = Duration::from_secs(1);
-            let (tx, rx) = std::sync::mpsc::channel();
-
-            // Spawn a thread to do the join
-            let join_thread = thread::spawn(move || {
-                let _ = handle.join();
-                let _ = tx.send(());
-            });
-
-            // Wait with timeout
-            match rx.recv_timeout(thread_join_timeout) {
-                Ok(_) => {}, // Thread joined successfully
-                Err(_) => {  // Join timed out, continue anyway
-                    // We'll print the success message ourselves
-                }
-            }
+            // No timeout, just wait for it to finish
+            let _ = handle.join();
         }
 
-        // Only try to acquire the output lock if it's available
-        if let Ok(_guard) = OUTPUT_MUTEX.try_lock() {
-            // Print success message
-            println!("✓ {} ({})",
-                     self.message.green(),
-                     format_duration(elapsed).yellow());
+        // Now we're guaranteed the spinner is done and line is cleared
+        // Acquire output lock with hard blocking
+        let _guard = OUTPUT_MUTEX.lock().unwrap();
 
-            // Mark that we printed something
-            mark_line_printed();
-        } else {
-            // Can't get lock, print directly
-            println!("✓ {} ({})", self.message.green(), format_duration(elapsed).yellow());
-        }
+        // Print success message after spinner is completely gone
+        println!("✓ {} ({})",
+                 self.message.green(),
+                 format_duration(elapsed).yellow());
+
+        // Mark that we printed something
+        mark_line_printed();
     }
 
     pub fn failure(self, error: &str) {
-        let elapsed = self.start_time.elapsed();
-
         // Signal the spinner to stop
         *self.stop_signal.lock().unwrap() = true;
 
-        // Wait for spinner thread to finish
+        // Wait for spinner thread to fully finish
         if let Some(handle) = self.handle {
             let _ = handle.join();
         }
 
-        // Acquire output lock
+        // Now acquire output lock with hard blocking
         let _guard = OUTPUT_MUTEX.lock().unwrap();
 
-        // Print failure message - more compact
+        // Print failure message after spinner is completely gone
         println!("✗ {}: {}",
                  self.message.red(),
                  error.red());
@@ -269,7 +246,7 @@ impl Clone for SpinningWheel {
                 let spinner_chars = vec!["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
                 let mut i = 0;
 
-                // Ensure we start on a new line - with a temporary guard
+                // Ensure we start on a new line
                 {
                     let _guard = OUTPUT_MUTEX.lock().unwrap();
                     ensure_single_newline();
@@ -303,7 +280,9 @@ impl Clone for SpinningWheel {
                     // Acquire lock just for printing, then release it
                     {
                         let _guard = OUTPUT_MUTEX.lock().unwrap();
-                        print!("\r{} {} {} ",
+                        // Use ANSI escape code to clear the line first
+                        print!("{}\r{} {} {} ",
+                               ANSI_ERASE_LINE,
                                spinner_char.cyan(),
                                msg.blue().bold(),
                                status.dimmed());
@@ -316,8 +295,8 @@ impl Clone for SpinningWheel {
                 // Final cleanup with lock
                 {
                     let _guard = OUTPUT_MUTEX.lock().unwrap();
-                    // Clear the line completely on exit
-                    print!("\r{}\r", " ".repeat(120));
+                    // Use ANSI escape code to completely clear the line
+                    print!("{}\r", ANSI_ERASE_LINE);
                     io::stdout().flush().unwrap();
                 }
 
@@ -406,6 +385,10 @@ impl LayoutManager {
     }
 }
 
+pub fn ensure_spinner_cleared() {
+
+}
+
 // Verbosity control functions
 pub fn set_verbosity(level: &str) {
     let mut v = VERBOSITY.lock().unwrap();
@@ -436,6 +419,8 @@ pub fn print_message(msg_type: MessageType, message: &str, details: Option<&str>
 
     // Acquire output lock for thread safety
     let _guard = OUTPUT_MUTEX.lock().unwrap();
+
+    ensure_spinner_cleared();
 
     // Handle spinner active case
     if *SPINNER_ACTIVE.lock().unwrap() {
@@ -496,6 +481,8 @@ pub fn print_step(action: &str, target: &str) {
     // Acquire output lock for thread safety
     let _guard = OUTPUT_MUTEX.lock().unwrap();
 
+    ensure_spinner_cleared();
+
     // Handle spinner active case
     if *SPINNER_ACTIVE.lock().unwrap() {
         println!();
@@ -550,6 +537,8 @@ pub fn print_status(message: &str) {
     // Acquire output lock
     let _guard = OUTPUT_MUTEX.lock().unwrap();
 
+    ensure_spinner_cleared();
+
     // Handle spinner active case without redundant logging
     if *SPINNER_ACTIVE.lock().unwrap() {
         println!();
@@ -569,6 +558,8 @@ pub fn print_substep(message: &str) {
     // Acquire output lock
     let _guard = OUTPUT_MUTEX.lock().unwrap();
 
+    ensure_spinner_cleared();
+
     // More compact bullet style
     println!("  • {}", message);
 
@@ -584,6 +575,8 @@ pub fn print_success(message: &str, details: Option<&str>) {
     // Don't add extra newline before success message
     let _guard = OUTPUT_MUTEX.lock().unwrap();
 
+    ensure_spinner_cleared();
+
     println!("✓ {}", message.green());
 
     if let Some(d) = details {
@@ -598,6 +591,8 @@ pub fn print_warning(message: &str, solution: Option<&str>) {
     // Always print warnings, even in quiet mode
     let _guard = OUTPUT_MUTEX.lock().unwrap();
 
+    ensure_spinner_cleared();
+
     println!("⚠ {}", message.yellow());
 
     if let Some(s) = solution {
@@ -611,6 +606,8 @@ pub fn print_warning(message: &str, solution: Option<&str>) {
 pub fn print_error(message: &str, code: Option<&str>, solution: Option<&str>) {
     // Always print errors, even in quiet mode
     let _guard = OUTPUT_MUTEX.lock().unwrap();
+
+    ensure_spinner_cleared();
 
     let error_prefix = match code {
         Some(c) => format!("✗ [{}]", c),
@@ -629,6 +626,7 @@ pub fn print_error(message: &str, code: Option<&str>, solution: Option<&str>) {
 
 pub fn print_detailed(message: &str) {
     if is_verbose() {
+        ensure_spinner_cleared();
         print_message(MessageType::Detail, message, None);
     }
 }

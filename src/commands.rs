@@ -356,13 +356,6 @@ pub fn run_command_with_timeout(
     env: Option<HashMap<String, String>>,
     timeout_seconds: u64
 ) -> Result<(), Box<dyn std::error::Error>> {
-    use std::process::{Command, Stdio};
-    use std::io::{BufRead, BufReader};
-    use std::sync::{Arc, Mutex};
-    use std::thread;
-    use std::time::Duration;
-    use std::sync::mpsc::channel;
-
     // Build the Command
     let mut command = Command::new(&cmd[0]);
     command.args(&cmd[1..]);
@@ -380,172 +373,152 @@ pub fn run_command_with_timeout(
     command.stdout(Stdio::piped());
     command.stderr(Stdio::piped());
 
-    if is_verbose() {
-        println!("Executing command: {}", cmd.join(" "));
-    }
-
-    // Spawn the command with better error handling
-    let mut child = match command.spawn() {
+    // Spawn the command
+    let child = match command.spawn() {
         Ok(child) => child,
         Err(e) => return Err(format!("Failed to execute command: {}", e).into()),
     };
 
-    // Take ownership of stdout/stderr handles
-    let stdout = match child.stdout.take() {
-        Some(out) => out,
-        None => return Err("Failed to capture stdout".into()),
-    };
+    // Wrap the Child in Arc<Mutex<>> so multiple threads can access
+    let child_arc = Arc::new(Mutex::new(child));
 
-    let stderr = match child.stderr.take() {
-        Some(err) => err,
-        None => return Err("Failed to capture stderr".into()),
-    };
+    // Take ownership of stdout/stderr handles *before* the wait thread
+    let stdout = child_arc
+        .lock()
+        .unwrap()
+        .stdout
+        .take()
+        .ok_or("Failed to capture child stdout")?;
+    let stderr = child_arc
+        .lock()
+        .unwrap()
+        .stderr
+        .take()
+        .ok_or("Failed to capture child stderr")?;
 
-    // Thread-safe child process handle
-    let child_mutex = Arc::new(Mutex::new(child));
-
-    // Flag to indicate if we've already handled process termination
-    let terminated = Arc::new(Mutex::new(false));
-    let terminated_stdout = Arc::clone(&terminated);
-    let terminated_stderr = Arc::clone(&terminated);
-
-    // Thread for reading stdout
-    let stdout_handle = thread::spawn(move || {
+    // Spawn a thread to continuously read from stdout
+    let child_arc_out = Arc::clone(&child_arc);
+    let out_handle = thread::spawn(move || {
         let reader = BufReader::new(stdout);
         for line in reader.lines() {
-            // Check if we should stop processing
-            if *terminated_stdout.lock().unwrap() {
-                break;
-            }
-
             if let Ok(line) = line {
                 if is_verbose() {
                     println!("{}", line);
                 }
             }
         }
+        drop(child_arc_out);
     });
 
-    // Thread for reading stderr
-    let stderr_handle = thread::spawn(move || {
+    // Spawn a thread to continuously read from stderr
+    let child_arc_err = Arc::clone(&child_arc);
+    let err_handle = thread::spawn(move || {
         let reader = BufReader::new(stderr);
         for line in reader.lines() {
-            // Check if we should stop processing
-            if *terminated_stderr.lock().unwrap() {
-                break;
-            }
-
             if let Ok(line) = line {
-                if is_verbose() || line.contains("error") || line.contains("Error") {
+                if is_verbose() || line.contains("error") || line.contains("Error") || line.contains("WARNING") {
                     eprintln!("{}", line.red());
                 }
             }
         }
+        drop(child_arc_err);
     });
 
-    // Set up a channel for the exit status
+    // We also need a channel to receive when the process completes
     let (tx, rx) = channel();
+    let child_arc_wait = Arc::clone(&child_arc);
+    let kill_tx = tx.clone();
 
-    // Thread to wait for process completion
-    let child_clone = Arc::clone(&child_mutex);
-    let terminated_wait = Arc::clone(&terminated);
-    let tx_watchdog = tx.clone();
+    // Thread to wait on the child's exit
+    thread::spawn(move || {
+        // Wait for the child to exit
+        let status = child_arc_wait.lock().unwrap().wait();
+        // Send the result back so we know the command is done
+        let _ = tx.send(status);
+    });
+
+    // Add a safety watchdog timer that will forcibly kill the process if it hangs
+    let child_arc_kill = Arc::clone(&child_arc);
 
     thread::spawn(move || {
-        // Get a lock on the child process
-        if let Ok(mut child) = child_clone.lock() {
-            // Wait for the process to complete
-            match child.wait() {
+        // Sleep for double the timeout period to ensure we kill only truly hung processes
+        thread::sleep(Duration::from_secs(timeout_seconds * 2));
+
+        // If we get here and the process is still running, it's definitely hung
+        let mut child_lock = match child_arc_kill.try_lock() {
+            Ok(lock) => lock,
+            Err(_) => return, // Already finished or being handled
+        };
+
+        // Check if process is still running (try_wait returns None if still running)
+        match child_lock.try_wait() {
+            Ok(None) => {
+                // Process is still running after twice the timeout - kill it
+                let _ = child_lock.kill();
+
+                // Send a timeout error
+                let _ = kill_tx.send(Err(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    format!("Command execution timed out after {} seconds", timeout_seconds * 2)
+                )));
+            },
+            _ => (), // Process already finished
+        }
+    });
+
+    // Now we wait up to `timeout_seconds` for the child to finish
+    match rx.recv_timeout(Duration::from_secs(timeout_seconds)) {
+        Ok(status_result) => {
+            // The child exited (we got a status). Join reading threads
+            let _ = out_handle.join();
+            let _ = err_handle.join();
+
+            match status_result {
                 Ok(status) => {
-                    // Mark as terminated
-                    *terminated_wait.lock().unwrap() = true;
-                    let _ = tx.send(Ok(status));
-                },
-                Err(e) => {
-                    // Mark as terminated
-                    *terminated_wait.lock().unwrap() = true;
-                    let _ = tx.send(Err(e));
-                }
-            }
-        } else {
-            // Failed to get lock - abnormal condition
-            let _ = tx.send(Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                "Failed to get lock on child process"
-            )));
-        }
-    });
-
-    // Set up a watchdog thread to kill the process if it hangs
-    let child_watchdog = Arc::clone(&child_mutex);
-    let terminated_watchdog = Arc::clone(&terminated);
-
-    thread::spawn(move || {
-        // Sleep for the timeout duration
-        thread::sleep(Duration::from_secs(timeout_seconds));
-
-        // Check if the process was already terminated
-        if *terminated_watchdog.lock().unwrap() {
-            return; // Process already completed
-        }
-
-        // Attempt to kill the process if it's still running
-        if let Ok(mut child) = child_watchdog.try_lock() {
-            // Try to get status without waiting (None means still running)
-            match child.try_wait() {
-                Ok(None) => {
-                    // Process is still running after timeout - kill it
-                    if !is_quiet() {
-                        println!("Command timed out after {} seconds - terminating", timeout_seconds);
+                    if status.success() {
+                        Ok(())
+                    } else {
+                        Err(format!("Command failed with exit code: {}",
+                                    status.code().unwrap_or(-1)).into())
                     }
-
-                    // Try to kill the process
-                    let _ = child.kill();
-
-                    // Mark as terminated
-                    *terminated_watchdog.lock().unwrap() = true;
-
-                    // Send timeout status
-                    let _ = tx_watchdog.send(Err(std::io::Error::new(
-                        std::io::ErrorKind::TimedOut,
-                        format!("Command timed out after {} seconds", timeout_seconds)
-                    )));
                 },
-                _ => () // Process already completed or failed to check
-            }
-        }
-    });
-
-    // Wait for result with a small buffer on top of the timeout
-    let result = match rx.recv_timeout(Duration::from_secs(timeout_seconds + 5)) {
-        Ok(result) => result,
-        Err(_) => {
-            // Channel timeout - something went very wrong
-            // Force terminate the process as a last resort
-            if let Ok(mut child) = child_mutex.try_lock() {
-                let _ = child.kill();
-            }
-
-            return Err(format!("Command execution timed out or channel error occurred after {} seconds",
-                               timeout_seconds).into());
-        }
-    };
-
-    // Wait for stdout/stderr readers to finish with a short timeout
-    let _ = stdout_handle.join();
-    let _ = stderr_handle.join();
-
-    // Process result
-    match result {
-        Ok(status) => {
-            if status.success() {
-                Ok(())
-            } else {
-                Err(format!("Command failed with exit code: {}",
-                            status.code().unwrap_or(-1)).into())
+                Err(e) => Err(format!("Command error: {}", e).into()),
             }
         },
-        Err(e) => Err(format!("Command error: {}", e).into()),
+        Err(_) => {
+            // Timeout occurred: kill the child
+            if is_verbose() {
+                eprintln!(
+                    "Command timed out after {} seconds: {}",
+                    timeout_seconds,
+                    cmd.join(" ")
+                );
+            }
+
+            // Because we have Arc<Mutex<Child>>, we can kill safely
+            let mut child = match child_arc.try_lock() {
+                Ok(lock) => lock,
+                Err(_) => {
+                    // Already being handled by another thread
+                    return Err(format!(
+                        "Command timed out after {} seconds and could not acquire lock to kill it",
+                        timeout_seconds
+                    ).into());
+                }
+            };
+
+            // Try to kill the process, but don't panic if it's already gone
+            let _ = child.kill();
+
+            // Optionally wait() again to reap the process
+            let _ = child.wait();
+
+            Err(format!(
+                "Command timed out after {} seconds: {}",
+                timeout_seconds,
+                cmd.join(" ")
+            ).into())
+        }
     }
 }
 
