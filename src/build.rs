@@ -664,8 +664,6 @@ pub fn execute_build_with_progress(
                         let stdout_content = stdout_buffer.lock().unwrap().clone();
                         let stderr_content = stderr_buffer.lock().unwrap().clone();
 
-                        // Build failed - display formatted errors using our enhanced error formatter
-
                         // Use our enhanced error formatter
                         println!();  // Add some space
                         let formatted_errors = format_compiler_errors(&stdout_content, &stderr_content);
@@ -673,8 +671,11 @@ pub fn execute_build_with_progress(
                             println!("{}", error_line);
                         }
 
+                        progress_clone.failure("");
+
                         return Err("".into());
                     }
+                    progress_clone.success();
                     Ok(())
                 },
                 Err(e) => Err(e.into()),
@@ -686,12 +687,6 @@ pub fn execute_build_with_progress(
             Err("Build process timed out after 10 minutes".into())
         }
     };
-
-    // Check if our internal timeout was triggered
-    if *timeout_monitor.lock().unwrap() {
-        progress.failure("Build timed out after 10 minutes");
-        return Err("Build process timed out after 10 minutes - possible hanging".into());
-    }
 
     // Wait for stdout/stderr readers to finish
     let _ = stdout_handle.join();

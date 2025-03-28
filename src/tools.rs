@@ -6,10 +6,6 @@ use crate::output_utils::*;
 
 pub fn ensure_build_tools(config: &ProjectConfig) -> Result<(), Box<dyn std::error::Error>> {
     // Handle spinner active case
-    if *SPINNER_ACTIVE.lock().unwrap() {
-        println!();
-        *LAST_LINE_WAS_NEWLINE.lock().unwrap() = true;
-    }
 
     // Ensure proper spacing
     ensure_single_newline();
