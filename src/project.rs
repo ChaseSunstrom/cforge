@@ -120,7 +120,10 @@ pub fn build_project(
 
     // Step 1: Ensure tools and setup
     progress.next_step("Setup");
+
+    let spinner = progress_bar("Verifying build tools");
     ensure_build_tools(config)?;
+    spinner.success();
 
     // Get the build type - make sure it matches configuration
     let build_type = get_build_type(config, config_type);
@@ -153,14 +156,8 @@ pub fn build_project(
         let mut config_progress = SpinningWheel::start("Configuration");
 
         // Delegate to configure_project with the progress bar
-        configure_project(
-            config,
-            project_path,
-            Some(&build_type),
-            variant_name,
-            cross_target,
-            workspace_config
-        )?;
+        configure_project(config, project_path, config_type, variant_name, cross_target, workspace_config)?;
+
 
         config_progress.success();
     } else {

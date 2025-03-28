@@ -12,6 +12,7 @@ use crate::dependencies::install_dependencies;
 use crate::errors::{format_compiler_errors, glob_to_regex};
 use crate::output_utils::{has_command, is_quiet, is_verbose, print_detailed, print_status, print_substep, print_success, print_warning, BuildProgress, SpinningWheel};
 use crate::project::generate_cmake_lists;
+use crate::utils::progress_bar;
 use crate::workspace::resolve_workspace_dependencies;
 
 pub fn configure_project(
@@ -23,11 +24,15 @@ pub fn configure_project(
     workspace_config: Option<&WorkspaceConfig>
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Create a progress tracker for configuration
-    let mut progress = BuildProgress::new(&format!("Configuring {}", config.project.name), 3);
+
+    print_status(&format!("Configuring {}", config.project.name));
 
     // Step 1: Ensure tools
-    progress.next_step("Checking required tools");
+    let spinner = progress_bar("Checking required tools");
     ensure_build_tools(config)?;
+    spinner.success();
+
+    print_substep("Preparing build environment");
 
     // Get compiler and build paths
     let compiler_label = get_effective_compiler_label(config);
@@ -60,17 +65,19 @@ pub fn configure_project(
     }
 
     // Step 2: Run pre-configure hooks
-    progress.next_step("Running hooks");
+    print_substep("Running hooks");
     if let Some(hooks) = &config.hooks {
         if let Some(pre_hooks) = &hooks.pre_configure {
             if !pre_hooks.is_empty() {
+                print_substep("Running pre-configure hooks");
                 run_hooks(&Some(pre_hooks.clone()), project_path, Some(hook_env.clone()))?;
             }
         }
     }
 
+
     // Step 3: Setup dependencies
-    progress.next_step("Configuring build");
+    print_substep("Configuring build");
 
     // Check for cross-compilation config
     let cross_config = if let Some(target) = cross_target {
@@ -118,12 +125,13 @@ pub fn configure_project(
     let conan_cmake = deps_result.get("conan_cmake").cloned().unwrap_or_default();
 
     // Step 4: Generate CMake files
-    let mut cmake_spinner = SpinningWheel::start("Generating CMakeLists.txt");
+    let cmake_spinner = progress_bar("Generating CMakeLists.txt");
     generate_cmake_lists(config, project_path, variant_name, workspace_config)?;
     cmake_spinner.success();
 
+
     // Step 5: Run CMake configuration
-    let mut cmake_progress = SpinningWheel::start("Running cmake");
+    let cmake_progress = progress_bar("Running cmake");
 
     // Get CMake generator
     let generator = get_cmake_generator(config)?;
@@ -239,9 +247,6 @@ pub fn configure_project(
             }
         }
     }
-
-    // Complete progress
-    progress.complete();
 
     // Show configuration summary
     if !is_quiet() {

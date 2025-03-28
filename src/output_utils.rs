@@ -78,15 +78,18 @@ impl SpinningWheel {
         // Only create the handle if we're not in quiet mode
         let handle = if !is_quiet() {
             let msg = message.clone();
+            let stop_clone = stop_clone.clone();  // Clone again for the thread
+            let status_clone = status_clone.clone();  // Clone again for the thread
+
             Some(thread::spawn(move || {
                 let spinner_chars = vec!["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
                 let mut i = 0;
 
-                // Acquire output lock to ensure we're not interrupted
-                let _guard = OUTPUT_MUTEX.lock().unwrap();
-
-                // Ensure we start on a new line
-                ensure_single_newline();
+                // Ensure we start on a new line - with a temporary guard
+                {
+                    let _guard = OUTPUT_MUTEX.lock().unwrap();
+                    ensure_single_newline();
+                }
 
                 loop {
                     {
@@ -113,19 +116,26 @@ impl SpinningWheel {
                     let spinner_char = spinner_chars[i % spinner_chars.len()];
                     i = (i + 1) % spinner_chars.len();
 
-                    // Clean, consistent output format
-                    print!("\r{} {} {} ",
-                           spinner_char.cyan(),
-                           msg.blue().bold(),
-                           status.dimmed());
-                    io::stdout().flush().unwrap();
+                    // Acquire lock just for printing, then release it
+                    {
+                        let _guard = OUTPUT_MUTEX.lock().unwrap();
+                        print!("\r{} {} {} ",
+                               spinner_char.cyan(),
+                               msg.blue().bold(),
+                               status.dimmed());
+                        io::stdout().flush().unwrap();
+                    }
 
                     thread::sleep(Duration::from_millis(80));
                 }
 
-                // Clear the line completely on exit
-                print!("\r{}\r", " ".repeat(120));
-                io::stdout().flush().unwrap();
+                // Final cleanup with lock
+                {
+                    let _guard = OUTPUT_MUTEX.lock().unwrap();
+                    // Clear the line completely on exit
+                    print!("\r{}\r", " ".repeat(120));
+                    io::stdout().flush().unwrap();
+                }
 
                 // Mark spinner as done
                 let mut spinner_active = SPINNER_ACTIVE.lock().unwrap();
@@ -158,25 +168,50 @@ impl SpinningWheel {
     pub fn success(self) {
         let elapsed = self.start_time.elapsed();
 
-        // Signal the spinner to stop
-        *self.stop_signal.lock().unwrap() = true;
-
-        // Wait for spinner thread to finish
-        if let Some(handle) = self.handle {
-            let _ = handle.join();
+        // Signal the spinner to stop - use try_lock with a fallback
+        match self.stop_signal.try_lock() {
+            Ok(mut guard) => {
+                *guard = true;
+            },
+            Err(_) => {
+                // If we can't get the lock, print directly without waiting for spinner
+                println!("✓ {} ({})", self.message.green(), format_duration(elapsed).yellow());
+                return;
+            }
         }
 
-        if !is_quiet() {
-            // Acquire output lock
-            let _guard = OUTPUT_MUTEX.lock().unwrap();
+        // Use a timeout for joining the thread
+        if let Some(handle) = self.handle {
+            let thread_join_timeout = Duration::from_secs(1);
+            let (tx, rx) = std::sync::mpsc::channel();
 
-            // Print success message - more compact with elapsed time in parentheses
+            // Spawn a thread to do the join
+            let join_thread = thread::spawn(move || {
+                let _ = handle.join();
+                let _ = tx.send(());
+            });
+
+            // Wait with timeout
+            match rx.recv_timeout(thread_join_timeout) {
+                Ok(_) => {}, // Thread joined successfully
+                Err(_) => {  // Join timed out, continue anyway
+                    // We'll print the success message ourselves
+                }
+            }
+        }
+
+        // Only try to acquire the output lock if it's available
+        if let Ok(_guard) = OUTPUT_MUTEX.try_lock() {
+            // Print success message
             println!("✓ {} ({})",
                      self.message.green(),
                      format_duration(elapsed).yellow());
 
             // Mark that we printed something
             mark_line_printed();
+        } else {
+            // Can't get lock, print directly
+            println!("✓ {} ({})", self.message.green(), format_duration(elapsed).yellow());
         }
     }
 
@@ -210,20 +245,35 @@ impl Clone for SpinningWheel {
         let message = self.message.clone();
         let start_time = self.start_time;
         let stop_signal = Arc::new(Mutex::new(false));
+        let stop_clone = stop_signal.clone();
 
         // Create a new channel
         let (tx, rx) = std::sync::mpsc::channel::<String>();
         let status_message = Arc::new(Mutex::new(String::new()));
+        let status_clone = status_message.clone();
+
 
         // Only create a new handle if we're not in quiet mode
+        {
+            let mut spinner_active = SPINNER_ACTIVE.lock().unwrap();
+            *spinner_active = true;
+        }
+
+        // Only create the handle if we're not in quiet mode
         let handle = if !is_quiet() {
             let msg = message.clone();
-            let stop_clone = stop_signal.clone();
-            let status_clone = status_message.clone();
+            let stop_clone = stop_clone.clone();  // Clone again for the thread
+            let status_clone = status_clone.clone();  // Clone again for the thread
 
             Some(thread::spawn(move || {
                 let spinner_chars = vec!["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
                 let mut i = 0;
+
+                // Ensure we start on a new line - with a temporary guard
+                {
+                    let _guard = OUTPUT_MUTEX.lock().unwrap();
+                    ensure_single_newline();
+                }
 
                 loop {
                     {
@@ -240,9 +290,9 @@ impl Clone for SpinningWheel {
                             new_status
                         },
                         Err(_) => {
-                            // Show elapsed time if no status updates
+                            // Just show elapsed time in seconds
                             let elapsed = start_time.elapsed();
-                            format!("{}s elapsed", elapsed.as_secs())
+                            format!("{:.1}s", elapsed.as_secs_f32())
                         }
                     };
 
@@ -250,19 +300,34 @@ impl Clone for SpinningWheel {
                     let spinner_char = spinner_chars[i % spinner_chars.len()];
                     i = (i + 1) % spinner_chars.len();
 
-                    print!("\r{} {} {} ",
-                           spinner_char.cyan().bold(),
-                           msg.blue().bold(),
-                           status);
-                    io::stdout().flush().unwrap();
+                    // Acquire lock just for printing, then release it
+                    {
+                        let _guard = OUTPUT_MUTEX.lock().unwrap();
+                        print!("\r{} {} {} ",
+                               spinner_char.cyan(),
+                               msg.blue().bold(),
+                               status.dimmed());
+                        io::stdout().flush().unwrap();
+                    }
 
                     thread::sleep(Duration::from_millis(80));
                 }
 
-                // Clear the line
-                let status_len = status_clone.lock().unwrap().len();
-                print!("\r{}\r", " ".repeat(msg.len() + status_len + 20));
-                io::stdout().flush().unwrap();
+                // Final cleanup with lock
+                {
+                    let _guard = OUTPUT_MUTEX.lock().unwrap();
+                    // Clear the line completely on exit
+                    print!("\r{}\r", " ".repeat(120));
+                    io::stdout().flush().unwrap();
+                }
+
+                // Mark spinner as done
+                let mut spinner_active = SPINNER_ACTIVE.lock().unwrap();
+                *spinner_active = false;
+
+                // Mark that the line is empty now
+                let mut was_newline = LAST_LINE_WAS_NEWLINE.lock().unwrap();
+                *was_newline = true;
             }))
         } else {
             None
