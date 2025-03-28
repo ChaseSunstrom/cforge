@@ -15,8 +15,6 @@ pub fn ensure_build_tools(config: &ProjectConfig) -> Result<(), Box<dyn std::err
     ensure_single_newline();
     println!();  // Extra blank line for better visual separation
 
-    print_status("Checking for required build tools...");
-
     // Create a key for this specific config to ensure tools match
     let config_key = format!("tools_for_{}",
                              config.build.compiler.as_deref().unwrap_or("default"));

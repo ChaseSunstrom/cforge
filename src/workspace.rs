@@ -3,7 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use colored::Colorize;
 use crate::config::{auto_adjust_config, load_project_config, load_workspace_config, save_workspace_config, ProjectConfig, WorkspaceConfig};
-use crate::output_utils::{format_project_name, is_quiet, print_header, print_status, print_success, print_warning, TaskList};
+use crate::output_utils::{format_project_name, is_quiet, print_error, print_header, print_status, print_success, print_warning, TaskList};
 use crate::{find_library_files, generate_clion_workspace, generate_ide_files, generate_vscode_workspace, get_build_type, get_effective_compiler_label, install_dependencies, list_project_targets, progress_bar, run_script, DEFAULT_BUILD_DIR, WORKSPACE_FILE};
 use crate::project::{build_project, clean_project, generate_package_config, install_project, list_project_items, package_project, run_project, test_project};
 
@@ -55,11 +55,10 @@ pub fn build_workspace_with_dependency_order(
     }
 
     // Build dependency graph
-    let spinner = progress_bar("Analyzing dependencies");
     let dependency_graph = match build_dependency_graph(&workspace_config, &project_paths) {
         Ok(graph) => graph,
         Err(e) => {
-            spinner.failure(&format!("Failed to build dependency graph: {}", e));
+            print_error(&format!("Failed to build dependency graph: {}", e), None, None);
             return Err(e);
         }
     };
@@ -68,19 +67,17 @@ pub fn build_workspace_with_dependency_order(
     let build_order = match resolve_build_order(&dependency_graph, &projects) {
         Ok(order) => order,
         Err(e) => {
-            spinner.failure(&format!("Failed to resolve build order: {}", e));
+            print_error(&format!("Failed to resolve build order: {}", e), None, None);
             return Err(e);
         }
     };
 
     // Early return if build order is empty
     if build_order.is_empty() {
-        spinner.success();
         print_warning("No buildable projects found", None);
         return Ok(());
     }
 
-    spinner.success();
 
     // Show build order
     if !is_quiet() {
@@ -111,8 +108,6 @@ pub fn build_workspace_with_dependency_order(
             PathBuf::from(project_name)
         };
 
-        print_status(&format!("Building project: {}", format_project_name(project_name)));
-
         let mut config = match load_project_config(Some(&path)) {
             Ok(cfg) => cfg,
             Err(e) => {
@@ -132,7 +127,6 @@ pub fn build_workspace_with_dependency_order(
         let build_result = build_project(&config, &path, config_type, variant_name, target, Some(&workspace_config));
 
         if let Err(e) = build_result {
-            print_warning(&format!("Building {} had issues: {}", project_name, e), None);
             print_warning("Continuing with other projects...", None);
         } else {
             task_list.complete_task(i);
@@ -482,18 +476,10 @@ pub fn resolve_workspace_dependencies(
 
     let workspace = workspace_config.unwrap();
 
-    if !is_quiet() {
-        println!("{}", "Resolving workspace dependencies...".blue());
-    }
-
     for dep in &config.dependencies.workspace {
         if !workspace.workspace.projects.contains(&dep.name) {
-            println!("{}", format!("Warning: Workspace dependency '{}' not found in workspace", dep.name).yellow());
+            print_warning(format!("Workspace dependency '{}' not found in workspace", dep.name).as_str(), None);
             continue;
-        }
-
-        if !is_quiet() {
-            println!("{}", format!("Processing dependency: {}", dep.name).blue());
         }
 
         // Get the absolute path to the dependency
@@ -512,7 +498,7 @@ pub fn resolve_workspace_dependencies(
         let dep_config = match load_project_config(Some(&dep_path)) {
             Ok(config) => config,
             Err(e) => {
-                println!("{}", format!("Warning: Could not load config for dependency '{}': {}", dep.name, e).yellow());
+                print_warning(format!("Could not load config for dependency '{}': {}", dep.name, e).as_str(), None);
                 continue;
             }
         };
@@ -522,21 +508,17 @@ pub fn resolve_workspace_dependencies(
         let dep_build_path = dep_path.join(dep_build_dir);
 
         if !dep_build_path.exists() {
-            println!("{}", format!("Dependency '{}' has not been built yet. Building it now...", dep.name).yellow());
-
             // Try to build the dependency
             let mut dep_conf = dep_config.clone();
             auto_adjust_config(&mut dep_conf)?;
             if let Err(e) = build_project(&dep_conf, &dep_path, None, None, None, Some(workspace)) {
-                println!("{}", format!("Warning: Failed to build dependency '{}': {}", dep.name, e).red());
-                println!("{}", "Continuing with dependency resolution anyway, but linking might fail.".yellow());
+                print_warning(format!("Failed to build dependency '{}': {}", dep.name, e).as_str(), None);;
             }
         }
 
         // Ensure the package config is generated
         if let Err(e) = generate_package_config(&dep_path, &dep.name) {
-            println!("{}", format!("Warning: Failed to generate package config for '{}': {}", dep.name, e).yellow());
-            println!("{}", "Continuing with dependency resolution anyway, but linking might fail.".yellow());
+            print_warning( format!("Failed to generate package config for '{}': {}", dep.name, e).as_str(), None);
         }
 
         // Add the build directory to CMAKE_PREFIX_PATH
@@ -605,19 +587,10 @@ pub fn resolve_workspace_dependencies(
                 break;
             }
         } else {
-            // If no libraries found, try to search the entire project directory
-            if !is_quiet() {
-                println!("{}", format!("No libraries found in standard locations for '{}', performing deep search...", dep.name).yellow());
-            }
-
             let found_libraries = find_library_files(&dep_path, &dep.name, is_shared, is_msvc_style);
 
             if !found_libraries.is_empty() {
                 for (lib_file, filename) in &found_libraries {
-                    if !is_quiet() {
-                        println!("{}", format!("Found library: {} ({})", lib_file.display(), filename).green());
-                    }
-
                     // Add the library path to CMake variables
                     cmake_options.push(format!(
                         "-D{}_LIBRARY={}",
@@ -629,8 +602,6 @@ pub fn resolve_workspace_dependencies(
                     break;
                 }
             } else {
-                println!("{}", format!("Warning: No library files found for '{}'. Linking may fail.", dep.name).yellow());
-
                 // Try to link directly to the library by name as a last resort
                 cmake_options.push(format!(
                     "-DCMAKE_LIBRARY_PATH={}",
@@ -657,9 +628,6 @@ pub fn resolve_workspace_dependencies(
         }
     }
 
-    if !is_quiet() {
-        println!("{}", "Workspace dependency resolution completed.".green());
-    }
     Ok(cmake_options)
 }
 
@@ -754,18 +722,18 @@ pub fn list_startup_projects(workspace_config: &WorkspaceConfig) -> Result<(), B
     if let Some(startup_projects) = &workspace_config.workspace.startup_projects {
         for project in startup_projects {
             if Some(project.as_str()) == default_startup {
-                println!(" * {} (default)", project.green());
+                print_status(format!("{} (default)", project).as_str());
             } else {
-                println!(" - {}", project.green());
+                print_status(format!("{}", project).as_str());
             }
         }
     } else {
         // If no specific startup projects, list all projects
         for project in &workspace_config.workspace.projects {
             if Some(project.as_str()) == default_startup {
-                println!(" * {} (default)", project.green());
+                print_status(format!("{} (default)", project).as_str());
             } else {
-                println!(" - {}", project.green());
+                print_status(format!("{}", project).as_str());
             }
         }
     }
@@ -794,17 +762,16 @@ pub fn set_startup_project(workspace_config: &mut WorkspaceConfig, project: &str
     // Save updated config
     save_workspace_config(workspace_config)?;
 
-    println!("{}", format!("Project '{}' set as default startup project", project).green());
+    print_status(format!("Project '{}' set as default startup project", project).as_str());
     Ok(())
 }
 
 pub fn show_current_startup(workspace_config: &WorkspaceConfig) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(default_startup) = &workspace_config.workspace.default_startup_project {
-        println!("{}", format!("Current default startup project: {}", default_startup).green());
+        print_status(format!("Current default startup project: {}", default_startup).as_str());
     } else {
-        println!("{}", "No default startup project set. The first project will be used.".yellow());
         if !workspace_config.workspace.projects.is_empty() {
-            println!("{}", format!("First project is: {}", workspace_config.workspace.projects[0]).blue());
+            print_status(format!("First project (default) is: {}", workspace_config.workspace.projects[0]).as_str());
         }
     }
 

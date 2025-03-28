@@ -24,12 +24,6 @@ pub fn configure_project(
     workspace_config: Option<&WorkspaceConfig>
 ) -> Result<(), Box<dyn std::error::Error>> {
     print_status(&format!("Configuring {}", config.project.name));
-
-    // Step 1: Ensure tools
-    let spinner = progress_bar("Checking required tools");
-    ensure_build_tools(config)?;
-    spinner.success();
-
     print_substep("Preparing build environment");
 
     // Get compiler and build paths
@@ -671,7 +665,6 @@ pub fn execute_build_with_progress(
                         let stderr_content = stderr_buffer.lock().unwrap().clone();
 
                         // Build failed - display formatted errors using our enhanced error formatter
-                        progress_clone.failure("Build failed");
 
                         // Use our enhanced error formatter
                         println!();  // Add some space
@@ -680,7 +673,7 @@ pub fn execute_build_with_progress(
                             println!("{}", error_line);
                         }
 
-                        return Err("Build process failed - see above for detailed errors".into());
+                        return Err("".into());
                     }
                     Ok(())
                 },
