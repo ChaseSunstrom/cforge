@@ -13,7 +13,7 @@ use regex::Regex;
 lazy_static! {
     pub static ref VERBOSITY: Mutex<Verbosity> = Mutex::new(Verbosity::Normal);
     pub static ref LAYOUT: Mutex<LayoutManager> = Mutex::new(LayoutManager::new());
-    pub static ref ACTIVE_PROGRESS_BARS: Mutex<usize> = Mutex::new(0);
+    pub static ref ACTIVE_SPINNERS: Mutex<Vec<SpinnerHandle>> = Mutex::new(Vec::new());
     pub static ref OUTPUT_MUTEX: Mutex<()> = Mutex::new(());
     pub static ref SPINNER_ACTIVE: Mutex<bool> = Mutex::new(false);
     pub static ref LAST_LINE_WAS_NEWLINE: Mutex<bool> = Mutex::new(true);
@@ -50,6 +50,11 @@ pub enum MessageType {
     Detail,
 }
 
+pub struct SpinnerHandle {
+    id: usize,
+    stop_signal: Arc<Mutex<bool>>,
+}
+
 // Spinning wheel for all long-running operations
 pub struct SpinningWheel {
     pub message: String,
@@ -59,6 +64,8 @@ pub struct SpinningWheel {
     pub update_channel: (std::sync::mpsc::Sender<String>, Arc<Mutex<String>>),
 }
 
+
+// Full SpinningWheel implementation
 impl SpinningWheel {
     pub fn start(message: &str) -> Self {
         let message = message.to_string();
@@ -66,10 +73,23 @@ impl SpinningWheel {
         let stop_signal = Arc::new(Mutex::new(false));
         let stop_clone = stop_signal.clone();
 
+        // Make sure any previous spinners are cleared
+        ensure_all_spinners_cleared();
+
         // Channel for status updates
         let (tx, rx) = std::sync::mpsc::channel::<String>();
         let status_message = Arc::new(Mutex::new(String::new()));
         let status_clone = status_message.clone();
+
+        // Register this spinner in the global registry
+        let spinner_id = rand::random::<u32>(); // Unique ID
+        {
+            let mut spinners = ACTIVE_SPINNERS.lock().unwrap();
+            spinners.push(SpinnerHandle {
+                id: spinner_id as usize,
+                stop_signal: stop_signal.clone(),
+            });
+        }
 
         // Mark that we're showing a spinner
         {
@@ -80,8 +100,8 @@ impl SpinningWheel {
         // Only create the handle if we're not in quiet mode
         let handle = if !is_quiet() {
             let msg = message.clone();
-            let stop_clone = stop_clone.clone();  // Clone again for the thread
-            let status_clone = status_clone.clone();  // Clone again for the thread
+            let stop_clone = stop_clone.clone();
+            let status_clone = status_clone.clone();
 
             Some(thread::spawn(move || {
                 let spinner_chars = vec!["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
@@ -100,7 +120,6 @@ impl SpinningWheel {
                             break;
                         }
                     }
-
 
                     // Get status message if available
                     let status = match rx.try_recv() {
@@ -122,9 +141,10 @@ impl SpinningWheel {
                     // Acquire lock just for printing, then release it
                     {
                         let _guard = OUTPUT_MUTEX.lock().unwrap();
-                        // Use ANSI escape code to clear the line first
-                        print!("{}\r{} {} {} ",
-                               ANSI_ERASE_LINE,
+                        // Multiple clear approaches for reliability
+                        print!("\r");
+                        print!("{}", ANSI_ERASE_LINE);
+                        print!("{} {} {} ",
                                spinner_char.cyan(),
                                msg.blue().bold(),
                                status.dimmed());
@@ -137,8 +157,12 @@ impl SpinningWheel {
                 // Final cleanup with lock
                 {
                     let _guard = OUTPUT_MUTEX.lock().unwrap();
-                    // Use ANSI escape code to completely clear the line
-                    print!("{}\r", ANSI_ERASE_LINE);
+                    // Multiple clear approaches for reliability
+                    print!("\r");
+                    print!("{}", ANSI_ERASE_LINE);
+                    print!("\r");
+                    print!("                                        \r");
+                    print!("\x1B[1K\r");
                     io::stdout().flush().unwrap();
                 }
 
@@ -150,7 +174,11 @@ impl SpinningWheel {
                 let mut was_newline = LAST_LINE_WAS_NEWLINE.lock().unwrap();
                 *was_newline = true;
 
-                ensure_spinner_cleared();
+                // Remove this spinner from registry
+                {
+                    let mut spinners = ACTIVE_SPINNERS.lock().unwrap();
+                    spinners.retain(|s| s.id != spinner_id as usize);
+                }
             }))
         } else {
             None
@@ -178,19 +206,30 @@ impl SpinningWheel {
         // Signal the spinner to stop
         *self.stop_signal.lock().unwrap() = true;
 
-        // Wait for spinner thread to finish - use a hard join here
+        // Remove this spinner from registry
+        {
+            let mut spinners = ACTIVE_SPINNERS.lock().unwrap();
+            spinners.retain(|s| !Arc::ptr_eq(&s.stop_signal, &self.stop_signal));
+        }
+
+        // Wait for spinner thread to finish
         if let Some(handle) = self.handle {
-            // No timeout, just wait for it to finish
             let _ = handle.join();
         }
 
-        // Now we're guaranteed the spinner is done and line is cleared
-        // Acquire output lock with hard blocking
+        // Now we're guaranteed the spinner is done
         let _guard = OUTPUT_MUTEX.lock().unwrap();
 
-        // Ensure the line is completely cleared before printing success message
-        print!("{}\r", ANSI_ERASE_LINE);
+        // Multiple clear approaches for reliability
+        print!("\r");
+        print!("{}", ANSI_ERASE_LINE);
+        print!("\r");
+        print!("                                        \r");
+        print!("\x1B[1K\r");
         io::stdout().flush().unwrap();
+
+        // Small delay to ensure terminal processing
+        thread::sleep(Duration::from_millis(20));
 
         // Print success message on a fresh line
         println!("✓ {} ({})",
@@ -205,17 +244,30 @@ impl SpinningWheel {
         // Signal the spinner to stop
         *self.stop_signal.lock().unwrap() = true;
 
-        // Wait for spinner thread to fully finish
+        // Remove this spinner from registry
+        {
+            let mut spinners = ACTIVE_SPINNERS.lock().unwrap();
+            spinners.retain(|s| !Arc::ptr_eq(&s.stop_signal, &self.stop_signal));
+        }
+
+        // Wait for spinner thread to finish
         if let Some(handle) = self.handle {
             let _ = handle.join();
         }
 
-        // Now acquire output lock with hard blocking
+        // Now acquire output lock
         let _guard = OUTPUT_MUTEX.lock().unwrap();
 
-        // Ensure the line is completely cleared before printing failure message
-        print!("{}\r", ANSI_ERASE_LINE);
+        // Multiple clear approaches for reliability
+        print!("\r");
+        print!("{}", ANSI_ERASE_LINE);
+        print!("\r");
+        print!("                                        \r");
+        print!("\x1B[1K\r");
         io::stdout().flush().unwrap();
+
+        // Small delay to ensure terminal processing
+        thread::sleep(Duration::from_millis(20));
 
         // Print failure message on a fresh line
         println!("✗ {}: {}",
@@ -227,6 +279,7 @@ impl SpinningWheel {
     }
 }
 
+// Full Clone implementation
 impl Clone for SpinningWheel {
     fn clone(&self) -> Self {
         // Create a new spinning wheel with the same message and start time
@@ -240,18 +293,27 @@ impl Clone for SpinningWheel {
         let status_message = Arc::new(Mutex::new(String::new()));
         let status_clone = status_message.clone();
 
+        // Register this spinner in the global registry
+        let spinner_id = rand::random::<u32>(); // Unique ID
+        {
+            let mut spinners = ACTIVE_SPINNERS.lock().unwrap();
+            spinners.push(SpinnerHandle {
+                id: spinner_id as usize,
+                stop_signal: stop_signal.clone(),
+            });
+        }
 
-        // Only create a new handle if we're not in quiet mode
+        // Mark spinner as active
         {
             let mut spinner_active = SPINNER_ACTIVE.lock().unwrap();
             *spinner_active = true;
         }
 
-        // Only create the handle if we're not in quiet mode
+        // Only create a new handle if we're not in quiet mode
         let handle = if !is_quiet() {
             let msg = message.clone();
-            let stop_clone = stop_clone.clone();  // Clone again for the thread
-            let status_clone = status_clone.clone();  // Clone again for the thread
+            let stop_clone = stop_clone.clone();
+            let status_clone = status_clone.clone();
 
             Some(thread::spawn(move || {
                 let spinner_chars = vec!["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
@@ -291,9 +353,10 @@ impl Clone for SpinningWheel {
                     // Acquire lock just for printing, then release it
                     {
                         let _guard = OUTPUT_MUTEX.lock().unwrap();
-                        // Use ANSI escape code to clear the line first
-                        print!("{}\r{} {} {} ",
-                               ANSI_ERASE_LINE,
+                        // Multiple clear approaches for reliability
+                        print!("\r");
+                        print!("{}", ANSI_ERASE_LINE);
+                        print!("{} {} {} ",
                                spinner_char.cyan(),
                                msg.blue().bold(),
                                status.dimmed());
@@ -306,8 +369,12 @@ impl Clone for SpinningWheel {
                 // Final cleanup with lock
                 {
                     let _guard = OUTPUT_MUTEX.lock().unwrap();
-                    // Use ANSI escape code to completely clear the line
-                    print!("{}\r", ANSI_ERASE_LINE);
+                    // Multiple clear approaches for reliability
+                    print!("\r");
+                    print!("{}", ANSI_ERASE_LINE);
+                    print!("\r");
+                    print!("                                        \r");
+                    print!("\x1B[1K\r");
                     io::stdout().flush().unwrap();
                 }
 
@@ -318,6 +385,12 @@ impl Clone for SpinningWheel {
                 // Mark that the line is empty now
                 let mut was_newline = LAST_LINE_WAS_NEWLINE.lock().unwrap();
                 *was_newline = true;
+
+                // Remove this spinner from registry
+                {
+                    let mut spinners = ACTIVE_SPINNERS.lock().unwrap();
+                    spinners.retain(|s| s.id != spinner_id as usize);
+                }
             }))
         } else {
             None
@@ -398,8 +471,44 @@ impl LayoutManager {
 
 pub fn ensure_spinner_cleared() {
     let _guard = OUTPUT_MUTEX.lock().unwrap();
-    print!("{}\r", ANSI_ERASE_LINE);
+    // Use multiple clear approaches for maximum compatibility
+    print!("\r");                                    // Move cursor to beginning of line
+    print!("{}", ANSI_ERASE_LINE);                   // ANSI clear line
+    print!("\r");                                    // Move cursor to beginning again
+    print!("                                        \r"); // Overwrite with spaces
+    io::stdout().flush().unwrap();                   // Ensure buffer is flushed
+}
+
+pub fn ensure_all_spinners_cleared() {
+    // First terminate all active spinners
+    let mut active_spinners = ACTIVE_SPINNERS.lock().unwrap();
+    for spinner in active_spinners.iter() {
+        *spinner.stop_signal.lock().unwrap() = true;
+    }
+    active_spinners.clear();
+
+    // Then clear the terminal line multiple times
+    let _guard = OUTPUT_MUTEX.lock().unwrap();
+
+    // Try different terminal clearing approaches
+    print!("\r");                                // Carriage return
+    print!("{}", ANSI_ERASE_LINE);              // ANSI clear line
+    print!("\r");                                // Carriage return again
+    print!("                                  \r"); // Spaces
+    print!("\x1B[1K\r");                         // Another ANSI variant
     io::stdout().flush().unwrap();
+
+    // Small delay to let terminal process everything
+    thread::sleep(Duration::from_millis(20));
+
+    // One more clear for good measure
+    print!("\r");
+    print!("{}", ANSI_ERASE_LINE);
+    io::stdout().flush().unwrap();
+
+    // Mark that the line is empty
+    let mut was_newline = LAST_LINE_WAS_NEWLINE.lock().unwrap();
+    *was_newline = true;
 }
 
 
