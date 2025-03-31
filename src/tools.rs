@@ -9,7 +9,7 @@ pub fn ensure_build_tools(config: &ProjectConfig) -> Result<(), Box<dyn std::err
 
     // Ensure proper spacing
     ensure_single_newline();
-    println!();  // Extra blank line for better visual separation
+    print_status("Verifying build tools");
 
     // Create a key for this specific config to ensure tools match
     let config_key = format!("tools_for_{}",
@@ -55,7 +55,7 @@ pub fn ensure_build_tools(config: &ProjectConfig) -> Result<(), Box<dyn std::err
             return Err("CMake is required but couldn't be installed automatically. Please install it manually.".into());
         }
     } else {
-        print_substep("CMake: ✓");
+        print_check_item("CMake", Some("Available"));
     }
 
     // 2. Ensure the configured compiler is available - with safety
@@ -113,7 +113,7 @@ pub fn ensure_build_tools(config: &ProjectConfig) -> Result<(), Box<dyn std::err
             return Err(format!("Required compiler '{}' could not be installed automatically.", compiler_label).into());
         }
     } else {
-        print_substep(&format!("Compiler '{}': ✓", compiler_label));
+        print_check_item("Compiler", Some(&format!("'{}' installed", compiler_label)));
     }
 
     // 3. Ensure a build generator is available - with safety
@@ -159,14 +159,14 @@ pub fn ensure_build_tools(config: &ProjectConfig) -> Result<(), Box<dyn std::err
 
             let _ = handle.join();
         } else {
-            print_substep(&format!("Build generator '{}': ✓", cmd));
+            print_check_item("Build generator", Some(&format!("'{}' available", cmd)));
         }
     }
 
     // 4. Check if vcpkg is required but not available
     // We'll skip actual setup here, just do a basic check
     if config.dependencies.vcpkg.enabled {
-        print_substep("vcpkg: ✓ (will be configured during build)");
+        print_check_item("vcpkg", Some("Will be configured during build"));
     }
 
     // 5. Check if conan is required but not available - with timeout

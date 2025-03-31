@@ -121,13 +121,9 @@ pub fn build_project(
     // Step 1: Ensure tools and setup
     progress.next_step("Setup");
 
-    let spinner = progress_bar("Verifying build tools");
-    let spinner = progress_bar("Verifying build tools");
     if let Err(e) = ensure_build_tools(config) {
-        spinner.failure(&e.to_string());
         return Err(e);   // ensures the spinner is fully stopped
     }
-    spinner.success();
 
     // Get the build type - make sure it matches configuration
     let build_type = get_build_type(config, config_type);

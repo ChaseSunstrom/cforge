@@ -12,7 +12,7 @@ use crate::{categorize_error, ensure_build_tools, ensure_compiler_available, get
 use crate::cross_compile::get_predefined_cross_target;
 use crate::dependencies::install_dependencies;
 use crate::errors::{format_compiler_errors, glob_to_regex};
-use crate::output_utils::{ensure_all_spinners_cleared, has_command, is_quiet, is_verbose, print_detailed, print_status, print_substep, print_success, print_warning, BuildProgress, SpinningWheel};
+use crate::output_utils::{ensure_all_spinners_cleared, ensure_single_newline, has_command, is_quiet, is_verbose, print_check_item, print_detailed, print_status, print_substep, print_success, print_warning, BuildProgress, SpinningWheel};
 use crate::project::generate_cmake_lists;
 use crate::utils::progress_bar;
 use crate::workspace::resolve_workspace_dependencies;
@@ -26,7 +26,8 @@ pub fn configure_project(
     workspace_config: Option<&WorkspaceConfig>
 ) -> Result<(), Box<dyn std::error::Error>> {
     print_status(&format!("Configuring {}", config.project.name));
-    print_substep("Preparing build environment");
+
+    print_check_item("Preparing build environment", None);
 
     // Get compiler and build paths
     let compiler_label = get_effective_compiler_label(config);
@@ -59,7 +60,7 @@ pub fn configure_project(
     }
 
     // Step 2: Run pre-configure hooks
-    print_substep("Running hooks");
+    print_check_item("Running hooks", None);
     if let Some(hooks) = &config.hooks {
         if let Some(pre_hooks) = &hooks.pre_configure {
             if !pre_hooks.is_empty() {
@@ -71,7 +72,7 @@ pub fn configure_project(
 
 
     // Step 3: Setup dependencies
-    print_substep("Configuring build");
+    print_check_item("Configuring build", None);
 
     // Check for cross-compilation config
     let cross_config = if let Some(target) = cross_target {
@@ -126,6 +127,7 @@ pub fn configure_project(
     }
     cmake_spinner.success();
 
+
     // Step 5: Run CMake configuration
     let cmake_progress = progress_bar("Running cmake");
 
@@ -143,7 +145,8 @@ pub fn configure_project(
 
     // Set this as a debug printf to check what's being used
     if !is_quiet() {
-        print_substep(&format!("Using build configuration: {}", build_type));
+        ensure_single_newline();
+        print_status(&format!("Using build configuration: {}", build_type));
     }
 
     // Add vcpkg toolchain if available
@@ -718,6 +721,7 @@ pub fn execute_build_with_progress(
     // Wait for stdout/stderr readers to finish
     let _ = stdout_handle.join();
     let _ = stderr_handle.join();
+
     let _ = progress_handle.join();
 
     // Handle the result
@@ -728,11 +732,24 @@ pub fn execute_build_with_progress(
             Ok(())
         },
         Err(e) => {
-            // Command failed to execute properly
-            progress.failure(&format!("Command failed: {}", e));
-            Err(e)
+            // Get the collected stdout and stderr content for error analysis
+            let stdout_content = stdout_buffer.lock().unwrap().clone();
+            let stderr_content = stderr_buffer.lock().unwrap().clone();
+
+            // Ensure spinner is fully stopped
+            progress.failure("Failed");
+
+            // Clear line and add spacing before errors
+            println!();
+            let formatted_errors = format_compiler_errors(&stdout_content, &stderr_content);
+            for error_line in &formatted_errors {
+                println!("{}", error_line);
+            }
+
+            Err("".into())  // Empty error since we've displayed it already
         }
     }
+
 }
 pub fn update_build_progress(state: &Arc<Mutex<BuildProgressState>>, line: &str, is_stderr: bool) {
     let mut state = state.lock().unwrap();

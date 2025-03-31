@@ -6,7 +6,7 @@ use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 use colored::Colorize;
 use crate::config::{PackageInstallState, ProjectConfig};
-use crate::output_utils::{is_quiet, is_verbose, print_detailed, print_error, print_status, print_step, print_substep, print_success, print_warning, SpinningWheel};
+use crate::output_utils::{is_quiet, is_verbose, print_check_item, print_detailed, print_error, print_status, print_step, print_substep, print_success, print_warning, SpinningWheel};
 use crate::{ensure_compiler_available, has_command, progress_bar, run_command, run_command_with_pattern_tracking, run_command_with_timeout, CACHED_PATHS, DEFAULT_BUILD_DIR, INSTALLED_PACKAGES, VCPKG_DEFAULT_DIR};
 use crate::errors::expand_tilde;
 
@@ -19,7 +19,7 @@ pub fn install_dependencies(
 
     // Set up vcpkg dependencies
     if config.dependencies.vcpkg.enabled {
-        print_status("Setting up vcpkg dependencies");
+        print_status("\nSetting up vcpkg dependencies");
 
         let spinner = progress_bar("Configuring vcpkg");
         match setup_vcpkg(config, project_path) {
@@ -99,9 +99,9 @@ pub fn install_dependencies(
     }
 
     if !dependencies_info.is_empty() {
-        print_success("Dependencies configured successfully", None);
+        print_check_item("Dependencies configured successfully", None);
     } else {
-        print_substep("No dependencies configured or all dependencies are disabled");
+        print_check_item("Dependencies status", Some("No dependencies configured or all dependencies are disabled"));
     }
 
     Ok(dependencies_info)
@@ -369,7 +369,6 @@ pub fn setup_vcpkg(
             }
         }
 
-        // Try to bootstrap vcpkg - 40% to 60% progress
         let bootstrap_script = if cfg!(windows) {
             "bootstrap-vcpkg.bat"
         } else {
@@ -440,10 +439,13 @@ pub fn setup_vcpkg(
         return Err(format!("vcpkg executable not found at {}. Please install vcpkg manually.", vcpkg_exe.display()).into());
     }
 
-    // Install configured packages - 60% to 90% progress
     if !vcpkg_config.packages.is_empty() {
         if !is_quiet() {
             print_substep("Installing dependencies with vcpkg");
+        }
+
+        if !is_quiet() {
+            print_substep("Checking package installation status");
         }
 
         // First update vcpkg with a dedicated progress bar
@@ -1619,10 +1621,6 @@ pub fn run_vcpkg_install_with_progress(
     let total_packages = packages.len();
     let mut checked_count = 0;
 
-    if !is_quiet() {
-        print_substep("Checking package installation status");
-    }
-
     for pkg in packages {
         // Update progress as we check each package
         checked_count += 1;
@@ -1708,6 +1706,7 @@ pub fn run_vcpkg_install_with_progress(
 
             // Final progress update
             progress.success();
+            println!();
             Ok(())
         },
         Err(e) => {

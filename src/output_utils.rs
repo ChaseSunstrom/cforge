@@ -503,6 +503,31 @@ pub fn print_detailed(message: &str) {
     }
 }
 
+pub fn print_check_item(item: &str, details: Option<&str>) {
+    if is_quiet() {
+        return;
+    }
+
+    // Acquire output lock
+    let _guard = OUTPUT_MUTEX.lock().unwrap();
+
+    // Handle spinner active case
+    if *SPINNER_ACTIVE.lock().unwrap() {
+
+        *LAST_LINE_WAS_NEWLINE.lock().unwrap() = true;
+    }
+
+    // Use consistent checkmark symbol
+    if let Some(detail) = details {
+        println!("  ✓ {}: {}", item.bold(), detail);
+    } else {
+        println!("  ✓ {}", item.bold());
+    }
+
+    // Mark that we printed something
+    mark_line_printed();
+}
+
 pub fn print_step(action: &str, target: &str) {
     if is_quiet() {
         return;
