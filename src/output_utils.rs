@@ -485,6 +485,7 @@ pub fn ensure_all_spinners_cleared() {
     for spinner in active_spinners.iter() {
         *spinner.stop_signal.lock().unwrap() = true;
     }
+
     active_spinners.clear();
 
     // Then clear the terminal line multiple times

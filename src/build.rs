@@ -468,13 +468,12 @@ pub fn run_cmake_silently(
         Err(e) => Err(format!("CMake error: {}", e).into()),
     }
 }
-
-// Improved execute_build_with_progress function with better output handling
+// Modify the function signature to accept a reference to the SpinningWheel
 pub fn execute_build_with_progress(
     cmd: Vec<String>,
     build_path: &Path,
     source_files_count: usize,
-    mut progress: SpinningWheel
+    progress: SpinningWheel  // Keep taking ownership as before
 ) -> Result<(), Box<dyn std::error::Error>> {
     use std::process::{Command, Stdio};
     use std::io::{BufRead, BufReader};
@@ -595,11 +594,14 @@ pub fn execute_build_with_progress(
         *stderr_done_clone.lock().unwrap() = true;
     });
 
+    // Create a shared channel to communicate progress status
+    let (tx, rx) = std::sync::mpsc::channel::<String>();
+    let tx_for_progress = tx.clone();
+
     // Create a thread to update the progress based on the build state
     let build_state_progress = Arc::clone(&build_state);
     let stdout_done_progress = Arc::clone(&stdout_done);
     let stderr_done_progress = Arc::clone(&stderr_done);
-    let progress_clone = progress.clone();
 
     // Add a timeout mechanism to avoid hanging
     let timeout_monitor = Arc::new(Mutex::new(false));
@@ -632,8 +634,8 @@ pub fn execute_build_with_progress(
             // Release the lock before updating status
             drop(state);
 
-            // Update the spinning wheel with our current status
-            progress_clone.update_status(&status_message);
+            // Use the channel to send the status update
+            let _ = tx_for_progress.send(status_message);
 
             // Don't spin the CPU - check every 100ms
             thread::sleep(Duration::from_millis(100));
@@ -642,57 +644,88 @@ pub fn execute_build_with_progress(
 
     // Wait for the command to complete with timeout
     let timeout = Duration::from_secs(600); // 10 minute timeout for the build
-    let (tx, rx) = std::sync::mpsc::channel();
+    let (cmd_tx, cmd_rx) = std::sync::mpsc::channel();
 
     thread::spawn(move || {
         let status = child.wait();
-        let _ = tx.send(status);
+        let _ = cmd_tx.send(status);
     });
 
-    let progress_clone = progress.clone();
+    // Process status updates while waiting for command to complete
+    let mut result: Result<(), Box<dyn std::error::Error>> = Ok(());
+    let mut completed = false;
+    let mut last_status = "Starting...".to_string();
 
-    let result = match rx.recv_timeout(timeout) {
-        Ok(status_result) => {
-            match status_result {
-                Ok(status) => {
-                    if !status.success() {
-                        // Wait for stdout/stderr readers to finish
-                        let _ = stdout_handle.join();
-                        let _ = stderr_handle.join();
-
-                        // Get the collected stdout and stderr content for error analysis
-                        let stdout_content = stdout_buffer.lock().unwrap().clone();
-                        let stderr_content = stderr_buffer.lock().unwrap().clone();
-
-                        // Use our enhanced error formatter
-                        println!();  // Add some space
-                        let formatted_errors = format_compiler_errors(&stdout_content, &stderr_content);
-                        for error_line in &formatted_errors {
-                            println!("{}", error_line);
-                        }
-
-                        progress_clone.failure("");
-
-                        return Err("".into());
-                    }
-                    progress_clone.success();
-                    Ok(())
-                },
-                Err(e) => Err(e.into()),
+    // Main loop - handle status updates and check for command completion
+    while !completed {
+        // Check for status updates
+        match rx.try_recv() {
+            Ok(status) => {
+                last_status = status;
+                progress.update_status(&last_status);
+            },
+            Err(_) => {
+                // No new status update
             }
-        },
-        Err(_) => {
-            // Timeout occurred - force terminate the child process
-            progress_clone.failure("Build timed out after 10 minutes");
-            Err("Build process timed out after 10 minutes".into())
         }
-    };
+
+        // Check if command has completed
+        match cmd_rx.try_recv() {
+            Ok(status_result) => {
+                match status_result {
+                    Ok(status) => {
+                        if !status.success() {
+                            // Wait for stdout/stderr readers to finish
+                            let _ = stdout_handle.join();
+                            let _ = stderr_handle.join();
+
+                            // Get the collected stdout and stderr content for error analysis
+                            let stdout_content = stdout_buffer.lock().unwrap().clone();
+                            let stderr_content = stderr_buffer.lock().unwrap().clone();
+
+                            // Use our enhanced error formatter
+                            println!();  // Add some space
+                            let formatted_errors = format_compiler_errors(&stdout_content, &stderr_content);
+                            for error_line in &formatted_errors {
+                                println!("{}", error_line);
+                            }
+
+                            // Call failure and return
+                            progress.failure("");
+                            return Err("".into());
+                        }
+                        result = Ok(());
+                    },
+                    Err(e) => {
+                        result = Err(e.into());
+                    }
+                }
+                completed = true;
+            },
+            Err(std::sync::mpsc::TryRecvError::Empty) => {
+                // Command still running, continue waiting
+                thread::sleep(Duration::from_millis(100));
+            },
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                // Channel disconnected, something went wrong
+                progress.failure("Command channel disconnected unexpectedly");
+                return Err("Command channel disconnected unexpectedly".into());
+            }
+        }
+
+        // Check for timeout
+        if timeout_monitor.lock().unwrap().clone() {
+            progress.failure("Build timed out after 10 minutes");
+            return Err("Build process timed out after 10 minutes".into());
+        }
+    }
 
     // Wait for stdout/stderr readers to finish
     let _ = stdout_handle.join();
     let _ = stderr_handle.join();
     let _ = progress_handle.join();
 
+    // Handle the result
     match result {
         Ok(_) => {
             // Build succeeded
@@ -706,7 +739,6 @@ pub fn execute_build_with_progress(
         }
     }
 }
-
 pub fn update_build_progress(state: &Arc<Mutex<BuildProgressState>>, line: &str, is_stderr: bool) {
     let mut state = state.lock().unwrap();
 

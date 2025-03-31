@@ -102,7 +102,6 @@ pub fn init_workspace() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-
 pub fn build_project(
     config: &ProjectConfig,
     project_path: &Path,
@@ -117,7 +116,7 @@ pub fn build_project(
     let mut progress = BuildProgress::new(project_name, 3);
 
     // Create a main progress bar for overall build progress
-    let mut main_progress = SpinningWheel::start(&format!("Building {}", project_name));
+    let main_progress = progress_bar(&format!("Building {}", project_name));
 
     // Step 1: Ensure tools and setup
     progress.next_step("Setup");
@@ -149,13 +148,9 @@ pub fn build_project(
     progress.next_step("Configure");
 
     if needs_configure {
-        // Creating a progress bar specifically for configuration
-        let mut config_progress = SpinningWheel::start("Configuration");
-
-        // Delegate to configure_project with the progress bar
+        // Configure the project
         configure_project(config, project_path, config_type, variant_name, cross_target, workspace_config)?;
-
-        config_progress.success();
+        print_success("Configuration complete", None);
     } else {
         if !is_quiet() {
             print_success("Already configured", None);
@@ -211,23 +206,18 @@ pub fn build_project(
     }
 
     // Create build progress bar
-    let build_progress = SpinningWheel::start(&format!("Compiling {} files", source_files_count));
+    let build_progress = progress_bar(&format!("Compiling {} files", source_files_count));
 
-    // Execute build command with progress tracking - using our enhanced function
+    // Execute build command with progress tracking
     let build_result = execute_build_with_progress(
         cmd,
         &build_path,
         source_files_count,
-        build_progress
+        build_progress // Pass the SpinningWheel directly
     );
 
     if let Err(e) = build_result {
-        if e.to_string().is_empty() {
-            main_progress.failure(&format!("Building failed!"));
-        }
-        else {
-            main_progress.failure(&format!("Building failed: {}", e));
-        }
+        main_progress.failure(&format!("Building failed: {}", e));
         return Err(e);
     }
 
@@ -249,6 +239,7 @@ pub fn build_project(
 
     Ok(())
 }
+
 
 pub fn run_project(
     config: &ProjectConfig,
