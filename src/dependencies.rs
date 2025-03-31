@@ -254,7 +254,8 @@ pub fn setup_vcpkg(
             ],
             None,
             None,
-            180  // 3 minute timeout for git clone
+            180,
+            None
         ) {
             Ok(_) => {
                 clone_progress.success();
@@ -281,7 +282,8 @@ pub fn setup_vcpkg(
                                 ],
                                 None,
                                 None,
-                                120  // 2 minute timeout
+                                120,
+                                None
                             ).is_ok()
                         } else {
                             false
@@ -296,7 +298,8 @@ pub fn setup_vcpkg(
                                 ],
                                 None,
                                 None,
-                                180  // 3 minute timeout
+                                180,
+                                None
                             ).is_ok()
                         } else {
                             false
@@ -310,7 +313,8 @@ pub fn setup_vcpkg(
                             ],
                             None,
                             None,
-                            60   // 1 minute timeout
+                            60,
+                            None
                         ).is_ok() &&
                             run_command_with_timeout(
                                 vec![
@@ -322,7 +326,8 @@ pub fn setup_vcpkg(
                                 ],
                                 None,
                                 None,
-                                120  // 2 minute timeout
+                                120,
+                                None
                             ).is_ok()
                     };
 
@@ -340,7 +345,8 @@ pub fn setup_vcpkg(
                             ],
                             None,
                             None,
-                            180  // 3 minute timeout
+                            180,
+                            None
                         ) {
                             Ok(_) => {
                                 retry_progress.success();
@@ -402,7 +408,8 @@ pub fn setup_vcpkg(
             vec![String::from(bootstrap_script)],
             Some(&configured_path),
             None,
-            300  // 5 minute timeout
+            300,
+            None
         ) {
             Ok(_) => {
                 bootstrap_progress.success();
@@ -448,7 +455,8 @@ pub fn setup_vcpkg(
             ],
             Some(&vcpkg_path),
             None,
-            120  // 2 minute timeout
+            120,
+            None
         );
 
         if update_result.is_ok() {
@@ -921,7 +929,7 @@ pub fn run_vcpkg_install_with_timeout(
     let to_install_count = to_install.len();
 
     // Use the timeout version
-    match run_command_with_timeout(cmd, Some(vcpkg_path), None, timeout_seconds) {
+    match run_command_with_timeout(cmd, Some(vcpkg_path), None, timeout_seconds, None) {
         Ok(_) => {
             // Show the results
             if !already_installed.is_empty() && !is_quiet() {
@@ -959,7 +967,7 @@ pub fn run_vcpkg_install_with_timeout(
                     pkg.clone(),
                 ];
 
-                match run_command_with_timeout(single_cmd, Some(vcpkg_path), None, 300) { // 5 minute timeout per package
+                match run_command_with_timeout(single_cmd, Some(vcpkg_path), None, 300, None) { // 5 minute timeout per package
                     Ok(_) => {
                         package_spinner.success();
                         success_count += 1;
@@ -1052,7 +1060,7 @@ pub fn run_vcpkg_install(
     cmd.extend(to_install.clone());
 
     // Use the timeout version with a reasonable timeout (10 minutes)
-    match run_command_with_timeout(cmd, Some(vcpkg_path), None, 600) {
+    match run_command_with_timeout(cmd, Some(vcpkg_path), None, 600, None) {
         Ok(_) => {
             // Show the results
             if !already_installed.is_empty() && !is_quiet() {
@@ -1101,7 +1109,8 @@ pub fn setup_conan_with_progress(
                     vec!["pip".to_string(), "install".to_string(), "conan".to_string()],
                     None,
                     None,
-                    180
+                    180,
+                    None
                 )
             } else {
                 Err("pip not found".into())
@@ -1112,7 +1121,8 @@ pub fn setup_conan_with_progress(
                     vec!["brew".to_string(), "install".to_string(), "conan".to_string()],
                     None,
                     None,
-                    180
+                    180,
+                    None
                 )
             } else {
                 Err("Homebrew not found".into())
@@ -1124,7 +1134,8 @@ pub fn setup_conan_with_progress(
                     vec![pip_cmd.to_string(), "install".to_string(), "conan".to_string()],
                     None,
                     None,
-                    180
+                    180,
+                    None
                 )
             } else {
                 Err("pip not found".into())
@@ -1717,7 +1728,7 @@ pub fn run_vcpkg_install_with_progress(
                     pkg.clone(),
                 ];
 
-                match run_command_with_timeout(single_cmd, Some(vcpkg_path), None, 300) { // 5 minute timeout per package
+                match run_command_with_timeout(single_cmd, Some(vcpkg_path), None, 300, None) { // 5 minute timeout per package
                     Ok(_) => {
                         package_progress_bar.success();
                         success_count += 1;

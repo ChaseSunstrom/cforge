@@ -882,7 +882,8 @@ fn install_nsis() -> Result<bool, Box<dyn std::error::Error>> {
                 ],
                 None,
                 None,
-                180  // 3 minute timeout for download and install
+                180,  // 3 minute timeout for download and install
+                None
             );
 
             match result {
@@ -911,7 +912,8 @@ fn install_nsis() -> Result<bool, Box<dyn std::error::Error>> {
                 ],
                 None,
                 None,
-                180
+                180,
+                None
             );
 
             match result {
@@ -951,7 +953,8 @@ fn install_nsis() -> Result<bool, Box<dyn std::error::Error>> {
             ],
             None,
             None,
-            120
+            120,
+            None
         );
 
         if result.is_err() {
@@ -973,7 +976,8 @@ fn install_nsis() -> Result<bool, Box<dyn std::error::Error>> {
             ],
             None,
             None,
-            180
+            180,
+            None
         );
 
         match result {
@@ -1015,7 +1019,8 @@ fn install_nsis() -> Result<bool, Box<dyn std::error::Error>> {
                 vec!["brew".to_string(), "install".to_string(), "makensis".to_string()],
                 None,
                 None,
-                180
+                180,
+                None
             );
 
             match result {
@@ -1042,7 +1047,8 @@ fn install_nsis() -> Result<bool, Box<dyn std::error::Error>> {
             vec!["sudo".to_string(), "apt-get".to_string(), "update".to_string()],
             None,
             None,
-            60
+            60,
+            None
         );
 
         if apt_update.is_ok() {
@@ -1050,7 +1056,8 @@ fn install_nsis() -> Result<bool, Box<dyn std::error::Error>> {
                 vec!["sudo".to_string(), "apt-get".to_string(), "install".to_string(), "-y".to_string(), "nsis".to_string()],
                 None,
                 None,
-                180
+                180,
+                None
             );
 
             match result {
@@ -1073,7 +1080,8 @@ fn install_nsis() -> Result<bool, Box<dyn std::error::Error>> {
                 vec!["sudo".to_string(), "dnf".to_string(), "install".to_string(), "-y".to_string(), "nsis".to_string()],
                 None,
                 None,
-                180
+                180,
+                None
             );
 
             match result {

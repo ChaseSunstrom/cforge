@@ -12,7 +12,7 @@ use crate::{categorize_error, ensure_build_tools, ensure_compiler_available, get
 use crate::cross_compile::get_predefined_cross_target;
 use crate::dependencies::install_dependencies;
 use crate::errors::{format_compiler_errors, glob_to_regex};
-use crate::output_utils::{has_command, is_quiet, is_verbose, print_detailed, print_status, print_substep, print_success, print_warning, BuildProgress, SpinningWheel};
+use crate::output_utils::{ensure_all_spinners_cleared, has_command, is_quiet, is_verbose, print_detailed, print_status, print_substep, print_success, print_warning, BuildProgress, SpinningWheel};
 use crate::project::generate_cmake_lists;
 use crate::utils::progress_bar;
 use crate::workspace::resolve_workspace_dependencies;
@@ -213,15 +213,13 @@ pub fn configure_project(
         cmd.clone(),
         Some(&build_path.to_string_lossy()),
         env_vars.clone(),
-        180 // 3 minute timeout
+        180, // 3 minute timeout
+        Some(&cmake_progress) // Pass the spinner to the function
     );
 
     match cmake_result {
         Ok(_) => cmake_progress.success(),
         Err(e) => {
-            cmake_progress.failure(&format!("CMake configuration failed: {}", e));
-
-            // Check for common CMake errors and provide helpful hints
             if e.to_string().contains("could not find") || e.to_string().contains("not found") {
                 print_warning("Missing dependencies or tools required by CMake",
                               Some("Check if all dependencies are installed correctly"));
@@ -680,15 +678,15 @@ pub fn execute_build_with_progress(
                             let stdout_content = stdout_buffer.lock().unwrap().clone();
                             let stderr_content = stderr_buffer.lock().unwrap().clone();
 
-                            // Use our enhanced error formatter
-                            println!();  // Add some space
+                            progress.failure("Failed");
+
+                            // Format and display the errors
+                            println!();
                             let formatted_errors = format_compiler_errors(&stdout_content, &stderr_content);
                             for error_line in &formatted_errors {
                                 println!("{}", error_line);
                             }
 
-                            // Call failure and return
-                            progress.failure("Failed");
                             return Err("".into());
                         }
                         result = Ok(());

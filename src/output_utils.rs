@@ -17,7 +17,7 @@ lazy_static! {
     pub static ref LAST_LINE_WAS_NEWLINE: Mutex<bool> = Mutex::new(true);
 }
 
-static ANSI_ERASE_LINE: &str = "\x1b[2K"; // ANSI escape code to erase the entire line
+pub static ANSI_ERASE_LINE: &str = "\x1b[2K"; // ANSI escape code to erase the entire line
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Verbosity {
@@ -230,6 +230,21 @@ impl SpinningWheel {
             }
         }
     }
+
+    pub fn ensure_stopped(&self) {
+        // Set stop signal to stop the thread
+        *self.stop_signal.lock().unwrap() = true;
+
+        // Give thread time to stop
+        thread::sleep(Duration::from_millis(100));
+
+        // Clear the line
+        {
+            let _guard = OUTPUT_MUTEX.lock().unwrap();
+            print!("\r{}\r", ANSI_ERASE_LINE);
+            std::io::stdout().flush().unwrap();
+        }
+    }
 }
 
 // If you really want to clone and keep references to a spinner, you can do that.
@@ -248,8 +263,6 @@ impl Clone for SpinningWheel {
     }
 }
 
-
-// CHANGED: ensure_all_spinners_cleared now sets stop_signal *and joins* each thread
 pub fn ensure_all_spinners_cleared() {
     let mut map = SPINNER_MAP.lock().unwrap();
 

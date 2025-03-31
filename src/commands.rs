@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
@@ -354,7 +354,8 @@ pub fn run_command_with_timeout(
     cmd: Vec<String>,
     cwd: Option<&str>,
     env: Option<HashMap<String, String>>,
-    timeout_seconds: u64
+    timeout_seconds: u64,
+    spinner: Option<&SpinningWheel>
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Build the Command
     let mut command = Command::new(&cmd[0]);
@@ -376,34 +377,60 @@ pub fn run_command_with_timeout(
     // Spawn the command
     let child = match command.spawn() {
         Ok(child) => child,
-        Err(e) => return Err(format!("Failed to execute command: {}", e).into()),
+        Err(e) => {
+            // Handle spawn error with spinner
+            if let Some(spin) = spinner {
+                spin.ensure_stopped();
+                eprintln!("✗ {}: {}", spin.message.red(),
+                          format!("Failed to execute command: {}", e).red());
+            }
+            return Err(format!("Failed to execute command: {}", e).into());
+        },
     };
 
     // Wrap the Child in Arc<Mutex<>> so multiple threads can access
     let child_arc = Arc::new(Mutex::new(child));
 
     // Take ownership of stdout/stderr handles *before* the wait thread
-    let stdout = child_arc
-        .lock()
-        .unwrap()
-        .stdout
-        .take()
-        .ok_or("Failed to capture child stdout")?;
-    let stderr = child_arc
-        .lock()
-        .unwrap()
-        .stderr
-        .take()
-        .ok_or("Failed to capture child stderr")?;
+    let stdout = match child_arc.lock().unwrap().stdout.take() {
+        Some(out) => out,
+        None => {
+            // Handle stdout capture error with spinner
+            if let Some(spin) = spinner {
+                spin.ensure_stopped();
+                eprintln!("✗ {}: {}", spin.message.red(), "Failed to capture child stdout".red());
+            }
+            return Err("Failed to capture child stdout".into());
+        }
+    };
+
+    let stderr = match child_arc.lock().unwrap().stderr.take() {
+        Some(err) => err,
+        None => {
+            // Handle stderr capture error with spinner
+            if let Some(spin) = spinner {
+                spin.ensure_stopped();
+                eprintln!("✗ {}: {}", spin.message.red(), "Failed to capture child stderr".red());
+            }
+            return Err("Failed to capture child stderr".into());
+        }
+    };
+
+    // Create buffers to store output instead of printing it immediately
+    let stdout_buffer = Arc::new(Mutex::new(Vec::<String>::new()));
+    let stderr_buffer = Arc::new(Mutex::new(Vec::<String>::new()));
 
     // Spawn a thread to continuously read from stdout
+    let stdout_buffer_clone = stdout_buffer.clone();
     let child_arc_out = Arc::clone(&child_arc);
     let out_handle = thread::spawn(move || {
         let reader = BufReader::new(stdout);
         for line in reader.lines() {
             if let Ok(line) = line {
+                // Store in buffer instead of printing directly
                 if is_verbose() {
-                    println!("{}", line);
+                    let mut buffer = stdout_buffer_clone.lock().unwrap();
+                    buffer.push(line);
                 }
             }
         }
@@ -411,14 +438,15 @@ pub fn run_command_with_timeout(
     });
 
     // Spawn a thread to continuously read from stderr
+    let stderr_buffer_clone = stderr_buffer.clone();
     let child_arc_err = Arc::clone(&child_arc);
     let err_handle = thread::spawn(move || {
         let reader = BufReader::new(stderr);
         for line in reader.lines() {
             if let Ok(line) = line {
-                if is_verbose() || line.contains("error") || line.contains("Error") || line.contains("WARNING") {
-                    eprintln!("{}", line.red());
-                }
+                // Store all error output in buffer
+                let mut buffer = stderr_buffer_clone.lock().unwrap();
+                buffer.push(line);
             }
         }
         drop(child_arc_err);
@@ -476,17 +504,61 @@ pub fn run_command_with_timeout(
             match status_result {
                 Ok(status) => {
                     if status.success() {
+                        // Process was successful, print any buffered output if in verbose mode
+                        if is_verbose() {
+                            let stdout = stdout_buffer.lock().unwrap();
+                            for line in stdout.iter() {
+                                println!("{}", line);
+                            }
+                        }
                         Ok(())
                     } else {
+                        // Command failed, safely stop the spinner first
+                        if let Some(spin) = spinner {
+                            spin.ensure_stopped();
+
+                            // Print failure message
+                            eprintln!("✗ {}: {}", spin.message.red(),
+                                      format!("Command failed with exit code: {}",
+                                              status.code().unwrap_or(-1)).red());
+
+                            // Now it's safe to print any error output
+                            let stderr = stderr_buffer.lock().unwrap();
+                            for line in stderr.iter() {
+                                if line.contains("error") || line.contains("Error") || line.contains("WARNING") {
+                                    eprintln!("{}", line.red());
+                                }
+                            }
+                        }
+
                         Err(format!("Command failed with exit code: {}",
                                     status.code().unwrap_or(-1)).into())
                     }
                 },
-                Err(e) => Err(format!("Command error: {}", e).into()),
+                Err(e) => {
+                    // Command error, safely stop the spinner first
+                    if let Some(spin) = spinner {
+                        spin.ensure_stopped();
+
+                        // Print error message
+                        eprintln!("✗ {}: {}", spin.message.red(),
+                                  format!("Command error: {}", e).red());
+                    }
+
+                    Err(format!("Command error: {}", e).into())
+                },
             }
         },
         Err(_) => {
-            // Timeout occurred: kill the child
+            // Timeout occurred: kill the child and safely stop the spinner
+            if let Some(spin) = spinner {
+                spin.ensure_stopped();
+
+                // Print timeout error message
+                eprintln!("✗ {}: {}", spin.message.red(),
+                          format!("Command timed out after {} seconds", timeout_seconds).red());
+            }
+
             if is_verbose() {
                 eprintln!(
                     "Command timed out after {} seconds: {}",
@@ -521,7 +593,6 @@ pub fn run_command_with_timeout(
         }
     }
 }
-
 
 pub fn run_command_with_progress(
     cmd: Vec<String>,

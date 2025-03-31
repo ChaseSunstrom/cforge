@@ -3,7 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use colored::Colorize;
 use crate::config::{auto_adjust_config, load_project_config, load_workspace_config, save_workspace_config, ProjectConfig, WorkspaceConfig};
-use crate::output_utils::{format_project_name, is_quiet, print_error, print_header, print_status, print_success, print_warning, TaskList};
+use crate::output_utils::{ensure_all_spinners_cleared, format_project_name, is_quiet, print_error, print_header, print_status, print_success, print_warning, TaskList};
 use crate::{find_library_files, generate_clion_workspace, generate_ide_files, generate_vscode_workspace, get_build_type, get_effective_compiler_label, install_dependencies, list_project_targets, progress_bar, run_script, DEFAULT_BUILD_DIR, WORKSPACE_FILE};
 use crate::project::{build_project, clean_project, generate_package_config, install_project, list_project_items, package_project, run_project, test_project};
 
@@ -98,6 +98,7 @@ pub fn build_workspace_with_dependency_order(
 
     // Build projects in order
     for (i, project_name) in build_order.iter().enumerate() {
+        ensure_all_spinners_cleared();
         task_list.start_task(i);
 
         let path = if Path::new(project_name).exists() {
@@ -113,6 +114,7 @@ pub fn build_workspace_with_dependency_order(
             Err(e) => {
                 print_warning(&format!("Could not load config for {}: {}", project_name, e), None);
                 print_warning("Skipping project and continuing...", None);
+                ensure_all_spinners_cleared();
                 continue;
             }
         };
@@ -144,8 +146,10 @@ pub fn build_workspace_with_dependency_order(
     // Completion message
     if task_list.all_completed() {
         print_success("Workspace build completed successfully", None);
+        ensure_all_spinners_cleared();
     } else {
         print_warning("Workspace build completed with some issues", None);
+        ensure_all_spinners_cleared();
     }
 
     Ok(())
