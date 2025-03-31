@@ -66,8 +66,8 @@ pub fn run_command_with_pattern_tracking(
     };
 
     // Clone spinner for threads
-    let spinner_out = spinner.update_channel.0.clone();
-    let spinner_err = spinner.update_channel.0.clone();
+    let spinner_out = spinner.update_tx.clone();
+    let spinner_err = spinner.update_tx.clone();
 
     // Take ownership of stdout/stderr handles
     let stdout = child.stdout.take()
@@ -576,7 +576,7 @@ pub fn run_command_with_progress(
 
     // Spawn a thread to continuously read from stdout and update progress
     let child_arc_out = Arc::clone(&child_arc);
-    let progress_clone = progress.update_channel.0.clone();
+    let progress_clone = progress.update_tx.clone();
     let out_handle = thread::spawn(move || {
         let reader = BufReader::new(stdout);
         let mut lines_read = 0;
@@ -605,7 +605,7 @@ pub fn run_command_with_progress(
 
     // Spawn a thread to continuously read from stderr
     let child_arc_err = Arc::clone(&child_arc);
-    let progress_clone_err = progress.update_channel.0.clone();
+    let progress_clone_err = progress.update_tx.clone();
     let err_handle = thread::spawn(move || {
         let reader = BufReader::new(stderr);
 

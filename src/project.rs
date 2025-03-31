@@ -122,7 +122,11 @@ pub fn build_project(
     progress.next_step("Setup");
 
     let spinner = progress_bar("Verifying build tools");
-    ensure_build_tools(config)?;
+    let spinner = progress_bar("Verifying build tools");
+    if let Err(e) = ensure_build_tools(config) {
+        spinner.failure(&e.to_string());
+        return Err(e);   // ensures the spinner is fully stopped
+    }
     spinner.success();
 
     // Get the build type - make sure it matches configuration
@@ -239,7 +243,6 @@ pub fn build_project(
 
     Ok(())
 }
-
 
 pub fn run_project(
     config: &ProjectConfig,

@@ -1,9 +1,11 @@
 use crate::cross_compile::{get_cross_compilation_env, setup_cross_compilation};
 use std::collections::{HashMap, HashSet};
 use std::{env, fs, thread};
+use std::io::{BufRead, BufReader};
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use colored::Colorize;
 use crate::config::{BuildProgressState, ProjectConfig, VariantSettings, WorkspaceConfig};
 use crate::{categorize_error, ensure_build_tools, ensure_compiler_available, get_effective_compiler_label, is_msvc_style_for_config, map_compiler_label, parse_universal_flags, print_general_suggestions, run_command_with_timeout};
@@ -118,9 +120,11 @@ pub fn configure_project(
 
     // Step 4: Generate CMake files
     let cmake_spinner = progress_bar("Generating CMakeLists.txt");
-    generate_cmake_lists(config, project_path, variant_name, workspace_config)?;
+    if let Err(e) = generate_cmake_lists(config, project_path, variant_name, workspace_config) {
+        cmake_spinner.failure(&e.to_string());
+        return Err(e.into());
+    }
     cmake_spinner.success();
-
 
     // Step 5: Run CMake configuration
     let cmake_progress = progress_bar("Running cmake");
@@ -475,12 +479,6 @@ pub fn execute_build_with_progress(
     source_files_count: usize,
     progress: SpinningWheel  // Keep taking ownership as before
 ) -> Result<(), Box<dyn std::error::Error>> {
-    use std::process::{Command, Stdio};
-    use std::io::{BufRead, BufReader};
-    use std::sync::{Arc, Mutex};
-    use std::thread;
-    use std::time::Duration;
-
     let is_cmake_command = cmd.len() > 0 && cmd[0].contains("cmake");
 
     // Build the Command
@@ -643,7 +641,6 @@ pub fn execute_build_with_progress(
     });
 
     // Wait for the command to complete with timeout
-    let timeout = Duration::from_secs(600); // 10 minute timeout for the build
     let (cmd_tx, cmd_rx) = std::sync::mpsc::channel();
 
     thread::spawn(move || {
@@ -691,7 +688,7 @@ pub fn execute_build_with_progress(
                             }
 
                             // Call failure and return
-                            progress.failure("");
+                            progress.failure("Failed");
                             return Err("".into());
                         }
                         result = Ok(());

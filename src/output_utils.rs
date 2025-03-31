@@ -1,25 +1,23 @@
-﻿// Updated output_utils.rs with cleaner, more consistent styling
-
-use colored::*;
+﻿use colored::*;
 use std::io::{self, Write};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use std::thread;
-use std::cmp;
+use std::thread::JoinHandle;
 use lazy_static::lazy_static;
 use regex::Regex;
 
-// Global verbosity control
 lazy_static! {
     pub static ref VERBOSITY: Mutex<Verbosity> = Mutex::new(Verbosity::Normal);
     pub static ref LAYOUT: Mutex<LayoutManager> = Mutex::new(LayoutManager::new());
-    pub static ref ACTIVE_SPINNERS: Mutex<Vec<SpinnerHandle>> = Mutex::new(Vec::new());
+    // Our global list of active spinners now holds SpinnerHandle with the thread.
+     pub static ref SPINNER_MAP: Mutex<std::collections::HashMap<usize, SpinnerHandleData>> = Mutex::new(std::collections::HashMap::new());
     pub static ref OUTPUT_MUTEX: Mutex<()> = Mutex::new(());
     pub static ref SPINNER_ACTIVE: Mutex<bool> = Mutex::new(false);
     pub static ref LAST_LINE_WAS_NEWLINE: Mutex<bool> = Mutex::new(true);
 }
 
-static ANSI_ERASE_LINE: &str = "\x1b[2K";  // ANSI escape code to erase the entire line
+static ANSI_ERASE_LINE: &str = "\x1b[2K"; // ANSI escape code to erase the entire line
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Verbosity {
@@ -37,7 +35,6 @@ pub enum Theme {
     Forest,
 }
 
-// Unified message type for consistent display
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum MessageType {
     Header,
@@ -50,114 +47,99 @@ pub enum MessageType {
     Detail,
 }
 
-pub struct SpinnerHandle {
-    id: usize,
-    stop_signal: Arc<Mutex<bool>>,
+pub struct SpinnerHandleData {
+    pub stop_signal: Arc<Mutex<bool>>,
+    pub handle: Option<JoinHandle<()>>,
 }
 
-// Spinning wheel for all long-running operations
+
+// The spinning wheel itself
 pub struct SpinningWheel {
+    // Unique ID for cross-referencing the SPINNER_MAP
+    pub id: usize,
+
     pub message: String,
     pub start_time: Instant,
+
+    // So we can set stop = true from .success() or .failure()
     pub stop_signal: Arc<Mutex<bool>>,
-    pub handle: Option<thread::JoinHandle<()>>,
-    pub update_channel: (std::sync::mpsc::Sender<String>, Arc<Mutex<String>>),
+
+    // We store the actual thread handle here as well
+    pub handle: Option<JoinHandle<()>>,
+
+    // If you need a channel to update the status text
+    pub update_tx: std::sync::mpsc::Sender<String>,
+    pub update_msg: Arc<Mutex<String>>,
 }
 
-
-// Full SpinningWheel implementation
 impl SpinningWheel {
     pub fn start(message: &str) -> Self {
-        let message = message.to_string();
-        let start_time = Instant::now();
-        let stop_signal = Arc::new(Mutex::new(false));
-        let stop_clone = stop_signal.clone();
+        // Make a unique ID
+        let spinner_id = rand::random::<u32>() as usize;
 
-        // Make sure any previous spinners are cleared
+        // Clear old spinners first
         ensure_all_spinners_cleared();
 
-        // Channel for status updates
+        let stop_signal = Arc::new(Mutex::new(false));
         let (tx, rx) = std::sync::mpsc::channel::<String>();
-        let status_message = Arc::new(Mutex::new(String::new()));
-        let status_clone = status_message.clone();
+        let status_msg = Arc::new(Mutex::new(String::new()));
 
-        // Register this spinner in the global registry
-        let spinner_id = rand::random::<u32>(); // Unique ID
-        {
-            let mut spinners = ACTIVE_SPINNERS.lock().unwrap();
-            spinners.push(SpinnerHandle {
-                id: spinner_id as usize,
-                stop_signal: stop_signal.clone(),
-            });
-        }
+        let message_str = message.to_string();
+        let start_time = Instant::now();
 
-        // Mark that we're showing a spinner
-        {
-            let mut spinner_active = SPINNER_ACTIVE.lock().unwrap();
-            *spinner_active = true;
-        }
-
-        // Only create the handle if we're not in quiet mode
+        // Only create a thread if not quiet
         let handle = if !is_quiet() {
-            let msg = message.clone();
-            let stop_clone = stop_clone.clone();
-            let status_clone = status_clone.clone();
+            let stop_clone = stop_signal.clone();
+            let msg_clone = message_str.clone();
+            let status_clone = status_msg.clone();
 
             Some(thread::spawn(move || {
                 let spinner_chars = vec!["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
                 let mut i = 0;
 
-                // Ensure we start on a new line
                 {
-                    let _guard = OUTPUT_MUTEX.lock().unwrap();
+                    let _lock = OUTPUT_MUTEX.lock().unwrap();
                     ensure_single_newline();
                 }
 
                 loop {
-                    {
-                        let should_stop = *stop_clone.lock().unwrap();
-                        if should_stop {
-                            break;
-                        }
+                    if *stop_clone.lock().unwrap() {
+                        break;
                     }
 
-                    // Get status message if available
+                    // See if there's a new status from the channel
                     let status = match rx.try_recv() {
                         Ok(new_status) => {
                             *status_clone.lock().unwrap() = new_status.clone();
                             new_status
                         },
                         Err(_) => {
-                            // Just show elapsed time in seconds
                             let elapsed = start_time.elapsed();
                             format!("{:.1}s", elapsed.as_secs_f32())
                         }
                     };
 
-                    // Update spinner animation
                     let spinner_char = spinner_chars[i % spinner_chars.len()];
-                    i = (i + 1) % spinner_chars.len();
+                    i += 1;
 
-                    // Acquire lock just for printing, then release it
                     {
                         let _guard = OUTPUT_MUTEX.lock().unwrap();
-                        // Multiple clear approaches for reliability
                         print!("\r");
                         print!("{}", ANSI_ERASE_LINE);
                         print!("{} {} {} ",
                                spinner_char.cyan(),
-                               msg.blue().bold(),
-                               status.dimmed());
+                               msg_clone.blue().bold(),
+                               status.dimmed()
+                        );
                         io::stdout().flush().unwrap();
                     }
 
-                    thread::sleep(Duration::from_millis(80));
+                    std::thread::sleep(Duration::from_millis(80));
                 }
 
-                // Final cleanup with lock
+                // Final clearing
                 {
                     let _guard = OUTPUT_MUTEX.lock().unwrap();
-                    // Multiple clear approaches for reliability
                     print!("\r");
                     print!("{}", ANSI_ERASE_LINE);
                     print!("\r");
@@ -166,247 +148,144 @@ impl SpinningWheel {
                     io::stdout().flush().unwrap();
                 }
 
-                // Mark spinner as done
-                let mut spinner_active = SPINNER_ACTIVE.lock().unwrap();
-                *spinner_active = false;
-
-                // Mark that the line is empty now
-                let mut was_newline = LAST_LINE_WAS_NEWLINE.lock().unwrap();
-                *was_newline = true;
-
-                // Remove this spinner from registry
-                {
-                    let mut spinners = ACTIVE_SPINNERS.lock().unwrap();
-                    spinners.retain(|s| s.id != spinner_id as usize);
-                }
+                *SPINNER_ACTIVE.lock().unwrap() = false;
+                *LAST_LINE_WAS_NEWLINE.lock().unwrap() = true;
             }))
         } else {
             None
         };
 
+        // Register in global
+        {
+            let mut map = SPINNER_MAP.lock().unwrap();
+            map.insert(spinner_id, SpinnerHandleData {
+                stop_signal: stop_signal.clone(),
+                handle,
+            });
+        }
+
+        {
+            *SPINNER_ACTIVE.lock().unwrap() = true;
+        }
+
         Self {
-            message,
+            id: spinner_id,
+            message: message_str,
             start_time,
             stop_signal,
-            handle,
-            update_channel: (tx, status_message),
+            handle: None,  // We'll retrieve it from SPINNER_MAP in .success()/.failure()
+            update_tx: tx,
+            update_msg: status_msg,
         }
     }
 
-    pub fn update_status(&self, status: &str) {
-        if !is_quiet() && self.handle.is_some() {
-            // Send the new status through the channel
-            let _ = self.update_channel.0.send(status.to_string());
+    pub fn update_status(&self, new_status: &str) {
+        if !is_quiet() {
+            let _ = self.update_tx.send(new_status.to_string());
         }
     }
 
-    pub fn success(self) {
+    pub fn success(mut self) {
         let elapsed = self.start_time.elapsed();
+        self.stop_and_join();
 
-        // Signal the spinner to stop
-        *self.stop_signal.lock().unwrap() = true;
-
-        // Remove this spinner from registry
         {
-            let mut spinners = ACTIVE_SPINNERS.lock().unwrap();
-            spinners.retain(|s| !Arc::ptr_eq(&s.stop_signal, &self.stop_signal));
+            let _guard = OUTPUT_MUTEX.lock().unwrap();
+            print!("\r");
+            print!("{}", ANSI_ERASE_LINE);
+            print!("\r");
+            print!("                                        \r");
+            print!("\x1B[1K\r");
+            io::stdout().flush().unwrap();
         }
 
-        // Wait for spinner thread to finish
-        if let Some(handle) = self.handle {
-            let _ = handle.join();
-        }
-
-        // Now we're guaranteed the spinner is done
-        let _guard = OUTPUT_MUTEX.lock().unwrap();
-
-        // Multiple clear approaches for reliability
-        print!("\r");
-        print!("{}", ANSI_ERASE_LINE);
-        print!("\r");
-        print!("                                        \r");
-        print!("\x1B[1K\r");
-        io::stdout().flush().unwrap();
-
-        // Small delay to ensure terminal processing
-        thread::sleep(Duration::from_millis(20));
-
-        // Print success message on a fresh line
-        println!("✓ {} ({})",
-                 self.message.green(),
-                 format_duration(elapsed).yellow());
-
-        // Mark that we printed something
+        println!("✓ {} ({})", self.message.green(), format_duration(elapsed).yellow());
         mark_line_printed();
     }
 
-    pub fn failure(self, error: &str) {
-        // Signal the spinner to stop
+    pub fn failure(mut self, error: &str) {
+        self.stop_and_join();
+
+        {
+            let _guard = OUTPUT_MUTEX.lock().unwrap();
+            print!("\r");
+            print!("{}", ANSI_ERASE_LINE);
+            io::stdout().flush().unwrap();
+        }
+
+        eprintln!("✗ {}: {}", self.message.red(), error.red());
+        mark_line_printed();
+    }
+
+    /// Actually signals the thread to stop, takes the handle from the map, and joins it.
+    fn stop_and_join(&mut self) {
+        // 1) Set stop_signal
         *self.stop_signal.lock().unwrap() = true;
 
-        // Remove this spinner from registry
-        {
-            let mut spinners = ACTIVE_SPINNERS.lock().unwrap();
-            spinners.retain(|s| !Arc::ptr_eq(&s.stop_signal, &self.stop_signal));
+        // 2) Remove from SPINNER_MAP, join the thread
+        let mut map = SPINNER_MAP.lock().unwrap();
+        if let Some(mut data) = map.remove(&self.id) {
+            if let Some(h) = data.handle.take() {
+                let _ = h.join();
+            }
         }
-
-        // Wait for spinner thread to finish
-        if let Some(handle) = self.handle {
-            let _ = handle.join();
-        }
-
-        // Now acquire output lock
-        let _guard = OUTPUT_MUTEX.lock().unwrap();
-
-        // Multiple clear approaches for reliability
-        print!("\r");
-        print!("{}", ANSI_ERASE_LINE);
-        print!("\r");
-        print!("                                        \r");
-        print!("\x1B[1K\r");
-        io::stdout().flush().unwrap();
-
-        // Small delay to ensure terminal processing
-        thread::sleep(Duration::from_millis(20));
-
-        // Print failure message on a fresh line
-        println!("✗ {}: {}",
-                 self.message.red(),
-                 error.red());
-
-        // Mark that we printed something
-        mark_line_printed();
     }
 }
 
-// Full Clone implementation
+// If you really want to clone and keep references to a spinner, you can do that.
 impl Clone for SpinningWheel {
     fn clone(&self) -> Self {
-        // Create a new spinning wheel with the same message and start time
-        let message = self.message.clone();
-        let start_time = self.start_time;
-        let stop_signal = Arc::new(Mutex::new(false));
-        let stop_clone = stop_signal.clone();
-
-        // Create a new channel
-        let (tx, rx) = std::sync::mpsc::channel::<String>();
-        let status_message = Arc::new(Mutex::new(String::new()));
-        let status_clone = status_message.clone();
-
-        // Register this spinner in the global registry
-        let spinner_id = rand::random::<u32>(); // Unique ID
-        {
-            let mut spinners = ACTIVE_SPINNERS.lock().unwrap();
-            spinners.push(SpinnerHandle {
-                id: spinner_id as usize,
-                stop_signal: stop_signal.clone(),
-            });
-        }
-
-        // Mark spinner as active
-        {
-            let mut spinner_active = SPINNER_ACTIVE.lock().unwrap();
-            *spinner_active = true;
-        }
-
-        // Only create a new handle if we're not in quiet mode
-        let handle = if !is_quiet() {
-            let msg = message.clone();
-            let stop_clone = stop_clone.clone();
-            let status_clone = status_clone.clone();
-
-            Some(thread::spawn(move || {
-                let spinner_chars = vec!["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-                let mut i = 0;
-
-                // Ensure we start on a new line
-                {
-                    let _guard = OUTPUT_MUTEX.lock().unwrap();
-                    ensure_single_newline();
-                }
-
-                loop {
-                    {
-                        let should_stop = *stop_clone.lock().unwrap();
-                        if should_stop {
-                            break;
-                        }
-                    }
-
-                    // Get status message if available
-                    let status = match rx.try_recv() {
-                        Ok(new_status) => {
-                            *status_clone.lock().unwrap() = new_status.clone();
-                            new_status
-                        },
-                        Err(_) => {
-                            // Just show elapsed time in seconds
-                            let elapsed = start_time.elapsed();
-                            format!("{:.1}s", elapsed.as_secs_f32())
-                        }
-                    };
-
-                    // Update spinner animation
-                    let spinner_char = spinner_chars[i % spinner_chars.len()];
-                    i = (i + 1) % spinner_chars.len();
-
-                    // Acquire lock just for printing, then release it
-                    {
-                        let _guard = OUTPUT_MUTEX.lock().unwrap();
-                        // Multiple clear approaches for reliability
-                        print!("\r");
-                        print!("{}", ANSI_ERASE_LINE);
-                        print!("{} {} {} ",
-                               spinner_char.cyan(),
-                               msg.blue().bold(),
-                               status.dimmed());
-                        io::stdout().flush().unwrap();
-                    }
-
-                    thread::sleep(Duration::from_millis(80));
-                }
-
-                // Final cleanup with lock
-                {
-                    let _guard = OUTPUT_MUTEX.lock().unwrap();
-                    // Multiple clear approaches for reliability
-                    print!("\r");
-                    print!("{}", ANSI_ERASE_LINE);
-                    print!("\r");
-                    print!("                                        \r");
-                    print!("\x1B[1K\r");
-                    io::stdout().flush().unwrap();
-                }
-
-                // Mark spinner as done
-                let mut spinner_active = SPINNER_ACTIVE.lock().unwrap();
-                *spinner_active = false;
-
-                // Mark that the line is empty now
-                let mut was_newline = LAST_LINE_WAS_NEWLINE.lock().unwrap();
-                *was_newline = true;
-
-                // Remove this spinner from registry
-                {
-                    let mut spinners = ACTIVE_SPINNERS.lock().unwrap();
-                    spinners.retain(|s| s.id != spinner_id as usize);
-                }
-            }))
-        } else {
-            None
-        };
-
         Self {
-            message,
-            start_time,
-            stop_signal,
-            handle,
-            update_channel: (tx, status_message),
+            id: self.id,
+            message: self.message.clone(),
+            start_time: self.start_time,
+            stop_signal: Arc::clone(&self.stop_signal),
+            // We cannot clone a JoinHandle, so we set handle = None in the clone
+            handle: None,
+            update_tx: self.update_tx.clone(),
+            update_msg: Arc::clone(&self.update_msg),
         }
     }
 }
 
-// Helper to ensure we don't print too many newlines
+
+// CHANGED: ensure_all_spinners_cleared now sets stop_signal *and joins* each thread
+pub fn ensure_all_spinners_cleared() {
+    let mut map = SPINNER_MAP.lock().unwrap();
+
+    // For each spinner, set stop = true
+    for (_id, data) in map.iter() {
+        *data.stop_signal.lock().unwrap() = true;
+    }
+
+    // Join them
+    for (_id, data) in map.iter_mut() {
+        if let Some(h) = data.handle.take() {
+            let _ = h.join();
+        }
+    }
+
+    map.clear();
+
+    // Finally clear the line
+    let _guard = OUTPUT_MUTEX.lock().unwrap();
+    print!("\r");
+    print!("{}", ANSI_ERASE_LINE);
+    print!("\r");
+    print!("                                  \r");
+    print!("\x1B[1K\r");
+    io::stdout().flush().unwrap();
+}
+
+pub fn ensure_spinner_cleared() {
+    let _guard = OUTPUT_MUTEX.lock().unwrap();
+    print!("\r");
+    print!("{}", ANSI_ERASE_LINE);
+    print!("\r");
+    print!("                                        \r");
+    io::stdout().flush().unwrap();
+}
+
 pub fn ensure_single_newline() {
     let mut was_newline = LAST_LINE_WAS_NEWLINE.lock().unwrap();
     if !*was_newline {
@@ -415,13 +294,11 @@ pub fn ensure_single_newline() {
     }
 }
 
-// Helper to mark that we printed something
 pub fn mark_line_printed() {
     let mut was_newline = LAST_LINE_WAS_NEWLINE.lock().unwrap();
     *was_newline = false;
 }
 
-// Terminal capabilities and layout management
 pub struct LayoutManager {
     width: usize,
     height: usize,
@@ -432,10 +309,7 @@ pub struct LayoutManager {
 
 impl LayoutManager {
     pub fn new() -> Self {
-        // Get terminal size (simplified for example)
         let (width, height) = (100, 30);
-
-        // In practice, you'd detect these properly
         let supports_unicode = true;
         let supports_colors = colored::control::SHOULD_COLORIZE.should_colorize();
 
@@ -447,73 +321,11 @@ impl LayoutManager {
             theme: Theme::Default,
         }
     }
-
-    pub fn get_spinner_chars(&self) -> Vec<&str> {
-        if self.supports_unicode {
-            vec!["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
-        } else {
-            vec!["-", "\\", "|", "/"]
-        }
-    }
-
     pub fn get_width(&self) -> usize {
         self.width
     }
-
-    pub fn get_progress_chars(&self) -> (String, String) {
-        if self.supports_unicode {
-            ("█".to_string(), "░".to_string())
-        } else {
-            ("#".to_string(), "-".to_string())
-        }
-    }
 }
 
-pub fn ensure_spinner_cleared() {
-    let _guard = OUTPUT_MUTEX.lock().unwrap();
-    // Use multiple clear approaches for maximum compatibility
-    print!("\r");                                    // Move cursor to beginning of line
-    print!("{}", ANSI_ERASE_LINE);                   // ANSI clear line
-    print!("\r");                                    // Move cursor to beginning again
-    print!("                                        \r"); // Overwrite with spaces
-    io::stdout().flush().unwrap();                   // Ensure buffer is flushed
-}
-
-pub fn ensure_all_spinners_cleared() {
-    // First terminate all active spinners
-    let mut active_spinners = ACTIVE_SPINNERS.lock().unwrap();
-    for spinner in active_spinners.iter() {
-        *spinner.stop_signal.lock().unwrap() = true;
-    }
-
-    active_spinners.clear();
-
-    // Then clear the terminal line multiple times
-    let _guard = OUTPUT_MUTEX.lock().unwrap();
-
-    // Try different terminal clearing approaches
-    print!("\r");                                // Carriage return
-    print!("{}", ANSI_ERASE_LINE);              // ANSI clear line
-    print!("\r");                                // Carriage return again
-    print!("                                  \r"); // Spaces
-    print!("\x1B[1K\r");                         // Another ANSI variant
-    io::stdout().flush().unwrap();
-
-    // Small delay to let terminal process everything
-    thread::sleep(Duration::from_millis(20));
-
-    // One more clear for good measure
-    print!("\r");
-    print!("{}", ANSI_ERASE_LINE);
-    io::stdout().flush().unwrap();
-
-    // Mark that the line is empty
-    let mut was_newline = LAST_LINE_WAS_NEWLINE.lock().unwrap();
-    *was_newline = true;
-}
-
-
-// Verbosity control functions
 pub fn set_verbosity(level: &str) {
     let mut v = VERBOSITY.lock().unwrap();
     *v = match level.to_lowercase().as_str() {
@@ -535,26 +347,20 @@ pub fn is_quiet() -> bool {
     get_verbosity() == Verbosity::Quiet
 }
 
-// Simplified, consistent printing functions
 pub fn print_message(msg_type: MessageType, message: &str, details: Option<&str>) {
-    if is_quiet() && msg_type != MessageType::Warning && msg_type != MessageType::Error {
+    if is_quiet() && !matches!(msg_type, MessageType::Warning | MessageType::Error) {
         return;
     }
-
     ensure_spinner_cleared();
 
     let _guard = OUTPUT_MUTEX.lock().unwrap();
-
-    // Handle spinner active case
     if *SPINNER_ACTIVE.lock().unwrap() {
         println!();
         *LAST_LINE_WAS_NEWLINE.lock().unwrap() = true;
     }
 
-    // Ensure proper spacing
     ensure_single_newline();
 
-    // Format based on message type
     match msg_type {
         MessageType::Header => {
             println!("{}", "╭─────────────────────────────────────────────────╮".blue());
@@ -596,28 +402,49 @@ pub fn print_message(msg_type: MessageType, message: &str, details: Option<&str>
     mark_line_printed();
 }
 
-pub fn print_step(action: &str, target: &str) {
+pub fn print_success(message: &str, details: Option<&str>) {
     if is_quiet() {
         return;
     }
 
-    // Acquire output lock for thread safety
+    ensure_spinner_cleared();
+    let _guard = OUTPUT_MUTEX.lock().unwrap();
+
+    println!("✓ {}", message.green());
+    if let Some(d) = details {
+        println!("  {}", d.green());
+    }
+    mark_line_printed();
+}
+
+pub fn print_warning(message: &str, suggestion: Option<&str>) {
+    ensure_spinner_cleared();
+    let _guard = OUTPUT_MUTEX.lock().unwrap();
+    println!("⚠ {}", message.yellow());
+    if let Some(s) = suggestion {
+        println!("  Suggestion: {}", s.yellow());
+    }
+    mark_line_printed();
+}
+
+pub fn print_status(message: &str) {
+    if is_quiet() {
+        return;
+    }
+
+    // Acquire output lock
 
     ensure_spinner_cleared();
     let _guard = OUTPUT_MUTEX.lock().unwrap();
 
-    // Handle spinner active case
+    // Handle spinner active case without redundant logging
     if *SPINNER_ACTIVE.lock().unwrap() {
         println!();
         *LAST_LINE_WAS_NEWLINE.lock().unwrap() = true;
     }
 
-    // Ensure proper spacing
-    ensure_single_newline();
-
-    // Print step with consistent formatting
-    println!("{}  {} {}", "→".blue().bold(), action.bold(), target);
-
+    // Simple, consistent prefix
+    println!("→ {}", message.blue());
     mark_line_printed();
 }
 
@@ -652,24 +479,39 @@ pub fn print_header(message: &str, icon: Option<&str>) {
     mark_line_printed();
 }
 
-pub fn print_status(message: &str) {
+pub fn format_project_name(name: &str) -> ColoredString {
+    name.cyan().bold()
+}
+
+pub fn print_detailed(message: &str) {
+    if is_verbose() {
+        ensure_spinner_cleared();
+        print_message(MessageType::Detail, message, None);
+    }
+}
+
+pub fn print_step(action: &str, target: &str) {
     if is_quiet() {
         return;
     }
 
-    // Acquire output lock
+    // Acquire output lock for thread safety
 
     ensure_spinner_cleared();
     let _guard = OUTPUT_MUTEX.lock().unwrap();
 
-    // Handle spinner active case without redundant logging
+    // Handle spinner active case
     if *SPINNER_ACTIVE.lock().unwrap() {
         println!();
         *LAST_LINE_WAS_NEWLINE.lock().unwrap() = true;
     }
 
-    // Simple, consistent prefix
-    println!("→ {}", message.blue());
+    // Ensure proper spacing
+    ensure_single_newline();
+
+    // Print step with consistent formatting
+    println!("{}  {} {}", "→".blue().bold(), action.bold(), target);
+
     mark_line_printed();
 }
 
@@ -677,8 +519,6 @@ pub fn print_substep(message: &str) {
     if is_quiet() {
         return;
     }
-
-    // Acquire output lock
 
     ensure_spinner_cleared();
     let _guard = OUTPUT_MUTEX.lock().unwrap();
@@ -690,71 +530,33 @@ pub fn print_substep(message: &str) {
     mark_line_printed();
 }
 
-pub fn print_success(message: &str, details: Option<&str>) {
-    if is_quiet() {
-        return;
-    }
-
-    // Don't add extra newline before success message
-
-    ensure_spinner_cleared();
-    let _guard = OUTPUT_MUTEX.lock().unwrap();
-
-    println!("✓ {}", message.green());
-
-    if let Some(d) = details {
-        println!("  {}", d.green());
-    }
-
-    // Mark that we printed something
-    mark_line_printed();
-}
-
-pub fn print_warning(message: &str, solution: Option<&str>) {
-    // Always print warnings, even in quiet mode
-
-    ensure_spinner_cleared();
-    let _guard = OUTPUT_MUTEX.lock().unwrap();
-
-    println!("⚠ {}", message.yellow());
-
-    if let Some(s) = solution {
-        println!("  Suggestion: {}", s.yellow());
-    }
-
-    // Mark that we printed something
-    mark_line_printed();
-}
-
 pub fn print_error(message: &str, code: Option<&str>, solution: Option<&str>) {
-    // Always print errors, even in quiet mode
     ensure_spinner_cleared();
     let _guard = OUTPUT_MUTEX.lock().unwrap();
 
-    let error_prefix = match code {
-        Some(c) => format!("✗ [{}]", c),
-        None => "✗".to_string(),
-    };
-
+    let error_prefix = code.map_or("✗".to_string(), |c| format!("✗ [{}]", c));
     println!("{} {}", error_prefix.red().bold(), message.red());
 
     if let Some(s) = solution {
         println!("  Solution: {}", s.yellow());
     }
-
-    // Mark that we printed something
     mark_line_printed();
 }
 
-pub fn print_detailed(message: &str) {
-    if is_verbose() {
-        ensure_spinner_cleared();
-        print_message(MessageType::Detail, message, None);
+pub fn format_duration(duration: Duration) -> String {
+    let total_secs = duration.as_secs();
+    let millis = duration.subsec_millis();
+    if total_secs < 60 {
+        format!("{}.{:03}s", total_secs, millis)
+    } else if total_secs < 3600 {
+        let mins = total_secs / 60;
+        let secs = total_secs % 60;
+        format!("{}m {}s", mins, secs)
+    } else {
+        let hours = total_secs / 3600;
+        let mins = (total_secs % 3600) / 60;
+        format!("{}h {}m", hours, mins)
     }
-}
-
-pub fn format_project_name(name: &str) -> ColoredString {
-    name.cyan().bold()
 }
 
 // Progress tracking for overall build
@@ -880,23 +682,6 @@ impl TaskList {
     }
 }
 
-// Helper for time formatting
-pub fn format_duration(duration: Duration) -> String {
-    let total_secs = duration.as_secs();
-    let millis = duration.subsec_millis();
-
-    if total_secs < 60 {
-        format!("{}.{:03}s", total_secs, millis)
-    } else if total_secs < 3600 {
-        let mins = total_secs / 60;
-        let secs = total_secs % 60;
-        format!("{}m {}s", mins, secs)
-    } else {
-        let hours = total_secs / 3600;
-        let mins = (total_secs % 3600) / 60;
-        format!("{}h {}m", hours, mins)
-    }
-}
 
 pub fn has_command(cmd: &str) -> bool {
     use std::process::Command;
