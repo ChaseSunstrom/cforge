@@ -1,144 +1,106 @@
-name: Build and Release
+name: CForge C/C++ Build
+
 on:
-  push:
-    tags:
-      - 'v*'
   workflow_dispatch:
-permissions:
-  contents: write  # This is crucial for creating releases
+  push:
+    branches: [ main, master ]  # Replace with your default branch name
+  pull_request:
+    branches: [ main, master ]  # Replace with your default branch name
+
 jobs:
   build:
-    name: Build ${{ matrix.target }}
-    runs-on: ${{ matrix.os }}
+    name: ${{ matrix.config.name }}
+    runs-on: ${{ matrix.config.os }}
     strategy:
-      fail-fast: false  # Continue with other builds even if one fails
+      fail-fast: false
       matrix:
-        include:
-          # Linux targets
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-            artifact_name: cforge
-            asset_name: cforge-linux-amd64
-          - os: ubuntu-latest
-            target: i686-unknown-linux-gnu
-            artifact_name: cforge
-            asset_name: cforge-linux-i686
-          # ARM targets were removed due to build failures
-          # - aarch64-unknown-linux-gnu
-          # - armv7-unknown-linux-gnueabihf
-          
-          # Windows targets
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
-            artifact_name: cforge.exe
-            asset_name: cforge-windows-amd64.exe
-          - os: windows-latest
-            target: i686-pc-windows-msvc
-            artifact_name: cforge.exe
-            asset_name: cforge-windows-i686.exe
-          - os: windows-latest
-            target: aarch64-pc-windows-msvc
-            artifact_name: cforge.exe
-            asset_name: cforge-windows-arm64.exe
-          
-          # macOS targets
-          - os: macos-latest
-            target: x86_64-apple-darwin
-            artifact_name: cforge
-            asset_name: cforge-macos-amd64
-          - os: macos-latest
-            target: aarch64-apple-darwin
-            artifact_name: cforge
-            asset_name: cforge-macos-arm64
-          
-          # Additional platforms could be added here
-          # The following targets were removed due to build failures:
-          # - x86_64-unknown-freebsd
-          # - aarch64-linux-android
-          # - armv7-linux-androideabi
-          # - wasm32-wasi
-          # - aarch64-unknown-linux-gnu
+        config:
+          - {
+            name: "Windows MSVC", 
+            os: windows-latest,
+            config: "Release",
+            compiler: "msvc"
+          }
+          - {
+            name: "Linux GCC", 
+            os: ubuntu-latest,
+            config: "Release",
+            compiler: "gcc"
+          }
+          - {
+            name: "macOS Clang", 
+            os: macos-latest,
+            config: "Release",
+            compiler: "clang"
+          }
+
     steps:
-      - uses: actions/checkout@v4
-      
-      - name: Install cross-compilation tools
-        if: contains(matrix.target, 'linux-gnu') || contains(matrix.target, 'android') || contains(matrix.target, 'freebsd')
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc-multilib g++-multilib
-          
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-          
-      - name: Install ARM Linux dependencies
-        if: contains(matrix.target, 'arm') && contains(matrix.target, 'linux')
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc-arm-linux-gnueabihf libc6-dev-armhf-cross
-      
-      - name: Install AArch64 Linux dependencies
-        if: contains(matrix.target, 'aarch64') && contains(matrix.target, 'linux')
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu libc6-dev-arm64-cross
-          
-      - name: Setup WASM target
-        if: contains(matrix.target, 'wasm')
-        run: |
-          curl https://wasmtime.dev/install.sh -sSf | bash
-          source ~/.bashrc
-          cargo install cargo-wasi
-          
-      - name: Configure cargo for cross-compilation
-        if: contains(matrix.target, 'android') || contains(matrix.target, 'freebsd')
-        run: |
-          mkdir -p ~/.cargo
-          echo '[target.${{ matrix.target }}]' >> ~/.cargo/config
-          echo 'linker = "rust-lld"' >> ~/.cargo/config
-          
-      - name: Build
-        run: cargo build --release --target ${{ matrix.target }}
-          
-      - name: Prepare artifact
-        shell: bash
-        run: |
-          mkdir -p release-artifacts
-          if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
-            cp target/${{ matrix.target }}/release/${{ matrix.artifact_name }} release-artifacts/${{ matrix.asset_name }}
-          else
-            cp target/${{ matrix.target }}/release/${{ matrix.artifact_name }} release-artifacts/${{ matrix.asset_name }}
-          fi
-      
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.asset_name }}
-          path: release-artifacts/${{ matrix.asset_name }}
-          
-  release:
-    name: Create Release
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Setup Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        components: rustfmt, clippy
+
+    - name: Install CForge
+      shell: bash
+      run: |
+        echo "Attempting to install latest CForge version directly from repository"
         
-      - name: List artifacts
-        run: ls -R artifacts
-      
-      - name: Create Release
-        uses: softprops/action-gh-release@v1
-        with:
-          files: |
-            artifacts/cforge-linux-amd64/cforge-linux-amd64
-            artifacts/cforge-linux-i686/cforge-linux-i686
-            artifacts/cforge-windows-amd64.exe/cforge-windows-amd64.exe
-            artifacts/cforge-windows-i686.exe/cforge-windows-i686.exe
-            artifacts/cforge-windows-arm64.exe/cforge-windows-arm64.exe
-            artifacts/cforge-macos-amd64/cforge-macos-amd64
-            artifacts/cforge-macos-arm64/cforge-macos-arm64
-          generate_release_notes: true
+        # Try to install directly from the git repository
+        cargo install --git https://github.com/ChaseSunstrom/cforge.git || {
+          echo "Failed to install from git, trying to find published beta version"
+          
+          # If repository install fails, fallback to trying a basic install
+          echo "Trying cargo install cforge"
+          cargo install cforge || {
+            echo "Failed to install CForge"
+            exit 1
+          }
+        }
+        
+        # Verify installation
+        echo "Installed CForge version:"
+        cforge --version
+
+    - name: Clean CForge
+      shell: bash
+      run: |
+        cforge clean
+
+    - name: Build with CForge
+      shell: bash
+      run: |
+        cforge build --config ${{ matrix.config.config }}
+
+    - name: Run Tests
+      shell: bash
+      run: |
+        cforge test
+
+    - name: Package Project
+      shell: bash
+      continue-on-error: true
+      run: |
+        cforge package --verbosity verbose --config ${{ matrix.config.config }}
+
+    - name: Convert config to lowercase
+      run: |
+        echo "CONFIG_LOWER=$(echo "$CONFIG" | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+      env:
+        CONFIG: ${{ matrix.config.config }}
+
+    - name: Upload Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: cforge-${{ matrix.config.os }}-${{ matrix.config.compiler }}
+        path: |
+          **/build-${{ env.CONFIG_LOWER }}/**/*.zip
+          **/build-${{ env.CONFIG_LOWER }}/**/*.tar.gz
+          **/build-${{ env.CONFIG_LOWER }}/**/*.deb
+          **/build-${{ env.CONFIG_LOWER }}/**/*.rpm
+          **/build-${{ env.CONFIG_LOWER }}/**/*.exe
+        retention-days: 7
+        if-no-files-found: ignore
