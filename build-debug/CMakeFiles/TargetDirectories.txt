@@ -1,8 +1,0 @@
-C:/cpp-forge/build-debug/CMakeFiles/default.dir
-C:/cpp-forge/build-debug/CMakeFiles/package.dir
-C:/cpp-forge/build-debug/CMakeFiles/package_source.dir
-C:/cpp-forge/build-debug/CMakeFiles/edit_cache.dir
-C:/cpp-forge/build-debug/CMakeFiles/rebuild_cache.dir
-C:/cpp-forge/build-debug/CMakeFiles/list_install_components.dir
-C:/cpp-forge/build-debug/CMakeFiles/install.dir
-C:/cpp-forge/build-debug/CMakeFiles/install/local.dir
