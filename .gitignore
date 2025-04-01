@@ -1,6 +1,5 @@
 /target
 /build-debug
 /build-release
-/deps
 /.vscode
 /.idea
