@@ -15,7 +15,7 @@
 
 # CForge
 
-![Version](https://img.shields.io/badge/beta-1.4.3-blue.svg)
+![Version](https://img.shields.io/badge/beta-1.5.0-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 
 **A TOML-based build system for C/C++ projects with seamless CMake and vcpkg integration.**

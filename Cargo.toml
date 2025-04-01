@@ -1,6 +1,6 @@
 [package]
 name = "cforge"
-version = "1.4.3-beta"
+version = "1.5.0-beta"
 edition = "2021"
 authors = ["Chase Sunstrom casunstrom@gmail.com"]
 description = "A TOML-based build system for C/C++ with CMake and vcpkg integration"
