@@ -24,6 +24,23 @@ workspace::~workspace() {
 workspace_config::workspace_config() : name_("cpp-workspace"), description_("A C++ workspace") {
 }
 
+// Accessors for workspace_config
+void workspace_config::set_name(const std::string& name) {
+    name_ = name;
+}
+
+void workspace_config::set_description(const std::string& description) {
+    description_ = description;
+}
+
+const std::string& workspace_config::get_name() const {
+    return name_;
+}
+
+const std::string& workspace_config::get_description() const {
+    return description_;
+}
+
 bool workspace::load(const std::filesystem::path& workspace_path) {
     workspace_path_ = workspace_path;
     
@@ -359,17 +376,14 @@ bool workspace_config::save(const std::string& workspace_file) const {
     file << "name = \"" << name_ << "\"\n";
     file << "description = \"" << description_ << "\"\n\n";
     
-    // Write projects as a string array with better formatting
+    // Write projects as a string array
     file << "# Projects in format: name:path:is_startup_project\n";
     file << "projects = [\n";
     
     for (size_t i = 0; i < projects_.size(); ++i) {
         const auto& project = projects_[i];
-        
-        // Format each project on its own line with consistent indentation
-        // Use just the project name as path to keep it relative
         file << "  \"" << project.name << ":" 
-             << project.name << ":" 
+             << project.path.string() << ":" 
              << (project.is_startup_project ? "true" : "false") << "\"";
         
         if (i < projects_.size() - 1) {

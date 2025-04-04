@@ -1,4 +1,4 @@
-# cpp-forge
+# lib-b
 
 A C++ project created with cforge.
 
@@ -19,7 +19,7 @@ cforge build
 
 ```bash
 # Run the executable
-./build/bin/cpp-project
+./build/bin/lib-b
 
 # Or using cforge
 cforge run
