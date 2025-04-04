@@ -16,4 +16,8 @@
 #define CMAKE_MIN_VERSION "3.15"
 #define WORKSPACE_FILE "cforge-workspace.toml"
 
+#ifdef _MSC_VER
+#pragma warning(disable: 4996)
+#endif
+
 #endif

@@ -5,6 +5,7 @@
 
 #include "cforge/log.hpp"
 #include "core/command.h"
+#include "core/commands.hpp"
 #include "core/file_system.h"
 #include "core/process.h"
 #include "core/types.h"

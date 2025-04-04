@@ -71,13 +71,6 @@ void cforge_parse_args(cforge_int_t argc, cforge_string_t argv[],
 void cforge_free_args(cforge_command_args_t *args);
 
 /**
- * @brief Dispatch command based on the parsed arguments
- * @details This function will call the appropriate command handler based on the
- * command specified in the arguments.
- */
-cforge_int_t cforge_dispatch_command(cforge_context_t *ctx);
-
-/**
  * @brief Set the verbosity level for logging
  * @details This function sets the verbosity level for logging output. It can be
  * set to quiet, normal, or verbose.

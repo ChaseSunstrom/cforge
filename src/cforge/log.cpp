@@ -51,6 +51,13 @@ void logger::print_step(const std::string &action, const std::string &target) {
     return;
   fmt::print("  • {} {}\n", action, target);
 }
+
+void logger::print_verbose(const std::string &message) {
+  // Only print in verbose mode
+  if (s_verbosity != log_verbosity::VERBOSITY_VERBOSE)
+    return;
+  fmt::print(fg(fmt::color::gray), "  {} {}\n", "▶", message);
+}
 } // namespace cforge
 
 // C wrapper implementations
@@ -105,6 +112,10 @@ void cforge_print_error(cforge_cstring_t message) {
 
 void cforge_print_step(cforge_cstring_t action, cforge_cstring_t target) {
   cforge::logger::print_step(action, target);
+}
+
+void cforge_print_verbose(cforge_cstring_t message) {
+  cforge::logger::print_verbose(message);
 }
 } // extern "C"
 #endif // __cplusplus

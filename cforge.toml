@@ -42,9 +42,4 @@ sources = [
     "src/**/**.cpp",
     "src/**/**.c"
 ]
-include_dirs = ["include", "deps", "deps/fmt/include"]
-
-[output]
-bin_dir = "bin"
-lib_dir = "lib"
-obj_dir = "obj"
+include_dirs = ["include", "deps", "deps/fmt/include", "deps/tomlplusplus/include"]

@@ -85,7 +85,7 @@ message(STATUS "Executable default will be built as ${PROJECT_NAME}_${TARGET_NAM
 target_compile_definitions(default PRIVATE $<$<CONFIG:DEBUG>:DEBUG>)
 target_compile_definitions(default PRIVATE $<$<CONFIG:RELEASE>:NDEBUG>)
 
-target_include_directories(default PRIVATE "include" "deps" "deps/fmt/include")
+target_include_directories(default PRIVATE "include" "deps" "deps/fmt/include" "deps/tomlplusplus/include")
 # Installation
 install(TARGETS default
   RUNTIME DESTINATION bin

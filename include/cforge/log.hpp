@@ -28,6 +28,7 @@ void cforge_print_success(cforge_cstring_t message);
 void cforge_print_warning(cforge_cstring_t message);
 void cforge_print_error(cforge_cstring_t message);
 void cforge_print_step(cforge_cstring_t action, cforge_cstring_t target);
+void cforge_print_verbose(cforge_cstring_t message);
 
 #ifdef __cplusplus
 } // extern "C"
@@ -48,13 +49,13 @@ class logger {
 public:
   static void set_verbosity(log_verbosity level);
   static log_verbosity get_verbosity();
-
   static void print_header(const std::string &message);
   static void print_status(const std::string &message);
   static void print_success(const std::string &message);
   static void print_warning(const std::string &message);
   static void print_error(const std::string &message);
   static void print_step(const std::string &action, const std::string &target);
+  static void print_verbose(const std::string &message);
 
 private:
   static log_verbosity s_verbosity;
