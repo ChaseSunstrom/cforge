@@ -453,6 +453,8 @@ cforge_int_t cforge_cmd_run(const cforge_context_t* ctx) {
                 return 1;
             }
             
+            logger::print_status("Running project in workspace '" + workspace.get_name() + "'");
+            
             // Get build configuration
             std::string build_config = get_build_config(ctx, nullptr);  // We'll use the same config for all projects
             
@@ -498,7 +500,6 @@ cforge_int_t cforge_cmd_run(const cforge_context_t* ctx) {
             // Run the project
             return run_workspace_project(project_dir, *project_to_run, build_config, verbose);
         } else {
-            // Regular project handling (existing code)
             // Check if cforge.toml exists
             std::filesystem::path config_path = project_dir / CFORGE_FILE;
             if (!std::filesystem::exists(config_path)) {
@@ -513,11 +514,8 @@ cforge_int_t cforge_cmd_run(const cforge_context_t* ctx) {
                 return 1;
             }
             
-            // Get project name and build directory
-            std::string project_name = project_config.get_string("project.name");
-            if (project_name.empty()) {
-                project_name = "unknown";
-            }
+            // Get build configuration
+            std::string build_config = get_build_config(ctx, &project_config);
             
             // Determine build directory
             std::string base_build_dir;
@@ -537,138 +535,17 @@ cforge_int_t cforge_cmd_run(const cforge_context_t* ctx) {
                 base_build_dir = "build";
             }
             
-            // Get build configuration
-            std::string build_config = get_build_config(ctx, &project_config);
-            logger::print_status("Using build configuration: " + build_config);
-            
             // Get the config-specific build directory
-            std::string build_dir = get_build_dir_for_config(base_build_dir, build_config);
-            logger::print_status("Using build directory: " + build_dir);
+            std::filesystem::path build_dir = get_build_dir_for_config(base_build_dir, build_config);
             
-            // We need to ensure the build command gets the right configuration
-            cforge_context_t build_ctx = *ctx;  // Make a copy of the context
-            
-            // Create a non-const copy of the configuration string
-            char* config_copy = strdup(build_config.c_str());
-            if (!config_copy) {
-                logger::print_error("Failed to allocate memory for build configuration");
-                return 1;
-            }
-            build_ctx.args.config = config_copy;
-            
-            // Build the project first
-            logger::print_status("Building project before running...");
-            int build_result = cforge_cmd_build(&build_ctx);
-            
-            // Free the allocated string
-            free(config_copy);
-            
-            if (build_result != 0) {
-                logger::print_error("Failed to build project");
-                return 1;
-            }
-            
-            // Find the executable
-            logger::print_status("Searching for executable in: " + build_dir);
-            
-            std::filesystem::path executable;
-            try {
-                executable = find_executable(build_dir, build_config, project_name);
-            } catch (const std::exception& e) {
-                logger::print_error("Exception while searching for executable: " + std::string(e.what()));
-                return 1;
-            }
-            
-            if (executable.empty()) {
-                logger::print_error("Could not find executable for project: " + project_name);
-                logger::print_status("Expected filename format: " + project_name + "_" + build_config.substr(0, 1) + build_config.substr(1));
-                return 1;
-            }
-            
-            logger::print_status("Executable found: " + executable.string());
-            
-            // Verify the executable exists and is valid
-            if (!std::filesystem::exists(executable)) {
-                logger::print_error("Executable was found but doesn't exist on disk: " + executable.string());
-                return 1;
-            }
-            
-            // Get arguments to pass to the executable
-            std::vector<std::string> run_args;
-            
-            // Extract run arguments from ctx->args.args, skipping known flags
-            if (ctx->args.args) {
-                bool skip_next = false;
-                for (int i = 0; i < ctx->args.arg_count && ctx->args.args[i]; ++i) {
-                    if (skip_next) {
-                        skip_next = false;
-                        continue;
-                    }
-                    
-                    std::string arg = ctx->args.args[i];
-                    
-                    // Skip known flags and their values
-                    if (arg == "--config" || arg == "-c" || 
-                        arg == "--build-dir" || arg == "-B") {
-                        skip_next = true;
-                        continue;
-                    }
-                    
-                    // Skip other known flags
-                    if (arg == "--clean" || arg == "--verbosity" || 
-                        arg.find("--version") == 0 || arg.find("--help") == 0) {
-                        if (arg == "--verbosity") skip_next = true;
-                        continue;
-                    }
-                    
-                    // Skip if the arg starts with a dash (it's likely a flag)
-                    if (arg.substr(0, 1) == "-") {
-                        continue;
-                    }
-                    
-                    // Add the argument to run_args
-                    run_args.push_back(arg);
-                }
-            }
-            
-            // Run the executable
-            logger::print_status("Running executable: " + executable.filename().string());
-            
+            // Determine verbosity
             bool verbose = logger::get_verbosity() == log_verbosity::VERBOSITY_VERBOSE;
-            try {
-                process_result result = execute_process(
-                    executable.string(), 
-                    run_args, 
-                    project_dir.string()
-                );
-                
-                if (result.success) {
-                    logger::print_success("Program completed with exit code: 0");
-                } else {
-                    logger::print_error("Program failed with exit code: " + std::to_string(result.exit_code));
-                    
-                    if (!result.stderr_output.empty()) {
-                        std::istringstream error_stream(result.stderr_output);
-                        std::string line;
-                        while (std::getline(error_stream, line)) {
-                            if (!line.empty()) {
-                                logger::print_error(line);
-                            }
-                        }
-                    }
-                }
-                
-                return result.exit_code;
-            } catch (const std::exception& e) {
-                logger::print_error("Exception while running executable: " + std::string(e.what()));
-                return 1;
-            }
+            
+            // Run the project
+            return run_project(project_dir, build_dir, build_config, verbose);
         }
-    } catch (const std::exception& e) {
-        logger::print_error("Unhandled exception in run command: " + std::string(e.what()));
-        return 1;
-    } catch (...) {
-        logger::print_error("Unknown exception in run command");
+    } catch (const std::exception& ex) {
+        logger::print_error("Exception during command execution: " + std::string(ex.what()));
         return 1;
     }
 } 

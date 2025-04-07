@@ -549,6 +549,8 @@ cforge_int_t cforge_cmd_build(const cforge_context_t* ctx) {
             return 1;
         }
         
+        logger::print_status("Building workspace '" + workspace.get_name() + "'");
+        
         // Get build configuration
         std::string build_config = get_build_config(ctx, nullptr);  // We'll use the same config for all projects
         
@@ -582,32 +584,66 @@ cforge_int_t cforge_cmd_build(const cforge_context_t* ctx) {
             }
         }
         
-        // Get build order
-        std::vector<std::string> build_order = workspace.get_build_order();
+        // Check if a specific project was requested
+        std::string project_to_build;
+        if (ctx->args.args) {
+            for (int i = 0; ctx->args.args[i]; ++i) {
+                if (strcmp(ctx->args.args[i], "--project") == 0 && ctx->args.args[i+1]) {
+                    project_to_build = ctx->args.args[i+1];
+                    break;
+                }
+            }
+        }
         
-        // Build each project in order
-        for (const std::string& project_name : build_order) {
-            // Find project in workspace
+        if (!project_to_build.empty()) {
+            // Build only the specified project
             const workspace_project* project = nullptr;
             for (const auto& p : workspace.get_projects()) {
-                if (p.name == project_name) {
+                if (p.name == project_to_build) {
                     project = &p;
                     break;
                 }
             }
             
             if (!project) {
-                logger::print_error("Project '" + project_name + "' not found in workspace");
+                logger::print_error("Project '" + project_to_build + "' not found in workspace");
                 return 1;
             }
             
-            // Build the project
+            logger::print_status("Building project '" + project->name + "'...");
             if (!build_workspace_project(project_dir, *project, build_config, num_jobs, verbose, target)) {
                 return 1;
             }
+            
+            logger::print_success("Project '" + project->name + "' built successfully");
+        } else {
+            // Get build order
+            std::vector<std::string> build_order = workspace.get_build_order();
+            
+            // Build each project in order
+            for (const std::string& project_name : build_order) {
+                // Find project in workspace
+                const workspace_project* project = nullptr;
+                for (const auto& p : workspace.get_projects()) {
+                    if (p.name == project_name) {
+                        project = &p;
+                        break;
+                    }
+                }
+                
+                if (!project) {
+                    logger::print_error("Project '" + project_name + "' not found in workspace");
+                    return 1;
+                }
+                
+                // Build the project
+                if (!build_workspace_project(project_dir, *project, build_config, num_jobs, verbose, target)) {
+                    return 1;
+                }
+            }
+            
+            logger::print_success("Workspace built successfully");
         }
-        
-        logger::print_success("Workspace built successfully");
     } else {
         // Check if cforge.toml exists
         std::filesystem::path config_path = project_dir / CFORGE_FILE;
@@ -650,23 +686,8 @@ cforge_int_t cforge_cmd_build(const cforge_context_t* ctx) {
         // Get the config-specific build directory
         std::filesystem::path build_dir = get_build_dir_for_config(base_build_dir, build_config);
         
-        // Determine if we need to clean
-        bool clean = false;
-        
-        // Check for --clean flag in arguments
-        if (ctx->args.args) {
-            for (int i = 0; ctx->args.args[i]; ++i) {
-                if (strcmp(ctx->args.args[i], "--clean") == 0) {
-                    clean = true;
-                    break;
-                }
-            }
-        }
-        
         // Determine number of jobs
         int num_jobs = 0;
-        
-        // Check for -j/--jobs flag in arguments
         if (ctx->args.args) {
             for (int i = 0; ctx->args.args[i]; ++i) {
                 if (strcmp(ctx->args.args[i], "-j") == 0 || 
@@ -692,13 +713,42 @@ cforge_int_t cforge_cmd_build(const cforge_context_t* ctx) {
             }
         }
         
-        // Configure project
-        if (!build_project(build_dir, build_config, num_jobs, verbose, target)) {
-            logger::print_error("Project configuration failed");
+        // Generate CMakeLists.txt if it doesn't exist
+        std::filesystem::path cmakelists_path = project_dir / "CMakeLists.txt";
+        if (!std::filesystem::exists(cmakelists_path)) {
+            logger::print_status("Generating CMakeLists.txt...");
+            if (!generate_cmakelists_from_toml(project_dir, project_config, verbose)) {
+                logger::print_error("Failed to generate CMakeLists.txt");
+                return 1;
+            }
+        }
+        
+        // Run CMake configure
+        std::vector<std::string> cmake_args;
+        cmake_args.push_back("-G");
+        cmake_args.push_back(get_cmake_generator());
+        
+        // Add C++ standard if specified
+        if (project_config.has_key("project.cpp_standard")) {
+            std::string cpp_standard = project_config.get_string("project.cpp_standard");
+            cmake_args.push_back("-DCMAKE_CXX_STANDARD=" + cpp_standard);
+            cmake_args.push_back("-DCMAKE_CXX_STANDARD_REQUIRED=ON");
+            cmake_args.push_back("-DCMAKE_CXX_EXTENSIONS=OFF");
+        }
+        
+        // Run CMake configure
+        if (!run_cmake_configure(cmake_args, build_dir.string(), verbose)) {
+            logger::print_error("CMake configure failed");
             return 1;
         }
         
-        logger::print_success("Project built successfully");
+        // Build the project
+        if (!build_project(build_dir, build_config, num_jobs, verbose, target)) {
+            logger::print_error("Build failed");
+            return 1;
+        }
+        
+        logger::print_success("Build completed successfully");
     }
     
     return 0;

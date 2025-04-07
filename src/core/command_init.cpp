@@ -929,19 +929,19 @@ static bool init_workspace(
     logger::print_status("Workspace path: " + workspace_path.string());
     logger::print_status("Projects: " + (project_names.empty() ? "none" : project_names[0] + (project_names.size() > 1 ? " and others" : "")));
     
-    // Determine whether to create a subdirectory for the workspace
-    // If workspace name is same as the last component of the path, use current directory
+    // Determine whether to create a subdirectory for the workspace or use the current directory
     std::filesystem::path workspace_dir;
-    bool use_current_dir = (workspace_path.filename().string() == workspace_name);
+    bool create_new_dir = !workspace_name.empty() && workspace_name != workspace_path.filename().string();
     
-    if (use_current_dir) {
-        // Use the current directory as is
-        workspace_dir = workspace_path;
-        logger::print_status("Using current directory as workspace: " + workspace_dir.string());
-    } else {
+    // Detailed debug logging
+    logger::print_status("DEBUG: workspace_name = '" + workspace_name + "'");
+    logger::print_status("DEBUG: workspace_path.filename() = '" + workspace_path.filename().string() + "'");
+    logger::print_status("DEBUG: create_new_dir = " + std::string(create_new_dir ? "true" : "false"));
+    
+    if (create_new_dir) {
         // Create a subdirectory for the workspace
         workspace_dir = workspace_path / workspace_name;
-        logger::print_status("Full workspace directory: " + workspace_dir.string());
+        logger::print_status("Creating subdirectory for workspace: " + workspace_dir.string());
         
         if (!std::filesystem::exists(workspace_dir)) {
             logger::print_status("Creating workspace directory: " + workspace_dir.string());
@@ -953,11 +953,15 @@ static bool init_workspace(
         } else {
             logger::print_status("Workspace directory already exists");
         }
+    } else {
+        // Use the current directory as is
+        workspace_dir = workspace_path;
+        logger::print_status("Using current directory as workspace: " + workspace_dir.string());
     }
     
     // Create workspace configuration file
     workspace_config config;
-    config.set_name(workspace_name);
+    config.set_name(workspace_name.empty() ? workspace_dir.filename().string() : workspace_name);
     config.set_description("A C++ workspace");
     
     // Create projects
@@ -1001,7 +1005,7 @@ static bool init_workspace(
         }
     }
     
-    logger::print_success("Workspace '" + workspace_name + "' created successfully");
+    logger::print_success("Workspace '" + config.get_name() + "' created successfully");
     return true;
 }
 
@@ -1012,149 +1016,174 @@ static bool init_workspace(
  * @return cforge_int_t Exit code (0 for success)
  */
 cforge_int_t cforge_cmd_init(const cforge_context_t* ctx) {
-    // Get project/workspace name from arguments or use default
-    std::string name = "cpp-project";
-    if (ctx->args.args && ctx->args.args[0] && ctx->args.args[0][0] != '-') {
-        name = ctx->args.args[0];
-    }
+    try {
+        logger::print_status("Starting init command execution");
+        
+        // Get project/workspace name from arguments or use default
+        std::string name = "cpp-project";
+        if (ctx->args.args && ctx->args.args[0] && ctx->args.args[0][0] != '-') {
+            name = ctx->args.args[0];
+        }
 
-    // Determine if this is a workspace creation request
-    bool is_workspace = false;
-    std::string workspace_name;
-    std::vector<std::string> project_names;
+        // Determine if this is a workspace creation request
+        bool is_workspace = false;
+        std::string workspace_name;
+        std::vector<std::string> project_names;
 
-    logger::print_status("Checking for workspace flag and projects...");
-    
-    // Process command line arguments
-    if (ctx->args.args) {
-        for (int i = 0; ctx->args.args[i]; ++i) {
-            std::string arg = ctx->args.args[i];
-            logger::print_status("Argument " + std::to_string(i) + ": " + arg);
+        logger::print_status("Checking for workspace flag and projects...");
+        
+        // Process command line arguments
+        if (ctx->args.args) {
+            logger::print_status("Processing command line arguments...");
             
-            if (arg == "--workspace") {
-                is_workspace = true;
+            try {
+                // Log all raw arguments
+                int arg_count = 0;
+                for (int i = 0; ctx->args.args[i] && i < 100; ++i) { // Cap at 100 for safety
+                    logger::print_status("Raw argument [" + std::to_string(i) + "]: '" + ctx->args.args[i] + "'");
+                    arg_count++;
+                }
+                logger::print_status("Total arguments: " + std::to_string(arg_count));
                 
-                // Check if next argument is a valid name (not a flag)
-                if (ctx->args.args[i+1] && ctx->args.args[i+1][0] != '-') {
-                    workspace_name = ctx->args.args[i+1];
-                    logger::print_status("Found workspace name: " + workspace_name);
-                    i++; // Skip the workspace name
+                for (int i = 0; ctx->args.args[i] && i < 100; ++i) { // Cap at 100 for safety
+                    std::string arg = ctx->args.args[i];
+                    logger::print_status("Processing argument " + std::to_string(i) + ": '" + arg + "'");
                     
-                    // We'll create a subdirectory with this name
-                    logger::print_status("Will create workspace in subdirectory: " + workspace_name);
-                } else {
-                    // If no name provided, use the current directory 
-                    workspace_name = ctx->working_dir.filename().string();
-                    logger::print_status("No workspace name provided, will use current directory as workspace");
-                }
-            }
-            else if (arg == "--projects") {
-                // Next argument should be the comma-separated project list
-                if (ctx->args.args[i+1] && ctx->args.args[i+1][0] != '-') {
-                    std::string projects_arg = ctx->args.args[i+1];
-                    logger::print_status("Found projects flag, value: " + projects_arg);
-                    project_names = parse_project_list(projects_arg);
-                    
-                    logger::print_status("Parsed " + std::to_string(project_names.size()) + " projects");
-                    for (size_t j = 0; j < project_names.size(); ++j) {
-                        logger::print_status("  Project " + std::to_string(j+1) + ": " + project_names[j]);
+                    // Parse --workspace[=name] or --workspace name 
+                    if (arg == "--workspace") {
+                        is_workspace = true;
+                        // Check if next argument exists and is a valid name (not a flag or the end of arguments)
+                        if (ctx->args.args[i+1] && ctx->args.args[i+1][0] != '-') {
+                            workspace_name = ctx->args.args[i+1];
+                            logger::print_status("Found workspace name: '" + workspace_name + "'");
+                            i++; // Skip the workspace name in the next iteration
+                        } else {
+                            // If no name provided, use the current directory as the workspace
+                            workspace_name = std::filesystem::path(ctx->working_dir).filename().string();
+                            logger::print_status("No workspace name provided after --workspace flag, using current directory name: '" + workspace_name + "'");
+                        }
+                    } 
+                    // Check for --workspace=NAME format
+                    else if (arg.compare(0, 12, "--workspace=") == 0) {
+                        is_workspace = true;
+                        workspace_name = arg.substr(12);
+                        logger::print_status("Found workspace name from --workspace= format: '" + workspace_name + "'");
                     }
-                    
-                    i++; // Skip the project list
-                } else {
-                    logger::print_error("Missing project list after --projects flag");
+                    // Handle --projects flag
+                    else if (arg == "--projects") {
+                        // Collect all project names until we hit another flag or end of arguments
+                        i++; // Move to the next argument
+                        while (ctx->args.args[i] && ctx->args.args[i][0] != '-') {
+                            project_names.push_back(ctx->args.args[i]);
+                            logger::print_status("Added project: '" + ctx->args.args[i] + "'");
+                            i++;
+                        }
+                        i--; // Adjust for the loop increment
+                    }
+                }
+                logger::print_status("Finished argument processing loop");
+            } catch (const std::exception& ex) {
+                logger::print_error("Exception during argument processing: " + std::string(ex.what()));
+            }
+            
+            logger::print_status("Finished processing command line arguments");
+        }
+
+        logger::print_status("After argument parsing, is_workspace=" + 
+                          std::string(is_workspace ? "true" : "false") + 
+                          ", workspace_name='" + workspace_name + "'" +
+                          ", project_count=" + std::to_string(project_names.size()));
+
+        // Get C++ standard from arguments or use default
+        std::string cpp_standard = "17";
+        if (ctx->args.args) {
+            for (int i = 0; ctx->args.args[i]; ++i) {
+                if (strcmp(ctx->args.args[i], "--std") == 0 && ctx->args.args[i+1]) {
+                    cpp_standard = ctx->args.args[i+1];
+                    break;
                 }
             }
         }
-    }
-
-    // Get C++ standard from arguments or use default
-    std::string cpp_standard = "17";
-    if (ctx->args.args) {
-        for (int i = 0; ctx->args.args[i]; ++i) {
-            if (strcmp(ctx->args.args[i], "--std") == 0 && ctx->args.args[i+1]) {
-                cpp_standard = ctx->args.args[i+1];
-                break;
+        logger::print_status("Using C++ standard: " + cpp_standard);
+        
+        // Check for test flag
+        bool with_tests = false;
+        if (ctx->args.args) {
+            for (int i = 0; ctx->args.args[i]; ++i) {
+                if (strcmp(ctx->args.args[i], "--with-tests") == 0) {
+                    with_tests = true;
+                    break;
+                }
             }
         }
-    }
-    logger::print_status("Using C++ standard: " + cpp_standard);
-    
-    // Check for test flag
-    bool with_tests = false;
-    if (ctx->args.args) {
-        for (int i = 0; ctx->args.args[i]; ++i) {
-            if (strcmp(ctx->args.args[i], "--with-tests") == 0) {
-                with_tests = true;
-                break;
+        logger::print_status("With tests: " + std::string(with_tests ? "yes" : "no"));
+        
+        // Check for git flag
+        bool with_git = false;
+        if (ctx->args.args) {
+            for (int i = 0; ctx->args.args[i]; ++i) {
+                if (strcmp(ctx->args.args[i], "--git") == 0) {
+                    with_git = true;
+                    break;
+                }
             }
         }
-    }
-    logger::print_status("With tests: " + std::string(with_tests ? "yes" : "no"));
-    
-    // Check for git flag
-    bool with_git = false;
-    if (ctx->args.args) {
-        for (int i = 0; ctx->args.args[i]; ++i) {
-            if (strcmp(ctx->args.args[i], "--git") == 0) {
-                with_git = true;
-                break;
+        logger::print_status("With git: " + std::string(with_git ? "yes" : "no"));
+        
+        // Get template type
+        std::string template_type = "app";
+        if (ctx->args.args) {
+            for (int i = 0; ctx->args.args[i]; ++i) {
+                if (strcmp(ctx->args.args[i], "--template") == 0 && ctx->args.args[i+1]) {
+                    template_type = ctx->args.args[i+1];
+                    i++; // Skip the template value
+                    break;
+                }
             }
         }
-    }
-    logger::print_status("With git: " + std::string(with_git ? "yes" : "no"));
-    
-    // Get template type
-    std::string template_type = "app";
-    if (ctx->args.args) {
-        for (int i = 0; ctx->args.args[i]; ++i) {
-            if (strcmp(ctx->args.args[i], "--template") == 0 && ctx->args.args[i+1]) {
-                template_type = ctx->args.args[i+1];
-                i++; // Skip the template value
-                break;
+        logger::print_status("Using template: " + template_type);
+        
+        // Determine verbosity
+        bool verbose = logger::get_verbosity() == log_verbosity::VERBOSITY_VERBOSE;
+        
+        // Log a status about what we're going to do
+        logger::print_status(is_workspace ? 
+                          "Proceeding with workspace creation..." : 
+                          "Proceeding with project creation...");
+        
+        if (is_workspace) {
+            // Use current directory path as the workspace base
+            std::filesystem::path workspace_base = ctx->working_dir;
+            
+            // If no projects were specified, create a default one
+            if (project_names.empty()) {
+                project_names.push_back("main-project");
+                logger::print_status("No projects specified, using default project: main-project");
             }
+            
+            logger::print_status("Creating workspace '" + workspace_name + "' with " + 
+                               std::to_string(project_names.size()) + " project(s)...");
+            
+            if (!init_workspace(workspace_name, workspace_base, project_names, cpp_standard, with_tests, with_git, verbose)) {
+                logger::print_error("Failed to initialize workspace");
+                return 1;
+            }
+            
+            logger::print_success("Workspace '" + workspace_name + "' created successfully");
+        } else {
+            logger::print_status("Creating project '" + name + "'...");
+            
+            if (!create_project(ctx->working_dir, name, cpp_standard, with_git, verbose)) {
+                logger::print_error("Failed to initialize project");
+                return 1;
+            }
+            
+            logger::print_success("Project '" + name + "' created successfully");
         }
+        
+        return 0;
+    } catch (const std::exception& ex) {
+        logger::print_error("Exception during command execution: " + std::string(ex.what()));
+        return 1;
     }
-    logger::print_status("Using template: " + template_type);
-    
-    // Determine verbosity
-    bool verbose = logger::get_verbosity() == log_verbosity::VERBOSITY_VERBOSE;
-    
-    if (is_workspace) {
-        // Use provided workspace name, or current directory name
-        std::filesystem::path workspace_base = ctx->working_dir;
-        
-        if (workspace_name.empty()) {
-            // Use current directory's name as the workspace name
-            workspace_name = workspace_base.filename().string();
-            logger::print_status("Using current directory for workspace, name: " + workspace_name);
-        }
-        
-        // If no projects were specified, create a default one
-        if (project_names.empty()) {
-            project_names.push_back("main-project");
-            logger::print_status("No projects specified, using default project: main-project");
-        }
-        
-        logger::print_status("Creating workspace '" + workspace_name + "' with " + 
-                          std::to_string(project_names.size()) + " project(s)...");
-        
-        if (!init_workspace(workspace_name, workspace_base, project_names, cpp_standard, with_tests, with_git, verbose)) {
-            logger::print_error("Failed to initialize workspace");
-            return 1;
-        }
-        
-        logger::print_success("Workspace '" + workspace_name + "' created successfully");
-    } else {
-        logger::print_status("Creating project '" + name + "'...");
-        
-        if (!create_project(ctx->working_dir, name, cpp_standard, with_git, verbose)) {
-            logger::print_error("Failed to initialize project");
-            return 1;
-        }
-        
-        logger::print_success("Project '" + name + "' created successfully");
-    }
-    
-    return 0;
 } 
