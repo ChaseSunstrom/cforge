@@ -1,0 +1,21 @@
+# ninja log v6
+2	47	7657485034127937	googletest-populate-prefix/src/googletest-populate-stamp/Debug/googletest-populate-mkdir	23a6a03ba1a1f796
+2	47	7657485034127937	C:/cpp-forge/proj1/_deps/googletest-subbuild/googletest-populate-prefix/src/googletest-populate-stamp/Debug/googletest-populate-mkdir	23a6a03ba1a1f796
+48	12293	7657485156585708	googletest-populate-prefix/src/googletest-populate-stamp/Debug/googletest-populate-download	1edaadb040f2a88
+48	12293	7657485156585708	C:/cpp-forge/proj1/_deps/googletest-subbuild/googletest-populate-prefix/src/googletest-populate-stamp/Debug/googletest-populate-download	1edaadb040f2a88
+12293	12423	7657485156635699	googletest-populate-prefix/src/googletest-populate-stamp/Debug/googletest-populate-update	f8fcf7c531040882
+12293	12423	7657485156635699	C:/cpp-forge/proj1/_deps/googletest-subbuild/googletest-populate-prefix/src/googletest-populate-stamp/Debug/googletest-populate-update	f8fcf7c531040882
+12423	12473	7657485158375747	googletest-populate-prefix/src/googletest-populate-stamp/Debug/googletest-populate-patch	86efd26e3d4210f6
+12423	12473	7657485158375747	C:/cpp-forge/proj1/_deps/googletest-subbuild/googletest-populate-prefix/src/googletest-populate-stamp/Debug/googletest-populate-patch	86efd26e3d4210f6
+12473	12517	7657485158825693	googletest-populate-prefix/src/googletest-populate-stamp/Debug/googletest-populate-configure	8b80461a569c7ae6
+12473	12517	7657485158825693	C:/cpp-forge/proj1/_deps/googletest-subbuild/googletest-populate-prefix/src/googletest-populate-stamp/Debug/googletest-populate-configure	8b80461a569c7ae6
+12517	12560	7657485159265695	googletest-populate-prefix/src/googletest-populate-stamp/Debug/googletest-populate-build	29ed88a0d693b3b1
+12517	12560	7657485159265695	C:/cpp-forge/proj1/_deps/googletest-subbuild/googletest-populate-prefix/src/googletest-populate-stamp/Debug/googletest-populate-build	29ed88a0d693b3b1
+12561	12605	7657485159705703	googletest-populate-prefix/src/googletest-populate-stamp/Debug/googletest-populate-install	5d0a0e99850f346
+12561	12605	7657485159705703	C:/cpp-forge/proj1/_deps/googletest-subbuild/googletest-populate-prefix/src/googletest-populate-stamp/Debug/googletest-populate-install	5d0a0e99850f346
+12605	12650	7657485160155695	googletest-populate-prefix/src/googletest-populate-stamp/Debug/googletest-populate-test	9b716e59edc23b4f
+12605	12650	7657485160155695	C:/cpp-forge/proj1/_deps/googletest-subbuild/googletest-populate-prefix/src/googletest-populate-stamp/Debug/googletest-populate-test	9b716e59edc23b4f
+12651	12712	7657485160775701	CMakeFiles/Debug/googletest-populate-complete	e5fdb7010e7b15ef
+12651	12712	7657485160775701	googletest-populate-prefix/src/googletest-populate-stamp/Debug/googletest-populate-done	e5fdb7010e7b15ef
+12651	12712	7657485160775701	C:/cpp-forge/proj1/_deps/googletest-subbuild/CMakeFiles/Debug/googletest-populate-complete	e5fdb7010e7b15ef
+12651	12712	7657485160775701	C:/cpp-forge/proj1/_deps/googletest-subbuild/googletest-populate-prefix/src/googletest-populate-stamp/Debug/googletest-populate-done	e5fdb7010e7b15ef

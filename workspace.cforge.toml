@@ -1,0 +1,12 @@
+[workspace]
+name = "cpp-forge"
+description = "A C++ workspace"
+
+# Projects in format: name:path:is_startup_project
+projects = [
+  "proj1:proj1:true",
+  "proj2:proj2:false",
+  "proj3:proj3:false"
+]
+
+# Dependencies are stored in project-specific cforge.toml files

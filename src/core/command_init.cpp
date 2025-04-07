@@ -923,86 +923,62 @@ static bool init_workspace(
     bool with_git,
     bool verbose
 ) {
-    // Log workspace creation details
-    logger::print_status("Creating workspace '" + workspace_name + "' with " + 
-                       std::to_string(project_names.size()) + " projects");
-    logger::print_status("Workspace path: " + workspace_path.string());
-    logger::print_status("Projects: " + (project_names.empty() ? "none" : project_names[0] + (project_names.size() > 1 ? " and others" : "")));
-    
-    // Determine whether to create a subdirectory for the workspace or use the current directory
-    std::filesystem::path workspace_dir;
+    // Create workspace directory if needed
     bool create_new_dir = !workspace_name.empty() && workspace_name != workspace_path.filename().string();
-    
-    // Detailed debug logging
-    logger::print_status("DEBUG: workspace_name = '" + workspace_name + "'");
-    logger::print_status("DEBUG: workspace_path.filename() = '" + workspace_path.filename().string() + "'");
-    logger::print_status("DEBUG: create_new_dir = " + std::string(create_new_dir ? "true" : "false"));
+    std::filesystem::path workspace_dir = workspace_path;
     
     if (create_new_dir) {
-        // Create a subdirectory for the workspace
         workspace_dir = workspace_path / workspace_name;
-        logger::print_status("Creating subdirectory for workspace: " + workspace_dir.string());
-        
         if (!std::filesystem::exists(workspace_dir)) {
-            logger::print_status("Creating workspace directory: " + workspace_dir.string());
-            if (!std::filesystem::create_directory(workspace_dir)) {
-                logger::print_error("Failed to create workspace directory");
+            try {
+                std::filesystem::create_directories(workspace_dir);
+            } catch (const std::exception& ex) {
+                logger::print_error("Failed to create workspace directory: " + workspace_dir.string() + " Error: " + ex.what());
                 return false;
             }
-            logger::print_success("Created workspace directory");
-        } else {
-            logger::print_status("Workspace directory already exists");
         }
-    } else {
-        // Use the current directory as is
-        workspace_dir = workspace_path;
-        logger::print_status("Using current directory as workspace: " + workspace_dir.string());
     }
     
-    // Create workspace configuration file
+    // Create workspace configuration
     workspace_config config;
     config.set_name(workspace_name.empty() ? workspace_dir.filename().string() : workspace_name);
     config.set_description("A C++ workspace");
     
-    // Create projects
+    // Create specified projects
+    std::string ws_name = config.get_name();
+    logger::print_status("Creating " + std::to_string(project_names.size()) + " projects in workspace '" + ws_name + "'");
+    
     for (const auto& project_name : project_names) {
-        logger::print_status("Creating project: " + project_name);
+        // Create project directory inside workspace
         std::filesystem::path project_dir = workspace_dir / project_name;
+        if (!std::filesystem::exists(project_dir)) {
+            try {
+                std::filesystem::create_directories(project_dir);
+            } catch (const std::exception& ex) {
+                logger::print_error("Failed to create project directory: " + project_dir.string() + " Error: " + ex.what());
+                return false;
+            }
+        }
         
-        // Create the project
-        if (!create_project(project_dir, project_name, cpp_version, false, verbose)) {
+        // Create project files
+        if (!create_project(project_dir, project_name, cpp_version, with_git, verbose)) {
             logger::print_error("Failed to create project '" + project_name + "'");
             return false;
         }
-        logger::print_success("Created project: " + project_name);
         
-        // Add the project to the workspace with a relative path
+        // Add project to workspace config (using relative path)
         workspace_project project;
         project.name = project_name;
-        project.path = project_name; // Use relative path (just the directory name)
-        project.is_startup_project = (project_name == project_names[0]); // First project is startup by default
+        project.path = std::filesystem::path(project_name); // Store as a relative path
+        project.is_startup_project = (project_name == project_names.front()); // First project is startup by default
         config.get_projects().push_back(project);
-        logger::print_status("Added project to workspace configuration: " + project_name);
     }
     
     // Save workspace configuration
-    std::filesystem::path config_path = workspace_dir / "workspace.cforge.toml";
-    logger::print_status("Saving workspace configuration to: " + config_path.string());
+    std::filesystem::path config_path = workspace_dir / WORKSPACE_FILE;
     if (!config.save(config_path.string())) {
         logger::print_error("Failed to save workspace configuration");
         return false;
-    }
-    logger::print_success("Saved workspace configuration");
-    
-    // Initialize git if requested
-    if (with_git) {
-        logger::print_status("Initializing git repository...");
-        if (!init_git_repository(workspace_dir, verbose)) {
-            logger::print_warning("Failed to initialize git repository");
-            // Continue anyway
-        } else {
-            logger::print_success("Initialized git repository");
-        }
     }
     
     logger::print_success("Workspace '" + config.get_name() + "' created successfully");
@@ -1075,7 +1051,7 @@ cforge_int_t cforge_cmd_init(const cforge_context_t* ctx) {
                         i++; // Move to the next argument
                         while (ctx->args.args[i] && ctx->args.args[i][0] != '-') {
                             project_names.push_back(ctx->args.args[i]);
-                            logger::print_status("Added project: '" + ctx->args.args[i] + "'");
+                            logger::print_status(std::string("Added project: '") + ctx->args.args[i] + "'");
                             i++;
                         }
                         i--; // Adjust for the loop increment

@@ -316,38 +316,40 @@ static std::string get_build_config(const cforge_context_t* ctx, const toml_read
 }
 
 /**
- * @brief Run a workspace project
+ * @brief Run a single project
  * 
- * @param workspace_dir Workspace directory
- * @param project Project to run
+ * @param project_dir Project directory
+ * @param build_dir Build directory
  * @param build_config Build configuration
  * @param verbose Verbose output
  * @return cforge_int_t Exit code
  */
-static cforge_int_t run_workspace_project(
-    const std::filesystem::path& workspace_dir,
-    const workspace_project& project,
+static cforge_int_t run_project(
+    const std::filesystem::path& project_dir,
+    const std::filesystem::path& build_dir,
     const std::string& build_config,
     bool verbose)
 {
-    // Change to project directory
-    std::filesystem::current_path(project.path);
-    
-    // Load project configuration
+    // Get project name from cforge.toml
     toml_reader project_config;
-    std::filesystem::path config_path = project.path / CFORGE_FILE;
+    std::filesystem::path config_path = project_dir / CFORGE_FILE;
     if (!project_config.load(config_path.string())) {
-        logger::print_error("Failed to load project configuration for '" + project.name + "'");
+        logger::print_error("Failed to parse " + std::string(CFORGE_FILE));
         return 1;
+    }
+    
+    std::string project_name = project_config.get_string("project.name");
+    if (project_name.empty()) {
+        project_name = "unknown";
     }
     
     // Create a context for building
     cforge_context_t build_ctx = {};
     
     // Copy the path to working_dir
-    strncpy(build_ctx.working_dir, project.path.string().c_str(), sizeof(build_ctx.working_dir) - 1);
+    strncpy(build_ctx.working_dir, project_dir.string().c_str(), sizeof(build_ctx.working_dir) - 1);
     build_ctx.working_dir[sizeof(build_ctx.working_dir) - 1] = '\0';
-
+    
     // Create a non-const copy of the configuration string
     char* config_copy = strdup(build_config.c_str());
     if (!config_copy) {
@@ -357,41 +359,30 @@ static cforge_int_t run_workspace_project(
     build_ctx.args.config = config_copy;
     
     // Build the project first
-    logger::print_status("Building project '" + project.name + "' before running...");
+    logger::print_status("Building project before running...");
     int build_result = cforge_cmd_build(&build_ctx);
     
     // Free the allocated string
     free(config_copy);
     
     if (build_result != 0) {
-        logger::print_error("Failed to build project '" + project.name + "'");
+        logger::print_error("Failed to build project");
         return 1;
     }
     
-    // Determine build directory
-    std::string base_build_dir;
-    if (project_config.has_key("build.build_dir")) {
-        base_build_dir = project_config.get_string("build.build_dir");
-    } else {
-        base_build_dir = "build";
-    }
-    
-    // Get the config-specific build directory
-    std::string build_dir = get_build_dir_for_config(base_build_dir, build_config);
-    
     // Find the executable
-    logger::print_status("Searching for executable in: " + build_dir);
+    logger::print_status("Searching for executable in: " + build_dir.string());
     
     std::filesystem::path executable;
     try {
-        executable = find_executable(build_dir, build_config, project.name);
+        executable = find_executable(build_dir, build_config, project_name);
     } catch (const std::exception& e) {
         logger::print_error("Exception while searching for executable: " + std::string(e.what()));
         return 1;
     }
     
     if (executable.empty()) {
-        logger::print_error("Could not find executable for project: " + project.name);
+        logger::print_error("Could not find executable for project: " + project_name);
         return 1;
     }
     
@@ -410,7 +401,7 @@ static cforge_int_t run_workspace_project(
         process_result result = execute_process(
             executable.string(), 
             {}, // No additional arguments for now
-            project.path.string()
+            project_dir.string()
         );
         
         if (result.success) {
@@ -432,6 +423,157 @@ static cforge_int_t run_workspace_project(
         return result.exit_code;
     } catch (const std::exception& e) {
         logger::print_error("Exception while running executable: " + std::string(e.what()));
+        return 1;
+    }
+}
+
+/**
+ * @brief Run a workspace project
+ * 
+ * @param workspace_dir Workspace directory
+ * @param project Project to run
+ * @param build_config Build configuration
+ * @param verbose Verbose output
+ * @return cforge_int_t Exit code
+ */
+static cforge_int_t run_workspace_project(
+    const std::filesystem::path& workspace_dir,
+    const workspace_project& project,
+    const std::string& build_config,
+    bool verbose)
+{
+    // Get project directory path - prefer using relative paths
+    std::filesystem::path project_path;
+    try {
+        // If project path is absolute, use it, otherwise treat as relative to workspace dir
+        if (project.path.is_absolute()) {
+            project_path = project.path;
+            logger::print_verbose("Using absolute project path: " + project_path.string());
+        } else {
+            project_path = workspace_dir / project.path;
+            logger::print_verbose("Using relative project path: " + project_path.string());
+        }
+        
+        logger::print_status("Project path: " + project_path.string());
+        
+        // Verify the project directory exists
+        if (!std::filesystem::exists(project_path)) {
+            logger::print_error("Project directory does not exist: " + project_path.string());
+            return 1;
+        }
+        
+        // Change to project directory
+        std::filesystem::current_path(project_path);
+        
+        // Load project configuration
+        toml_reader project_config;
+        std::filesystem::path config_path = CFORGE_FILE;  // Use relative path since we've changed directory
+        if (!std::filesystem::exists(config_path)) {
+            logger::print_error("Project configuration file not found: " + config_path.string());
+            return 1;
+        }
+        
+        if (!project_config.load(config_path.string())) {
+            logger::print_error("Failed to load project configuration for '" + project.name + "'");
+            return 1;
+        }
+        
+        // Create a context for building
+        cforge_context_t build_ctx = {};
+        
+        // Copy the path to working_dir (current directory)
+        std::string working_dir_str = std::filesystem::current_path().string();
+        strncpy(build_ctx.working_dir, working_dir_str.c_str(), sizeof(build_ctx.working_dir) - 1);
+        build_ctx.working_dir[sizeof(build_ctx.working_dir) - 1] = '\0';
+
+        // Create a non-const copy of the configuration string
+        char* config_copy = strdup(build_config.c_str());
+        if (!config_copy) {
+            logger::print_error("Failed to allocate memory for build configuration");
+            return 1;
+        }
+        build_ctx.args.config = config_copy;
+        
+        // Build the project first
+        logger::print_status("Building project '" + project.name + "' before running...");
+        int build_result = cforge_cmd_build(&build_ctx);
+        
+        // Free the allocated string
+        free(config_copy);
+        
+        if (build_result != 0) {
+            logger::print_error("Failed to build project '" + project.name + "'");
+            return 1;
+        }
+        
+        // Determine build directory
+        std::string base_build_dir;
+        if (project_config.has_key("build.build_dir")) {
+            base_build_dir = project_config.get_string("build.build_dir");
+        } else {
+            base_build_dir = "build";
+        }
+        
+        // Get the config-specific build directory
+        std::filesystem::path build_dir = get_build_dir_for_config(base_build_dir, build_config);
+        
+        // Find the executable
+        logger::print_status("Searching for executable in: " + build_dir.string());
+        
+        std::filesystem::path executable;
+        try {
+            executable = find_executable(build_dir, build_config, project.name);
+        } catch (const std::exception& e) {
+            logger::print_error("Exception while searching for executable: " + std::string(e.what()));
+            return 1;
+        }
+        
+        if (executable.empty()) {
+            logger::print_error("Could not find executable for project: " + project.name);
+            return 1;
+        }
+        
+        logger::print_status("Executable found: " + executable.string());
+        
+        // Verify the executable exists and is valid
+        if (!std::filesystem::exists(executable)) {
+            logger::print_error("Executable was found but doesn't exist on disk: " + executable.string());
+            return 1;
+        }
+        
+        // Run the executable
+        logger::print_status("Running executable: " + executable.filename().string());
+        
+        try {
+            process_result result = execute_process(
+                executable.string(), 
+                {}, // No additional arguments for now
+                project_path.string()
+            );
+            
+            if (result.success) {
+                logger::print_success("Program completed with exit code: 0");
+            } else {
+                logger::print_error("Program failed with exit code: " + std::to_string(result.exit_code));
+                
+                if (!result.stderr_output.empty()) {
+                    std::istringstream error_stream(result.stderr_output);
+                    std::string line;
+                    while (std::getline(error_stream, line)) {
+                        if (!line.empty()) {
+                            logger::print_error(line);
+                        }
+                    }
+                }
+            }
+            
+            return result.exit_code;
+        } catch (const std::exception& e) {
+            logger::print_error("Exception while running executable: " + std::string(e.what()));
+            return 1;
+        }
+    } catch (const std::exception& e) {
+        logger::print_error("Failed to handle project path: " + std::string(e.what()));
         return 1;
     }
 }

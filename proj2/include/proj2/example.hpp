@@ -1,11 +1,11 @@
 /**
  * @file example.hpp
- * @brief Example header file for cpp-project
+ * @brief Example header file for proj2
  */
 
 #pragma once
 
-namespace cpp_project {
+namespace proj2 {
 
 /**
  * @brief Example function
@@ -14,4 +14,4 @@ namespace cpp_project {
  */
 const char* get_example_message();
 
-} // namespace cpp_project
+} // namespace proj2
