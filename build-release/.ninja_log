@@ -41,3 +41,12 @@
 3	2477	7657484631362858	CMakeFiles/default.dir/src/core/command_init.cpp.obj	b070a872577aa350
 3	2132	7657484907446140	CMakeFiles/default.dir/src/core/workspace.cpp.obj	507bbefaf66a5340
 2132	2242	7657484928736454	cpp-forge__Release.exe	9d7282f0d5aea2ba
+3	2264	7657485773958217	CMakeFiles/default.dir/src/core/command_run.cpp.obj	7833171d13238be0
+2265	2375	7657485796574014	cpp-forge__Release.exe	9d7282f0d5aea2ba
+3	2587	7657487701675107	CMakeFiles/default.dir/src/core/command_build.cpp.obj	93bb619696ef4687
+2588	2698	7657487727525418	cpp-forge__Release.exe	9d7282f0d5aea2ba
+3	2559	7657488642118246	CMakeFiles/default.dir/src/core/command_build.cpp.obj	93bb619696ef4687
+2560	2666	7657488667688259	cpp-forge__Release.exe	9d7282f0d5aea2ba
+9	2406	7657491295234094	CMakeFiles/default.dir/src/core/command_init.cpp.obj	b070a872577aa350
+4	2622	7657491295174092	CMakeFiles/default.dir/src/core/command_build.cpp.obj	93bb619696ef4687
+2622	2732	7657491321367115	cpp-forge__Release.exe	9d7282f0d5aea2ba

@@ -482,10 +482,10 @@ static cforge_int_t run_workspace_project(
         cforge_context_t build_ctx = {};
         
         // Copy the path to working_dir (current directory)
-        std::string working_dir_str = std::filesystem::current_path().string();
-        strncpy(build_ctx.working_dir, working_dir_str.c_str(), sizeof(build_ctx.working_dir) - 1);
+        std::string current_dir = std::filesystem::current_path().string();
+        strncpy(build_ctx.working_dir, current_dir.c_str(), sizeof(build_ctx.working_dir) - 1);
         build_ctx.working_dir[sizeof(build_ctx.working_dir) - 1] = '\0';
-
+        
         // Create a non-const copy of the configuration string
         char* config_copy = strdup(build_config.c_str());
         if (!config_copy) {
@@ -512,6 +512,18 @@ static cforge_int_t run_workspace_project(
             base_build_dir = project_config.get_string("build.build_dir");
         } else {
             base_build_dir = "build";
+        }
+        
+        // Ensure build directory exists
+        std::filesystem::path build_dir_path = std::filesystem::path(base_build_dir);
+        if (!std::filesystem::exists(build_dir_path)) {
+            logger::print_status("Creating build directory: " + build_dir_path.string());
+            try {
+                std::filesystem::create_directories(build_dir_path);
+            } catch (const std::exception& ex) {
+                logger::print_error("Failed to create build directory: " + std::string(ex.what()));
+                return 1;
+            }
         }
         
         // Get the config-specific build directory

@@ -411,7 +411,7 @@ static bool create_cforge_toml(
     
     config << "[test]\n";
     config << "# Enable or disable testing\n";
-    config << "enabled = true\n";
+    config << "enabled = false\n";
     config << "# Test executable name (default: ${project_name}_tests)\n";
     config << "# test_executable = \"${project_name}_tests\"\n";
     config << "# Additional arguments to pass to the test executable\n";
@@ -856,6 +856,7 @@ static bool init_git_repository(const std::filesystem::path& project_path, bool 
  * @param cpp_version C++ standard version
  * @param initialize_git Whether to initialize a git repository
  * @param verbose Verbose output flag
+ * @param with_tests Whether to include test files
  * @return bool Success flag
  */
 static bool create_project(
@@ -863,7 +864,8 @@ static bool create_project(
     const std::string& project_name,
     const std::string& cpp_version,
     bool initialize_git,
-    bool verbose
+    bool verbose,
+    bool with_tests = false
 ) {
     // Create project directory if it doesn't exist
     try {
@@ -882,7 +884,12 @@ static bool create_project(
     success &= create_cforge_toml(project_path, project_name, cpp_version);
     success &= create_main_cpp(project_path, project_name);
     success &= create_include_files(project_path, project_name);
-    success &= create_test_files(project_path, project_name);
+    
+    // Only create test files if tests are enabled
+    if (with_tests) {
+        success &= create_test_files(project_path, project_name);
+    }
+    
     success &= create_license_file(project_path, project_name);
     
     // Initialize git repository if requested
@@ -961,7 +968,7 @@ static bool init_workspace(
         }
         
         // Create project files
-        if (!create_project(project_dir, project_name, cpp_version, with_git, verbose)) {
+        if (!create_project(project_dir, project_name, cpp_version, with_git, verbose, with_tests)) {
             logger::print_error("Failed to create project '" + project_name + "'");
             return false;
         }
@@ -1149,7 +1156,7 @@ cforge_int_t cforge_cmd_init(const cforge_context_t* ctx) {
         } else {
             logger::print_status("Creating project '" + name + "'...");
             
-            if (!create_project(ctx->working_dir, name, cpp_standard, with_git, verbose)) {
+            if (!create_project(ctx->working_dir, name, cpp_standard, with_git, verbose, with_tests)) {
                 logger::print_error("Failed to initialize project");
                 return 1;
             }
