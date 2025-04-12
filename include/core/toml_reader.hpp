@@ -1,5 +1,5 @@
 /**
- * @file toml_reader.h
+ * @file toml_reader.hpp
  * @brief TOML file parsing utilities using tomlplusplus
  */
 

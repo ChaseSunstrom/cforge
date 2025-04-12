@@ -5,10 +5,11 @@
 
 #include "cpp-project/example.hpp"
 
-namespace cpp_project {
-
-const char* get_example_message() {
-    return "This is an example message";
+/**
+ * @brief Implementation of the example function
+ * 
+ * @return const char* A message
+ */
+const char* cpp_project::get_example_message() {
+    return "Hello, world!";
 }
-
-} // namespace cpp_project
