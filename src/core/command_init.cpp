@@ -32,30 +32,6 @@ static std::vector<std::string> parse_project_list(const std::string& project_li
     std::string::size_type start = 0;
     std::string::size_type end = 0;
     
-    while ((end = project_list.find(',', start)) != std::string::npos) {
-        // Extract the substring and trim whitespace
-        std::string project = project_list.substr(start, end - start);
-        // Add to result if not empty
-        if (!project.empty()) {
-            result.push_back(project);
-        }
-        start = end + 1;
-    }
-    
-    // Add the last part
-    std::string last_project = project_list.substr(start);
-    if (!last_project.empty()) {
-        result.push_back(last_project);
-    }
-    
-    return result;
-}
-
-static std::vector<std::string> parse_project_list(const std::string& project_list) {
-    std::vector<std::string> result;
-    std::string::size_type start = 0;
-    std::string::size_type end = 0;
-    
     // First try comma-separated format
     if (project_list.find(',') != std::string::npos) {
         // Split by commas
