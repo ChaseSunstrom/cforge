@@ -27,7 +27,7 @@ using namespace cforge;
  * @param project_list String containing comma-separated project names
  * @return Vector of individual project names
  */
-static std::vector<std::string> split_project_list(const std::string& project_list) {
+static std::vector<std::string> parse_project_list(const std::string& project_list) {
     std::vector<std::string> result;
     std::string::size_type start = 0;
     std::string::size_type end = 0;
@@ -903,6 +903,7 @@ static bool init_git_repository(const std::filesystem::path& project_path, bool 
  * @param cpp_version C++ standard version
  * @param initialize_git Whether to initialize a git repository
  * @param verbose Verbose output flag
+ * @param with_tests Whether to include test files
  * @return bool Success flag
  */
 static bool create_project(
@@ -911,7 +912,7 @@ static bool create_project(
     const std::string& cpp_version,
     bool initialize_git,
     bool verbose,
-    bool with_tests
+    bool with_tests = false
 ) {
     // Create project directory if it doesn't exist
     try {
@@ -930,7 +931,12 @@ static bool create_project(
     success &= create_cforge_toml(project_path, project_name, cpp_version, with_tests);
     success &= create_main_cpp(project_path, project_name);
     success &= create_include_files(project_path, project_name);
-    success &= create_test_files(project_path, project_name);
+    
+    // Only create test files if tests are enabled
+    if (with_tests) {
+        success &= create_test_files(project_path, project_name);
+    }
+    
     success &= create_license_file(project_path, project_name);
     
     // Initialize git repository if requested
@@ -971,53 +977,65 @@ static bool init_workspace(
     bool with_git,
     bool verbose
 ) {
-    // Create the workspace directory
-    std::filesystem::path workspace_dir = workspace_path / workspace_name;
-    if (!std::filesystem::exists(workspace_dir)) {
-        if (!std::filesystem::create_directory(workspace_dir)) {
-            logger::print_error("Failed to create workspace directory");
-            return false;
+    // Create workspace directory if needed
+    bool create_new_dir = !workspace_name.empty() && workspace_name != workspace_path.filename().string();
+    std::filesystem::path workspace_dir = workspace_path;
+    
+    if (create_new_dir) {
+        workspace_dir = workspace_path / workspace_name;
+        if (!std::filesystem::exists(workspace_dir)) {
+            try {
+                std::filesystem::create_directories(workspace_dir);
+            } catch (const std::exception& ex) {
+                logger::print_error("Failed to create workspace directory: " + workspace_dir.string() + " Error: " + ex.what());
+                return false;
+            }
         }
     }
     
-    // Create workspace configuration file
+    // Create workspace configuration
     workspace_config config;
-    config.set_name(workspace_name);
+    config.set_name(workspace_name.empty() ? workspace_dir.filename().string() : workspace_name);
     config.set_description("A C++ workspace");
     
-    // Create projects
+    // Create specified projects
+    std::string ws_name = config.get_name();
+    logger::print_status("Creating " + std::to_string(project_names.size()) + " projects in workspace '" + ws_name + "'");
+    
     for (const auto& project_name : project_names) {
+        // Create project directory inside workspace
         std::filesystem::path project_dir = workspace_dir / project_name;
+        if (!std::filesystem::exists(project_dir)) {
+            try {
+                std::filesystem::create_directories(project_dir);
+            } catch (const std::exception& ex) {
+                logger::print_error("Failed to create project directory: " + project_dir.string() + " Error: " + ex.what());
+                return false;
+            }
+        }
         
-        // Create the project
-        if (!create_project(project_dir, project_name, cpp_version, false, verbose, with_tests)) {
+        // Create project files
+        if (!create_project(project_dir, project_name, cpp_version, with_git, verbose, with_tests)) {
             logger::print_error("Failed to create project '" + project_name + "'");
             return false;
         }
         
-        // Add the project to the workspace with a relative path
+        // Add project to workspace config (using relative path)
         workspace_project project;
         project.name = project_name;
-        project.path = project_name; // Use relative path (just the directory name)
-        project.is_startup_project = (project_name == project_names[0]); // First project is startup by default
+        project.path = std::filesystem::path(project_name); // Store as a relative path
+        project.is_startup_project = (project_name == project_names.front()); // First project is startup by default
         config.get_projects().push_back(project);
     }
     
     // Save workspace configuration
-    std::filesystem::path config_path = workspace_dir / "workspace.cforge.toml";
+    std::filesystem::path config_path = workspace_dir / WORKSPACE_FILE;
     if (!config.save(config_path.string())) {
         logger::print_error("Failed to save workspace configuration");
         return false;
     }
     
-    // Initialize git if requested
-    if (with_git) {
-        if (!init_git_repository(workspace_dir, verbose)) {
-            logger::print_warning("Failed to initialize git repository");
-            // Continue anyway
-        }
-    }
-    
+    logger::print_success("Workspace '" + config.get_name() + "' created successfully");
     return true;
 }
 

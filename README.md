@@ -19,7 +19,7 @@ cforge build
 
 ```bash
 # Run the executable
-./build/bin/cpp_forge
+./build/bin/cpp-project
 
 # Or using cforge
 cforge run

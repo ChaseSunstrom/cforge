@@ -267,21 +267,22 @@ static bool generate_cmakelists_from_toml(
     cmakelists << "    target_compile_options(${EXECUTABLE_NAME} PRIVATE -Wall -Wextra -Wpedantic)\n";
     cmakelists << "endif()\n\n";
     
-    // Tests - check if tests are enabled in the configuration
-    bool tests_enabled = project_config.get_bool("test.enabled", true);
-    cmakelists << "# Testing configuration\n";
-    cmakelists << "enable_testing()\n";
-    cmakelists << "option(BUILD_TESTING \"Build the testing tree.\" " << (tests_enabled ? "ON" : "OFF") << ")\n\n";
+    // Tests - check if tests are explicitly enabled in the configuration
+    bool tests_enabled = project_config.get_bool("test.enabled", false);
     
-    // Only add the test subdirectory if tests are enabled
+    // Only add test-related configuration if tests are explicitly enabled
     if (tests_enabled) {
+        cmakelists << "# Testing configuration\n";
+        cmakelists << "enable_testing()\n";
+        cmakelists << "option(BUILD_TESTING \"Build the testing tree.\" ON)\n\n";
+        
         cmakelists << "if(BUILD_TESTING)\n";
         cmakelists << "    # Add test directory\n";
         cmakelists << "    add_subdirectory(tests)\n";
         cmakelists << "endif()\n\n";
     } else {
-        cmakelists << "# Tests are disabled in cforge.toml configuration\n";
-        cmakelists << "# Set BUILD_TESTING to ON and create a tests directory to enable testing\n\n";
+        cmakelists << "# Testing is disabled by default\n";
+        cmakelists << "# To enable testing, set test.enabled=true in cforge.toml and create a tests directory\n\n";
     }
     
     // Installation
@@ -376,9 +377,22 @@ static bool run_cmake_configure(
 }
 
 /**
+ * @brief Convert a string to lowercase
+ * 
+ * @param str String to convert
+ * @return std::string Lowercase string
+ */
+static std::string to_lower_case(const std::string& str) {
+    std::string result = str;
+    std::transform(result.begin(), result.end(), result.begin(), 
+                  [](unsigned char c){ return std::tolower(c); });
+    return result;
+}
+
+/**
  * @brief Build the project with CMake
  * 
- * @param build_dir Build directory
+ * @param project_dir Project directory
  * @param build_config Build configuration
  * @param num_jobs Number of parallel jobs (0 for default)
  * @param verbose Verbose output
@@ -386,89 +400,193 @@ static bool run_cmake_configure(
  * @return bool Success flag
  */
 static bool build_project(
-    const std::filesystem::path& build_dir,
+    const std::filesystem::path& project_dir,
     const std::string& build_config,
     int num_jobs,
     bool verbose,
-    const std::string& target)
+    const std::string& target = "")
 {
-    // Create the build directory if it doesn't exist
+    logger::print_status("Building project...");
+    
+    // Determine build directory
+    std::string base_build_dir = "build";
+    
+    // First look for a cforge.toml file
+    std::filesystem::path config_path = project_dir / CFORGE_FILE;
+    toml_reader project_config;
+    
+    if (!std::filesystem::exists(config_path)) {
+        logger::print_warning("No " + std::string(CFORGE_FILE) + " file found, using default settings");
+    } else if (!project_config.load(config_path.string())) {
+        logger::print_warning("Failed to parse " + std::string(CFORGE_FILE) + ", using default settings");
+    } else {
+        // Get build directory from config
+        if (project_config.has_key("build.build_dir")) {
+            base_build_dir = project_config.get_string("build.build_dir");
+            logger::print_verbose("Using build directory from config: " + base_build_dir);
+        }
+    }
+    
+    // Get the config-specific build directory
+    std::filesystem::path build_dir = get_build_dir_for_config(base_build_dir, build_config);
+    logger::print_verbose("Using build directory: " + build_dir.string());
+    
+    // If build dir doesn't exist, create it
     if (!std::filesystem::exists(build_dir)) {
+        logger::print_status("Creating build directory: " + build_dir.string());
         std::filesystem::create_directories(build_dir);
     }
     
-    // Run CMake configure
-    std::vector<std::string> cmake_args;
-    cmake_args.push_back("-S");
-    cmake_args.push_back(".");  // Source directory is current directory
-    cmake_args.push_back("-B");
-    cmake_args.push_back(build_dir.string());
+    // Check if CMakeLists.txt exists, if not, generate one
+    std::filesystem::path cmakelists_path = project_dir / "CMakeLists.txt";
+    if (!std::filesystem::exists(cmakelists_path)) {
+        logger::print_status("Generating CMakeLists.txt...");
+        
+        // Get project details from cforge.toml
+        std::string cpp_version = project_config.get_string("project.cpp_standard", "17");
+        std::string project_name = project_config.get_string("project.name", "cpp-project");
+        
+        // Generate CMakeLists.txt
+        logger::print_status("Generating CMakeLists.txt from cforge.toml configuration");
+        
+        if (!generate_cmakelists_from_toml(project_dir, project_config, verbose)) {
+            logger::print_error("Failed to generate CMakeLists.txt");
+            return false;
+        }
+        
+        logger::print_success("Generated CMakeLists.txt file");
+    }
+    
+    // Run CMake to configure the project
+    logger::print_status("Running CMake Configure...");
+    
+    std::string generator = get_cmake_generator();
+    logger::print_verbose("Using CMake generator: " + generator);
+    
+    // Convert to relative paths for command
+    std::filesystem::path relative_build_dir = build_dir.is_absolute() 
+        ? std::filesystem::relative(build_dir, project_dir) 
+        : build_dir;
+    
+    std::string cmake_command = "cmake -S . -B " + relative_build_dir.string();
     
     // Add generator
-    std::string generator = get_cmake_generator();
-    cmake_args.push_back("-G");
-    cmake_args.push_back(generator);
+    cmake_command += " -G \"" + generator + "\"";
     
-    // Add build type
-#ifndef _WIN32
-    // On non-Windows platforms, specify build type during configuration
-    cmake_args.push_back("-DCMAKE_BUILD_TYPE=" + build_config);
-#else
-    // On Windows, we need to specify the build type for multi-config generators
-    if (generator.find("Visual Studio") != std::string::npos || 
-        generator.find("Ninja Multi-Config") != std::string::npos) {
-        // For multi-config generators, we set the initial config but it can be changed later
-        cmake_args.push_back("-DCMAKE_CONFIGURATION_TYPES=" + build_config);
-        cmake_args.push_back("-DCMAKE_DEFAULT_BUILD_TYPE=" + build_config);
-    } else {
-        // For single-config generators like plain Ninja, set the build type
-        cmake_args.push_back("-DCMAKE_BUILD_TYPE=" + build_config);
+    // Add C++ standard if specified
+    std::string cpp_version = project_config.get_string("project.cpp_standard", "");
+    if (!cpp_version.empty()) {
+        cmake_command += " -DCMAKE_CXX_STANDARD=" + cpp_version;
     }
-#endif
     
-    if (!run_cmake_configure(cmake_args, build_dir.string(), verbose)) {
-        logger::print_error("CMake configuration failed");
+    // Add build type for non-multi-config generators
+    if (generator.find("Multi-Config") == std::string::npos) {
+        cmake_command += " -DCMAKE_BUILD_TYPE=" + build_config;
+    }
+    
+    // Add extra arguments from cforge.toml if available
+    std::string args_key = "build.config." + to_lower_case(build_config) + ".cmake_args";
+    if (project_config.has_key(args_key)) {
+        std::vector<std::string> extra_args = project_config.get_string_array(args_key);
+        for (const auto& arg : extra_args) {
+            cmake_command += " " + arg;
+        }
+    }
+    
+    // Run cmake command
+    logger::print_verbose("Running command: " + cmake_command);
+    
+    std::string current_dir = std::filesystem::current_path().string();
+    logger::print_verbose("Current directory: " + current_dir);
+    
+    process_result cmake_result = execute_process(
+        cmake_command,
+        {},
+        project_dir.string()
+    );
+    
+    if (!cmake_result.success) {
+        logger::print_error("CMake configure failed with exit code: " + std::to_string(cmake_result.exit_code));
+        if (!cmake_result.stderr_output.empty()) {
+            logger::print_error("CMake error output:\n" + cmake_result.stderr_output);
+        }
+        if (!cmake_result.stdout_output.empty()) {
+            logger::print_error("CMake standard output:\n" + cmake_result.stdout_output);
+        }
         return false;
     }
     
-    // Run CMake build
+    logger::print_success("CMake Configure completed successfully");
+    
+    // Show the contents of the build directory for debugging
+    logger::print_verbose("Contents of build directory after CMake:");
+    try {
+        for (const auto& entry : std::filesystem::directory_iterator(build_dir)) {
+            logger::print_verbose("- " + entry.path().string());
+        }
+    } catch (const std::exception& ex) {
+        logger::print_error("Error listing build directory: " + std::string(ex.what()));
+    }
+    
+    // Verify that we have a CMakeCache.txt to confirm the configuration worked
+    std::filesystem::path cmake_cache = build_dir / "CMakeCache.txt";
+    if (!std::filesystem::exists(cmake_cache)) {
+        logger::print_error("CMake appeared to run, but CMakeCache.txt was not created. This may indicate a configuration error.");
+        logger::print_warning("You might need to clean the build directory and try again.");
+        
+        // Show the contents of the build directory for debugging
+        logger::print_verbose("Contents of build directory:");
+        
+        for (const auto& entry : std::filesystem::directory_iterator(build_dir)) {
+            logger::print_verbose("- " + entry.path().string());
+        }
+        
+        return false;
+    }
+    
+    // Run the build command
     logger::print_status("Building project in " + build_config + " mode");
     
-    std::vector<std::string> args;
-    args.push_back("--build");
-    args.push_back(build_dir.string());  // Use the full build directory path
+    std::string build_command = "cmake --build " + relative_build_dir.string();
     
     // Add configuration for multi-config generators
     if (generator.find("Visual Studio") != std::string::npos || 
         generator.find("Ninja Multi-Config") != std::string::npos) {
-        args.push_back("--config");
-        args.push_back(build_config);
+        build_command += " --config " + build_config;
     }
     
     // Add target if specified
     if (!target.empty()) {
-        args.push_back("--target");
-        args.push_back(target);
+        build_command += " --target " + target;
     }
     
     // Add parallel jobs
     if (num_jobs > 0) {
-        args.push_back("--parallel");
-        args.push_back(std::to_string(num_jobs));
+        build_command += " --parallel " + std::to_string(num_jobs);
     }
     
     // Add verbose flag if needed
     if (verbose) {
-        args.push_back("--verbose");
+        build_command += " --verbose";
     }
     
-    bool build_success = execute_tool("cmake", args, ".", "Build", verbose);  // Run from current directory
+    logger::print_verbose("Running build command: " + build_command);
     
-    if (!build_success) {
-        logger::print_error("Build failed");
+    process_result build_result = execute_process(
+        build_command,
+        {},
+        project_dir.string()
+    );
+    
+    if (!build_result.success) {
+        logger::print_error("Build failed with exit code: " + std::to_string(build_result.exit_code));
+        if (!build_result.stderr_output.empty()) {
+            logger::print_error("Build error output:\n" + build_result.stderr_output);
+        }
         return false;
     }
     
+    logger::print_success("Build completed successfully");
     return true;
 }
 
@@ -515,7 +633,7 @@ static bool build_workspace_project(
     
     // Build the project
     logger::print_status("Building project '" + project.name + "'...");
-    bool success = build_project(build_dir, build_config, num_jobs, verbose, target);
+    bool success = build_project(workspace_dir, build_config, num_jobs, verbose, target);
     
     if (!success) {
         logger::print_error("Failed to build project '" + project.name + "'");
@@ -548,6 +666,8 @@ cforge_int_t cforge_cmd_build(const cforge_context_t* ctx) {
             logger::print_error("Failed to load workspace configuration");
             return 1;
         }
+        
+        logger::print_status("Building workspace '" + workspace.get_name() + "'");
         
         // Get build configuration
         std::string build_config = get_build_config(ctx, nullptr);  // We'll use the same config for all projects
@@ -582,32 +702,66 @@ cforge_int_t cforge_cmd_build(const cforge_context_t* ctx) {
             }
         }
         
-        // Get build order
-        std::vector<std::string> build_order = workspace.get_build_order();
+        // Check if a specific project was requested
+        std::string project_to_build;
+        if (ctx->args.args) {
+            for (int i = 0; ctx->args.args[i]; ++i) {
+                if (strcmp(ctx->args.args[i], "--project") == 0 && ctx->args.args[i+1]) {
+                    project_to_build = ctx->args.args[i+1];
+                    break;
+                }
+            }
+        }
         
-        // Build each project in order
-        for (const std::string& project_name : build_order) {
-            // Find project in workspace
+        if (!project_to_build.empty()) {
+            // Build only the specified project
             const workspace_project* project = nullptr;
             for (const auto& p : workspace.get_projects()) {
-                if (p.name == project_name) {
+                if (p.name == project_to_build) {
                     project = &p;
                     break;
                 }
             }
             
             if (!project) {
-                logger::print_error("Project '" + project_name + "' not found in workspace");
+                logger::print_error("Project '" + project_to_build + "' not found in workspace");
                 return 1;
             }
             
-            // Build the project
+            logger::print_status("Building project '" + project->name + "'...");
             if (!build_workspace_project(project_dir, *project, build_config, num_jobs, verbose, target)) {
                 return 1;
             }
+            
+            logger::print_success("Project '" + project->name + "' built successfully");
+        } else {
+            // Get build order
+            std::vector<std::string> build_order = workspace.get_build_order();
+            
+            // Build each project in order
+            for (const std::string& project_name : build_order) {
+                // Find project in workspace
+                const workspace_project* project = nullptr;
+                for (const auto& p : workspace.get_projects()) {
+                    if (p.name == project_name) {
+                        project = &p;
+                        break;
+                    }
+                }
+                
+                if (!project) {
+                    logger::print_error("Project '" + project_name + "' not found in workspace");
+                    return 1;
+                }
+                
+                // Build the project
+                if (!build_workspace_project(project_dir, *project, build_config, num_jobs, verbose, target)) {
+                    return 1;
+                }
+            }
+            
+            logger::print_success("Workspace built successfully");
         }
-        
-        logger::print_success("Workspace built successfully");
     } else {
         // Check if cforge.toml exists
         std::filesystem::path config_path = project_dir / CFORGE_FILE;
@@ -650,23 +804,8 @@ cforge_int_t cforge_cmd_build(const cforge_context_t* ctx) {
         // Get the config-specific build directory
         std::filesystem::path build_dir = get_build_dir_for_config(base_build_dir, build_config);
         
-        // Determine if we need to clean
-        bool clean = false;
-        
-        // Check for --clean flag in arguments
-        if (ctx->args.args) {
-            for (int i = 0; ctx->args.args[i]; ++i) {
-                if (strcmp(ctx->args.args[i], "--clean") == 0) {
-                    clean = true;
-                    break;
-                }
-            }
-        }
-        
         // Determine number of jobs
         int num_jobs = 0;
-        
-        // Check for -j/--jobs flag in arguments
         if (ctx->args.args) {
             for (int i = 0; ctx->args.args[i]; ++i) {
                 if (strcmp(ctx->args.args[i], "-j") == 0 || 
@@ -692,13 +831,42 @@ cforge_int_t cforge_cmd_build(const cforge_context_t* ctx) {
             }
         }
         
-        // Configure project
-        if (!build_project(build_dir, build_config, num_jobs, verbose, target)) {
-            logger::print_error("Project configuration failed");
+        // Generate CMakeLists.txt if it doesn't exist
+        std::filesystem::path cmakelists_path = project_dir / "CMakeLists.txt";
+        if (!std::filesystem::exists(cmakelists_path)) {
+            logger::print_status("Generating CMakeLists.txt...");
+            if (!generate_cmakelists_from_toml(project_dir, project_config, verbose)) {
+                logger::print_error("Failed to generate CMakeLists.txt");
+                return 1;
+            }
+        }
+        
+        // Run CMake configure
+        std::vector<std::string> cmake_args;
+        cmake_args.push_back("-G");
+        cmake_args.push_back(get_cmake_generator());
+        
+        // Add C++ standard if specified
+        if (project_config.has_key("project.cpp_standard")) {
+            std::string cpp_standard = project_config.get_string("project.cpp_standard");
+            cmake_args.push_back("-DCMAKE_CXX_STANDARD=" + cpp_standard);
+            cmake_args.push_back("-DCMAKE_CXX_STANDARD_REQUIRED=ON");
+            cmake_args.push_back("-DCMAKE_CXX_EXTENSIONS=OFF");
+        }
+        
+        // Run CMake configure
+        if (!run_cmake_configure(cmake_args, build_dir.string(), verbose)) {
+            logger::print_error("CMake configure failed");
             return 1;
         }
         
-        logger::print_success("Project built successfully");
+        // Build the project
+        if (!build_project(build_dir, build_config, num_jobs, verbose, target)) {
+            logger::print_error("Build failed");
+            return 1;
+        }
+        
+        logger::print_success("Build completed successfully");
     }
     
     return 0;
