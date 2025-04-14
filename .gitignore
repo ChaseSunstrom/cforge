@@ -1,6 +1,8 @@
 # Build directory
 build/
 out/
+build-debug/
+build-release/
 
 # CMake build files
 CMakeFiles/

@@ -116,6 +116,22 @@ public:
      * @param description Description of the workspace
      */
     void set_description(const std::string& description) { description_ = description; }
+
+    /**
+     * @brief Get the description of the workspace
+     * 
+     * @return Description of the workspace
+     */
+    std::string get_description() const { return description_; }
+
+    /**
+     * @brief Get the name of the workspace
+     * 
+     * @return Name of the workspace
+     */
+    std::string get_name() const { return name_; }
+
+
     
 private:
     std::string name_;
