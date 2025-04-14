@@ -1006,13 +1006,8 @@ cforge_int_t cforge_cmd_init(const cforge_context_t* ctx) {
         std::filesystem::path workspace_file_path = std::filesystem::path(ctx->working_dir) / WORKSPACE_FILE;
         bool workspace_file_exists = std::filesystem::exists(workspace_file_path);
         
-        // Get project/workspace name from arguments or use default
-        std::string name = "cpp-project";
-        if (ctx->args.args && ctx->args.args[0] && ctx->args.args[0][0] != '-') {
-            name = ctx->args.args[0];
-        }
-
-        // Process command line flags
+        // Default project and workspace names
+        std::string project_name = "cpp-project";
         bool is_workspace = false;
         bool from_file = false;
         std::string workspace_name;
@@ -1028,23 +1023,43 @@ cforge_int_t cforge_cmd_init(const cforge_context_t* ctx) {
         if (ctx->args.args) {
             logger::print_status("Processing command line arguments...");
             
+            // Get positional argument for project name (if provided)
+            if (ctx->args.args[0] && ctx->args.args[0][0] != '-') {
+                project_name = ctx->args.args[0];
+                logger::print_status("Using positional project name: " + project_name);
+            }
+            
             try {
-                // Log all raw arguments
+                // Log all raw arguments for debugging
                 int arg_count = 0;
                 for (int i = 0; ctx->args.args[i] && i < 100; ++i) { // Cap at 100 for safety
-                    logger::print_status("Raw argument [" + std::to_string(i) + "]: '" + ctx->args.args[i] + "'");
+                    logger::print_verbose("Raw argument [" + std::to_string(i) + "]: '" + ctx->args.args[i] + "'");
                     arg_count++;
                 }
-                logger::print_status("Total arguments: " + std::to_string(arg_count));
+                logger::print_verbose("Total arguments: " + std::to_string(arg_count));
                 
                 for (int i = 0; ctx->args.args[i] && i < 100; ++i) { // Cap at 100 for safety
                     std::string arg = ctx->args.args[i];
-                    logger::print_status("Processing argument " + std::to_string(i) + ": '" + arg + "'");
+                    logger::print_verbose("Processing argument " + std::to_string(i) + ": '" + arg + "'");
                     
                     // Check for --from-file flag
                     if (arg == "--from-file" || arg == "-f") {
                         from_file = true;
                         logger::print_status("Will use existing workspace.cforge.toml file");
+                    }
+                    // Parse --name parameter
+                    else if (arg == "--name" || arg == "-n") {
+                        // Check if next argument exists and is a valid name (not a flag)
+                        if (ctx->args.args[i+1] && ctx->args.args[i+1][0] != '-') {
+                            project_name = ctx->args.args[i+1];
+                            logger::print_status("Found project name: '" + project_name + "'");
+                            i++; // Skip the project name in the next iteration
+                        }
+                    }
+                    // Check for --name=NAME format
+                    else if (arg.compare(0, 7, "--name=") == 0) {
+                        project_name = arg.substr(7);
+                        logger::print_status("Found project name from --name= format: '" + project_name + "'");
                     }
                     // Parse --workspace[=name] or --workspace name 
                     else if (arg == "--workspace" || arg == "-w") {
@@ -1068,14 +1083,24 @@ cforge_int_t cforge_cmd_init(const cforge_context_t* ctx) {
                     }
                     // Handle --projects flag
                     else if (arg == "--projects" || arg == "-p") {
-                        // Collect all project names until we hit another flag or end of arguments
                         i++; // Move to the next argument
+                        
+                        // Collect all project names until we hit another flag or end of arguments
                         while (ctx->args.args[i] && ctx->args.args[i][0] != '-') {
-                            project_names.push_back(ctx->args.args[i]);
-                            logger::print_status(std::string("Added project: '") + ctx->args.args[i] + "'");
+                            std::string proj = ctx->args.args[i];
+                            project_names.push_back(proj);
+                            logger::print_status("Added project: '" + proj + "'");
                             i++;
                         }
                         i--; // Adjust for the loop increment
+                    }
+                    // Handle --projects=LIST format
+                    else if (arg.compare(0, 11, "--projects=") == 0) {
+                        std::string projects_list = arg.substr(11);
+                        project_names = parse_project_list(projects_list);
+                        for (const auto& proj : project_names) {
+                            logger::print_status("Added project from list: '" + proj + "'");
+                        }
                     }
                     // Handle other flags
                     else if (arg == "--cpp" || arg == "-c") {
@@ -1098,12 +1123,19 @@ cforge_int_t cforge_cmd_init(const cforge_context_t* ctx) {
                     }
                 }
                 
-                logger::print_status("Finished argument processing loop");
+                logger::print_verbose("Finished argument processing loop");
             } catch (const std::exception& ex) {
                 logger::print_error("Error processing arguments: " + std::string(ex.what()));
             }
             
             logger::print_status("Finished processing command line arguments");
+        }
+        
+        // If no projects specified for a workspace, use the project name as the only project
+        if (is_workspace && project_names.empty()) {
+            // If using a positional arg for the project, add it to the projects list
+            project_names.push_back(project_name);
+            logger::print_status("No projects specified for workspace, using default project: '" + project_name + "'");
         }
         
         // Summarize parsed flags
@@ -1171,14 +1203,14 @@ cforge_int_t cforge_cmd_init(const cforge_context_t* ctx) {
             // Get project names if none were specified
             if (project_names.empty()) {
                 // Use a default project name
-                project_names.push_back("project1");
+                project_names.push_back("main-project");
             }
             
-            // Create a workspace with the specified projects
+            // Create the workspace with specified projects
             logger::print_status("Creating workspace '" + workspace_name + "' with " + std::to_string(project_names.size()) + " project(s)...");
             
             if (!init_workspace(workspace_name, std::filesystem::path(ctx->working_dir), project_names, cpp_standard, with_tests, with_git, logger::get_verbosity() >= log_verbosity::VERBOSITY_VERBOSE)) {
-                logger::print_error("Failed to initialize workspace");
+                logger::print_error("Failed to create workspace '" + workspace_name + "'");
                 return 1;
             }
             
@@ -1187,23 +1219,22 @@ cforge_int_t cforge_cmd_init(const cforge_context_t* ctx) {
             logger::print_status("Proceeding with project creation...");
             
             // Create a single project
-            logger::print_status("Creating project '" + name + "'...");
+            logger::print_status("Creating project '" + project_name + "'...");
             
-            if (!create_project(ctx->working_dir, name, cpp_standard, with_git, logger::get_verbosity() >= log_verbosity::VERBOSITY_VERBOSE, with_tests)) {
-                logger::print_error("Failed to initialize project");
+            // Create the project in the current directory
+            std::filesystem::path project_dir = std::filesystem::path(ctx->working_dir);
+            if (!create_project(project_dir, project_name, cpp_standard, with_git, logger::get_verbosity() >= log_verbosity::VERBOSITY_VERBOSE, with_tests)) {
+                logger::print_error("Failed to create project '" + project_name + "'");
                 return 1;
             }
             
-            logger::print_success("Project '" + name + "' created successfully");
+            logger::print_success("Project '" + project_name + "' created successfully");
         }
         
         logger::print_success("Command completed successfully");
         return 0;
     } catch (const std::exception& ex) {
-        logger::print_error("Exception during command execution: " + std::string(ex.what()));
-        return 1;
-    } catch (...) {
-        logger::print_error("Unknown exception during command execution");
+        logger::print_error("Failed to initialize project: " + std::string(ex.what()));
         return 1;
     }
 } 
