@@ -145,6 +145,7 @@ public:
      * 
      * @param description Description of the workspace
      */
+
     void set_description(const std::string& description);
     
     /**
@@ -160,7 +161,7 @@ public:
      * @return Description of the workspace
      */
     const std::string& get_description() const;
-    
+
 private:
     std::string name_;
     std::string description_;
