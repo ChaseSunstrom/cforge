@@ -24,6 +24,23 @@ workspace::~workspace() {
 workspace_config::workspace_config() : name_("cpp-workspace"), description_("A C++ workspace") {
 }
 
+// Accessors for workspace_config
+void workspace_config::set_name(const std::string& name) {
+    name_ = name;
+}
+
+void workspace_config::set_description(const std::string& description) {
+    description_ = description;
+}
+
+const std::string& workspace_config::get_name() const {
+    return name_;
+}
+
+const std::string& workspace_config::get_description() const {
+    return description_;
+}
+
 bool workspace::load(const std::filesystem::path& workspace_path) {
     workspace_path_ = workspace_path;
     
@@ -245,60 +262,56 @@ bool workspace::create_workspace(const std::filesystem::path& workspace_path,
 void workspace::load_projects() {
     projects_.clear();
     
-    // Get the list of projects
-    std::vector<std::string> project_paths = config_->get_string_array("workspace.projects");
+    // Get the list of projects from the TOML config
+    std::vector<std::string> project_strings = config_->get_string_array("workspace.projects");
     
-    for (const auto& path : project_paths) {
-        // Convert to absolute path
-        std::filesystem::path project_path = workspace_path_ / path;
+    // Parse each project string and add to the projects list
+    workspace_config workspace_cfg;
+    std::filesystem::path config_path = workspace_path_ / WORKSPACE_FILE;
+    if (!workspace_cfg.load(config_path.string())) {
+        logger::print_error("Failed to load workspace configuration file");
+        return;
+    }
+    
+    // Use the parsed projects from workspace_config
+    projects_ = workspace_cfg.get_projects();
+    
+    // Process each project path - make sure relative paths are resolved correctly
+    for (auto& project : projects_) {
+        // If the path is relative, make it relative to the workspace path
+        if (!project.path.is_absolute()) {
+            project.path = workspace_path_ / project.path;
+        }
         
-        // Check if the project directory exists
-        if (!std::filesystem::exists(project_path)) {
-            logger::print_warning("Project directory does not exist: " + project_path.string());
+        // Check if project directory exists
+        if (!std::filesystem::exists(project.path)) {
+            logger::print_warning("Project directory does not exist: " + project.path.string());
             continue;
         }
         
         // Check if it's a valid cforge project
-        if (!std::filesystem::exists(project_path / CFORGE_FILE)) {
-            logger::print_warning("Not a valid cforge project (missing " + std::string(CFORGE_FILE) + "): " + project_path.string());
+        if (!std::filesystem::exists(project.path / CFORGE_FILE)) {
+            logger::print_warning("Not a valid cforge project (missing " + std::string(CFORGE_FILE) + "): " + project.path.string());
             continue;
         }
         
-        // Try to read the project name from cforge.toml
+        // Update startup flag if this is the startup project
+        project.is_startup = (project.name == startup_project_);
+        
+        // Try to read the project name from cforge.toml to validate
         toml_reader project_config;
-        std::string project_name;
+        std::filesystem::path project_config_path = project.path / CFORGE_FILE;
+        std::string config_project_name;
         
-        if (project_config.load((project_path / CFORGE_FILE).string())) {
-            project_name = project_config.get_string("project.name", "");
-        }
-        
-        // If no name found, use the directory name
-        if (project_name.empty()) {
-            project_name = project_path.filename().string();
-        }
-        
-        // Create the project
-        workspace_project project;
-        project.name = project_name;
-        project.path = project_path;
-        project.is_startup = (path == startup_project_);
-        
-        // Add to the list
-        projects_.push_back(project);
-    }
-    
-    // If a startup project was specified but not found, clear it
-    if (!startup_project_.empty()) {
-        bool found = false;
-        for (const auto& project : projects_) {
-            if (project.is_startup) {
-                found = true;
-                break;
+        if (project_config.load(project_config_path.string())) {
+            config_project_name = project_config.get_string("project.name", "");
+            
+            // Validate the project name matches the config
+            if (!config_project_name.empty() && config_project_name != project.name) {
+                logger::print_warning("Project name mismatch: '" + project.name + 
+                                     "' in workspace vs '" + config_project_name + 
+                                     "' in project config");
             }
-        }
-        
-        if (!found) {
-            startup_project_.clear();
         }
     }
 }
@@ -319,27 +332,44 @@ bool workspace_config::load(const std::string& workspace_file) {
     if (!project_paths.empty()) {
         for (const auto& project_path : project_paths) {
             workspace_project project;
-            // Parse project data from the path string - assuming format like "name:path:startup"
-            size_t first_colon = project_path.find(':');
-            if (first_colon != std::string::npos) {
-                project.name = project_path.substr(0, first_colon);
-                
-                size_t second_colon = project_path.find(':', first_colon + 1);
-                if (second_colon != std::string::npos) {
-                    project.path = project_path.substr(first_colon + 1, second_colon - first_colon - 1);
-                    project.is_startup_project = (project_path.substr(second_colon + 1) == "true");
-                } else {
-                    project.path = project_path.substr(first_colon + 1);
-                    project.is_startup_project = false;
+            
+            // Parse project data from the path string - format: "name:path:is_startup_project"
+            std::vector<std::string> parts;
+            std::string::size_type start = 0;
+            std::string::size_type end = 0;
+            
+            // Split by colons, but handle Windows drive letters (e.g., C:\)
+            while (start < project_path.length()) {
+                end = project_path.find(':', start);
+                if (end == std::string::npos) {
+                    // Last part
+                    parts.push_back(project_path.substr(start));
+                    break;
                 }
-            } else {
-                // Simple case where the path is just the project name
-                project.name = project_path;
-                project.path = project_path;
-                project.is_startup_project = false;
+                
+                // Check if this colon is part of a Windows drive letter
+                if (end + 2 < project_path.length() && project_path[end + 1] == '\\') {
+                    // This is a Windows drive letter, find the next colon
+                    start = end + 1;
+                    continue;
+                }
+                
+                parts.push_back(project_path.substr(start, end - start));
+                start = end + 1;
             }
             
-            // Assume no dependencies for now
+            if (parts.size() >= 1) {
+                project.name = parts[0];
+            }
+            
+            if (parts.size() >= 2) {
+                project.path = std::filesystem::path(parts[1]);
+            }
+            
+            if (parts.size() >= 3) {
+                project.is_startup_project = (parts[2] == "true");
+            }
+            
             projects_.push_back(project);
         }
     }
@@ -354,22 +384,40 @@ bool workspace_config::save(const std::string& workspace_file) const {
         return false;
     }
     
+    // Get the workspace directory
+    std::filesystem::path workspace_dir = std::filesystem::path(workspace_file).parent_path();
+    
     // Write workspace info
     file << "[workspace]\n";
     file << "name = \"" << name_ << "\"\n";
     file << "description = \"" << description_ << "\"\n\n";
     
-    // Write projects as a string array with better formatting
+    // Write projects as a string array
     file << "# Projects in format: name:path:is_startup_project\n";
     file << "projects = [\n";
     
     for (size_t i = 0; i < projects_.size(); ++i) {
         const auto& project = projects_[i];
         
-        // Format each project on its own line with consistent indentation
-        // Use just the project name as path to keep it relative
+        // Create a relative path if possible
+        std::filesystem::path path_to_save;
+        if (project.path.is_absolute()) {
+            try {
+                // Try to make the path relative to workspace directory
+                path_to_save = std::filesystem::relative(project.path, workspace_dir);
+                logger::print_verbose("Converted absolute path to relative: " + path_to_save.string());
+            } catch (...) {
+                // If we can't create a relative path, use the absolute one
+                path_to_save = project.path;
+                logger::print_verbose("Using absolute path: " + path_to_save.string());
+            }
+        } else {
+            // Already a relative path
+            path_to_save = project.path;
+        }
+        
         file << "  \"" << project.name << ":" 
-             << project.name << ":" 
+             << path_to_save.string() << ":" 
              << (project.is_startup_project ? "true" : "false") << "\"";
         
         if (i < projects_.size() - 1) {

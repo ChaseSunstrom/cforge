@@ -14,6 +14,36 @@
 namespace cforge {
 
 /**
+ * @brief Utility function to split a comma-separated list of project names
+ * 
+ * @param project_list String containing comma-separated project names
+ * @return Vector of individual project names
+ */
+inline std::vector<std::string> split_project_list(const std::string& project_list) {
+    std::vector<std::string> result;
+    std::string::size_type start = 0;
+    std::string::size_type end = 0;
+    
+    while ((end = project_list.find(',', start)) != std::string::npos) {
+        // Extract the substring and trim whitespace
+        std::string project = project_list.substr(start, end - start);
+        // Add to result if not empty
+        if (!project.empty()) {
+            result.push_back(project);
+        }
+        start = end + 1;
+    }
+    
+    // Add the last part
+    std::string last_project = project_list.substr(start);
+    if (!last_project.empty()) {
+        result.push_back(last_project);
+    }
+    
+    return result;
+}
+
+/**
  * @brief Represents a project within a workspace
  */
 struct workspace_project {
@@ -108,14 +138,28 @@ public:
      * 
      * @param name Name of the workspace
      */
-    void set_name(const std::string& name) { name_ = name; }
+    void set_name(const std::string& name);
     
     /**
      * @brief Set the description of the workspace
      * 
      * @param description Description of the workspace
      */
-    void set_description(const std::string& description) { description_ = description; }
+    void set_description(const std::string& description);
+    
+    /**
+     * @brief Get the name of the workspace
+     * 
+     * @return Name of the workspace
+     */
+    const std::string& get_name() const;
+    
+    /**
+     * @brief Get the description of the workspace
+     * 
+     * @return Description of the workspace
+     */
+    const std::string& get_description() const;
     
 private:
     std::string name_;
