@@ -27,6 +27,12 @@ using namespace cforge;
  * @param project_list String containing comma-separated project names
  * @return Vector of individual project names
  */
+/**
+ * @brief Split a comma-separated list of project names
+ * 
+ * @param project_list String containing comma-separated project names
+ * @return Vector of individual project names
+ */
 static std::vector<std::string> parse_project_list(const std::string& project_list) {
     std::vector<std::string> result;
     std::string::size_type start = 0;
@@ -59,13 +65,13 @@ static std::vector<std::string> parse_project_list(const std::string& project_li
             result.push_back(last_project);
         }
     } else {
-        // Split by spaces
-        std::istringstream iss(project_list);
-        std::string token;
-        while (iss >> token) {
-            if (!token.empty()) {
-                result.push_back(token);
-            }
+        // It's a single project - trim and add it
+        std::string project = project_list;
+        project.erase(0, project.find_first_not_of(" \t"));
+        project.erase(project.find_last_not_of(" \t") + 1);
+        
+        if (!project.empty()) {
+            result.push_back(project);
         }
     }
     
@@ -1142,13 +1148,6 @@ cforge_int_t cforge_cmd_init(const cforge_context_t* ctx) {
     try {
         logger::print_status("Starting init command execution");
         
-        // Debug command line arguments
-        logger::print_status("Command line arguments:");
-        if (ctx->args.args) {
-            for (int i = 0; ctx->args.args[i]; ++i) {
-                logger::print_status(std::string("  Arg ") + std::to_string(i) + ": " + ctx->args.args[i]);
-            }
-        }
 
         // Debug the WORKSPACE_FILE constant
         logger::print_status("WORKSPACE_FILE defined as: " + std::string(WORKSPACE_FILE));
@@ -1177,7 +1176,7 @@ cforge_int_t cforge_cmd_init(const cforge_context_t* ctx) {
             }
             
             // Parse flag arguments
-            for (int i = 0; ctx->args.args[i]; ++i) {
+            for (int i = 0; i < ctx->args.arg_count; ++i) {
                 std::string arg = ctx->args.args[i];
                 
                 // Handle --from-file flag
@@ -1187,7 +1186,7 @@ cforge_int_t cforge_cmd_init(const cforge_context_t* ctx) {
                 }
                 // Handle --name or -n parameter
                 else if (arg == "--name" || arg == "-n") {
-                    if (ctx->args.args[i+1] && ctx->args.args[i+1][0] != '-') {
+                    if (i+1 < ctx->args.arg_count && ctx->args.args[i+1][0] != '-') {
                         project_name = ctx->args.args[i+1];
                         logger::print_status("Using project name from --name flag: " + project_name);
                         i++; // Skip the value in next iteration
@@ -1203,7 +1202,7 @@ cforge_int_t cforge_cmd_init(const cforge_context_t* ctx) {
                     is_workspace = true;
                     
                     // Check if next argument exists and is a value (not a flag)
-                    if (ctx->args.args[i+1] && ctx->args.args[i+1][0] != '-') {
+                    if (i+1 < ctx->args.arg_count && ctx->args.args[i+1][0] != '-') {
                         workspace_name = ctx->args.args[i+1];
                         logger::print_status("Using workspace name from command line: " + workspace_name);
                         i++; // Skip the value in next iteration
@@ -1222,7 +1221,7 @@ cforge_int_t cforge_cmd_init(const cforge_context_t* ctx) {
                 // Handle --projects or -p parameter
                 else if (arg == "--projects" || arg == "-p") {
                     // If the next argument is a flag or end of args, use empty project list
-                    if (!ctx->args.args[i+1] || ctx->args.args[i+1][0] == '-') {
+                    if (i+1 >= ctx->args.arg_count || ctx->args.args[i+1][0] == '-') {
                         logger::print_warning("--projects flag provided but no projects specified");
                         continue;
                     }
@@ -1236,7 +1235,7 @@ cforge_int_t cforge_cmd_init(const cforge_context_t* ctx) {
                     } else {
                         // Collect all arguments until next flag
                         int j = i + 1;
-                        while (ctx->args.args[j] && ctx->args.args[j][0] != '-') {
+                        while (j < ctx->args.arg_count && ctx->args.args[j][0] != '-') {
                             project_names.push_back(ctx->args.args[j]);
                             j++;
                         }
@@ -1259,7 +1258,7 @@ cforge_int_t cforge_cmd_init(const cforge_context_t* ctx) {
                 }
                 // Handle --cpp or -c parameter for C++ standard
                 else if (arg == "--cpp" || arg == "-c") {
-                    if (ctx->args.args[i+1]) {
+                    if (i+1 < ctx->args.arg_count) {
                         cpp_standard = ctx->args.args[i+1];
                         i++; // Skip the value in next iteration
                     }
@@ -1278,7 +1277,7 @@ cforge_int_t cforge_cmd_init(const cforge_context_t* ctx) {
                 }
                 // Handle --template parameter
                 else if (arg == "--template") {
-                    if (ctx->args.args[i+1]) {
+                    if (i+1 < ctx->args.arg_count) {
                         template_name = ctx->args.args[i+1];
                         i++; // Skip the value in next iteration
                     }
@@ -1302,6 +1301,10 @@ cforge_int_t cforge_cmd_init(const cforge_context_t* ctx) {
         if (is_workspace) {
             logger::print_status("- Workspace name: " + workspace_name);
             logger::print_status("- Project count: " + std::to_string(project_names.size()));
+            logger::print_status("- Projects: ");
+            for (const auto& proj : project_names) {
+                logger::print_status("  * " + proj);
+            }
         } else {
             logger::print_status("- Project name: " + project_name);
         }
@@ -1482,6 +1485,8 @@ cforge_int_t cforge_cmd_init(const cforge_context_t* ctx) {
             } else {
                 logger::print_warning("Workspace '" + workspace_name + "' created with some errors");
             }
+            
+            return all_projects_success ? 0 : 1;
         }
         // Handle single project creation
         else {

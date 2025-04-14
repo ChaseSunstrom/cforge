@@ -28,31 +28,60 @@ void cforge_parse_args(cforge_int_t argc, cforge_string_t argv[],
   }
 
   args->command = argv[1];
+  
+  // Allocate memory for additional arguments
+  // We allocate for all possible arguments to simplify management
+  args->args = (cforge_string_t *)malloc((argc - 1) * sizeof(cforge_string_t));
+  args->arg_count = 0;
+  
+  if (!args->args) {
+    // Handle memory allocation failure
+    args->command = NULL;
+    return;
+  }
 
   // Parse the rest of the arguments
   for (cforge_int_t i = 2; i < argc; i++) {
+    // Store all arguments in args->args for better access in command handlers
+    args->args[args->arg_count++] = argv[i];
+    
+    // Also check for specific options
     if (strcmp(argv[i], "--config") == 0 && i + 1 < argc) {
       args->config = argv[++i];
+      // Also add this to args array
+      args->args[args->arg_count++] = argv[i];
     } else if (strcmp(argv[i], "--variant") == 0 && i + 1 < argc) {
       args->variant = argv[++i];
+      // Also add this to args array
+      args->args[args->arg_count++] = argv[i];
     } else if (strcmp(argv[i], "--target") == 0 && i + 1 < argc) {
       args->target = argv[++i];
+      // Also add this to args array
+      args->args[args->arg_count++] = argv[i];
     } else if (strcmp(argv[i], "--verbosity") == 0 && i + 1 < argc) {
       args->verbosity = argv[++i];
+      // Also add this to args array
+      args->args[args->arg_count++] = argv[i];
     } else if (args->project == NULL && argv[i][0] != '-') {
       // The first non-option argument is the project
       args->project = argv[i];
-    } else {
-      // Remaining arguments are collected for commands like "run"
-      // that need to pass them along
-      if (args->args == NULL) {
-        // Allocate space for the remaining arguments
-        args->args =
-            (cforge_string_t *)malloc((argc - i) * sizeof(cforge_string_t));
-        args->arg_count = 0;
-      }
-
-      args->args[args->arg_count++] = argv[i];
+    }
+    
+    // Handle --config=value format
+    if (strncmp(argv[i], "--config=", 9) == 0) {
+      args->config = argv[i] + 9;
+    }
+    // Handle --variant=value format
+    else if (strncmp(argv[i], "--variant=", 10) == 0) {
+      args->variant = argv[i] + 10;
+    }
+    // Handle --target=value format
+    else if (strncmp(argv[i], "--target=", 9) == 0) {
+      args->target = argv[i] + 9;
+    }
+    // Handle --verbosity=value format
+    else if (strncmp(argv[i], "--verbosity=", 12) == 0) {
+      args->verbosity = argv[i] + 12;
     }
   }
 }
