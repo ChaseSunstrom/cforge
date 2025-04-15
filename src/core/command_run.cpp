@@ -1,6 +1,6 @@
 /**
  * @file command_run.cpp
- * @brief Implementation of the 'run' command
+ * @brief Enhanced implementation of the 'run' command with proper workspace support
  */
 
 #include "core/commands.hpp"
@@ -14,38 +14,18 @@
 #include <filesystem>
 #include <string>
 #include <vector>
+#include <algorithm>
 #include <fstream>
 
 using namespace cforge;
 
 /**
- * @brief Get the generator string for CMake based on platform
- * 
- * @return std::string CMake generator string
- */
-static std::string get_cmake_generator() {
-#ifdef _WIN32
-    // Check if Ninja is available - prefer it if it is
-    if (is_command_available("ninja", 15)) {
-        logger::print_verbose("Ninja is available, using Ninja Multi-Config generator");
-        return "Ninja Multi-Config";
-    }
-    
-    logger::print_verbose("Ninja not found, falling back to Visual Studio generator");
-    return "Visual Studio 17 2022";
-#else
-    return "Unix Makefiles";
-#endif
-}
-
-/**
  * @brief Get build directory path based on base directory and configuration
- * 
- * @param base_dir Base build directory from configuration
- * @param config Build configuration (Release, Debug, etc.)
- * @return std::filesystem::path The configured build directory
  */
-static std::string get_build_dir_for_config(const std::string& base_dir, const std::string& config) {
+static std::filesystem::path get_build_dir_for_config(
+    const std::string& base_dir,
+    const std::string& config) 
+{
     // If config is empty, use the base directory
     if (config.empty()) {
         return base_dir;
@@ -54,17 +34,6 @@ static std::string get_build_dir_for_config(const std::string& base_dir, const s
     // Transform config name to lowercase for directory naming
     std::string config_lower = config;
     std::transform(config_lower.begin(), config_lower.end(), config_lower.begin(), ::tolower);
-
-    // For Ninja Multi-Config, we don't append the config to the build directory
-    std::string generator = get_cmake_generator();
-    if (generator.find("Ninja Multi-Config") != std::string::npos) {
-        // Create the build directory if it doesn't exist
-        std::filesystem::path build_path(base_dir);
-        if (!std::filesystem::exists(build_path)) {
-            std::filesystem::create_directories(build_path);
-        }
-        return base_dir;
-    }
 
     // Format build directory based on configuration
     std::string build_dir = base_dir + "-" + config_lower;
@@ -79,211 +48,186 @@ static std::string get_build_dir_for_config(const std::string& base_dir, const s
 }
 
 /**
- * @brief Find the executable file in the build directory
+ * @brief Find the executable file for a project
  * 
- * @param build_dir Path to build directory
+ * @param project_path Path to the project directory
+ * @param build_dir Build directory name
  * @param config Build configuration
- * @param project_name Name of the project
+ * @param project_name Project name
  * @return std::filesystem::path Path to executable, empty if not found
  */
-static std::filesystem::path find_executable(
-    const std::filesystem::path& build_dir,
+static std::filesystem::path find_project_executable(
+    const std::filesystem::path& project_path,
+    const std::string& build_dir,
     const std::string& config,
-    const std::string& project_name
-) {
-    // Define a helper function to check if a file is a valid executable
-    auto is_valid_executable = [&project_name, &config](const std::filesystem::path& path) -> bool {
-        std::string filename = path.filename().string();
-        
-        // Skip known CMake test files and intermediate files
-        if (filename.find("CMake") != std::string::npos || 
-            filename.find("CompilerId") != std::string::npos ||
-            filename.find("intermediate") != std::string::npos ||
-            filename.find(".lib") != std::string::npos ||
-            filename.find(".pdb") != std::string::npos ||
-            filename.find(".exp") != std::string::npos ||
-            filename.find(".ilk") != std::string::npos ||
-            filename == "a.exe") {  // Skip CMake compiler test
-            logger::print_verbose("Skipping CMake or intermediate file: " + filename);
-            return false;
-        }
-        
-        // Check if the filename matches the expected naming convention
-        std::string lower_filename = filename;
-        std::string lower_project = project_name;
-        std::string lower_config = config;
-        std::transform(lower_filename.begin(), lower_filename.end(), lower_filename.begin(), ::tolower);
-        std::transform(lower_project.begin(), lower_project.end(), lower_project.begin(), ::tolower);
-        std::transform(lower_config.begin(), lower_config.end(), lower_config.begin(), ::tolower);
-        
-        // Check for exact match with naming convention: project_name + config
-        std::string expected_prefix = lower_project + "_" + lower_config;
-        if (lower_filename.find(expected_prefix) == 0) {
-            logger::print_verbose("Found exact prefix match: " + filename);
-            return true;
-        }
-        
-        // Check alternative: project_name_debug for Debug builds
-        if (lower_config == "debug" && lower_filename.find(lower_project + "_debug") == 0) {
-            logger::print_verbose("Found debug build match: " + filename);
-            return true;
-        }
-        
-        // Check for just project name as fallback
-        if (lower_filename.find(lower_project) != std::string::npos) {
-            logger::print_verbose("Found project name match: " + filename);
-            return true;
-        }
-        
-        logger::print_verbose("File doesn't match naming conventions: " + filename);
-        return false;
-    };
+    const std::string& project_name)
+{
+    logger::print_verbose("Searching for executable for project: " + project_name);
+    logger::print_verbose("Project path: " + project_path.string());
+    logger::print_verbose("Build directory: " + build_dir);
+    logger::print_verbose("Configuration: " + config);
     
-    // Generate possible executable names based on different naming conventions
-    std::vector<std::string> possible_names;
-    
-    // Format 1: project_name_config (e.g., test_fixed_hang_release)
+    // Convert config to lowercase for directory matching
     std::string config_lower = config;
     std::transform(config_lower.begin(), config_lower.end(), config_lower.begin(), ::tolower);
     
-    possible_names.push_back(project_name + "_" + config_lower);
+    // Define common executable locations to search
+    std::vector<std::filesystem::path> search_paths = {
+        project_path / build_dir / "bin",
+        project_path / build_dir / "bin" / config,
+        project_path / build_dir / "bin" / config_lower,
+        project_path / build_dir / config,
+        project_path / build_dir / config_lower,
+        project_path / build_dir,
+        project_path / "bin",
+        project_path / "bin" / config,
+        project_path / "bin" / config_lower
+    };
     
-    // Format 2: project_name_debug/release (e.g., test_fixed_hang_debug)
-    if (config_lower == "debug" || config_lower == "release") {
-        possible_names.push_back(project_name + "_" + config_lower);
+    // Common executable name patterns to try
+    std::vector<std::string> executable_patterns = {
+        project_name + "_" + config_lower,
+        project_name,
+        project_name + "_" + config,
+        project_name + "_d",       // Debug convention
+        project_name + "_debug",   // Debug convention
+        project_name + "_release", // Release convention
+        project_name + "_r"        // Release convention
+    };
+    
+#ifdef _WIN32
+    // Add .exe extension for Windows
+    for (auto& pattern : executable_patterns) {
+        pattern += ".exe";
     }
+#endif
     
-    // Format 3: Just project_name (e.g., test_fixed_hang)
-    possible_names.push_back(project_name);
+    // Function to check if a file is a valid executable
+    auto is_valid_executable = [](const std::filesystem::path& path) -> bool {
+        try {
+#ifdef _WIN32
+            return path.extension() == ".exe";
+#else
+            return (std::filesystem::status(path).permissions() & 
+                    std::filesystem::perms::owner_exec) != std::filesystem::perms::none;
+#endif
+        } catch (const std::exception& ex) {
+            logger::print_verbose("Error checking executable permissions: " + std::string(ex.what()));
+            return false;
+        }
+    };
     
-    // Add extension for Windows
-    #ifdef _WIN32
-    for (auto& name : possible_names) {
-        name += ".exe";
-    }
-    #endif
+    // Function to check if an executable is likely a project executable (not a CMake/test executable)
+    auto is_likely_project_executable = [&project_name](const std::filesystem::path& path) -> bool {
+        std::string filename = path.filename().string();
+        std::string filename_lower = filename;
+        std::transform(filename_lower.begin(), filename_lower.end(), filename_lower.begin(), ::tolower);
+        
+        // Skip CMake/test executables
+        if (filename_lower.find("cmake") != std::string::npos || 
+            filename_lower.find("compile") != std::string::npos ||
+            filename_lower.find("test") != std::string::npos) {
+            return false;
+        }
+        
+        // Project name should be part of the executable name
+        std::string project_name_lower = project_name;
+        std::transform(project_name_lower.begin(), project_name_lower.end(), 
+                      project_name_lower.begin(), ::tolower);
+        
+        return filename_lower.find(project_name_lower) != std::string::npos;
+    };
     
-    logger::print_verbose("Looking for executable with possible names:");
-    for (const auto& name : possible_names) {
-        logger::print_verbose("- " + name);
-    }
-    
-    // Define search paths in order of priority
-    std::vector<std::filesystem::path> search_paths;
-    
-    // Check if we're using Ninja Multi-Config
-    std::string generator = get_cmake_generator();
-    bool is_multi_config = generator.find("Ninja Multi-Config") != std::string::npos;
-    
-    #ifdef _WIN32
-    // Windows-specific search paths
-    if (is_multi_config) {
-        search_paths.push_back(build_dir / "bin" / config_lower);
-        search_paths.push_back(build_dir / config_lower);
-    } else {
-        search_paths.push_back(build_dir / "bin");
-        search_paths.push_back(build_dir);
-        search_paths.push_back(build_dir / config_lower);
-        search_paths.push_back(build_dir / "bin" / config_lower);
-    }
-    #else
-    // Unix-specific search paths
-    search_paths.push_back(build_dir / "bin");
-    search_paths.push_back(build_dir);
-    #endif
-    
-    logger::print_verbose("Searching in directories:");
-    for (const auto& path : search_paths) {
-        logger::print_verbose("- " + path.string());
-    }
-    
-    // First, look for all possible filenames in the search paths
-    for (const auto& path : search_paths) {
-        if (!std::filesystem::exists(path)) {
-            logger::print_verbose("Directory doesn't exist: " + path.string());
+    // Search for exact matches first
+    for (const auto& search_path : search_paths) {
+        if (!std::filesystem::exists(search_path)) {
             continue;
         }
         
-        logger::print_status("Searching for executable in: " + path.string());
+        logger::print_verbose("Searching in: " + search_path.string());
         
-        for (const auto& name : possible_names) {
-            std::filesystem::path expected_path = path / name;
-            if (std::filesystem::exists(expected_path)) {
-                logger::print_status("Found executable with expected name: " + expected_path.string());
-                return expected_path;
+        for (const auto& pattern : executable_patterns) {
+            std::filesystem::path exe_path = search_path / pattern;
+            if (std::filesystem::exists(exe_path) && is_valid_executable(exe_path)) {
+                logger::print_status("Found executable: " + exe_path.string());
+                return exe_path;
             }
         }
     }
     
-    // If exact match not found, search for valid executables
-    for (const auto& path : search_paths) {
-        if (!std::filesystem::exists(path)) {
+    // If exact match not found, search directories for executables with similar names
+    for (const auto& search_path : search_paths) {
+        if (!std::filesystem::exists(search_path)) {
             continue;
         }
         
-        for (const auto& entry : std::filesystem::directory_iterator(path)) {
-            if (entry.is_regular_file()) {
-                #ifdef _WIN32
-                if (entry.path().extension() == ".exe" && is_valid_executable(entry.path())) {
-                #else
-                if ((entry.permissions(std::filesystem::status(entry.path())) & 
-                    std::filesystem::perms::owner_exec) && 
-                    is_valid_executable(entry.path())) {
-                #endif
+        try {
+            for (const auto& entry : std::filesystem::directory_iterator(search_path)) {
+                if (!is_valid_executable(entry.path())) {
+                    continue;
+                }
+                
+                if (is_likely_project_executable(entry.path())) {
                     logger::print_status("Found executable: " + entry.path().string());
                     return entry.path();
                 }
             }
+        } catch (const std::exception& ex) {
+            logger::print_verbose("Error scanning directory: " + search_path.string() + " - " + std::string(ex.what()));
         }
     }
     
-    // If not found in standard locations, do a recursive search as a last resort
-    logger::print_status("Recursively searching for executable in build directory...");
-    
-    for (const auto& entry : std::filesystem::recursive_directory_iterator(build_dir)) {
-        if (entry.is_regular_file()) {
-            #ifdef _WIN32
-            if (entry.path().extension() == ".exe" && is_valid_executable(entry.path())) {
-                logger::print_verbose("Found executable in recursive search: " + entry.path().string());
-            #else
-            if ((entry.permissions(std::filesystem::status(entry.path())) & 
-                std::filesystem::perms::owner_exec) && 
-                is_valid_executable(entry.path())) {
-                logger::print_verbose("Found executable in recursive search: " + entry.path().string());
-            #endif
-                logger::print_status("Found executable: " + entry.path().string());
+    // Final attempt: recursive search in build directory
+    logger::print_status("Performing recursive search for executable in: " + (project_path / build_dir).string());
+    try {
+        for (const auto& entry : std::filesystem::recursive_directory_iterator(project_path / build_dir)) {
+            if (!is_valid_executable(entry.path())) {
+                continue;
+            }
+            
+            if (is_likely_project_executable(entry.path())) {
+                logger::print_status("Found executable in recursive search: " + entry.path().string());
                 return entry.path();
             }
         }
+    } catch (const std::exception& ex) {
+        logger::print_verbose("Error in recursive search: " + std::string(ex.what()));
     }
     
-    // List all executables found to help with debugging
-    logger::print_status("No suitable executable found. Found executables:");
-    for (const auto& entry : std::filesystem::recursive_directory_iterator(build_dir)) {
-        if (entry.is_regular_file()) {
-            #ifdef _WIN32
-            if (entry.path().extension() == ".exe") {
-                logger::print_status("- " + entry.path().string());
-            #else
-            if ((entry.permissions(std::filesystem::status(entry.path())) & 
-                std::filesystem::perms::owner_exec)) {
-                logger::print_status("- " + entry.path().string());
-            #endif
-            }
+    // List all valid executables found for debugging
+    logger::print_error("No matching executable found for project: " + project_name);
+    logger::print_status("Listing all executables found:");
+    int found_count = 0;
+    
+    for (const auto& search_path : search_paths) {
+        if (!std::filesystem::exists(search_path)) {
+            continue;
         }
+        
+        try {
+            for (const auto& entry : std::filesystem::directory_iterator(search_path)) {
+                if (is_valid_executable(entry.path())) {
+                    logger::print_status("  - " + entry.path().string());
+                    found_count++;
+                }
+            }
+        } catch (...) {}
+    }
+    
+    if (found_count == 0) {
+        logger::print_status("No executables found. The project might not have been built correctly.");
     }
     
     return std::filesystem::path();
 }
 
 /**
- * @brief Get build configuration
- * 
- * @param ctx Command context
- * @param project_config TOML reader for project config
- * @return std::string Build configuration
+ * @brief Get build configuration from various sources
  */
-static std::string get_build_config(const cforge_context_t* ctx, const toml_reader* project_config) {
+static std::string get_build_config(
+    const cforge_context_t* ctx,
+    const toml_reader* project_config) 
+{
     // Priority 1: Direct configuration argument
     if (ctx->args.config != nullptr && strlen(ctx->args.config) > 0) {
         logger::print_verbose("Using build configuration from direct argument: " + std::string(ctx->args.config));
@@ -292,10 +236,10 @@ static std::string get_build_config(const cforge_context_t* ctx, const toml_read
     
     // Priority 2: Command line argument
     if (ctx->args.args) {
-        for (int i = 0; ctx->args.args[i]; ++i) {
+        for (int i = 0; i < ctx->args.arg_count; ++i) {
             if (strcmp(ctx->args.args[i], "--config") == 0 || 
                 strcmp(ctx->args.args[i], "-c") == 0) {
-                if (ctx->args.args[i+1]) {
+                if (i+1 < ctx->args.arg_count) {
                     logger::print_verbose("Using build configuration from command line: " + std::string(ctx->args.args[i+1]));
                     return std::string(ctx->args.args[i+1]);
                 }
@@ -304,10 +248,12 @@ static std::string get_build_config(const cforge_context_t* ctx, const toml_read
     }
     
     // Priority 3: Configuration from cforge.toml
-    std::string config = project_config->get_string("build.build_type", "");
-    if (!config.empty()) {
-        logger::print_verbose("Using build configuration from cforge.toml: " + config);
-        return config;
+    if (project_config) {
+        std::string config = project_config->get_string("build.build_type", "");
+        if (!config.empty()) {
+            logger::print_verbose("Using build configuration from cforge.toml: " + config);
+            return config;
+        }
     }
     
     // Priority 4: Default to Release
@@ -316,278 +262,61 @@ static std::string get_build_config(const cforge_context_t* ctx, const toml_read
 }
 
 /**
- * @brief Run a single project
- * 
- * @param project_dir Project directory
- * @param build_dir Build directory
- * @param build_config Build configuration
- * @param verbose Verbose output
- * @return cforge_int_t Exit code
+ * @brief Build a project before running it
  */
-static cforge_int_t run_project(
+static bool build_project_for_run(
     const std::filesystem::path& project_dir,
-    const std::filesystem::path& build_dir,
-    const std::string& build_config,
-    bool verbose)
+    const std::string& config,
+    bool verbose) 
 {
-    // Get project name from cforge.toml
-    toml_reader project_config;
-    std::filesystem::path config_path = project_dir / CFORGE_FILE;
-    if (!project_config.load(config_path.string())) {
-        logger::print_error("Failed to parse " + std::string(CFORGE_FILE));
-        return 1;
+    std::string build_cmd = "cmake";
+    
+    // First check if CMakeLists.txt exists
+    if (!std::filesystem::exists(project_dir / "CMakeLists.txt")) {
+        logger::print_error("CMakeLists.txt not found in project directory");
+        return false;
     }
     
-    std::string project_name = project_config.get_string("project.name");
-    if (project_name.empty()) {
-        project_name = "unknown";
+    // Create build directory if it doesn't exist
+    std::filesystem::path build_dir = project_dir / "build";
+    if (!std::filesystem::exists(build_dir)) {
+        try {
+            std::filesystem::create_directories(build_dir);
+        } catch (const std::exception& ex) {
+            logger::print_error("Failed to create build directory: " + std::string(ex.what()));
+            return false;
+        }
     }
     
-    // Create a context for building
-    cforge_context_t build_ctx = {};
+    // Configure the project
+    logger::print_status("Configuring project...");
+    std::vector<std::string> config_args = {
+        "-S", project_dir.string(),
+        "-B", build_dir.string(),
+        "-DCMAKE_BUILD_TYPE=" + config
+    };
     
-    // Copy the path to working_dir
-    strncpy(build_ctx.working_dir, project_dir.string().c_str(), sizeof(build_ctx.working_dir) - 1);
-    build_ctx.working_dir[sizeof(build_ctx.working_dir) - 1] = '\0';
-    
-    // Create a non-const copy of the configuration string
-    char* config_copy = strdup(build_config.c_str());
-    if (!config_copy) {
-        logger::print_error("Failed to allocate memory for build configuration");
-        return 1;
+    bool config_success = execute_tool(build_cmd, config_args, "", "CMake Configure", verbose);
+    if (!config_success) {
+        logger::print_error("Failed to configure project");
+        return false;
     }
-    build_ctx.args.config = config_copy;
     
-    // Build the project first
-    logger::print_status("Building project before running...");
-    int build_result = cforge_cmd_build(&build_ctx);
+    // Build the project
+    logger::print_status("Building project...");
+    std::vector<std::string> build_args = {
+        "--build", build_dir.string(),
+        "--config", config
+    };
     
-    // Free the allocated string
-    free(config_copy);
-    
-    if (build_result != 0) {
+    bool build_success = execute_tool(build_cmd, build_args, "", "CMake Build", verbose);
+    if (!build_success) {
         logger::print_error("Failed to build project");
-        return 1;
+        return false;
     }
     
-    // Find the executable
-    logger::print_status("Searching for executable in: " + build_dir.string());
-    
-    std::filesystem::path executable;
-    try {
-        executable = find_executable(build_dir, build_config, project_name);
-    } catch (const std::exception& e) {
-        logger::print_error("Exception while searching for executable: " + std::string(e.what()));
-        return 1;
-    }
-    
-    if (executable.empty()) {
-        logger::print_error("Could not find executable for project: " + project_name);
-        return 1;
-    }
-    
-    logger::print_status("Executable found: " + executable.string());
-    
-    // Verify the executable exists and is valid
-    if (!std::filesystem::exists(executable)) {
-        logger::print_error("Executable was found but doesn't exist on disk: " + executable.string());
-        return 1;
-    }
-    
-    // Run the executable
-    logger::print_status("Running executable: " + executable.filename().string());
-    
-    try {
-        process_result result = execute_process(
-            executable.string(), 
-            {}, // No additional arguments for now
-            project_dir.string()
-        );
-        
-        if (result.success) {
-            logger::print_success("Program completed with exit code: 0");
-        } else {
-            logger::print_error("Program failed with exit code: " + std::to_string(result.exit_code));
-            
-            if (!result.stderr_output.empty()) {
-                std::istringstream error_stream(result.stderr_output);
-                std::string line;
-                while (std::getline(error_stream, line)) {
-                    if (!line.empty()) {
-                        logger::print_error(line);
-                    }
-                }
-            }
-        }
-        
-        return result.exit_code;
-    } catch (const std::exception& e) {
-        logger::print_error("Exception while running executable: " + std::string(e.what()));
-        return 1;
-    }
-}
-
-/**
- * @brief Run a workspace project
- * 
- * @param workspace_dir Workspace directory
- * @param project Project to run
- * @param build_config Build configuration
- * @param verbose Verbose output
- * @return cforge_int_t Exit code
- */
-static cforge_int_t run_workspace_project(
-    const std::filesystem::path& workspace_dir,
-    const workspace_project& project,
-    const std::string& build_config,
-    bool verbose)
-{
-    // Get project directory path - prefer using relative paths
-    std::filesystem::path project_path;
-    try {
-        // If project path is absolute, use it, otherwise treat as relative to workspace dir
-        if (project.path.is_absolute()) {
-            project_path = project.path;
-            logger::print_verbose("Using absolute project path: " + project_path.string());
-        } else {
-            project_path = workspace_dir / project.path;
-            logger::print_verbose("Using relative project path: " + project_path.string());
-        }
-        
-        logger::print_status("Project path: " + project_path.string());
-        
-        // Verify the project directory exists
-        if (!std::filesystem::exists(project_path)) {
-            logger::print_error("Project directory does not exist: " + project_path.string());
-            return 1;
-        }
-        
-        // Change to project directory
-        std::filesystem::current_path(project_path);
-        
-        // Load project configuration
-        toml_reader project_config;
-        std::filesystem::path config_path = CFORGE_FILE;  // Use relative path since we've changed directory
-        if (!std::filesystem::exists(config_path)) {
-            logger::print_error("Project configuration file not found: " + config_path.string());
-            return 1;
-        }
-        
-        if (!project_config.load(config_path.string())) {
-            logger::print_error("Failed to load project configuration for '" + project.name + "'");
-            return 1;
-        }
-        
-        // Create a context for building
-        cforge_context_t build_ctx = {};
-        
-        // Copy the path to working_dir (current directory)
-        std::string current_dir = std::filesystem::current_path().string();
-        strncpy(build_ctx.working_dir, current_dir.c_str(), sizeof(build_ctx.working_dir) - 1);
-        build_ctx.working_dir[sizeof(build_ctx.working_dir) - 1] = '\0';
-        
-        // Create a non-const copy of the configuration string
-        char* config_copy = strdup(build_config.c_str());
-        if (!config_copy) {
-            logger::print_error("Failed to allocate memory for build configuration");
-            return 1;
-        }
-        build_ctx.args.config = config_copy;
-        
-        // Build the project first
-        logger::print_status("Building project '" + project.name + "' before running...");
-        int build_result = cforge_cmd_build(&build_ctx);
-        
-        // Free the allocated string
-        free(config_copy);
-        
-        if (build_result != 0) {
-            logger::print_error("Failed to build project '" + project.name + "'");
-            return 1;
-        }
-        
-        // Determine build directory
-        std::string base_build_dir;
-        if (project_config.has_key("build.build_dir")) {
-            base_build_dir = project_config.get_string("build.build_dir");
-        } else {
-            base_build_dir = "build";
-        }
-        
-        // Ensure build directory exists
-        std::filesystem::path build_dir_path = std::filesystem::path(base_build_dir);
-        if (!std::filesystem::exists(build_dir_path)) {
-            logger::print_status("Creating build directory: " + build_dir_path.string());
-            try {
-                std::filesystem::create_directories(build_dir_path);
-            } catch (const std::exception& ex) {
-                logger::print_error("Failed to create build directory: " + std::string(ex.what()));
-                return 1;
-            }
-        }
-        
-        // Get the config-specific build directory
-        std::filesystem::path build_dir = get_build_dir_for_config(base_build_dir, build_config);
-        
-        // Find the executable
-        logger::print_status("Searching for executable in: " + build_dir.string());
-        
-        std::filesystem::path executable;
-        try {
-            executable = find_executable(build_dir, build_config, project.name);
-        } catch (const std::exception& e) {
-            logger::print_error("Exception while searching for executable: " + std::string(e.what()));
-            return 1;
-        }
-        
-        if (executable.empty()) {
-            logger::print_error("Could not find executable for project: " + project.name);
-            return 1;
-        }
-        
-        logger::print_status("Executable found: " + executable.string());
-        
-        // Verify the executable exists and is valid
-        if (!std::filesystem::exists(executable)) {
-            logger::print_error("Executable was found but doesn't exist on disk: " + executable.string());
-            return 1;
-        }
-        
-        // Run the executable
-        logger::print_status("Running executable: " + executable.filename().string());
-        
-        try {
-            process_result result = execute_process(
-                executable.string(), 
-                {}, // No additional arguments for now
-                project_path.string()
-            );
-            
-            if (result.success) {
-                logger::print_success("Program completed with exit code: 0");
-            } else {
-                logger::print_error("Program failed with exit code: " + std::to_string(result.exit_code));
-                
-                if (!result.stderr_output.empty()) {
-                    std::istringstream error_stream(result.stderr_output);
-                    std::string line;
-                    while (std::getline(error_stream, line)) {
-                        if (!line.empty()) {
-                            logger::print_error(line);
-                        }
-                    }
-                }
-            }
-            
-            return result.exit_code;
-        } catch (const std::exception& e) {
-            logger::print_error("Exception while running executable: " + std::string(e.what()));
-            return 1;
-        }
-    } catch (const std::exception& e) {
-        logger::print_error("Failed to handle project path: " + std::string(e.what()));
-        return 1;
-    }
+    logger::print_success("Project built successfully");
+    return true;
 }
 
 cforge_int_t cforge_cmd_run(const cforge_context_t* ctx) {
@@ -596,64 +325,80 @@ cforge_int_t cforge_cmd_run(const cforge_context_t* ctx) {
         std::filesystem::path project_dir = ctx->working_dir;
         
         // Check if this is a workspace
-        std::filesystem::path workspace_config_path = project_dir / "workspace.cforge.toml";
-        bool is_workspace = std::filesystem::exists(workspace_config_path);
+        std::filesystem::path workspace_file = project_dir / WORKSPACE_FILE;
+        bool is_workspace = std::filesystem::exists(workspace_file);
         
         if (is_workspace) {
-            // Load workspace configuration
-            workspace_config workspace;
-            if (!workspace.load(workspace_config_path.string())) {
+            // Handle workspace run
+            workspace workspace_obj;
+            if (!workspace_obj.load(project_dir)) {
                 logger::print_error("Failed to load workspace configuration");
                 return 1;
             }
             
-            logger::print_status("Running project in workspace '" + workspace.get_name() + "'");
-            
-            // Get build configuration
-            std::string build_config = get_build_config(ctx, nullptr);  // We'll use the same config for all projects
-            
-            // Determine which project to run
-            const workspace_project* project_to_run = nullptr;
+            logger::print_status("Running project in workspace '" + workspace_obj.get_name() + "'");
             
             // Check if a specific project was requested
-            if (ctx->args.args) {
-                for (int i = 0; ctx->args.args[i]; ++i) {
-                    if (strcmp(ctx->args.args[i], "--project") == 0 && ctx->args.args[i+1]) {
-                        std::string requested_project = ctx->args.args[i+1];
-                        for (const auto& project : workspace.get_projects()) {
-                            if (project.name == requested_project) {
-                                project_to_run = &project;
-                                break;
-                            }
+            std::string project_to_run;
+            if (ctx->args.project) {
+                project_to_run = ctx->args.project;
+            } else if (ctx->args.args) {
+                for (int i = 0; i < ctx->args.arg_count; ++i) {
+                    if (strcmp(ctx->args.args[i], "--project") == 0 || 
+                        strcmp(ctx->args.args[i], "-p") == 0) {
+                        if (i+1 < ctx->args.arg_count) {
+                            project_to_run = ctx->args.args[i+1];
+                            break;
                         }
-                        break;
                     }
                 }
             }
             
-            // If no specific project was requested, use the startup project
-            if (!project_to_run) {
-                project_to_run = workspace.get_startup_project();
+            // Get the configuration to build/run
+            std::string config = ctx->args.config ? ctx->args.config : "Release";
+            if (ctx->args.args) {
+                for (int i = 0; i < ctx->args.arg_count; ++i) {
+                    if (strcmp(ctx->args.args[i], "--config") == 0 || 
+                        strcmp(ctx->args.args[i], "-c") == 0) {
+                        if (i+1 < ctx->args.arg_count) {
+                            config = ctx->args.args[i+1];
+                            break;
+                        }
+                    }
+                }
             }
             
-            // If still no project to run, use the first project
-            if (!project_to_run && !workspace.get_projects().empty()) {
-                project_to_run = &workspace.get_projects().front();
-            }
-            
-            if (!project_to_run) {
-                logger::print_error("No project to run in workspace");
-                return 1;
-            }
-            
-            logger::print_status("Running project '" + project_to_run->name + "'...");
-            
-            // Determine verbosity
+            // Check verbosity
             bool verbose = logger::get_verbosity() == log_verbosity::VERBOSITY_VERBOSE;
             
+            // Get extra arguments to pass to the executable
+            std::vector<std::string> run_args;
+            bool passing_args = false;
+            if (ctx->args.args) {
+                for (int i = 0; i < ctx->args.arg_count; ++i) {
+                    if (passing_args) {
+                        run_args.push_back(ctx->args.args[i]);
+                        continue;
+                    }
+                    
+                    if (strcmp(ctx->args.args[i], "--") == 0) {
+                        // Start passing all remaining args to the executable
+                        passing_args = true;
+                    }
+                }
+            }
+            
             // Run the project
-            return run_workspace_project(project_dir, *project_to_run, build_config, verbose);
+            if (project_to_run.empty()) {
+                // Run the startup project
+                return workspace_obj.run_startup_project(run_args, config, verbose) ? 0 : 1;
+            } else {
+                // Run a specific project
+                return workspace_obj.run_project(project_to_run, run_args, config, verbose) ? 0 : 1;
+            }
         } else {
+            // Handle single project run
+            
             // Check if cforge.toml exists
             std::filesystem::path config_path = project_dir / CFORGE_FILE;
             if (!std::filesystem::exists(config_path)) {
@@ -668,38 +413,100 @@ cforge_int_t cforge_cmd_run(const cforge_context_t* ctx) {
                 return 1;
             }
             
-            // Get build configuration
-            std::string build_config = get_build_config(ctx, &project_config);
-            
-            // Determine build directory
-            std::string base_build_dir;
-            
-            // Check command line arguments first for build directory
-            if (ctx->args.args && ctx->args.args[1] && 
-                (strcmp(ctx->args.args[0], "--build-dir") == 0 || 
-                 strcmp(ctx->args.args[0], "-B") == 0)) {
-                base_build_dir = ctx->args.args[1];
-            } 
-            // Then check project configuration
-            else if (project_config.has_key("build.build_dir")) {
-                base_build_dir = project_config.get_string("build.build_dir");
-            } 
-            // Default to "build"
-            else {
-                base_build_dir = "build";
+            // Get project name
+            std::string project_name = project_config.get_string("project.name", "");
+            if (project_name.empty()) {
+                // Use directory name as fallback
+                project_name = project_dir.filename().string();
             }
             
-            // Get the config-specific build directory
-            std::filesystem::path build_dir = get_build_dir_for_config(base_build_dir, build_config);
+            // Get the configuration
+            std::string config = get_build_config(ctx, &project_config);
             
-            // Determine verbosity
+            // Get build directory
+            std::string build_dir_name = project_config.get_string("build.build_dir", "build");
+            
+            // Check if we should skip building
+            bool skip_build = false;
+            if (ctx->args.args) {
+                for (int i = 0; i < ctx->args.arg_count; ++i) {
+                    if (strcmp(ctx->args.args[i], "--no-build") == 0) {
+                        skip_build = true;
+                        break;
+                    }
+                }
+            }
+            
+            // Check verbosity
             bool verbose = logger::get_verbosity() == log_verbosity::VERBOSITY_VERBOSE;
             
-            // Run the project
-            return run_project(project_dir, build_dir, build_config, verbose);
+            // Build the project if needed
+            if (!skip_build) {
+                if (!build_project_for_run(project_dir, config, verbose)) {
+                    logger::print_error("Failed to build project");
+                    return 1;
+                }
+            } else {
+                logger::print_status("Skipping build step");
+            }
+            
+            // Find the executable
+            std::filesystem::path executable = find_project_executable(
+                project_dir, build_dir_name, config, project_name);
+            
+            if (executable.empty()) {
+                logger::print_error("Failed to find executable for project: " + project_name);
+                logger::print_status("Make sure the project is built correctly");
+                return 1;
+            }
+            
+            // Get extra arguments to pass to the executable
+            std::vector<std::string> run_args;
+            bool passing_args = false;
+            if (ctx->args.args) {
+                for (int i = 0; i < ctx->args.arg_count; ++i) {
+                    if (passing_args) {
+                        run_args.push_back(ctx->args.args[i]);
+                        continue;
+                    }
+                    
+                    if (strcmp(ctx->args.args[i], "--") == 0) {
+                        // Start passing all remaining args to the executable
+                        passing_args = true;
+                    }
+                }
+            }
+            
+            // Run the executable
+            logger::print_status("Running: " + executable.filename().string());
+            if (!run_args.empty()) {
+                std::string args_str;
+                for (const auto& arg : run_args) {
+                    if (!args_str.empty()) args_str += " ";
+                    args_str += arg;
+                }
+                logger::print_status("Arguments: " + args_str);
+            }
+            
+            bool result = execute_tool(
+                executable.string(), 
+                run_args, 
+                project_dir.string(), 
+                "Project " + project_name, 
+                verbose, 
+                0  // No timeout
+            );
+            
+            if (!result) {
+                logger::print_error("Program execution failed");
+                return 1;
+            }
+            
+            logger::print_success("Program executed successfully");
+            return 0;
         }
     } catch (const std::exception& ex) {
         logger::print_error("Exception during command execution: " + std::string(ex.what()));
         return 1;
     }
-} 
+}

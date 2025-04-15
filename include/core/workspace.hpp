@@ -176,12 +176,12 @@ public:
     /**
      * @brief Constructor
      */
-    workspace();
+    workspace() = default;
     
     /**
      * @brief Destructor
      */
-    ~workspace();
+    ~workspace() = default;
     
     /**
      * @brief Load a workspace configuration
@@ -298,7 +298,7 @@ public:
                                 const std::string& workspace_name);
     
 private:
-    std::unique_ptr<toml_reader> config_;
+    std::unique_ptr<toml_reader> config_ = nullptr;
     std::filesystem::path workspace_path_;
     std::string workspace_name_;
     std::vector<workspace_project> projects_;

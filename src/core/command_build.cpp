@@ -656,7 +656,7 @@ cforge_int_t cforge_cmd_build(const cforge_context_t* ctx) {
     std::filesystem::path project_dir = ctx->working_dir;
     
     // Check if this is a workspace
-    std::filesystem::path workspace_config_path = project_dir / "workspace.cforge.toml";
+    std::filesystem::path workspace_config_path = project_dir / WORKSPACE_FILE;
     bool is_workspace = std::filesystem::exists(workspace_config_path);
     
     if (is_workspace) {

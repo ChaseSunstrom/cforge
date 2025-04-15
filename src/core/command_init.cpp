@@ -197,17 +197,19 @@ static bool create_readme(const std::filesystem::path& project_path, const std::
 }
 
 /**
- * @brief Create default CMakeLists.txt file with proper packaging and testing support
+ * @brief Create enhanced CMakeLists.txt file with proper workspace project linking support
  * 
  * @param project_path Path to project directory
  * @param project_name Project name
  * @param cpp_version C++ standard version (e.g., "17")
+ * @param workspace_aware Enable workspace linking features
  * @return bool Success flag
  */
 static bool create_cmakelists(
     const std::filesystem::path& project_path,
     const std::string& project_name,
-    const std::string& cpp_version
+    const std::string& cpp_version,
+    bool workspace_aware = true
 ) {
     std::filesystem::path cmakelists_path = project_path / "CMakeLists.txt";
     
@@ -238,121 +240,142 @@ static bool create_cmakelists(
     cmakelists << "set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)\n";
     cmakelists << "set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)\n\n";
     
-    // vcpkg integration
-    cmakelists << "# vcpkg integration - uncomment the line below if using vcpkg\n";
-    cmakelists << "# set(CMAKE_TOOLCHAIN_FILE \"$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake\" CACHE STRING \"\")\n\n";
+    // Enhanced workspace project support
+    if (workspace_aware) {
+        cmakelists << "# Workspace integration support\n";
+        cmakelists << "if(CMAKE_INCLUDE_PATH)\n";
+        cmakelists << "    include_directories(${CMAKE_INCLUDE_PATH})\n";
+        cmakelists << "endif()\n\n";
+        
+        cmakelists << "if(CMAKE_LIBRARY_PATH)\n";
+        cmakelists << "    link_directories(${CMAKE_LIBRARY_PATH})\n";
+        cmakelists << "endif()\n\n";
+        
+        // Support for specific workspace project dependencies
+        cmakelists << "# Check for dependency-specific include/library paths\n";
+        cmakelists << "# This allows proper linking between workspace projects\n";
+        cmakelists << "function(check_workspace_dependency DEP_NAME)\n";
+        cmakelists << "    if(DEFINED CFORGE_DEP_${DEP_NAME})\n";
+        cmakelists << "        message(STATUS \"Using workspace dependency: ${DEP_NAME}\")\n";
+        cmakelists << "        if(DEFINED CFORGE_${DEP_NAME}_INCLUDE)\n";
+        cmakelists << "            include_directories(${CFORGE_${DEP_NAME}_INCLUDE})\n";
+        cmakelists << "            message(STATUS \"  Include path: ${CFORGE_${DEP_NAME}_INCLUDE}\")\n";
+        cmakelists << "        endif()\n";
+        cmakelists << "        if(DEFINED CFORGE_${DEP_NAME}_LIB)\n";
+        cmakelists << "            link_directories(${CFORGE_${DEP_NAME}_LIB})\n";
+        cmakelists << "            message(STATUS \"  Library path: ${CFORGE_${DEP_NAME}_LIB}\")\n";
+        cmakelists << "        endif()\n";
+        cmakelists << "        set(CFORGE_HAS_${DEP_NAME} ON PARENT_SCOPE)\n";
+        cmakelists << "    endif()\n";
+        cmakelists << "endfunction()\n\n";
+    }
     
-    // Dependencies
-    cmakelists << "# Find dependencies (if using vcpkg)\n";
-    cmakelists << "# find_package(SomePackage REQUIRED)\n\n";
+    // vcpkg integration
+    cmakelists << "# vcpkg integration\n";
+    cmakelists << "if(DEFINED ENV{VCPKG_ROOT})\n";
+    cmakelists << "    set(CMAKE_TOOLCHAIN_FILE \"$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake\"\n";
+    cmakelists << "        CACHE STRING \"Vcpkg toolchain file\")\n";
+    cmakelists << "endif()\n\n";
+    
+    // Dependencies section
+    cmakelists << "# Dependencies\n";
+    cmakelists << "find_package(Threads REQUIRED)\n";
+    cmakelists << "# Example of checking for a workspace dependency:\n";
+    cmakelists << "# check_workspace_dependency(some_other_project)\n\n";
     
     // Source files
     cmakelists << "# Add source files\n";
-    cmakelists << "file(GLOB_RECURSE SOURCES src/*.cpp)\n\n";
+    cmakelists << "file(GLOB_RECURSE SOURCES\n";
+    cmakelists << "    ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp\n";
+    cmakelists << "    ${CMAKE_CURRENT_SOURCE_DIR}/src/*.c\n";
+    cmakelists << ")\n\n";
     
-    // Define the executable name
-    cmakelists << "# Define the executable name\n";
-    cmakelists << "set(EXECUTABLE_NAME ${PROJECT_NAME})\n\n";
+    // Define the executable/library based on project type
+    cmakelists << "# Define target name\n";
+    cmakelists << "set(TARGET_NAME ${PROJECT_NAME})\n\n";
     
-    // Support configuration-specific executable names if desired
-    cmakelists << "# Configuration-specific executable name (comment out if not needed)\n";
-    cmakelists << "# For debug builds, append '_d' to executable name\n";
-    cmakelists << "if(CMAKE_BUILD_TYPE STREQUAL \"Debug\")\n";
-    cmakelists << "    set(EXECUTABLE_NAME ${EXECUTABLE_NAME}_d)\n";
+    // Project type determination based on sources
+    cmakelists << "# Determine project type (executable vs. library)\n";
+    cmakelists << "if(EXISTS \"${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp\" OR\n";
+    cmakelists << "   EXISTS \"${CMAKE_CURRENT_SOURCE_DIR}/src/main.c\")\n";
+    cmakelists << "    # This is an executable project\n";
+    cmakelists << "    add_executable(${TARGET_NAME} ${SOURCES})\n";
+    cmakelists << "    set(PROJECT_TYPE \"executable\")\n";
+    cmakelists << "else()\n";
+    cmakelists << "    # This is a library project\n";
+    cmakelists << "    add_library(${TARGET_NAME} STATIC ${SOURCES})\n";
+    cmakelists << "    set(PROJECT_TYPE \"library\")\n";
     cmakelists << "endif()\n\n";
-    
-    // Add executable
-    cmakelists << "# Add executable\n";
-    cmakelists << "add_executable(${EXECUTABLE_NAME} ${SOURCES})\n\n";
     
     // Include directories
     cmakelists << "# Include directories\n";
-    cmakelists << "target_include_directories(${EXECUTABLE_NAME} PRIVATE\n";
+    cmakelists << "target_include_directories(${TARGET_NAME} PUBLIC\n";
     cmakelists << "    ${CMAKE_CURRENT_SOURCE_DIR}/include\n";
     cmakelists << ")\n\n";
     
     // Link libraries
     cmakelists << "# Link libraries\n";
-    cmakelists << "# target_link_libraries(${EXECUTABLE_NAME} PRIVATE SomePackage)\n\n";
+    cmakelists << "target_link_libraries(${TARGET_NAME} PRIVATE\n";
+    cmakelists << "    Threads::Threads\n";
+    cmakelists << "    # Add other libraries here\n";
+    cmakelists << ")\n\n";
     
     // Compiler warnings
     cmakelists << "# Enable compiler warnings\n";
     cmakelists << "if(MSVC)\n";
-    cmakelists << "    target_compile_options(${EXECUTABLE_NAME} PRIVATE /W4)\n";
+    cmakelists << "    target_compile_options(${TARGET_NAME} PRIVATE /W4 /MP)\n";
     cmakelists << "else()\n";
-    cmakelists << "    target_compile_options(${EXECUTABLE_NAME} PRIVATE -Wall -Wextra -Wpedantic)\n";
+    cmakelists << "    target_compile_options(${TARGET_NAME} PRIVATE -Wall -Wextra -Wpedantic)\n";
     cmakelists << "endif()\n\n";
     
-    // Testing
-    cmakelists << "# Testing configuration\n";
-    cmakelists << "enable_testing()\n";
-    cmakelists << "option(BUILD_TESTING \"Build the testing tree.\" ON)\n\n";
-    
-    cmakelists << "if(BUILD_TESTING)\n";
-    cmakelists << "    # Add test directory\n";
+    // Tests
+    cmakelists << "# Testing\n";
+    cmakelists << "option(BUILD_TESTING \"Build tests\" ON)\n";
+    cmakelists << "if(BUILD_TESTING AND EXISTS \"${CMAKE_CURRENT_SOURCE_DIR}/tests\")\n";
+    cmakelists << "    enable_testing()\n";
     cmakelists << "    add_subdirectory(tests)\n";
     cmakelists << "endif()\n\n";
     
     // Installation
-    cmakelists << "# Installation configuration\n";
-    cmakelists << "install(TARGETS ${EXECUTABLE_NAME}\n";
-    cmakelists << "    RUNTIME DESTINATION bin\n";
-    cmakelists << "    LIBRARY DESTINATION lib\n";
-    cmakelists << "    ARCHIVE DESTINATION lib\n";
-    cmakelists << ")\n\n";
+    cmakelists << "# Installation\n";
+    cmakelists << "include(GNUInstallDirs)\n";
+    cmakelists << "if(PROJECT_TYPE STREQUAL \"executable\")\n";
+    cmakelists << "    install(TARGETS ${TARGET_NAME}\n";
+    cmakelists << "        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}\n";
+    cmakelists << "    )\n";
+    cmakelists << "else()\n";
+    cmakelists << "    install(TARGETS ${TARGET_NAME}\n";
+    cmakelists << "        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}\n";
+    cmakelists << "        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}\n";
+    cmakelists << "        PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}\n";
+    cmakelists << "    )\n";
+    cmakelists << "    # Install headers\n";
+    cmakelists << "    install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/\n";
+    cmakelists << "        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}\n";
+    cmakelists << "        FILES_MATCHING PATTERN \"*.h\" PATTERN \"*.hpp\"\n";
+    cmakelists << "    )\n";
+    cmakelists << "endif()\n\n";
     
-    cmakelists << "# Install headers\n";
-    cmakelists << "install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/\n";
-    cmakelists << "    DESTINATION include\n";
-    cmakelists << "    FILES_MATCHING PATTERN \"*.h\" PATTERN \"*.hpp\"\n";
-    cmakelists << ")\n\n";
-    
-    // CPack
-    cmakelists << "# Packaging configuration with CPack\n";
+    // CPack configuration
+    cmakelists << "# Packaging with CPack\n";
     cmakelists << "include(CPack)\n";
     cmakelists << "set(CPACK_PACKAGE_NAME ${PROJECT_NAME})\n";
     cmakelists << "set(CPACK_PACKAGE_VERSION ${PROJECT_VERSION})\n";
     cmakelists << "set(CPACK_PACKAGE_DESCRIPTION_SUMMARY \"${PROJECT_NAME} - A C++ project created with cforge\")\n";
     cmakelists << "set(CPACK_PACKAGE_VENDOR \"Your Organization\")\n";
-    cmakelists << "set(CPACK_PACKAGE_DESCRIPTION_FILE \"${CMAKE_CURRENT_SOURCE_DIR}/README.md\")\n";
-    cmakelists << "set(CPACK_RESOURCE_FILE_LICENSE \"${CMAKE_CURRENT_SOURCE_DIR}/LICENSE\")\n\n";
     
-    // OS specific packaging settings
+    // OS-specific packaging settings
     cmakelists << "# OS specific packaging settings\n";
     cmakelists << "if(WIN32)\n";
     cmakelists << "    set(CPACK_GENERATOR \"ZIP;NSIS\")\n";
-    cmakelists << "    set(CPACK_NSIS_PACKAGE_NAME \"${PROJECT_NAME}\")\n";
-    cmakelists << "    set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL ON)\n";
     cmakelists << "elseif(APPLE)\n";
     cmakelists << "    set(CPACK_GENERATOR \"TGZ;DragNDrop\")\n";
     cmakelists << "else()\n";
     cmakelists << "    set(CPACK_GENERATOR \"TGZ;DEB\")\n";
-    cmakelists << "    set(CPACK_DEBIAN_PACKAGE_MAINTAINER \"Your Name\")\n";
-    cmakelists << "    set(CPACK_DEBIAN_PACKAGE_SECTION \"devel\")\n";
-    cmakelists << "endif()\n\n";
-    
-    // Custom targets for different configurations
-    cmakelists << "# Add a custom target to build all configurations\n";
-    cmakelists << "add_custom_target(build-all)\n\n";
-    
-    cmakelists << "# Helper macro to add configuration-specific build targets\n";
-    cmakelists << "macro(add_build_configuration CONFIG)\n";
-    cmakelists << "    string(TOLOWER \"${CONFIG}\" CONFIG_LOWER)\n";
-    cmakelists << "    add_custom_target(build-${CONFIG_LOWER}\n";
-    cmakelists << "        COMMAND ${CMAKE_COMMAND} --build . --config ${CONFIG}\n";
-    cmakelists << "        COMMENT \"Building ${CONFIG} configuration\"\n";
-    cmakelists << "    )\n";
-    cmakelists << "    add_dependencies(build-all build-${CONFIG_LOWER})\n";
-    cmakelists << "endmacro()\n\n";
-    
-    cmakelists << "# Add standard configurations\n";
-    cmakelists << "add_build_configuration(Debug)\n";
-    cmakelists << "add_build_configuration(Release)\n";
-    cmakelists << "add_build_configuration(RelWithDebInfo)\n";
-    cmakelists << "add_build_configuration(MinSizeRel)\n";
+    cmakelists << "endif()\n";
     
     cmakelists.close();
-    logger::print_success("Created CMakeLists.txt file");
+    logger::print_success("Created CMakeLists.txt file with workspace support");
     return true;
 }
 

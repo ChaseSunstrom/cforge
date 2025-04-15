@@ -1,25 +1,22 @@
 /**
  * @file workspace.cpp
- * @brief Implementation of workspace management utilities
+ * @brief Enhanced implementation of workspace management utilities
  */
 
 #include "core/workspace.hpp"
 #include "core/toml_reader.hpp"
 #include "cforge/log.hpp"
+#include "core/process_utils.hpp"
 
 #include <fstream>
 #include <queue>
 #include <set>
 #include <sstream>
 #include <functional>
+#include <algorithm>
 
 namespace cforge {
 
-workspace::workspace() : config_(nullptr) {
-}
-
-workspace::~workspace() {
-}
 
 workspace_config::workspace_config() : name_("cpp-workspace"), description_("A C++ workspace") {
 }
@@ -98,6 +95,20 @@ workspace_project workspace::get_startup_project() const {
         }
     }
     
+    // If no project is marked as startup but we have a startup_project_ name, find that project
+    if (!startup_project_.empty()) {
+        for (const auto& project : projects_) {
+            if (project.name == startup_project_) {
+                return project;
+            }
+        }
+    }
+    
+    // If still no startup project is found but we have projects, return the first one
+    if (!projects_.empty()) {
+        return projects_[0];
+    }
+    
     // Return an empty project if no startup project is set
     return workspace_project{};
 }
@@ -123,9 +134,225 @@ bool workspace::set_startup_project(const std::string& project_name) {
     // Update the startup project name
     startup_project_ = project_name;
     
-    // TODO: Update the workspace configuration file
+    // Update the workspace configuration file
+    std::filesystem::path config_path = workspace_path_ / WORKSPACE_FILE;
+    workspace_config config;
+    if (config.load(config_path.string())) {
+        config.set_startup_project(project_name);
+        config.save(config_path.string());
+    }
     
     return true;
+}
+
+/**
+ * @brief Find the executable file for a project
+ * 
+ * @param project_path Path to the project directory
+ * @param build_dir Build directory name
+ * @param config Build configuration
+ * @param project_name Project name
+ * @return std::filesystem::path Path to executable, empty if not found
+ */
+static std::filesystem::path find_project_executable(
+    const std::filesystem::path& project_path,
+    const std::string& build_dir,
+    const std::string& config,
+    const std::string& project_name)
+{
+    logger::print_verbose("Searching for executable for project: " + project_name);
+    logger::print_verbose("Build directory: " + build_dir);
+    logger::print_verbose("Configuration: " + config);
+    
+    // Convert config to lowercase for directory matching
+    std::string config_lower = config;
+    std::transform(config_lower.begin(), config_lower.end(), config_lower.begin(), ::tolower);
+    
+    // Define common executable locations to search
+    std::vector<std::filesystem::path> search_paths = {
+        project_path / build_dir / "bin",
+        project_path / build_dir / "bin" / config,
+        project_path / build_dir / "bin" / config_lower,
+        project_path / build_dir / config,
+        project_path / build_dir / config_lower,
+        project_path / build_dir,
+        project_path / "bin",
+        project_path / "bin" / config,
+        project_path / "bin" / config_lower
+    };
+    
+    // Common executable name patterns to try
+    std::vector<std::string> executable_patterns = {
+        project_name + "_" + config_lower,
+        project_name,
+        project_name + "_" + config,
+        project_name + "_d",       // Debug convention
+        project_name + "_debug",   // Debug convention
+        project_name + "_release", // Release convention
+        project_name + "_r"        // Release convention
+    };
+    
+#ifdef _WIN32
+    // Add .exe extension for Windows
+    for (auto& pattern : executable_patterns) {
+        pattern += ".exe";
+    }
+#endif
+    
+    // Function to check if a file is a valid executable
+    auto is_valid_executable = [](const std::filesystem::path& path) -> bool {
+        try {
+#ifdef _WIN32
+            return path.extension() == ".exe";
+#else
+            return (std::filesystem::status(path).permissions() & 
+                    std::filesystem::perms::owner_exec) != std::filesystem::perms::none;
+#endif
+        } catch (const std::exception& ex) {
+            logger::print_verbose("Error checking executable permissions: " + std::string(ex.what()));
+            return false;
+        }
+    };
+    
+    // Search for exact matches first
+    for (const auto& search_path : search_paths) {
+        if (!std::filesystem::exists(search_path)) {
+            continue;
+        }
+        
+        for (const auto& pattern : executable_patterns) {
+            std::filesystem::path exe_path = search_path / pattern;
+            if (std::filesystem::exists(exe_path) && is_valid_executable(exe_path)) {
+                logger::print_verbose("Found executable: " + exe_path.string());
+                return exe_path;
+            }
+        }
+    }
+    
+    // If exact match not found, search directories for executables with similar names
+    for (const auto& search_path : search_paths) {
+        if (!std::filesystem::exists(search_path)) {
+            continue;
+        }
+        
+        try {
+            for (const auto& entry : std::filesystem::directory_iterator(search_path)) {
+                if (!is_valid_executable(entry.path())) {
+                    continue;
+                }
+                
+                std::string filename = entry.path().filename().string();
+                std::string filename_lower = filename;
+                std::transform(filename_lower.begin(), filename_lower.end(), filename_lower.begin(), ::tolower);
+                
+                // Skip CMake/system executables
+                if (filename_lower.find("cmake") != std::string::npos || 
+                    filename_lower.find("ninja") != std::string::npos ||
+                    filename_lower.find("make") != std::string::npos ||
+                    filename_lower.find("a.out") != std::string::npos ||
+                    filename_lower.find("test") != std::string::npos) {
+                    continue;
+                }
+                
+                // Check if filename contains project name
+                std::string project_name_lower = project_name;
+                std::transform(project_name_lower.begin(), project_name_lower.end(), 
+                              project_name_lower.begin(), ::tolower);
+                
+                if (filename_lower.find(project_name_lower) != std::string::npos) {
+                    logger::print_verbose("Found executable with partial match: " + entry.path().string());
+                    return entry.path();
+                }
+            }
+        } catch (const std::exception& ex) {
+            logger::print_verbose("Error scanning directory: " + search_path.string() + " - " + std::string(ex.what()));
+        }
+    }
+    
+    // Final attempt: recursive search in build directory
+    logger::print_status("Performing recursive search for executable in: " + (project_path / build_dir).string());
+    try {
+        for (auto& entry : std::filesystem::recursive_directory_iterator(project_path / build_dir)) {
+            if (!is_valid_executable(entry.path())) {
+                continue;
+            }
+            
+            std::string filename = entry.path().filename().string();
+            std::string filename_lower = filename;
+            std::transform(filename_lower.begin(), filename_lower.end(), filename_lower.begin(), ::tolower);
+            
+            // Skip CMake/system executables
+            if (filename_lower.find("cmake") != std::string::npos || 
+                filename_lower.find("test") != std::string::npos) {
+                continue;
+            }
+            
+            // Check if filename contains project name
+            std::string project_name_lower = project_name;
+            std::transform(project_name_lower.begin(), project_name_lower.end(), 
+                          project_name_lower.begin(), ::tolower);
+            
+            if (filename_lower.find(project_name_lower) != std::string::npos) {
+                logger::print_verbose("Found executable in recursive search: " + entry.path().string());
+                return entry.path();
+            }
+        }
+    } catch (const std::exception& ex) {
+        logger::print_verbose("Error in recursive search: " + std::string(ex.what()));
+    }
+    
+    logger::print_error("No executable found for project: " + project_name);
+    return std::filesystem::path();
+}
+
+/**
+ * @brief Generate proper CMake linking options for dependent projects
+ * 
+ * @param project Project to generate options for
+ * @param projects All projects in the workspace
+ * @param config Build configuration
+ * @return std::vector<std::string> CMake options
+ */
+static std::vector<std::string> generate_cmake_linking_options(
+    const workspace_project& project,
+    const std::vector<workspace_project>& projects,
+    const std::string& config)
+{
+    std::vector<std::string> options;
+    
+    // Build paths for dependencies
+    for (const auto& dep_name : project.dependencies) {
+        // Find the dependency project
+        auto it = std::find_if(projects.begin(), projects.end(),
+                              [&dep_name](const workspace_project& p) {
+                                  return p.name == dep_name;
+                              });
+        
+        if (it != projects.end()) {
+            const auto& dep = *it;
+            
+            // Add include directory
+            options.push_back("-DCMAKE_INCLUDE_PATH=" + 
+                             (dep.path / "include").string());
+            
+            // Add library directory
+            options.push_back("-DCMAKE_LIBRARY_PATH=" + 
+                             (dep.path / "lib").string());
+            
+            // Add as a dependency
+            options.push_back("-DCFORGE_DEP_" + dep.name + "=ON");
+            
+            // Add dependency's include path
+            options.push_back("-DCFORGE_" + dep.name + "_INCLUDE=" +
+                             (dep.path / "include").string());
+            
+            // Add dependency's library path
+            options.push_back("-DCFORGE_" + dep.name + "_LIB=" +
+                             (dep.path / "lib").string());
+        }
+    }
+    
+    return options;
 }
 
 bool workspace::build_all(const std::string& config, int num_jobs, bool verbose) const {
@@ -134,19 +361,140 @@ bool workspace::build_all(const std::string& config, int num_jobs, bool verbose)
         return false;
     }
     
-    logger::print_status("Building all " + std::to_string(projects_.size()) + " projects in workspace: " + workspace_name_);
+    // Get build order respecting dependencies
+    std::vector<std::string> build_order;
+    std::set<std::string> visited;
+    
+    // Topological sort for dependency-aware build order
+    std::function<void(const std::string&)> visit = [&](const std::string& project_name) {
+        if (visited.find(project_name) != visited.end()) {
+            return;
+        }
+        
+        visited.insert(project_name);
+        
+        // Find project dependencies
+        for (const auto& project : projects_) {
+            if (project.name == project_name) {
+                for (const auto& dep : project.dependencies) {
+                    visit(dep);
+                }
+                break;
+            }
+        }
+        
+        build_order.push_back(project_name);
+    };
+    
+    // Visit all projects
+    for (const auto& project : projects_) {
+        visit(project.name);
+    }
+    
+    logger::print_status("Building " + std::to_string(build_order.size()) + 
+                       " projects in workspace: " + workspace_name_);
+    
+    if (verbose) {
+        logger::print_status("Build order:");
+        for (size_t i = 0; i < build_order.size(); ++i) {
+            logger::print_status("  " + std::to_string(i+1) + ". " + build_order[i]);
+        }
+    }
     
     bool all_success = true;
     
-    // Build each project
-    for (const auto& project : projects_) {
+    // Build each project in order
+    for (const auto& project_name : build_order) {
+        // Find project in workspace
+        auto it = std::find_if(projects_.begin(), projects_.end(),
+                              [&project_name](const workspace_project& p) {
+                                  return p.name == project_name;
+                              });
+        
+        if (it == projects_.end()) {
+            logger::print_error("Project not found in workspace: " + project_name);
+            all_success = false;
+            continue;
+        }
+        
+        const auto& project = *it;
         logger::print_status("Building project: " + project.name);
         
-        // TODO: Implement project building
-        // This would require invoking the build command for each project
+        // Create build directory if it doesn't exist
+        std::filesystem::path build_dir = project.path / "build";
+        if (!std::filesystem::exists(build_dir)) {
+            try {
+                std::filesystem::create_directories(build_dir);
+            } catch (const std::exception& ex) {
+                logger::print_error("Failed to create build directory: " + std::string(ex.what()));
+                all_success = false;
+                continue;
+            }
+        }
         
-        // For now, just log success
-        logger::print_success("Project built successfully: " + project.name);
+        // Check if the project has a CMakeLists.txt file
+        std::filesystem::path cmake_path = project.path / "CMakeLists.txt";
+        if (!std::filesystem::exists(cmake_path)) {
+            logger::print_error("CMakeLists.txt not found for project: " + project.name);
+            all_success = false;
+            continue;
+        }
+        
+        // Generate CMake options with dependency linking
+        std::vector<std::string> cmake_args = {
+            "-S", project.path.string(),
+            "-B", build_dir.string(),
+            "-DCMAKE_BUILD_TYPE=" + config
+        };
+        
+        // Add dependency linking options
+        std::vector<std::string> link_options = generate_cmake_linking_options(
+            project, projects_, config);
+        cmake_args.insert(cmake_args.end(), link_options.begin(), link_options.end());
+        
+        // Set jobs if specified
+        if (num_jobs > 0) {
+            cmake_args.push_back("-DCMAKE_BUILD_PARALLEL_LEVEL=" + std::to_string(num_jobs));
+        }
+        
+        // Run CMake configure
+        logger::print_status("Configuring project with CMake...");
+        bool configure_success = execute_tool("cmake", cmake_args, "", "CMake Configure", verbose);
+        
+        if (!configure_success) {
+            logger::print_error("Failed to configure project: " + project.name);
+            all_success = false;
+            continue;
+        }
+        
+        // Build the project
+        std::vector<std::string> build_args = {
+            "--build", build_dir.string(),
+            "--config", config
+        };
+        
+        // Set parallel jobs for build
+        if (num_jobs > 0) {
+            build_args.push_back("--parallel");
+            build_args.push_back(std::to_string(num_jobs));
+        }
+        
+        logger::print_status("Building project: " + project.name);
+        bool build_success = execute_tool("cmake", build_args, "", "CMake Build", verbose);
+        
+        if (!build_success) {
+            logger::print_error("Failed to build project: " + project.name);
+            all_success = false;
+            continue;
+        }
+        
+        logger::print_success("Successfully built project: " + project.name);
+    }
+    
+    if (all_success) {
+        logger::print_success("All projects built successfully");
+    } else {
+        logger::print_warning("Some projects failed to build");
     }
     
     return all_success;
@@ -155,21 +503,102 @@ bool workspace::build_all(const std::string& config, int num_jobs, bool verbose)
 bool workspace::build_project(const std::string& project_name, const std::string& config, 
                              int num_jobs, bool verbose) const {
     // Find the project by name
-    for (const auto& project : projects_) {
-        if (project.name == project_name) {
-            logger::print_status("Building project: " + project.name);
-            
-            // TODO: Implement project building
-            // This would require invoking the build command for the specific project
-            
-            // For now, just log success
-            logger::print_success("Project built successfully: " + project.name);
-            return true;
+    auto it = std::find_if(projects_.begin(), projects_.end(),
+                         [&project_name](const workspace_project& p) {
+                             return p.name == project_name;
+                         });
+    
+    if (it == projects_.end()) {
+        logger::print_error("Project not found in workspace: " + project_name);
+        return false;
+    }
+    
+    const auto& project = *it;
+    
+    // First, check and build dependencies
+    bool all_deps_built = true;
+    for (const auto& dep_name : project.dependencies) {
+        logger::print_status("Building dependency: " + dep_name);
+        if (!build_project(dep_name, config, num_jobs, verbose)) {
+            logger::print_error("Failed to build dependency: " + dep_name);
+            all_deps_built = false;
         }
     }
     
-    logger::print_error("Project not found in workspace: " + project_name);
-    return false;
+    if (!all_deps_built) {
+        logger::print_error("Failed to build all dependencies for project: " + project_name);
+        return false;
+    }
+    
+    // Now build the project itself
+    logger::print_status("Building project: " + project.name);
+    
+    // Create build directory if it doesn't exist
+    std::filesystem::path build_dir = project.path / "build";
+    if (!std::filesystem::exists(build_dir)) {
+        try {
+            std::filesystem::create_directories(build_dir);
+        } catch (const std::exception& ex) {
+            logger::print_error("Failed to create build directory: " + std::string(ex.what()));
+            return false;
+        }
+    }
+    
+    // Check if the project has a CMakeLists.txt file
+    std::filesystem::path cmake_path = project.path / "CMakeLists.txt";
+    if (!std::filesystem::exists(cmake_path)) {
+        logger::print_error("CMakeLists.txt not found for project: " + project.name);
+        return false;
+    }
+    
+    // Generate CMake options with dependency linking
+    std::vector<std::string> cmake_args = {
+        "-S", project.path.string(),
+        "-B", build_dir.string(),
+        "-DCMAKE_BUILD_TYPE=" + config
+    };
+    
+    // Add dependency linking options
+    std::vector<std::string> link_options = generate_cmake_linking_options(
+        project, projects_, config);
+    cmake_args.insert(cmake_args.end(), link_options.begin(), link_options.end());
+    
+    // Set jobs if specified
+    if (num_jobs > 0) {
+        cmake_args.push_back("-DCMAKE_BUILD_PARALLEL_LEVEL=" + std::to_string(num_jobs));
+    }
+    
+    // Run CMake configure
+    logger::print_status("Configuring project with CMake...");
+    bool configure_success = execute_tool("cmake", cmake_args, "", "CMake Configure", verbose);
+    
+    if (!configure_success) {
+        logger::print_error("Failed to configure project: " + project.name);
+        return false;
+    }
+    
+    // Build the project
+    std::vector<std::string> build_args = {
+        "--build", build_dir.string(),
+        "--config", config
+    };
+    
+    // Set parallel jobs for build
+    if (num_jobs > 0) {
+        build_args.push_back("--parallel");
+        build_args.push_back(std::to_string(num_jobs));
+    }
+    
+    logger::print_status("Building project: " + project.name);
+    bool build_success = execute_tool("cmake", build_args, "", "CMake Build", verbose);
+    
+    if (!build_success) {
+        logger::print_error("Failed to build project: " + project.name);
+        return false;
+    }
+    
+    logger::print_success("Successfully built project: " + project.name);
+    return true;
 }
 
 bool workspace::run_startup_project(const std::vector<std::string>& args, 
@@ -189,21 +618,49 @@ bool workspace::run_startup_project(const std::vector<std::string>& args,
 bool workspace::run_project(const std::string& project_name, const std::vector<std::string>& args,
                           const std::string& config, bool verbose) const {
     // Find the project by name
-    for (const auto& project : projects_) {
-        if (project.name == project_name) {
-            logger::print_status("Running project: " + project.name);
-            
-            // TODO: Implement project running
-            // This would require invoking the run command for the specific project
-            
-            // For now, just log success
-            logger::print_success("Project ran successfully: " + project.name);
-            return true;
-        }
+    auto it = std::find_if(projects_.begin(), projects_.end(),
+                         [&project_name](const workspace_project& p) {
+                             return p.name == project_name;
+                         });
+    
+    if (it == projects_.end()) {
+        logger::print_error("Project not found in workspace: " + project_name);
+        return false;
     }
     
-    logger::print_error("Project not found in workspace: " + project_name);
-    return false;
+    const auto& project = *it;
+    logger::print_status("Running project: " + project.name);
+    
+    // Make sure the project is built
+    if (!build_project(project.name, config, 0, verbose)) {
+        logger::print_error("Failed to build project: " + project.name);
+        return false;
+    }
+    
+    // Find the executable
+    std::filesystem::path executable = find_project_executable(
+        project.path, "build", config, project.name);
+    
+    if (executable.empty()) {
+        logger::print_error("Executable not found for project: " + project.name);
+        return false;
+    }
+    
+    logger::print_status("Running executable: " + executable.string());
+    
+    // Execute the program
+    bool success = execute_tool(
+        executable.string(), args, project.path.string(), 
+        "Project " + project.name, verbose, 0 // No timeout
+    );
+    
+    if (!success) {
+        logger::print_error("Project execution failed: " + project.name);
+        return false;
+    }
+    
+    logger::print_success("Project executed successfully: " + project.name);
+    return true;
 }
 
 bool workspace::is_workspace_dir(const std::filesystem::path& dir) {
@@ -243,8 +700,9 @@ bool workspace::create_workspace(const std::filesystem::path& workspace_path,
     config_file << "# Workspace configuration for cforge\n\n";
     config_file << "[workspace]\n";
     config_file << "name = \"" << workspace_name << "\"\n";
+    config_file << "description = \"A C++ workspace created with cforge\"\n";
     config_file << "projects = []\n";
-    config_file << "# default_startup_project = \"path/to/startup/project\"\n";
+    config_file << "# default_startup_project = \"main_project\"\n";
     
     config_file.close();
     
@@ -312,6 +770,26 @@ void workspace::load_projects() {
                                      "' in workspace vs '" + config_project_name + 
                                      "' in project config");
             }
+            
+            // Try to find dependencies for this project
+            if (project_config.has_key("dependencies")) {
+                std::vector<std::string> deps = project_config.get_table_keys("dependencies");
+                for (const auto& dep : deps) {
+                    // Check if this dependency is another project in the workspace
+                    for (const auto& other_project : projects_) {
+                        if (other_project.name == dep) {
+                            // Add as dependency if it's not already there
+                            if (std::find(project.dependencies.begin(),
+                                         project.dependencies.end(),
+                                         dep) == project.dependencies.end()) {
+                                project.dependencies.push_back(dep);
+                                logger::print_verbose("Added dependency: " + project.name + " -> " + dep);
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -348,7 +826,7 @@ bool workspace_config::load(const std::string& workspace_file) {
                 }
                 
                 // Check if this colon is part of a Windows drive letter
-                if (end + 2 < project_path.length() && project_path[end + 1] == '\\') {
+                if (end == 1 && project_path.length() > 2 && project_path[end + 1] == '\\') {
                     // This is a Windows drive letter, find the next colon
                     start = end + 1;
                     continue;
@@ -364,14 +842,24 @@ bool workspace_config::load(const std::string& workspace_file) {
             
             if (parts.size() >= 2) {
                 project.path = std::filesystem::path(parts[1]);
+            } else if (!project.name.empty()) {
+                // If path is not specified, use the name as the path
+                project.path = project.name;
             }
             
             if (parts.size() >= 3) {
                 project.is_startup_project = (parts[2] == "true");
             }
             
+            // Add the project to the list
             projects_.push_back(project);
         }
+    }
+    
+    // Check for default startup project
+    std::string default_startup = reader.get_string("workspace.default_startup_project", "");
+    if (!default_startup.empty()) {
+        set_startup_project(default_startup);
     }
     
     return true;
@@ -391,6 +879,20 @@ bool workspace_config::save(const std::string& workspace_file) const {
     file << "[workspace]\n";
     file << "name = \"" << name_ << "\"\n";
     file << "description = \"" << description_ << "\"\n\n";
+    
+    // Find startup project
+    std::string startup_project;
+    for (const auto& project : projects_) {
+        if (project.is_startup_project) {
+            startup_project = project.name;
+            break;
+        }
+    }
+    
+    // Write startup project if found
+    if (!startup_project.empty()) {
+        file << "default_startup_project = \"" << startup_project << "\"\n\n";
+    }
     
     // Write projects as a string array
     file << "# Projects in format: name:path:is_startup_project\n";
@@ -429,7 +931,8 @@ bool workspace_config::save(const std::string& workspace_file) const {
     file << "]\n\n";
     
     // Write additional information as comments
-    file << "# Dependencies are stored in project-specific cforge.toml files\n";
+    file << "# Dependencies between projects are determined automatically\n";
+    file << "# based on the dependencies section in each project's cforge.toml file\n";
     
     return true;
 }
@@ -489,8 +992,16 @@ bool workspace_config::add_project_dependency(const std::string& project_name, c
                 }
             }
             
+            // Check if the dependency already exists
+            if (std::find(project.dependencies.begin(), project.dependencies.end(), dependency) !=
+                project.dependencies.end()) {
+                logger::print_status("Dependency already exists: " + project_name + " -> " + dependency);
+                return true;
+            }
+            
             // Add dependency
             project.dependencies.push_back(dependency);
+            logger::print_status("Added dependency: " + project_name + " -> " + dependency);
             return true;
         }
     }
@@ -561,4 +1072,4 @@ std::vector<workspace_project>& workspace_config::get_projects() {
     return projects_;
 }
 
-} // namespace cforge 
+} // namespace cforge
