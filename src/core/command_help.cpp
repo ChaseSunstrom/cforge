@@ -59,9 +59,11 @@ cforge_int_t cforge_cmd_help(const cforge_context_t* ctx) {
         logger::print_status("  name             Project name (default: current directory name)");
         logger::print_status("");
         logger::print_status("Options:");
-        logger::print_status("  --std=c++XX      Set C++ standard (11, 14, 17, 20) (default: 17)");
-        logger::print_status("  --git            Initialize git repository (disabled by default)");
-        logger::print_status("  -v, --verbose    Show verbose output");
+        logger::print_status("  --std=c++XX                   Set C++ standard (11, 14, 17, 20) (default: 17)");
+        logger::print_status("  --git                         Initialize git repository (disabled by default)");
+        logger::print_status("  --workspace [name]            Create a new workspace with the given name (initialized a new folder)");
+        logger::print_status("  --projects [name1] [name2]... Create projects in the workspace");
+        logger::print_status("  -v, --verbose                 Show verbose output");
         logger::print_status("");
         logger::print_status("Notes:");
         logger::print_status("  - Hyphens in project names are replaced with underscores in code");
@@ -165,7 +167,7 @@ cforge_int_t cforge_cmd_help(const cforge_context_t* ctx) {
         logger::print_status("Arguments:");
         logger::print_status("  command          Command to show help for");
     } else if (specific_command == "install") {
-        logger::print_status("cforge install - Install cforge to the system");
+        logger::print_status("cforge install - Install a cforge project to the system");
         logger::print_status("");
         logger::print_status("Usage: cforge install [options]");
         logger::print_status("");
