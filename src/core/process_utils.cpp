@@ -4,6 +4,7 @@
  */
 
 #include "core/process_utils.hpp"
+#include "core/error_format.hpp"
 #include <array>
 #include <algorithm>
 #include <chrono>
@@ -457,6 +458,12 @@ bool execute_tool(
         timeout_seconds
     );
     
+    // Handle case where errors are in stdout instead of stderr
+    if (!result.success && result.stderr_output.empty() && !result.stdout_output.empty()) {
+        // Some cmake versions output errors to stdout instead of stderr
+        result.stderr_output = result.stdout_output;
+    }
+    
     // Handle the result
     if (result.success) {
         logger::print_success(tool_name + " completed successfully");
@@ -468,12 +475,29 @@ bool execute_tool(
             logger::print_error(tool_name + " failed with exit code: " + std::to_string(result.exit_code));
         }
         
-        // Always show error output, even in non-verbose mode
-        std::istringstream error_stream(result.stderr_output);
-        std::string line;
-        while (std::getline(error_stream, line)) {
-            if (!line.empty()) {
-                logger::print_error(line);
+        // Check if this is a build-related tool for better error formatting
+        bool is_build_tool = (command == "cmake" || command == "ninja" || command == "make" || 
+                            command.find("gcc") != std::string::npos || 
+                            command.find("clang") != std::string::npos ||
+                            command.find("cl.exe") != std::string::npos ||
+                            command.find("msbuild") != std::string::npos);
+        
+        // Use formatted error output for build tools
+        if (is_build_tool && !result.stderr_output.empty()) {
+            // Format the error output using Rust-like style
+            std::string formatted_error = format_build_errors(result.stderr_output);
+            // If the formatter didn't handle it (returned the original), print it ourselves
+            if (!formatted_error.empty()) {
+                logger::print_error(formatted_error);
+            }
+        } else {
+            // Always show error output, even in non-verbose mode
+            std::istringstream error_stream(result.stderr_output);
+            std::string line;
+            while (std::getline(error_stream, line)) {
+                if (!line.empty()) {
+                    logger::print_error(line);
+                }
             }
         }
         

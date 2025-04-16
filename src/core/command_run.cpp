@@ -311,7 +311,6 @@ static bool build_project_for_run(
     
     bool build_success = execute_tool(build_cmd, build_args, "", "CMake Build", verbose);
     if (!build_success) {
-        logger::print_error("Failed to build project");
         return false;
     }
     

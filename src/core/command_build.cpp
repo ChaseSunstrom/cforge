@@ -10,6 +10,7 @@
 #include "core/toml_reader.hpp"
 #include "core/workspace.hpp"
 #include "cforge/log.hpp"
+#include "core/error_format.hpp"
 
 #include <filesystem>
 #include <string>
@@ -508,10 +509,20 @@ static bool build_project(
     if (!cmake_result.success) {
         logger::print_error("CMake configure failed with exit code: " + std::to_string(cmake_result.exit_code));
         if (!cmake_result.stderr_output.empty()) {
-            logger::print_error("CMake error output:\n" + cmake_result.stderr_output);
+            // Format CMake error output using Rust-like formatting
+            std::string formatted_error = format_build_errors(cmake_result.stderr_output);
+            // If the formatter didn't handle it (returned the original), print it ourselves
+            if (!formatted_error.empty()) {
+                logger::print_error(formatted_error);
+            }
         }
         if (!cmake_result.stdout_output.empty()) {
-            logger::print_error("CMake standard output:\n" + cmake_result.stdout_output);
+            // Format standard output that might contain errors
+            std::string formatted_output = format_build_errors(cmake_result.stdout_output);
+            // If the formatter didn't handle it (returned the original), print it ourselves
+            if (!formatted_output.empty()) {
+                logger::print_error(formatted_output);
+            }
         }
         return false;
     }
@@ -578,10 +589,23 @@ static bool build_project(
         project_dir.string()
     );
     
+    // Handle case where build errors are in stdout instead of stderr
+    if (!build_result.success && build_result.stderr_output.empty() && !build_result.stdout_output.empty()) {
+        logger::print_verbose("Build stderr is empty but stdout has content, checking stdout for errors");
+        build_result.stderr_output = build_result.stdout_output;
+    }
+    
     if (!build_result.success) {
         logger::print_error("Build failed with exit code: " + std::to_string(build_result.exit_code));
         if (!build_result.stderr_output.empty()) {
-            logger::print_error("Build error output:\n" + build_result.stderr_output);
+            // Format build error output using Rust-like formatting
+            std::string formatted_error = format_build_errors(build_result.stderr_output);
+            // If the formatter didn't handle it (returned the original), print it ourselves
+            if (!formatted_error.empty()) {
+                logger::print_error(formatted_error);
+            }
+        } else {
+            logger::print_error("No error output was captured from the build process.");
         }
         return false;
     }
