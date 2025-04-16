@@ -781,11 +781,9 @@ cforge_int_t cforge_cmd_build(const cforge_context_t* ctx) {
                 logger::print_status("Building all projects in workspace");
                 
                 if (!workspace.build_all(build_config, num_jobs, verbose)) {
-                    logger::print_error("Failed to build all projects in workspace");
                     return 1;
                 }
                 
-                logger::print_success("All projects in workspace built successfully");
                 return 0;
             }
         } else {

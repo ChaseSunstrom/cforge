@@ -486,7 +486,7 @@ cforge_int_t cforge_cmd_run(const cforge_context_t* ctx) {
             
             std::cout << std::endl;
 
-            logger::print_status("Program Output\n────────────");
+            logger::print_status("Program Output\n────────────────");
             
             // Create custom callbacks to display raw program output
             std::function<void(const std::string&)> stdout_callback = [](const std::string& chunk) {

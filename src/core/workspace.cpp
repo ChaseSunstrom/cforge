@@ -7,6 +7,7 @@
 #include "core/toml_reader.hpp"
 #include "cforge/log.hpp"
 #include "core/process_utils.hpp"
+#include "core/constants.h"
 
 #include <fstream>
 #include <queue>
@@ -356,6 +357,168 @@ static std::vector<std::string> generate_cmake_linking_options(
     return options;
 }
 
+/**
+ * @brief Generate CMakeLists.txt from project configuration
+ * 
+ * @param project_dir Project directory
+ * @param project_config Project configuration from cforge.toml
+ * @param verbose Verbose output flag
+ * @return bool Success flag
+ */
+static bool generate_cmakelists_from_toml(
+    const std::filesystem::path& project_dir,
+    const toml_reader& project_config,
+    bool verbose
+) {
+    std::filesystem::path cmakelists_path = project_dir / "CMakeLists.txt";
+    
+    // Check if we need to generate the file
+    bool file_exists = std::filesystem::exists(cmakelists_path);
+    
+    if (file_exists) {
+        // If the file already exists, we don't need to generate it
+        logger::print_verbose("CMakeLists.txt already exists, using existing file");
+        return true;
+    }
+    
+    logger::print_status("Generating CMakeLists.txt from cforge.toml configuration");
+    
+    // Get project name and version from configuration
+    std::string project_name = project_config.get_string("project.name", "cpp-project");
+    std::string project_version = project_config.get_string("project.version", "0.1.0");
+    std::string project_description = project_config.get_string("project.description", "A C++ project created with cforge");
+    std::string cpp_standard = project_config.get_string("project.cpp_standard", "17");
+    
+    // Open the file for writing
+    std::ofstream cmakelists(cmakelists_path);
+    if (!cmakelists) {
+        logger::print_error("Failed to create CMakeLists.txt");
+        return false;
+    }
+    
+    cmakelists << "cmake_minimum_required(VERSION 3.14)\n\n";
+    cmakelists << "project(" << project_name << " VERSION " << project_version << " LANGUAGES CXX)\n\n";
+    
+    // C++ standard
+    cmakelists << "# Set C++ standard\n";
+    cmakelists << "set(CMAKE_CXX_STANDARD " << cpp_standard << ")\n";
+    cmakelists << "set(CMAKE_CXX_STANDARD_REQUIRED ON)\n";
+    cmakelists << "set(CMAKE_CXX_EXTENSIONS OFF)\n\n";
+    
+    // Output directories
+    cmakelists << "# Set output directories\n";
+    cmakelists << "set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)\n";
+    cmakelists << "set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)\n";
+    cmakelists << "set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)\n\n";
+    
+    // vcpkg integration
+    cmakelists << "# vcpkg integration - uncomment the line below if using vcpkg\n";
+    cmakelists << "# set(CMAKE_TOOLCHAIN_FILE \"$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake\" CACHE STRING \"\")\n\n";
+    
+    // Dependencies
+    cmakelists << "# Find dependencies (if using vcpkg)\n";
+    cmakelists << "# find_package(SomePackage REQUIRED)\n\n";
+    
+    // Source files
+    cmakelists << "# Add source files\n";
+    cmakelists << "file(GLOB_RECURSE SOURCES src/*.cpp)\n\n";
+    
+    // Define the executable name
+    cmakelists << "# Define executable name with configuration suffix\n";
+    cmakelists << "string(TOLOWER \"${CMAKE_BUILD_TYPE}\" build_type_lower)\n";
+    cmakelists << "set(EXECUTABLE_NAME ${PROJECT_NAME}_${build_type_lower})\n\n";
+    
+    // Add executable
+    cmakelists << "# Add executable\n";
+    cmakelists << "add_executable(${EXECUTABLE_NAME} ${SOURCES})\n\n";
+    
+    // Include directories
+    cmakelists << "# Include directories\n";
+    cmakelists << "target_include_directories(${EXECUTABLE_NAME} PRIVATE\n";
+    cmakelists << "    ${CMAKE_CURRENT_SOURCE_DIR}/include\n";
+    cmakelists << ")\n\n";
+    
+    // Link libraries
+    cmakelists << "# Link libraries\n";
+    cmakelists << "# target_link_libraries(${EXECUTABLE_NAME} PRIVATE SomePackage)\n\n";
+    
+    // Compiler warnings
+    cmakelists << "# Enable compiler warnings\n";
+    cmakelists << "if(MSVC)\n";
+    cmakelists << "    target_compile_options(${EXECUTABLE_NAME} PRIVATE /W4)\n";
+    cmakelists << "else()\n";
+    cmakelists << "    target_compile_options(${EXECUTABLE_NAME} PRIVATE -Wall -Wextra -Wpedantic)\n";
+    cmakelists << "endif()\n\n";
+    
+    // Tests - check if tests are explicitly enabled in the configuration
+    bool tests_enabled = project_config.get_bool("test.enabled", false);
+    
+    // Only add test-related configuration if tests are explicitly enabled
+    if (tests_enabled) {
+        cmakelists << "# Testing configuration\n";
+        cmakelists << "enable_testing()\n";
+        cmakelists << "option(BUILD_TESTING \"Build the testing tree.\" ON)\n\n";
+        
+        cmakelists << "if(BUILD_TESTING)\n";
+        cmakelists << "    # Add test directory\n";
+        cmakelists << "    add_subdirectory(tests)\n";
+        cmakelists << "endif()\n\n";
+    } else {
+        cmakelists << "# Testing is disabled by default\n";
+        cmakelists << "# To enable testing, set test.enabled=true in cforge.toml and create a tests directory\n\n";
+    }
+    
+    // Installation
+    cmakelists << "# Installation configuration\n";
+    cmakelists << "install(TARGETS ${EXECUTABLE_NAME}\n";
+    cmakelists << "    RUNTIME DESTINATION bin\n";
+    cmakelists << "    LIBRARY DESTINATION lib\n";
+    cmakelists << "    ARCHIVE DESTINATION lib\n";
+    cmakelists << ")\n\n";
+    
+    cmakelists << "# Install headers\n";
+    cmakelists << "install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/\n";
+    cmakelists << "    DESTINATION include\n";
+    cmakelists << "    FILES_MATCHING PATTERN \"*.h\" PATTERN \"*.hpp\"\n";
+    cmakelists << ")\n\n";
+    
+    // CPack
+    cmakelists << "# Packaging configuration with CPack\n";
+    cmakelists << "include(CPack)\n";
+    cmakelists << "set(CPACK_PACKAGE_NAME ${PROJECT_NAME})\n";
+    cmakelists << "set(CPACK_PACKAGE_VERSION ${PROJECT_VERSION})\n";
+    cmakelists << "set(CPACK_PACKAGE_DESCRIPTION_SUMMARY \"${PROJECT_NAME} - " << project_description << "\")\n";
+    cmakelists << "set(CPACK_PACKAGE_VENDOR \"Your Organization\")\n";
+    cmakelists << "set(CPACK_PACKAGE_DESCRIPTION_FILE \"${CMAKE_CURRENT_SOURCE_DIR}/README.md\")\n";
+    cmakelists << "set(CPACK_RESOURCE_FILE_LICENSE \"${CMAKE_CURRENT_SOURCE_DIR}/LICENSE\")\n\n";
+    
+    // OS specific packaging settings
+    cmakelists << "# OS specific packaging settings\n";
+    cmakelists << "if(WIN32)\n";
+    cmakelists << "    set(CPACK_GENERATOR \"ZIP;NSIS\")\n";
+    cmakelists << "    set(CPACK_NSIS_PACKAGE_NAME \"${PROJECT_NAME}\")\n";
+    cmakelists << "    set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL ON)\n";
+    cmakelists << "elseif(APPLE)\n";
+    cmakelists << "    set(CPACK_GENERATOR \"TGZ;DragNDrop\")\n";
+    cmakelists << "else()\n";
+    cmakelists << "    set(CPACK_GENERATOR \"TGZ;DEB\")\n";
+    cmakelists << "    set(CPACK_DEBIAN_PACKAGE_MAINTAINER \"Your Name\")\n";
+    cmakelists << "    set(CPACK_DEBIAN_PACKAGE_SECTION \"devel\")\n";
+    cmakelists << "endif()\n";
+    
+    cmakelists.close();
+    
+    if (verbose) {
+        logger::print_verbose("Generated CMakeLists.txt with the following configuration:");
+        logger::print_verbose("- Project name: " + project_name);
+        logger::print_verbose("- C++ standard: " + cpp_standard);
+        logger::print_verbose("- Tests enabled: " + std::string(tests_enabled ? "yes" : "no"));
+    }
+    
+    logger::print_success("Generated CMakeLists.txt file");
+    return true;
+}
+
 bool workspace::build_all(const std::string& config, int num_jobs, bool verbose) const {
     if (projects_.empty()) {
         logger::print_warning("No projects in workspace");
@@ -433,12 +596,30 @@ bool workspace::build_all(const std::string& config, int num_jobs, bool verbose)
             }
         }
         
-        // Check if the project has a CMakeLists.txt file
+        // Check if the project has a CMakeLists.txt file or needs to be generated
         std::filesystem::path cmake_path = project.path / "CMakeLists.txt";
+        std::filesystem::path config_path = project.path / CFORGE_FILE;
+        
         if (!std::filesystem::exists(cmake_path)) {
-            logger::print_error("CMakeLists.txt not found for project: " + project.name);
-            all_success = false;
-            continue;
+            if (std::filesystem::exists(config_path)) {
+                // Try to generate CMakeLists.txt from cforge.toml
+                toml_reader project_config;
+                if (project_config.load(config_path.string())) {
+                    if (!generate_cmakelists_from_toml(project.path, project_config, verbose)) {
+                        logger::print_error("Failed to generate CMakeLists.txt for project: " + project.name);
+                        all_success = false;
+                        continue;
+                    }
+                } else {
+                    logger::print_error("Failed to load cforge.toml for project: " + project.name);
+                    all_success = false;
+                    continue;
+                }
+            } else {
+                logger::print_error("No cforge.toml found for project: " + project.name);
+                all_success = false;
+                continue;
+            }
         }
         
         // Generate CMake options with dependency linking
@@ -545,11 +726,27 @@ bool workspace::build_project(const std::string& project_name, const std::string
         }
     }
     
-    // Check if the project has a CMakeLists.txt file
+    // Check if the project has a CMakeLists.txt file or needs to be generated
     std::filesystem::path cmake_path = project.path / "CMakeLists.txt";
+    std::filesystem::path config_path = project.path / CFORGE_FILE;
+    
     if (!std::filesystem::exists(cmake_path)) {
-        logger::print_error("CMakeLists.txt not found for project: " + project.name);
-        return false;
+        if (std::filesystem::exists(config_path)) {
+            // Try to generate CMakeLists.txt from cforge.toml
+            toml_reader project_config;
+            if (project_config.load(config_path.string())) {
+                if (!generate_cmakelists_from_toml(project.path, project_config, verbose)) {
+                    logger::print_error("Failed to generate CMakeLists.txt for project: " + project.name);
+                    return false;
+                }
+            } else {
+                logger::print_error("Failed to load cforge.toml for project: " + project.name);
+                return false;
+            }
+        } else {
+            logger::print_error("No cforge.toml found for project: " + project.name);
+            return false;
+        }
     }
     
     // Generate CMake options with dependency linking
