@@ -843,8 +843,6 @@ cforge_int_t cforge_cmd_build(const cforge_context_t* ctx) {
             std::filesystem::path build_dir = get_build_dir_for_config(base_build_dir, build_config);
             
             // Build the project
-            logger::print_status("Building project...");
-            
             if (!build_project(project_dir, build_config, num_jobs, verbose, target)) {
                 logger::print_error("Build failed");
                 return 1;
