@@ -280,8 +280,8 @@ static bool create_cmakelists(
     // Dependencies section
     cmakelists << "# Dependencies\n";
     cmakelists << "find_package(Threads REQUIRED)\n";
-    cmakelists << "# Example of checking for a workspace dependency:\n";
-    cmakelists << "# check_workspace_dependency(some_other_project)\n\n";
+    // Example of checking for a workspace dependency:
+    // check_workspace_dependency(some_other_project)
     
     // Source files
     cmakelists << "# Add source files\n";
@@ -317,7 +317,7 @@ static bool create_cmakelists(
     cmakelists << "# Link libraries\n";
     cmakelists << "target_link_libraries(${TARGET_NAME} PRIVATE\n";
     cmakelists << "    Threads::Threads\n";
-    cmakelists << "    # Add other libraries here\n";
+    // Add other libraries here
     cmakelists << ")\n\n";
     
     // Compiler warnings
@@ -419,12 +419,12 @@ static bool create_cforge_toml(
     
     config << "[build]\n";
     config << "build_dir = \"build\"\n";
-    config << "# For detailed configurations, you can specify build types\n";
+    // For detailed configurations, you can specify build types
     config << "build_type = \"Release\"  # Release, Debug, RelWithDebInfo, MinSizeRel\n";
-    config << "# Set to true to clean the build directory before building\n";
-    config << "# clean = false\n";
-    config << "# Number of parallel jobs to use when building\n";
-    config << "# jobs = 4\n\n";
+    // Set to true to clean the build directory before building
+    // clean = false
+    // Number of parallel jobs to use when building
+    // jobs = 4
     
     // Add custom build configurations
     config << "# Custom build configurations\n";
@@ -544,37 +544,31 @@ static bool create_main_cpp(const std::filesystem::path& project_path, const std
 }
 
 /**
- * @brief Create include directory with example header
+ * @brief Create include files
  * 
- * @param project_path Path to project directory
- * @param project_name Project name
+ * @param project_path Project path
+ * @param project_name Project name (normalized with underscores for code usage)
  * @return bool Success flag
  */
 static bool create_include_files(const std::filesystem::path& project_path, const std::string& project_name) {
-    // Create include directory if it doesn't exist
     std::filesystem::path include_dir = project_path / "include";
-    try {
+    
+    if (!std::filesystem::exists(include_dir)) {
         std::filesystem::create_directories(include_dir);
-    } catch (const std::exception& ex) {
-        logger::print_error("Failed to create include directory: " + std::string(ex.what()));
-        return false;
     }
     
-    // Create project include directory
+    // Create project-specific include directory
     std::filesystem::path project_include_dir = include_dir / project_name;
-    try {
+    
+    if (!std::filesystem::exists(project_include_dir)) {
         std::filesystem::create_directories(project_include_dir);
-    } catch (const std::exception& ex) {
-        logger::print_error("Failed to create project include directory: " + std::string(ex.what()));
-        return false;
     }
     
-    // Create example header file
+    // Create example.hpp
     std::filesystem::path example_header_path = project_include_dir / "example.hpp";
     std::ofstream example_header(example_header_path);
     
     if (!example_header.is_open()) {
-        logger::print_error("Failed to create example header file");
         return false;
     }
     
@@ -582,28 +576,37 @@ static bool create_include_files(const std::filesystem::path& project_path, cons
     example_header << " * @file example.hpp\n";
     example_header << " * @brief Example header file for " << project_name << "\n";
     example_header << " */\n\n";
-    
     example_header << "#pragma once\n\n";
-    
     example_header << "namespace " << project_name << " {\n\n";
-    
     example_header << "/**\n";
-    example_header << " * @brief Example function\n";
-    example_header << " * \n";
-    example_header << " * @return const char* A message\n";
+    example_header << " * @brief Get an example message\n";
+    example_header << " * @return const char* The message\n";
     example_header << " */\n";
     example_header << "const char* get_example_message();\n\n";
-    
     example_header << "} // namespace " << project_name << "\n";
     
-    example_header.close();
+    return true;
+}
+
+/**
+ * @brief Create example implementation file
+ * 
+ * @param project_path Project path
+ * @param project_name Project name (normalized with underscores for code usage)
+ * @return bool Success flag
+ */
+static bool create_example_implementation(const std::filesystem::path& project_path, const std::string& project_name) {
+    std::filesystem::path src_dir = project_path / "src";
     
-    // Create example implementation file
-    std::filesystem::path example_cpp_path = project_path / "src" / "example.cpp";
+    if (!std::filesystem::exists(src_dir)) {
+        std::filesystem::create_directories(src_dir);
+    }
+    
+    // Create example.cpp
+    std::filesystem::path example_cpp_path = src_dir / "example.cpp";
     std::ofstream example_cpp(example_cpp_path);
     
     if (!example_cpp.is_open()) {
-        logger::print_error("Failed to create example implementation file");
         return false;
     }
     
@@ -611,38 +614,28 @@ static bool create_include_files(const std::filesystem::path& project_path, cons
     example_cpp << " * @file example.cpp\n";
     example_cpp << " * @brief Implementation of example functions for " << project_name << "\n";
     example_cpp << " */\n\n";
-    
     example_cpp << "#include \"" << project_name << "/example.hpp\"\n\n";
-    
     example_cpp << "namespace " << project_name << " {\n\n";
-    
     example_cpp << "const char* get_example_message() {\n";
     example_cpp << "    return \"This is an example function from the " << project_name << " library.\";\n";
     example_cpp << "}\n\n";
-    
     example_cpp << "} // namespace " << project_name << "\n";
     
-    example_cpp.close();
-    
-    logger::print_success("Created example header and implementation files");
     return true;
 }
 
 /**
- * @brief Create test directory with basic test files and CMake configuration
+ * @brief Create test files
  * 
- * @param project_path Path to project directory
- * @param project_name Project name
+ * @param project_path Project path
+ * @param project_name Project name (normalized with underscores for code usage)
  * @return bool Success flag
  */
 static bool create_test_files(const std::filesystem::path& project_path, const std::string& project_name) {
-    // Create tests directory if it doesn't exist
     std::filesystem::path tests_dir = project_path / "tests";
-    try {
+    
+    if (!std::filesystem::exists(tests_dir)) {
         std::filesystem::create_directories(tests_dir);
-    } catch (const std::exception& ex) {
-        logger::print_error("Failed to create tests directory: " + std::string(ex.what()));
-        return false;
     }
     
     // Create CMakeLists.txt for tests
@@ -650,75 +643,47 @@ static bool create_test_files(const std::filesystem::path& project_path, const s
     std::ofstream tests_cmake(tests_cmake_path);
     
     if (!tests_cmake.is_open()) {
-        logger::print_error("Failed to create tests CMakeLists.txt file");
         return false;
     }
     
     tests_cmake << "# Tests CMakeLists.txt for " << project_name << "\n\n";
-    
-    // Add check for BUILD_TESTING flag
-    tests_cmake << "# Only enable tests if BUILD_TESTING is enabled\n";
-    tests_cmake << "if(NOT BUILD_TESTING)\n";
-    tests_cmake << "    message(STATUS \"Tests disabled - skipping test setup\")\n";
-    tests_cmake << "    return()\n";
-    tests_cmake << "endif()\n\n";
-    
-    // GoogleTest integration
-    tests_cmake << "# Include FetchContent for Google Test\n";
+    tests_cmake << "# Find GoogleTest\n";
     tests_cmake << "include(FetchContent)\n";
     tests_cmake << "FetchContent_Declare(\n";
     tests_cmake << "  googletest\n";
     tests_cmake << "  GIT_REPOSITORY https://github.com/google/googletest.git\n";
-    tests_cmake << "  GIT_TAG v1.14.0\n";
-    tests_cmake << ")\n";
+    tests_cmake << "  GIT_TAG release-1.12.1\n";
+    tests_cmake << ")\n\n";
+    tests_cmake << "# For Windows: Prevent overriding the parent project's compiler/linker settings\n";
     tests_cmake << "set(gtest_force_shared_crt ON CACHE BOOL \"\" FORCE)\n";
     tests_cmake << "FetchContent_MakeAvailable(googletest)\n\n";
-    
-    tests_cmake << "# Disable install rules for GoogleTest\n";
-    tests_cmake << "set_target_properties(gtest gtest_main gmock gmock_main\n";
-    tests_cmake << "    PROPERTIES EXCLUDE_FROM_ALL 1\n";
-    tests_cmake << "               EXCLUDE_FROM_DEFAULT_BUILD 1)\n\n";
-    
-    // Create test executables
-    tests_cmake << "# Add test sources\n";
-    tests_cmake << "set(TEST_SOURCES\n";
-    tests_cmake << "    test_main.cpp\n";
-    tests_cmake << "    test_example.cpp\n";
-    tests_cmake << ")\n\n";
-    
-    // Define test executable name with config suffix
-    tests_cmake << "# Define test executable name with configuration suffix\n";
-    tests_cmake << "string(TOLOWER \"${CMAKE_BUILD_TYPE}\" build_type_lower)\n";
+    tests_cmake << "# Enable testing\n";
+    tests_cmake << "enable_testing()\n\n";
+    tests_cmake << "# Include GoogleTest\n";
+    tests_cmake << "include(GoogleTest)\n\n";
+    tests_cmake << "# Create test executable\n";
+    tests_cmake << "# Convert build type to lowercase for naming\n";
+    tests_cmake << "string(TOLOWER \"${CMAKE_BUILD_TYPE}\" build_type_lower)\n\n";
     tests_cmake << "set(TEST_EXECUTABLE_NAME ${PROJECT_NAME}_${build_type_lower}_tests)\n\n";
-    
-    tests_cmake << "# Add test executable\n";
-    tests_cmake << "add_executable(${TEST_EXECUTABLE_NAME} ${TEST_SOURCES})\n\n";
-    
-    tests_cmake << "# Link with GoogleTest and project libraries\n";
-    tests_cmake << "target_link_libraries(${TEST_EXECUTABLE_NAME} PRIVATE\n";
-    tests_cmake << "    gtest\n";
-    tests_cmake << "    gtest_main\n";
-    tests_cmake << "    # Add any project libraries here\n";
+    tests_cmake << "add_executable(${TEST_EXECUTABLE_NAME}\n";
+    tests_cmake << "  test_main.cpp\n";
+    tests_cmake << "  test_example.cpp\n";
     tests_cmake << ")\n\n";
-    
-    tests_cmake << "# Include directories\n";
     tests_cmake << "target_include_directories(${TEST_EXECUTABLE_NAME} PRIVATE\n";
-    tests_cmake << "    ${CMAKE_SOURCE_DIR}/include\n";
-    tests_cmake << "    ${CMAKE_SOURCE_DIR}/src\n";
+    tests_cmake << "  ${CMAKE_SOURCE_DIR}/include\n";
     tests_cmake << ")\n\n";
-    
-    tests_cmake << "# Register tests with CTest\n";
-    tests_cmake << "include(GoogleTest)\n";
+    tests_cmake << "target_link_libraries(${TEST_EXECUTABLE_NAME} PRIVATE\n";
+    tests_cmake << "  ${PROJECT_NAME}\n";
+    tests_cmake << "  gtest_main\n";
+    tests_cmake << "  gmock_main\n";
+    tests_cmake << ")\n\n";
     tests_cmake << "gtest_discover_tests(${TEST_EXECUTABLE_NAME})\n";
-    
-    tests_cmake.close();
     
     // Create test_main.cpp
     std::filesystem::path test_main_path = tests_dir / "test_main.cpp";
     std::ofstream test_main(test_main_path);
     
     if (!test_main.is_open()) {
-        logger::print_error("Failed to create test_main.cpp file");
         return false;
     }
     
@@ -726,25 +691,19 @@ static bool create_test_files(const std::filesystem::path& project_path, const s
     test_main << " * @file test_main.cpp\n";
     test_main << " * @brief Main test runner for " << project_name << "\n";
     test_main << " */\n\n";
-    
     test_main << "#include <gtest/gtest.h>\n\n";
-    
-    test_main << "/**\n";
-    test_main << " * @brief Main function for running all tests\n";
-    test_main << " */\n";
-    test_main << "int main(int argc, char** argv) {\n";
+    test_main << "// Let Google Test handle main\n";
+    test_main << "// This is not strictly necessary with gtest_main linkage\n";
+    test_main << "int main(int argc, char **argv) {\n";
     test_main << "    ::testing::InitGoogleTest(&argc, argv);\n";
     test_main << "    return RUN_ALL_TESTS();\n";
     test_main << "}\n";
-    
-    test_main.close();
     
     // Create test_example.cpp
     std::filesystem::path test_example_path = tests_dir / "test_example.cpp";
     std::ofstream test_example(test_example_path);
     
     if (!test_example.is_open()) {
-        logger::print_error("Failed to create test_example.cpp file");
         return false;
     }
     
@@ -752,35 +711,18 @@ static bool create_test_files(const std::filesystem::path& project_path, const s
     test_example << " * @file test_example.cpp\n";
     test_example << " * @brief Example tests for " << project_name << "\n";
     test_example << " */\n\n";
-    
     test_example << "#include <gtest/gtest.h>\n";
     test_example << "#include \"" << project_name << "/example.hpp\"\n\n";
-    
-    test_example << "/**\n";
-    test_example << " * @brief Example test case\n";
-    test_example << " */\n";
-    test_example << "TEST(ExampleTest, BasicTest) {\n";
-    test_example << "    // Call the example function from the library\n";
+    test_example << "// Example test case\n";
+    test_example << "TEST(ExampleTest, GetMessage) {\n";
+    test_example << "    // Arrange\n";
     test_example << "    const char* message = " << project_name << "::get_example_message();\n";
     test_example << "    \n";
-    test_example << "    // Verify the result\n";
-    test_example << "    ASSERT_NE(message, nullptr);\n";
-    test_example << "    EXPECT_TRUE(strlen(message) > 0);\n";
-    test_example << "}\n\n";
-    
-    test_example << "/**\n";
-    test_example << " * @brief Another example test case\n";
-    test_example << " */\n";
-    test_example << "TEST(ExampleTest, TrivialTest) {\n";
-    test_example << "    // Basic assertions\n";
-    test_example << "    EXPECT_EQ(1, 1);\n";
-    test_example << "    EXPECT_TRUE(true);\n";
-    test_example << "    EXPECT_FALSE(false);\n";
+    test_example << "    // Act & Assert\n";
+    test_example << "    EXPECT_NE(message, nullptr);\n";
+    test_example << "    EXPECT_STRNE(message, \"\");\n";
     test_example << "}\n";
     
-    test_example.close();
-    
-    logger::print_success("Created test files and configuration");
     return true;
 }
 
@@ -901,162 +843,121 @@ static bool init_git_repository(const std::filesystem::path& project_path, bool 
 }
 
 /**
- * @brief Create all the project files and structure
+ * @brief Normalize a project name by replacing special characters with underscores
  * 
- * @param project_path Path to project directory
+ * @param name The original project name
+ * @return std::string Normalized project name safe for C++ identifiers
+ */
+static std::string normalize_project_name(const std::string& name) {
+    std::string normalized = name;
+    
+    // Replace special characters with underscores
+    // This includes hyphens, @, #, $, %, etc.
+    for (char& c : normalized) {
+        // Allow alphanumeric characters and underscores
+        if (!std::isalnum(c) && c != '_') {
+            c = '_';
+        }
+    }
+    
+    // Ensure it starts with a letter or underscore (valid C++ identifier)
+    if (!normalized.empty() && std::isdigit(normalized[0])) {
+        normalized = "_" + normalized;
+    }
+    
+    return normalized;
+}
+
+/**
+ * @brief Create project files
+ * 
+ * @param project_path Project directory path
  * @param project_name Project name
- * @param cpp_version C++ standard version
- * @param initialize_git Whether to initialize a git repository
- * @param verbose Verbose output flag
- * @param with_tests Whether to include test files
+ * @param cpp_version C++ version
+ * @param with_git Initialize git repository
+ * @param with_tests Include test files
+ * @param cmake_preset CMake preset to use (optional)
+ * @param build_type Build type (Debug/Release) (optional)
  * @return bool Success flag
  */
 static bool create_project(
     const std::filesystem::path& project_path,
     const std::string& project_name,
     const std::string& cpp_version,
-    bool initialize_git,
-    bool verbose,
-    bool with_tests = false
-) {
-    // Create project directory if it doesn't exist
+    bool with_git,
+    bool with_tests,
+    const std::string& cmake_preset = "",
+    const std::string& build_type = "Debug")
+{
     try {
+        // Create the project directory if it doesn't exist
         if (!std::filesystem::exists(project_path)) {
-            bool created = std::filesystem::create_directories(project_path);
-            if (!created) {
-                logger::print_error("Failed to create project directory (returned false)");
-                return false;
-            }
-            logger::print_status("Created project directory: " + project_path.string());
-        } else {
-            logger::print_status("Using existing project directory: " + project_path.string());
+            std::filesystem::create_directories(project_path);
         }
-    } catch (const std::exception& ex) {
-        logger::print_error("Exception creating project directory: " + std::string(ex.what()));
-        return false;
-    }
-    
-    // Test write permissions
-    try {
-        std::string test_path = (project_path / "cforge_test_file").string();
-        std::ofstream test_file(test_path);
-        if (!test_file.is_open()) {
-            logger::print_error("Project directory is not writable: " + project_path.string());
+        
+        // Normalize the project name for code usage
+        std::string normalized_name = normalize_project_name(project_name);
+        
+        // Create project skeleton
+        std::filesystem::create_directories(project_path / "src");
+        std::filesystem::create_directories(project_path / "include");
+        std::filesystem::create_directories(project_path / "build");
+        
+        // Create README file
+        if (!create_readme(project_path, project_name)) {
+            logger::print_error("Failed to create README.md");
             return false;
         }
-        test_file.close();
-        std::filesystem::remove(test_path);
-        logger::print_status("Project directory is writable");
-    } catch (const std::exception& ex) {
-        logger::print_error("Failed to write to project directory: " + std::string(ex.what()));
-        return false;
-    }
-    
-    // Create project files with better error handling
-    bool success = true;
-    
-    // Create .gitignore
-    try {
-        if (!create_gitignore(project_path)) {
-            logger::print_error("Failed to create .gitignore file");
-            success = false;
+        
+        // Create CMakeLists.txt
+        if (!create_cmakelists(project_path, project_name, cpp_version, with_tests)) {
+            logger::print_error("Failed to create CMakeLists.txt");
+            return false;
         }
-    } catch (const std::exception& ex) {
-        logger::print_error("Exception creating .gitignore: " + std::string(ex.what()));
-        success = false;
-    }
-    
-    // Create README.md
-    try {
-        if (!create_readme(project_path, project_name)) {
-            logger::print_error("Failed to create README.md file");
-            success = false;
-        }
-    } catch (const std::exception& ex) {
-        logger::print_error("Exception creating README.md: " + std::string(ex.what()));
-        success = false;
-    }
-    
-    // Create cforge.toml
-    try {
+        
+        // Create cforge.toml configuration
         if (!create_cforge_toml(project_path, project_name, cpp_version, with_tests)) {
-            logger::print_error("Failed to create cforge.toml file");
-            success = false;
+            logger::print_error("Failed to create cforge.toml");
+            return false;
         }
-    } catch (const std::exception& ex) {
-        logger::print_error("Exception creating cforge.toml: " + std::string(ex.what()));
-        success = false;
-    }
-    
-    // Create main.cpp
-    try {
+        
+        // Create src/main.cpp
         if (!create_main_cpp(project_path, project_name)) {
-            logger::print_error("Failed to create main.cpp file");
-            success = false;
+            logger::print_error("Failed to create main.cpp");
+            return false;
         }
-    } catch (const std::exception& ex) {
-        logger::print_error("Exception creating main.cpp: " + std::string(ex.what()));
-        success = false;
-    }
-    
-    // Create include files
-    try {
-        if (!create_include_files(project_path, project_name)) {
+        
+        // Create include files
+        if (!create_include_files(project_path, normalized_name)) {
             logger::print_error("Failed to create include files");
-            success = false;
+            return false;
         }
-    } catch (const std::exception& ex) {
-        logger::print_error("Exception creating include files: " + std::string(ex.what()));
-        success = false;
-    }
-    
-    // Create test files if tests are enabled
-    if (with_tests) {
-        try {
-            if (!create_test_files(project_path, project_name)) {
+        
+        // Create example implementation file
+        if (!create_example_implementation(project_path, normalized_name)) {
+            logger::print_error("Failed to create implementation files");
+            return false;
+        }
+        
+        // Create test files if requested
+        if (with_tests) {
+            if (!create_test_files(project_path, normalized_name)) {
                 logger::print_error("Failed to create test files");
-                success = false;
+                return false;
             }
-        } catch (const std::exception& ex) {
-            logger::print_error("Exception creating test files: " + std::string(ex.what()));
-            success = false;
         }
-    }
-    
-    // Create license file
-    try {
+        
+        // Create license file
         if (!create_license_file(project_path, project_name)) {
             logger::print_error("Failed to create LICENSE file");
-            success = false;
+            return false;
         }
+        
+        return true;
     } catch (const std::exception& ex) {
-        logger::print_error("Exception creating LICENSE file: " + std::string(ex.what()));
-        success = false;
+        logger::print_error("Failed to create project: " + std::string(ex.what()));
+        return false;
     }
-    
-    // Initialize git repository if requested
-    if (initialize_git && success) {
-        try {
-            if (!init_git_repository(project_path, verbose)) {
-                logger::print_warning("Failed to initialize git repository");
-                // Continue anyway, not critical
-            }
-        } catch (const std::exception& ex) {
-            logger::print_warning("Exception initializing git: " + std::string(ex.what()));
-            // Continue anyway, not critical
-        }
-    }
-    
-    if (success) {
-        logger::print_success("Project created successfully: " + project_name);
-        logger::print_status("You can now build the project with: cforge build");
-        logger::print_status("Or run the project with: cforge run");
-        logger::print_status("CMakeLists.txt will be generated automatically when you run build");
-    } else {
-        logger::print_error("Failed to create some project files");
-    }
-    
-    return success;
 }
 
 /**
@@ -1283,7 +1184,7 @@ cforge_int_t cforge_cmd_init(const cforge_context_t* ctx) {
                 }
                 
                 // Create the project files
-                if (!create_project(project_dir, project.name, cpp_standard, with_git, true, with_tests)) {
+                if (!create_project(project_dir, project.name, cpp_standard, with_git, with_tests)) {
                     logger::print_error("Failed to create project '" + project.name + "'");
                     continue;
                 }
@@ -1404,7 +1305,7 @@ cforge_int_t cforge_cmd_init(const cforge_context_t* ctx) {
                 logger::print_status("Creating project '" + proj_name + "' at " + project_dir.string());
                 
                 // Create the project with detailed logging
-                if (!create_project(project_dir, proj_name, cpp_standard, with_git, true, with_tests)) {
+                if (!create_project(project_dir, proj_name, cpp_standard, with_git, with_tests, "", "Debug")) {
                     logger::print_error("Failed to create project '" + proj_name + "'");
                     all_projects_success = false;
                     // Continue with other projects instead of stopping
@@ -1450,9 +1351,7 @@ cforge_int_t cforge_cmd_init(const cforge_context_t* ctx) {
                 }
                 
                 // Create the project files
-                if (!create_project(project_dir, proj_name, cpp_standard, with_git, 
-                                  logger::get_verbosity() >= log_verbosity::VERBOSITY_VERBOSE, 
-                                  with_tests)) {
+                if (!create_project(project_dir, proj_name, cpp_standard, with_git, with_tests, "", "Debug")) {
                     logger::print_error("Failed to create project '" + proj_name + "'");
                     all_projects_success = false;
                     continue;
@@ -1522,9 +1421,12 @@ cforge_int_t cforge_cmd_init(const cforge_context_t* ctx) {
             // Create the project files
             logger::print_status("Creating project files...");
             
-            if (!create_project(project_dir, project_name, cpp_standard, with_git, 
-                              logger::get_verbosity() >= log_verbosity::VERBOSITY_VERBOSE, 
-                              with_tests)) {
+            // Default build type and CMake preset
+            std::string build_type = "Debug";
+            std::string cmake_preset = "";
+            
+            // Create the project with detailed logging
+            if (!create_project(project_dir, project_name, cpp_standard, with_git, with_tests, cmake_preset, build_type)) {
                 logger::print_error("Failed to create project '" + project_name + "'");
                 return 1;
             }

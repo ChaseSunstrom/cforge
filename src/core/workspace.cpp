@@ -14,6 +14,7 @@
 #include <sstream>
 #include <functional>
 #include <algorithm>
+#include <iostream>
 
 namespace cforge {
 
@@ -648,13 +649,32 @@ bool workspace::run_project(const std::string& project_name, const std::vector<s
     
     logger::print_status("Running executable: " + executable.string());
     
-    // Execute the program
-    bool success = execute_tool(
-        executable.string(), args, project.path.string(), 
-        "Project " + project.name, verbose, 0 // No timeout
+    // Display program output header
+    logger::print_status("Program Output\n────────────");
+    
+    // Create custom callbacks to display raw program output
+    std::function<void(const std::string&)> stdout_callback = [](const std::string& chunk) {
+        std::cout << chunk << std::flush;
+    };
+    
+    std::function<void(const std::string&)> stderr_callback = [](const std::string& chunk) {
+        std::cerr << chunk << std::flush;
+    };
+    
+    // Execute the program with custom output handling
+    process_result result = execute_process(
+        executable.string(), 
+        args, 
+        project.path.string(),
+        stdout_callback, 
+        stderr_callback,
+        0  // No timeout
     );
     
-    if (!success) {
+    // Add a blank line after program output
+    std::cout << std::endl;
+    
+    if (!result.success) {
         logger::print_error("Project execution failed: " + project.name);
         return false;
     }

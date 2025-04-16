@@ -16,6 +16,8 @@
 #include <vector>
 #include <algorithm>
 #include <fstream>
+#include <iostream>
+#include <functional>
 
 using namespace cforge;
 
@@ -149,7 +151,7 @@ static std::filesystem::path find_project_executable(
         for (const auto& pattern : executable_patterns) {
             std::filesystem::path exe_path = search_path / pattern;
             if (std::filesystem::exists(exe_path) && is_valid_executable(exe_path)) {
-                logger::print_status("Found executable: " + exe_path.string());
+                logger::print_verbose("Found executable: " + exe_path.string());
                 return exe_path;
             }
         }
@@ -168,7 +170,7 @@ static std::filesystem::path find_project_executable(
                 }
                 
                 if (is_likely_project_executable(entry.path())) {
-                    logger::print_status("Found executable: " + entry.path().string());
+                    logger::print_verbose("Found executable: " + entry.path().string());
                     return entry.path();
                 }
             }
@@ -186,7 +188,7 @@ static std::filesystem::path find_project_executable(
             }
             
             if (is_likely_project_executable(entry.path())) {
-                logger::print_status("Found executable in recursive search: " + entry.path().string());
+                logger::print_verbose("Found executable in recursive search: " + entry.path().string());
                 return entry.path();
             }
         }
@@ -482,23 +484,38 @@ cforge_int_t cforge_cmd_run(const cforge_context_t* ctx) {
                 logger::print_status("Arguments: " + args_str);
             }
             
-            logger::print_status("\nProgram Output\n────────────");
+            std::cout << std::endl;
+
+            logger::print_status("Program Output\n────────────");
             
-            bool result = execute_tool(
+            // Create custom callbacks to display raw program output
+            std::function<void(const std::string&)> stdout_callback = [](const std::string& chunk) {
+                std::cout << chunk << std::flush;
+            };
+            
+            std::function<void(const std::string&)> stderr_callback = [](const std::string& chunk) {
+                std::cerr << chunk << std::flush;
+            };
+            
+            // Execute the program with custom output handling
+            process_result result = execute_process(
                 executable.string(), 
                 run_args, 
-                project_dir.string(), 
-                "Project " + project_name, 
-                verbose, 
+                project_dir.string(),
+                stdout_callback, 
+                stderr_callback,
                 0  // No timeout
             );
             
-            if (!result) {
+            // Add a blank line after program output
+            std::cout << std::endl;
+            
+            if (!result.success) {
                 logger::print_error("Program execution failed");
                 return 1;
             }
             
-            logger::print_success("\n✓ Program executed successfully");
+            logger::print_success("Program executed successfully");
             return 0;
         }
     } catch (const std::exception& ex) {

@@ -168,14 +168,55 @@ std::vector<Diagnostic> parse_gcc_clang_errors(const std::string& error_output) 
                 
                 std::string level_str = matches[4].str();
                 diag.message = matches[5].str();
-                diag.code = matches[6].matched ? matches[6].str() : "E0000";
+                
+                // Use a more specific error code based on message content
+                if (matches[6].matched) {
+                    diag.code = matches[6].str();
+                } else {
+                    // Generate a meaningful error code based on the message
+                    if (diag.message.find("expected") != std::string::npos) {
+                        diag.code = "E1001"; // syntax error - expected something
+                    } else if (diag.message.find("undeclared") != std::string::npos || 
+                               diag.message.find("not declared") != std::string::npos) {
+                        diag.code = "E1002"; // undeclared identifier
+                    } else if (diag.message.find("undefined") != std::string::npos) {
+                        diag.code = "E1003"; // undefined reference/symbol
+                    } else if (diag.message.find("cannot convert") != std::string::npos || 
+                               diag.message.find("invalid conversion") != std::string::npos) {
+                        diag.code = "E1004"; // type conversion error
+                    } else if (diag.message.find("no matching") != std::string::npos) {
+                        diag.code = "E1005"; // no matching function/method
+                    } else if (diag.message.find("redefinition") != std::string::npos || 
+                               diag.message.find("already defined") != std::string::npos) {
+                        diag.code = "E1006"; // redefinition error
+                    } else {
+                        diag.code = "E1000"; // generic error
+                    }
+                }
                 
                 if (level_str == "error") {
                     diag.level = DiagnosticLevel::ERROR;
                 } else if (level_str == "warning") {
                     diag.level = DiagnosticLevel::WARNING;
+                    
+                    // If it's a warning and no specific code was provided, use W prefix
+                    if (!matches[6].matched) {
+                        if (diag.message.find("unused") != std::string::npos) {
+                            diag.code = "W2001"; // unused variable/function
+                        } else if (diag.message.find("implicit") != std::string::npos) {
+                            diag.code = "W2002"; // implicit conversion
+                        } else if (diag.message.find("deprecated") != std::string::npos) {
+                            diag.code = "W2003"; // deprecated feature
+                        } else {
+                            diag.code = "W2000"; // generic warning
+                        }
+                    }
                 } else if (level_str == "note") {
                     diag.level = DiagnosticLevel::NOTE;
+                    // Use N prefix for notes
+                    if (!matches[6].matched) {
+                        diag.code = "N3000";
+                    }
                 }
             } else if (matches[9].matched) {  // Second pattern without column number
                 diag.file_path = matches[7].str();
@@ -184,14 +225,55 @@ std::vector<Diagnostic> parse_gcc_clang_errors(const std::string& error_output) 
                 
                 std::string level_str = matches[9].str();
                 diag.message = matches[10].str();
-                diag.code = matches[11].matched ? matches[11].str() : "E0000";
+                
+                // Use a more specific error code based on message content
+                if (matches[11].matched) {
+                    diag.code = matches[11].str();
+                } else {
+                    // Generate a meaningful error code based on the message
+                    if (diag.message.find("expected") != std::string::npos) {
+                        diag.code = "E1001"; // syntax error - expected something
+                    } else if (diag.message.find("undeclared") != std::string::npos || 
+                               diag.message.find("not declared") != std::string::npos) {
+                        diag.code = "E1002"; // undeclared identifier
+                    } else if (diag.message.find("undefined") != std::string::npos) {
+                        diag.code = "E1003"; // undefined reference/symbol
+                    } else if (diag.message.find("cannot convert") != std::string::npos || 
+                               diag.message.find("invalid conversion") != std::string::npos) {
+                        diag.code = "E1004"; // type conversion error
+                    } else if (diag.message.find("no matching") != std::string::npos) {
+                        diag.code = "E1005"; // no matching function/method
+                    } else if (diag.message.find("redefinition") != std::string::npos || 
+                               diag.message.find("already defined") != std::string::npos) {
+                        diag.code = "E1006"; // redefinition error
+                    } else {
+                        diag.code = "E1000"; // generic error
+                    }
+                }
                 
                 if (level_str == "error") {
                     diag.level = DiagnosticLevel::ERROR;
                 } else if (level_str == "warning") {
                     diag.level = DiagnosticLevel::WARNING;
+                    
+                    // If it's a warning and no specific code was provided, use W prefix
+                    if (!matches[11].matched) {
+                        if (diag.message.find("unused") != std::string::npos) {
+                            diag.code = "W2001"; // unused variable/function
+                        } else if (diag.message.find("implicit") != std::string::npos) {
+                            diag.code = "W2002"; // implicit conversion
+                        } else if (diag.message.find("deprecated") != std::string::npos) {
+                            diag.code = "W2003"; // deprecated feature
+                        } else {
+                            diag.code = "W2000"; // generic warning
+                        }
+                    }
                 } else if (level_str == "note") {
                     diag.level = DiagnosticLevel::NOTE;
+                    // Use N prefix for notes
+                    if (!matches[11].matched) {
+                        diag.code = "N3000";
+                    }
                 }
             }
             
@@ -347,9 +429,58 @@ std::vector<Diagnostic> parse_cmake_errors(const std::string& error_output) {
             if (matches[2].matched) {
                 diag.file_path = matches[2].str();
                 diag.line_number = std::stoi(matches[3].str());
-                diag.message = matches[5].str() + " (in " + matches[4].str() + ")";
+                std::string command = matches[4].str();
+                std::string message = matches[5].str();
+                diag.message = message + " (in " + command + ")";
+                
+                // Assign more specific error codes based on command
+                if (level_str == "Error") {
+                    if (command == "find_package") {
+                        diag.code = "CM1001"; // package not found
+                    } else if (command == "add_executable" || command == "add_library") {
+                        diag.code = "CM1002"; // target definition error
+                    } else if (command == "target_link_libraries") {
+                        diag.code = "CM1003"; // linking error
+                    } else if (command == "include") {
+                        diag.code = "CM1004"; // include error
+                    } else {
+                        diag.code = "CM1000"; // generic CMake error
+                    }
+                } else if (level_str == "Warning") {
+                    if (command == "find_package") {
+                        diag.code = "CM2001"; // package warning
+                    } else if (command.find("deprecated") != std::string::npos) {
+                        diag.code = "CM2002"; // deprecation warning
+                    } else {
+                        diag.code = "CM2000"; // generic CMake warning
+                    }
+                }
             } else {
-                diag.message = matches[5].str();
+                // For errors not associated with a specific file
+                std::string message = matches[5].str();
+                diag.message = message;
+                
+                // Assign more specific error codes based on message content
+                if (level_str == "Error") {
+                    if (message.find("Could not find") != std::string::npos || 
+                        message.find("not found") != std::string::npos) {
+                        diag.code = "CM1001"; // not found error
+                    } else if (message.find("already exists") != std::string::npos) {
+                        diag.code = "CM1005"; // duplicate definition
+                    } else if (message.find("syntax error") != std::string::npos) {
+                        diag.code = "CM1006"; // syntax error
+                    } else {
+                        diag.code = "CM1000"; // generic CMake error
+                    }
+                } else if (level_str == "Warning") {
+                    if (message.find("deprecated") != std::string::npos) {
+                        diag.code = "CM2002"; // deprecation warning
+                    } else if (message.find("unused") != std::string::npos) {
+                        diag.code = "CM2003"; // unused variable/target
+                    } else {
+                        diag.code = "CM2000"; // generic CMake warning
+                    }
+                }
             }
             
             // Add help text
@@ -392,6 +523,33 @@ std::vector<Diagnostic> parse_ninja_errors(const std::string& error_output) {
             }
             
             diag.message = matches[4].str();
+            std::string message = diag.message;
+            
+            // More specific error codes for ninja
+            if (level_str == "error") {
+                if (message.find("syntax error") != std::string::npos) {
+                    diag.code = "NJ1001"; // syntax error
+                } else if (message.find("multiple rules") != std::string::npos) {
+                    diag.code = "NJ1002"; // multiple rules for one target
+                } else if (message.find("missing") != std::string::npos) {
+                    diag.code = "NJ1003"; // missing input
+                } else if (message.find("stopping") != std::string::npos || 
+                           message.find("failed") != std::string::npos) {
+                    diag.code = "NJ1004"; // build stopped
+                } else if (message.find("unknown") != std::string::npos) {
+                    diag.code = "NJ1005"; // unknown target/variable
+                } else {
+                    diag.code = "NJ1000"; // generic ninja error
+                }
+            } else if (level_str == "warning") {
+                if (message.find("duplicate") != std::string::npos) {
+                    diag.code = "NJ2001"; // duplicate definition
+                } else if (message.find("deprecated") != std::string::npos) {
+                    diag.code = "NJ2002"; // deprecated feature
+                } else {
+                    diag.code = "NJ2000"; // generic ninja warning
+                }
+            }
             
             // Add help text
             diag.help_text = "Check your build configuration";
@@ -431,35 +589,70 @@ std::vector<Diagnostic> parse_linker_errors(const std::string& error_output) {
         if (std::regex_search(line, matches, lld_error_regex)) {
             Diagnostic diag;
             diag.level = DiagnosticLevel::ERROR;
-            diag.code = "LINK0001";
-            diag.message = matches[1].str();
+            std::string message = matches[1].str();
+            diag.message = message;
             diag.file_path = "";
             diag.line_number = 0;
             diag.column_number = 0;
+            
+            // Generate a more specific error code based on the message
+            if (message.find("undefined symbol") != std::string::npos) {
+                diag.code = "L4001"; // undefined symbol
+            } else if (message.find("duplicate symbol") != std::string::npos) {
+                diag.code = "L4002"; // duplicate symbol
+            } else if (message.find("cannot open") != std::string::npos) {
+                diag.code = "L4003"; // cannot open file
+            } else if (message.find("unresolved") != std::string::npos) {
+                diag.code = "L4004"; // unresolved external
+            } else {
+                diag.code = "L4000"; // generic linker error
+            }
+            
             diagnostics.push_back(diag);
-            current_error = matches[1].str();
+            current_error = message;
         }
         // Try to match ld linker errors
         else if (std::regex_search(line, matches, ld_error_regex)) {
             Diagnostic diag;
             diag.level = DiagnosticLevel::ERROR;
-            diag.code = "LINK0002";
-            diag.message = matches[2].str();
+            std::string message = matches[2].str();
+            diag.message = message;
             diag.file_path = "";
             diag.line_number = 0;
             diag.column_number = 0;
+            
+            // Generate a more specific error code based on the message
+            if (message.find("undefined reference") != std::string::npos || 
+                message.find("undefined symbol") != std::string::npos) {
+                diag.code = "L4001"; // undefined symbol
+            } else if (message.find("duplicate symbol") != std::string::npos || 
+                       message.find("multiple definition") != std::string::npos) {
+                diag.code = "L4002"; // duplicate symbol
+            } else if (message.find("cannot find") != std::string::npos || 
+                       message.find("cannot open") != std::string::npos) {
+                diag.code = "L4003"; // cannot open file
+            } else if (message.find("unresolved") != std::string::npos) {
+                diag.code = "L4004"; // unresolved external
+            } else {
+                diag.code = "L4000"; // generic linker error
+            }
+            
             diagnostics.push_back(diag);
-            current_error = matches[2].str();
+            current_error = message;
         }
         // Try to match MSVC linker errors
         else if (std::regex_search(line, matches, msvc_link_error_regex)) {
             Diagnostic diag;
             diag.level = DiagnosticLevel::ERROR;
+            
+            // MSVC has its own error codes like LNK2001, LNK2019, etc.
+            // We'll use those directly for more accuracy
             diag.code = matches[1].str();
             diag.message = matches[2].str();
             diag.file_path = "";
             diag.line_number = 0;
             diag.column_number = 0;
+            
             diagnostics.push_back(diag);
             current_error = matches[2].str();
         }
