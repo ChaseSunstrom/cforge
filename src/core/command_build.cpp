@@ -234,17 +234,17 @@ static bool clone_git_dependencies(
         std::filesystem::path dep_path = deps_path / dep;
 
         if (std::filesystem::exists(dep_path)) {
-            if (verbose) {
-                logger::print_verbose("Dependency '" + dep + "' directory already exists at: " + dep_path.string());
-            }
+            logger::print_status("Dependency '" + dep + "' directory already exists at: " + dep_path.string());
             
             // Update the repository if it exists
-            if (verbose) {
-                logger::print_verbose("Updating dependency '" + dep + "' from remote...");
-            }
+            logger::print_status("Updating dependency '" + dep + "' from remote...");
             
             // Run git fetch to update
             std::vector<std::string> fetch_args = {"fetch", "--quiet"};
+            if (verbose) {
+                fetch_args.pop_back(); // Remove --quiet for verbose output
+            }
+            
             bool fetch_result = execute_tool("git", fetch_args, dep_path.string(), 
                                            "Git Fetch for " + dep, verbose);
             
@@ -254,11 +254,13 @@ static bool clone_git_dependencies(
             
             // Checkout specific ref if provided
             if (!ref.empty()) {
-                if (verbose) {
-                    logger::print_verbose("Checking out " + ref + " for dependency '" + dep + "'");
+                logger::print_status("Checking out " + ref + " for dependency '" + dep + "'");
+                
+                std::vector<std::string> checkout_args = {"checkout", ref};
+                if (!verbose) {
+                    checkout_args.push_back("--quiet");
                 }
                 
-                std::vector<std::string> checkout_args = {"checkout", ref, "--quiet"};
                 bool checkout_result = execute_tool("git", checkout_args, dep_path.string(), 
                                                  "Git Checkout for " + dep, verbose);
                 
@@ -271,9 +273,7 @@ static bool clone_git_dependencies(
             logger::print_status("Cloning dependency '" + dep + "' from " + url + "...");
             
             std::vector<std::string> clone_args = {"clone", url, dep_path.string()};
-            if (verbose) {
-                clone_args.push_back("--verbose");
-            } else {
+            if (!verbose) {
                 clone_args.push_back("--quiet");
             }
             
@@ -348,36 +348,41 @@ static void configure_git_dependencies_in_cmake(
         std::string tag = project_config.get_string("dependencies.git." + dep + ".tag", "");
         std::string branch = project_config.get_string("dependencies.git." + dep + ".branch", "");
         std::string commit = project_config.get_string("dependencies.git." + dep + ".commit", "");
-        std::string ref = tag;
-        if (ref.empty()) ref = branch;
-        if (ref.empty()) ref = commit;
+        
+        // Get dependency options
+        bool make_available = project_config.get_bool("dependencies.git." + dep + ".make_available", true);
+        bool include = project_config.get_bool("dependencies.git." + dep + ".include", true);
+        bool link = project_config.get_bool("dependencies.git." + dep + ".link", true);
+        std::string target_name = project_config.get_string("dependencies.git." + dep + ".target_name", "");
         
         cmakelists << "# " << dep << " dependency\n";
         cmakelists << "message(STATUS \"Setting up " << dep << " dependency from " << url << "\")\n";
         
-        // First, check if directory already exists
-        cmakelists << "if(NOT EXISTS \"${DEPS_DIR}/" << dep << "\")\n";
-        cmakelists << "    message(STATUS \"Cloning " << dep << " via Git...\")\n";
-        cmakelists << "    execute_process(\n";
-        cmakelists << "        COMMAND git clone " << url << " ${DEPS_DIR}/" << dep << "\n";
-        cmakelists << "        RESULT_VARIABLE GIT_RESULT\n";
-        cmakelists << "    )\n";
-        
-        // Check out specific ref if provided
-        if (!ref.empty()) {
-            cmakelists << "    if(GIT_RESULT EQUAL 0)\n";
-            cmakelists << "        execute_process(\n";
-            cmakelists << "            COMMAND git checkout " << ref << "\n";
-            cmakelists << "            WORKING_DIRECTORY ${DEPS_DIR}/" << dep << "\n";
-            cmakelists << "        )\n";
-        }
-        
-        cmakelists << "endif()\n\n";
-        
-        // Set up FetchContent for CMake dependency management
+        // FetchContent declaration
         cmakelists << "FetchContent_Declare(" << dep << "\n";
         cmakelists << "    SOURCE_DIR ${DEPS_DIR}/" << dep << "\n";
         cmakelists << ")\n";
+        
+        // Process include directories
+        if (include) {
+            cmakelists << "# Include directories for " << dep << "\n";
+            
+            std::vector<std::string> include_dirs;
+            std::string include_dirs_key = "dependencies.git." + dep + ".include_dirs";
+            
+            if (project_config.has_key(include_dirs_key)) {
+                include_dirs = project_config.get_string_array(include_dirs_key);
+            } else {
+                // Default include directories
+                include_dirs.push_back("include");
+                include_dirs.push_back(".");
+            }
+            
+            for (const auto& inc_dir : include_dirs) {
+                cmakelists << "include_directories(${DEPS_DIR}/" << dep << "/" << inc_dir << ")\n";
+            }
+            cmakelists << "\n";
+        }
         
         // Special handling for common libraries
         if (dep == "json" || dep == "nlohmann_json") {
@@ -395,18 +400,29 @@ static void configure_git_dependencies_in_cmake(
             cmakelists << "set(FMT_DOC OFF CACHE BOOL \"\" FORCE)\n";
             cmakelists << "set(FMT_SYSTEM_HEADERS ON CACHE BOOL \"\" FORCE)\n";
             cmakelists << "FetchContent_MakeAvailable(" << dep << ")\n\n";
-        } else {
-            // Check if the dependency should be made available
-            bool make_available = project_config.get_bool("dependencies.git." + dep + ".make_available", true);
+        } else if (dep == "spdlog") {
+            // For spdlog, similar configuration
+            cmakelists << "# For spdlog, configure options\n";
+            cmakelists << "set(SPDLOG_BUILD_EXAMPLES OFF CACHE BOOL \"\" FORCE)\n";
+            cmakelists << "set(SPDLOG_BUILD_TESTS OFF CACHE BOOL \"\" FORCE)\n";
             if (make_available) {
-                cmakelists << "FetchContent_MakeAvailable(" << dep << ")\n";
+                cmakelists << "FetchContent_MakeAvailable(" << dep << ")\n\n";
             } else {
                 cmakelists << "FetchContent_GetProperties(" << dep << ")\n";
                 cmakelists << "if(NOT " << dep << "_POPULATED)\n";
                 cmakelists << "    FetchContent_Populate(" << dep << ")\n";
-                cmakelists << "endif()\n";
+                cmakelists << "endif()\n\n";
             }
-            cmakelists << "\n";
+        } else {
+            // General case for other dependencies
+            if (make_available) {
+                cmakelists << "FetchContent_MakeAvailable(" << dep << ")\n\n";
+            } else {
+                cmakelists << "FetchContent_GetProperties(" << dep << ")\n";
+                cmakelists << "if(NOT " << dep << "_POPULATED)\n";
+                cmakelists << "    FetchContent_Populate(" << dep << ")\n";
+                cmakelists << "endif()\n\n";
+            }
         }
     }
 }
@@ -744,16 +760,6 @@ static bool generate_cmakelists_from_toml(
                     if (!target_name.empty()) {
                         // Use the user-specified target name
                         cmakelists << "    " << target_name << "\n";
-                    } else {
-                        // Special case for common libraries
-                        if (dep == "fmt") {
-                            cmakelists << "    fmt::fmt\n";
-                        } else if (dep == "json" || dep == "nlohmann_json") {
-                            // JSON is header-only, no linking needed
-                            continue;
-                        } else {
-                            cmakelists << "    " << dep << "\n";
-                        }
                     }
                 }
             }

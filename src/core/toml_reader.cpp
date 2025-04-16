@@ -139,7 +139,8 @@ bool toml_reader::has_key(const std::string& key) const {
     
     try {
         auto& table = *static_cast<toml::table*>(toml_data);
-        return table.at_path(key).is_value();
+        auto node = table.at_path(key);
+        return static_cast<bool>(node); // Check if node exists
     } catch (...) {
         return false;
     }
