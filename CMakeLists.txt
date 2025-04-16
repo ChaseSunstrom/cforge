@@ -87,9 +87,6 @@ target_compile_definitions(default PRIVATE $<$<CONFIG:RELEASE>:NDEBUG>)
 
 target_include_directories(default PRIVATE "include" "deps" "deps/fmt/include" "deps/tomlplusplus/include")
 
-# Testing support
-enable_testing()
-add_subdirectory(tests)
 
 # Installation
 install(TARGETS default

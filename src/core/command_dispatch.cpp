@@ -2,6 +2,7 @@
 #include "core/command.h"
 #include "cforge/log.hpp"
 #include <string>
+#include <iostream>
 
 using namespace cforge;
 
@@ -12,7 +13,9 @@ using namespace cforge;
  * @return cforge_int_t Exit code (0 for success)
  */
 extern "C" cforge_int_t cforge_dispatch_command(const cforge_context_t* ctx) {
+  // Check if command is null
   if (!ctx->args.command) {
+    // No command specified, show help
     return cforge_cmd_help(ctx);
   }
 
@@ -47,6 +50,8 @@ extern "C" cforge_int_t cforge_dispatch_command(const cforge_context_t* ctx) {
     return cforge_cmd_ide(ctx);
   } else if (strcmp(ctx->args.command, "list") == 0) {
     return cforge_cmd_list(ctx);
+  } else if (strcmp(ctx->args.command, "pack") == 0) {
+    return cforge_cmd_package(ctx);
   } else if (strcmp(ctx->args.command, "help") == 0 ||
              strcmp(ctx->args.command, "--help") == 0 ||
              strcmp(ctx->args.command, "-h") == 0) {
