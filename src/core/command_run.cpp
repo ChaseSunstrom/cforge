@@ -324,82 +324,106 @@ cforge_int_t cforge_cmd_run(const cforge_context_t* ctx) {
         // Determine project directory
         std::filesystem::path project_dir = ctx->working_dir;
         
+        // Parse common parameters first
+        // Get the build configuration
+        std::string config = "Release"; // Default
+        if (ctx->args.config && strlen(ctx->args.config) > 0) {
+            config = ctx->args.config;
+        }
+        
+        // Check for --config or -c flag
+        if (ctx->args.args) {
+            for (int i = 0; i < ctx->args.arg_count; ++i) {
+                std::string arg = ctx->args.args[i];
+                if ((arg == "--config" || arg == "-c") && i + 1 < ctx->args.arg_count) {
+                    config = ctx->args.args[i + 1];
+                    break;
+                }
+            }
+        }
+        
+        // Check verbosity
+        bool verbose = logger::get_verbosity() == log_verbosity::VERBOSITY_VERBOSE;
+        
+        // Check if build should be skipped
+        bool skip_build = false;
+        if (ctx->args.args) {
+            for (int i = 0; i < ctx->args.arg_count; ++i) {
+                if (strcmp(ctx->args.args[i], "--no-build") == 0) {
+                    skip_build = true;
+                    break;
+                }
+            }
+        }
+        
+        // Check for specific project
+        std::string specific_project;
+        if (ctx->args.project) {
+            specific_project = ctx->args.project;
+        } else if (ctx->args.args) {
+            for (int i = 0; i < ctx->args.arg_count; ++i) {
+                if ((strcmp(ctx->args.args[i], "--project") == 0 || 
+                     strcmp(ctx->args.args[i], "-p") == 0) && 
+                    i + 1 < ctx->args.arg_count) {
+                    specific_project = ctx->args.args[i + 1];
+                    break;
+                }
+            }
+        }
+        
+        // Get extra arguments to pass to the executable
+        std::vector<std::string> run_args;
+        bool passing_args = false;
+        if (ctx->args.args) {
+            for (int i = 0; i < ctx->args.arg_count; ++i) {
+                if (passing_args) {
+                    run_args.push_back(ctx->args.args[i]);
+                    continue;
+                }
+                
+                if (strcmp(ctx->args.args[i], "--") == 0) {
+                    // Start passing all remaining args to the executable
+                    passing_args = true;
+                }
+            }
+        }
+        
         // Check if this is a workspace
         std::filesystem::path workspace_file = project_dir / WORKSPACE_FILE;
         bool is_workspace = std::filesystem::exists(workspace_file);
         
         if (is_workspace) {
             // Handle workspace run
+            logger::print_status("Running in workspace context");
+            
             workspace workspace_obj;
             if (!workspace_obj.load(project_dir)) {
                 logger::print_error("Failed to load workspace configuration");
                 return 1;
             }
             
-            logger::print_status("Running project in workspace '" + workspace_obj.get_name() + "'");
+            logger::print_status("Workspace: " + workspace_obj.get_name());
+            logger::print_status("Configuration: " + config);
             
-            // Check if a specific project was requested
-            std::string project_to_run;
-            if (ctx->args.project) {
-                project_to_run = ctx->args.project;
-            } else if (ctx->args.args) {
-                for (int i = 0; i < ctx->args.arg_count; ++i) {
-                    if (strcmp(ctx->args.args[i], "--project") == 0 || 
-                        strcmp(ctx->args.args[i], "-p") == 0) {
-                        if (i+1 < ctx->args.arg_count) {
-                            project_to_run = ctx->args.args[i+1];
-                            break;
-                        }
-                    }
-                }
-            }
-            
-            // Get the configuration to build/run
-            std::string config = ctx->args.config ? ctx->args.config : "Release";
-            if (ctx->args.args) {
-                for (int i = 0; i < ctx->args.arg_count; ++i) {
-                    if (strcmp(ctx->args.args[i], "--config") == 0 || 
-                        strcmp(ctx->args.args[i], "-c") == 0) {
-                        if (i+1 < ctx->args.arg_count) {
-                            config = ctx->args.args[i+1];
-                            break;
-                        }
-                    }
-                }
-            }
-            
-            // Check verbosity
-            bool verbose = logger::get_verbosity() == log_verbosity::VERBOSITY_VERBOSE;
-            
-            // Get extra arguments to pass to the executable
-            std::vector<std::string> run_args;
-            bool passing_args = false;
-            if (ctx->args.args) {
-                for (int i = 0; i < ctx->args.arg_count; ++i) {
-                    if (passing_args) {
-                        run_args.push_back(ctx->args.args[i]);
-                        continue;
-                    }
-                    
-                    if (strcmp(ctx->args.args[i], "--") == 0) {
-                        // Start passing all remaining args to the executable
-                        passing_args = true;
-                    }
-                }
+            if (skip_build) {
+                logger::print_status("Skipping build step as requested");
             }
             
             // Run the project
-            if (project_to_run.empty()) {
+            if (specific_project.empty()) {
                 // Run the startup project
+                logger::print_status("Running startup project");
                 return workspace_obj.run_startup_project(run_args, config, verbose) ? 0 : 1;
             } else {
                 // Run a specific project
-                return workspace_obj.run_project(project_to_run, run_args, config, verbose) ? 0 : 1;
+                logger::print_status("Running project: " + specific_project);
+                return workspace_obj.run_project(specific_project, run_args, config, verbose) ? 0 : 1;
             }
         } else {
             // Handle single project run
+            logger::print_status("Running in single project context");
             
-            // Check if cforge.toml exists
+            // Check if this is a valid cforge project
             std::filesystem::path config_path = project_dir / CFORGE_FILE;
             if (!std::filesystem::exists(config_path)) {
                 logger::print_error("Not a valid cforge project (missing " + std::string(CFORGE_FILE) + ")");
@@ -416,29 +440,15 @@ cforge_int_t cforge_cmd_run(const cforge_context_t* ctx) {
             // Get project name
             std::string project_name = project_config.get_string("project.name", "");
             if (project_name.empty()) {
-                // Use directory name as fallback
-                project_name = project_dir.filename().string();
+                project_name = std::filesystem::path(project_dir).filename().string();
             }
             
-            // Get the configuration
-            std::string config = get_build_config(ctx, &project_config);
+            // Log project info
+            logger::print_status("Project: " + project_name);
+            logger::print_status("Configuration: " + config);
             
-            // Get build directory
+            // Determine build directory
             std::string build_dir_name = project_config.get_string("build.build_dir", "build");
-            
-            // Check if we should skip building
-            bool skip_build = false;
-            if (ctx->args.args) {
-                for (int i = 0; i < ctx->args.arg_count; ++i) {
-                    if (strcmp(ctx->args.args[i], "--no-build") == 0) {
-                        skip_build = true;
-                        break;
-                    }
-                }
-            }
-            
-            // Check verbosity
-            bool verbose = logger::get_verbosity() == log_verbosity::VERBOSITY_VERBOSE;
             
             // Build the project if needed
             if (!skip_build) {
@@ -447,7 +457,7 @@ cforge_int_t cforge_cmd_run(const cforge_context_t* ctx) {
                     return 1;
                 }
             } else {
-                logger::print_status("Skipping build step");
+                logger::print_status("Skipping build step as requested");
             }
             
             // Find the executable
@@ -460,25 +470,10 @@ cforge_int_t cforge_cmd_run(const cforge_context_t* ctx) {
                 return 1;
             }
             
-            // Get extra arguments to pass to the executable
-            std::vector<std::string> run_args;
-            bool passing_args = false;
-            if (ctx->args.args) {
-                for (int i = 0; i < ctx->args.arg_count; ++i) {
-                    if (passing_args) {
-                        run_args.push_back(ctx->args.args[i]);
-                        continue;
-                    }
-                    
-                    if (strcmp(ctx->args.args[i], "--") == 0) {
-                        // Start passing all remaining args to the executable
-                        passing_args = true;
-                    }
-                }
-            }
-            
             // Run the executable
+            logger::print_status("Found executable: " + executable.string());
             logger::print_status("Running: " + executable.filename().string());
+            
             if (!run_args.empty()) {
                 std::string args_str;
                 for (const auto& arg : run_args) {
@@ -487,6 +482,8 @@ cforge_int_t cforge_cmd_run(const cforge_context_t* ctx) {
                 }
                 logger::print_status("Arguments: " + args_str);
             }
+            
+            logger::print_status("\nProgram Output\n────────────");
             
             bool result = execute_tool(
                 executable.string(), 
@@ -502,11 +499,13 @@ cforge_int_t cforge_cmd_run(const cforge_context_t* ctx) {
                 return 1;
             }
             
-            logger::print_success("Program executed successfully");
+            logger::print_success("\n✓ Program executed successfully");
             return 0;
         }
     } catch (const std::exception& ex) {
         logger::print_error("Exception during command execution: " + std::string(ex.what()));
         return 1;
     }
+    
+    return 0;
 }

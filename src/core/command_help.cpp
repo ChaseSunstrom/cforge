@@ -85,9 +85,17 @@ cforge_int_t cforge_cmd_help(const cforge_context_t* ctx) {
         logger::print_status("");
         logger::print_status("Options:");
         logger::print_status("  -c, --config <config>  Build configuration (Debug, Release, etc.)");
-        logger::print_status("  --clean                Clean before building");
         logger::print_status("  -j <N>                 Number of parallel jobs (default: auto)");
-        logger::print_status("  -v, --verbose         Show verbose output");
+        logger::print_status("  -t, --target <target>  Build specific target");
+        logger::print_status("  -p, --project <name>   Build specific project in workspace");
+        logger::print_status("  -B, --build-dir <dir>  Specify build directory");
+        logger::print_status("  -v, --verbose          Show verbose output");
+        logger::print_status("");
+        logger::print_status("Examples:");
+        logger::print_status("  cforge build                   Build with default Release config");
+        logger::print_status("  cforge build --config Debug    Build with Debug configuration");
+        logger::print_status("  cforge build -j 4              Build using 4 parallel jobs");
+        logger::print_status("  cforge build --project mylib   Build specific project in a workspace");
     } else if (specific_command == "clean") {
         logger::print_status("cforge clean - Clean build artifacts");
         logger::print_status("");
@@ -106,8 +114,15 @@ cforge_int_t cforge_cmd_help(const cforge_context_t* ctx) {
         logger::print_status("");
         logger::print_status("Options:");
         logger::print_status("  -c, --config <config>  Build configuration (Debug, Release, etc.)");
+        logger::print_status("  -p, --project <name>   Run specific project in workspace");
         logger::print_status("  --no-build             Skip building before running");
         logger::print_status("  -v, --verbose          Show verbose output");
+        logger::print_status("");
+        logger::print_status("Examples:");
+        logger::print_status("  cforge run                    Build and run with default config");
+        logger::print_status("  cforge run -c Debug           Build and run with Debug config");
+        logger::print_status("  cforge run -- arg1 arg2       Pass arguments to the executable");
+        logger::print_status("  cforge run -p app1 -- arg1    Run 'app1' from workspace with args");
         logger::print_status("");
         logger::print_status("Arguments after -- are passed to the application");
     } else if (specific_command == "test") {

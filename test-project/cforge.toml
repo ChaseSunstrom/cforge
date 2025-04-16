@@ -1,0 +1,78 @@
+[project]
+name = "test-project"
+version = "0.1.0"
+description = "A C++ project created with cforge"
+cpp_standard = "17"
+authors = ["Your Name <your.email@example.com>"]
+homepage = "https://github.com/yourusername/test-project"
+repository = "https://github.com/yourusername/test-project.git"
+license = "MIT"
+
+[build]
+build_dir = "build"
+# For detailed configurations, you can specify build types
+build_type = "Release"  # Release, Debug, RelWithDebInfo, MinSizeRel
+# Set to true to clean the build directory before building
+# clean = false
+# Number of parallel jobs to use when building
+# jobs = 4
+
+# Custom build configurations
+# You can define custom compiler flags for different build types
+[build.config.debug]
+# Custom compiler defines for Debug builds
+defines = ["DEBUG=1", "ENABLE_LOGGING=1"]
+# Custom compiler flags for Debug builds
+flags = ["-g", "-O0"]
+# Custom CMake arguments for Debug builds
+cmake_args = ["-DENABLE_TESTS=ON"]
+
+[build.config.release]
+# Custom compiler defines for Release builds
+defines = ["NDEBUG=1", "RELEASE=1"]
+# Custom compiler flags for Release builds
+flags = ["-O3"]
+# Custom CMake arguments for Release builds
+cmake_args = ["-DENABLE_TESTS=OFF"]
+
+[build.config.relwithdebinfo]
+# Custom compiler defines for RelWithDebInfo builds
+defines = ["NDEBUG=1"]
+# Custom compiler flags for RelWithDebInfo builds
+flags = ["-O2", "-g"]
+# Custom CMake arguments for RelWithDebInfo builds
+cmake_args = []
+
+[build.config.minsizerel]
+# Custom compiler defines for MinSizeRel builds
+defines = ["NDEBUG=1"]
+# Custom compiler flags for MinSizeRel builds
+flags = ["-Os"]
+# Custom CMake arguments for MinSizeRel builds
+cmake_args = []
+
+[test]
+# Enable or disable testing
+enabled = false
+# Test executable name (default: ${project_name}_tests)
+# test_executable = "${project_name}_tests"
+# Additional arguments to pass to the test executable
+# args = ["--gtest_filter=*", "--gtest_color=yes"]
+# Number of parallel test jobs
+# jobs = 4
+
+[package]
+# Enable or disable packaging
+enabled = true
+# Package generators to use
+generators = []
+# Windows generators: ZIP, NSIS
+# Linux generators: TGZ, DEB, RPM
+# macOS generators: TGZ, DragNDrop
+vendor = "Your Organization"
+contact = "Your Name <your.email@example.com>"
+
+# [dependencies]
+# vcpkg = ["fmt", "spdlog"]
+# vcpkg_triplet = "x64-windows"  # Specify the vcpkg triplet if needed
+# vcpkg_path = "/path/to/vcpkg"  # Custom vcpkg path if needed
