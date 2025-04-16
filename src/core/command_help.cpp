@@ -77,7 +77,7 @@ cforge_int_t cforge_cmd_help(const cforge_context_t* ctx) {
         logger::print_status("");
         logger::print_status("Notes:");
         logger::print_status("  - Hyphens in project names are replaced with underscores in code");
-        logger::print_status("  - If no name is provided, the current directory name is used");
+        logger::print_status("  - If no name is provided, the current directory name is used as the project name");
     } else if (specific_command == "build") {
         logger::print_status("cforge build - Build the project");
         logger::print_status("");

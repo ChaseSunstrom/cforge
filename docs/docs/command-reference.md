@@ -37,7 +37,7 @@ The `init` command creates new cforge projects or workspaces. It supports severa
 #### Creating a Single Project
 
 ```bash
-# Create a project in the current directory
+# Create a project in the current directory using the directory name as project name
 cforge init
 
 # Create a project with a specific name (in a new directory)

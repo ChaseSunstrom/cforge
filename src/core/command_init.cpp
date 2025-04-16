@@ -1073,16 +1073,12 @@ cforge_int_t cforge_cmd_init(const cforge_context_t* ctx) {
     try {
         logger::print_status("Starting init command execution");
         
-
-        // Debug the WORKSPACE_FILE constant
-        logger::print_status("WORKSPACE_FILE defined as: " + std::string(WORKSPACE_FILE));
-        
         // Check if a workspace configuration file exists in the current directory
         std::filesystem::path workspace_file_path = std::filesystem::path(ctx->working_dir) / WORKSPACE_FILE;
         bool workspace_file_exists = std::filesystem::exists(workspace_file_path);
         
-        // Default project and workspace names
-        std::string project_name = "cpp-project";
+        // Default project and workspace names - use current directory name as default project name
+        std::string project_name = std::filesystem::path(ctx->working_dir).filename().string();
         bool is_workspace = false;
         bool from_file = false;
         std::string workspace_name;
@@ -1536,7 +1532,6 @@ cforge_int_t cforge_cmd_init(const cforge_context_t* ctx) {
             logger::print_success("Project '" + project_name + "' created successfully");
         }
         
-        logger::print_success("Command completed successfully");
         return 0;
     } catch (const std::exception& ex) {
         logger::print_error("Failed to initialize project: " + std::string(ex.what()));
