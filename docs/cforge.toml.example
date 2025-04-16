@@ -1,0 +1,92 @@
+# Example cforge.toml configuration file for a C++ project
+# This file configures how cforge manages your project
+
+# Project metadata
+[project]
+name = "my-awesome-project"
+version = "0.1.0"
+description = "An awesome C++ project built with cforge"
+authors = ["Your Name <your.email@example.com>"]
+cpp_standard = "17"         # C++ standard: 11, 14, 17, 20
+binary_type = "executable"  # executable, shared_lib, static_lib, header_only
+
+# Build configuration
+[build]
+type = "Release"            # Default build type: Debug, Release, RelWithDebInfo, MinSizeRel
+directory = "build"         # Build directory (created if it doesn't exist)
+source_dirs = ["src"]       # Directories containing source files
+include_dirs = ["include"]  # Directories containing header files
+
+# Optional: Specific source files to include
+source_files = ["src/main.cpp", "src/utils.cpp"]
+
+# Optional: Additional libraries to link against (beyond dependencies)
+libraries = ["SDL2"]
+
+# Configuration-specific settings
+[build.config.debug]
+defines = ["DEBUG", "ENABLE_LOGGING"]
+
+[build.config.release]
+defines = ["NDEBUG", "RELEASE_MODE"]
+
+# Packaging settings
+[package]
+enabled = true
+generators = ["ZIP", "TGZ"]  # Package formats to generate
+vendor = "Your Company"      # Vendor name for packages
+
+# Dependencies configuration
+[dependencies]
+directory = "deps"           # Directory to store dependencies (default: deps)
+
+# Additional libraries to link against (not tied to specific dependencies)
+libraries = ["SDL2", "OpenGL32", "pthread"]
+
+# Git dependencies - automatically cloned to dependencies.directory
+[dependencies.git]
+# Header-only library example (no build required)
+json = { 
+    url = "https://github.com/nlohmann/json.git", 
+    tag = "v3.11.2"
+}
+
+# Library that needs to be built
+fmt = { 
+    url = "https://github.com/fmtlib/fmt.git", 
+    tag = "9.1.0",
+    make_available = true,    # Use FetchContent_MakeAvailable
+    include = true,           # Include the headers
+    link = true,              # Link against the library
+    target_name = "fmt::fmt", # Custom target name for CMake (optional)
+    include_dirs = ["include"] # Custom include directories within the repo
+}
+
+# Example with branch instead of tag
+spdlog = { 
+    url = "https://github.com/gabime/spdlog.git", 
+    branch = "v1.x",
+    target_name = "spdlog::spdlog" # Custom target name for CMake
+}
+
+# vcpkg dependencies - requires vcpkg to be installed
+[dependencies.vcpkg]
+# Simple dependency with version
+toml11 = "3.7.0"
+
+# Dependency with components and custom target name
+curl = { 
+    version = "7.80.0", 
+    components = ["ssl", "http2"],
+    target_name = "CURL::libcurl" # Custom target name
+}
+
+# System dependencies - for system-provided libraries
+[dependencies.system]
+OpenGL = true
+X11 = true
+
+# Testing configuration
+[test]
+enabled = true
+framework = "Catch2"         # Test framework to use 

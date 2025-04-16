@@ -39,15 +39,6 @@ include(GNUInstallDirs)
 
 # Configuration-specific definitions
 message(STATUS "CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}")
-# Debug configuration flags
-set(CMAKE_C_FLAGS_DEBUG "")
-set(CMAKE_CXX_FLAGS_DEBUG "")
-set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -DDEBUG=1")
-set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -DDEBUG=1")
-set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} /Zi /Od")
-set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /Zi /Od")
-message(STATUS "Debug C flags: ${CMAKE_C_FLAGS_DEBUG}")
-message(STATUS "Debug CXX flags: ${CMAKE_CXX_FLAGS_DEBUG}")
 # Release configuration flags
 set(CMAKE_C_FLAGS_RELEASE "")
 set(CMAKE_CXX_FLAGS_RELEASE "")
@@ -57,6 +48,15 @@ set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} /O2")
 set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /O2")
 message(STATUS "Release C flags: ${CMAKE_C_FLAGS_RELEASE}")
 message(STATUS "Release CXX flags: ${CMAKE_CXX_FLAGS_RELEASE}")
+# Debug configuration flags
+set(CMAKE_C_FLAGS_DEBUG "")
+set(CMAKE_CXX_FLAGS_DEBUG "")
+set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -DDEBUG=1")
+set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -DDEBUG=1")
+set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} /Zi /Od")
+set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /Zi /Od")
+message(STATUS "Debug C flags: ${CMAKE_C_FLAGS_DEBUG}")
+message(STATUS "Debug CXX flags: ${CMAKE_CXX_FLAGS_DEBUG}")
 
 # Enable multi-config support
 if(NOT CMAKE_CONFIGURATION_TYPES)
@@ -82,12 +82,10 @@ set_target_properties(default PROPERTIES
 set_property(TARGET default PROPERTY TARGET_NAME "default")
 message(STATUS "Executable default will be built as ${PROJECT_NAME}_${TARGET_NAME}_${CMAKE_BUILD_TYPE} in ${CMAKE_BUILD_TYPE} mode")
 # Apply configuration-specific defines to target
-target_compile_definitions(default PRIVATE $<$<CONFIG:DEBUG>:DEBUG>)
 target_compile_definitions(default PRIVATE $<$<CONFIG:RELEASE>:NDEBUG>)
+target_compile_definitions(default PRIVATE $<$<CONFIG:DEBUG>:DEBUG>)
 
 target_include_directories(default PRIVATE "include" "deps" "deps/fmt/include" "deps/tomlplusplus/include")
-
-
 # Installation
 install(TARGETS default
   RUNTIME DESTINATION bin

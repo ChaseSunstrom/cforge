@@ -19,6 +19,96 @@
 
 namespace cforge {
 
+// Utility functions - defined at the top to avoid "used before declared" errors
+static std::string to_lower_case(const std::string& str) {
+    std::string result = str;
+    std::transform(result.begin(), result.end(), result.begin(), 
+                  [](unsigned char c){ return std::tolower(c); });
+    return result;
+}
+
+static std::string get_cmake_generator() {
+#ifdef _WIN32
+    // Check if Ninja is available - prefer it if it is
+    if (is_command_available("ninja", 15)) {
+        logger::print_verbose("Ninja is available, using Ninja Multi-Config generator");
+        return "Ninja Multi-Config";
+    }
+    
+    logger::print_verbose("Ninja not found, falling back to Visual Studio generator");
+    return "Visual Studio 17 2022";
+#else
+    return "Unix Makefiles";
+#endif
+}
+
+static std::filesystem::path get_build_dir_for_config(
+    const std::string& base_dir,
+    const std::string& config)
+{
+    // If config is empty, use the base directory
+    if (config.empty()) {
+        return base_dir;
+    }
+    
+    // Transform config name to lowercase for directory naming
+    std::string config_lower = config;
+    std::transform(config_lower.begin(), config_lower.end(), config_lower.begin(), ::tolower);
+
+    // For Ninja Multi-Config, we don't append the config to the build directory
+    std::string generator = get_cmake_generator();
+    if (generator.find("Ninja Multi-Config") != std::string::npos) {
+        // Create the build directory if it doesn't exist
+        std::filesystem::path build_path(base_dir);
+        if (!std::filesystem::exists(build_path)) {
+            std::filesystem::create_directories(build_path);
+        }
+        return base_dir;
+    }
+
+    // Format build directory based on configuration
+    std::string build_dir = base_dir + "-" + config_lower;
+    
+    // Create the build directory if it doesn't exist
+    std::filesystem::path build_path(build_dir);
+    if (!std::filesystem::exists(build_path)) {
+        std::filesystem::create_directories(build_path);
+    }
+    
+    return build_dir;
+}
+
+static bool run_cmake_configure(
+    const std::vector<std::string>& cmake_args,
+    const std::string& build_dir,
+    bool verbose
+) {
+    // Set a longer timeout for Windows
+#ifdef _WIN32
+    int timeout = 180; // 3 minutes for Windows
+#else
+    int timeout = 120; // 2 minutes for other platforms
+#endif
+
+    // Run the CMake command with appropriate timeout
+    bool result = execute_tool("cmake", cmake_args, "", "CMake Configure", verbose, timeout);
+    
+    // Verify that the configuration was successful by checking for CMakeCache.txt
+    std::filesystem::path build_path(build_dir);
+    bool cmake_success = result && std::filesystem::exists(build_path / "CMakeCache.txt");
+    
+    if (!cmake_success) {
+        if (result) {
+            logger::print_error("CMake appeared to run, but CMakeCache.txt was not created. This may indicate a configuration error.");
+        } else {
+            logger::print_error("CMake configuration failed. See errors above.");
+        }
+        logger::print_warning("You might need to clean the build directory and try again.");
+        return false;
+    }
+    
+    return true;
+}
 
 workspace_config::workspace_config() : name_("cpp-workspace"), description_("A C++ workspace") {
 }
@@ -682,121 +772,152 @@ bool workspace::build_all(const std::string& config, int num_jobs, bool verbose)
     return all_success;
 }
 
-bool workspace::build_project(const std::string& project_name, const std::string& config, 
-                             int num_jobs, bool verbose) const {
-    // Find the project by name
-    auto it = std::find_if(projects_.begin(), projects_.end(),
-                         [&project_name](const workspace_project& p) {
-                             return p.name == project_name;
-                         });
-    
-    if (it == projects_.end()) {
-        logger::print_error("Project not found in workspace: " + project_name);
+bool workspace::build_project(
+    const std::string& project_name,
+    const std::string& config,
+    int num_jobs,
+    bool verbose,
+    const std::string& target) const {
+    // Find the project
+    const workspace_project* project = get_project_by_name(project_name);
+    if (!project) {
+        logger::print_error("Project '" + project_name + "' not found in workspace");
         return false;
     }
     
-    const auto& project = *it;
+    // Save current directory
+    std::filesystem::path current_dir = std::filesystem::current_path();
     
-    // First, check and build dependencies
-    bool all_deps_built = true;
-    for (const auto& dep_name : project.dependencies) {
-        logger::print_status("Building dependency: " + dep_name);
-        if (!build_project(dep_name, config, num_jobs, verbose)) {
-            logger::print_error("Failed to build dependency: " + dep_name);
-            all_deps_built = false;
-        }
-    }
-    
-    if (!all_deps_built) {
-        logger::print_error("Failed to build all dependencies for project: " + project_name);
-        return false;
-    }
-    
-    // Now build the project itself
-    logger::print_status("Building project: " + project.name);
-    
-    // Create build directory if it doesn't exist
-    std::filesystem::path build_dir = project.path / "build";
-    if (!std::filesystem::exists(build_dir)) {
-        try {
-            std::filesystem::create_directories(build_dir);
-        } catch (const std::exception& ex) {
-            logger::print_error("Failed to create build directory: " + std::string(ex.what()));
+    try {
+        // Change to project directory
+        std::filesystem::current_path(project->path);
+        logger::print_status("Building project '" + project->name + "'...");
+        
+        // Load project configuration
+        toml_reader project_config;
+        std::filesystem::path config_path = project->path / CFORGE_FILE;
+        if (!std::filesystem::exists(config_path)) {
+            logger::print_error("Project '" + project->name + "' is missing " + std::string(CFORGE_FILE));
             return false;
         }
-    }
-    
-    // Check if the project has a CMakeLists.txt file or needs to be generated
-    std::filesystem::path cmake_path = project.path / "CMakeLists.txt";
-    std::filesystem::path config_path = project.path / CFORGE_FILE;
-    
-    if (!std::filesystem::exists(cmake_path)) {
-        if (std::filesystem::exists(config_path)) {
-            // Try to generate CMakeLists.txt from cforge.toml
-            toml_reader project_config;
-            if (project_config.load(config_path.string())) {
-                if (!generate_cmakelists_from_toml(project.path, project_config, verbose)) {
-                    logger::print_error("Failed to generate CMakeLists.txt for project: " + project.name);
-                    return false;
-                }
-            } else {
-                logger::print_error("Failed to load cforge.toml for project: " + project.name);
-                return false;
-            }
+        
+        if (!project_config.load(config_path.string())) {
+            logger::print_error("Failed to load project configuration for '" + project->name + "'");
+            return false;
+        }
+        
+        // Determine build directory
+        std::string base_build_dir;
+        if (project_config.has_key("build.directory")) {
+            base_build_dir = project_config.get_string("build.directory");
+        } else if (project_config.has_key("build.build_dir")) {
+            // Legacy key support
+            base_build_dir = project_config.get_string("build.build_dir");
         } else {
-            logger::print_error("No cforge.toml found for project: " + project.name);
+            base_build_dir = "build";
+        }
+        
+        // Get the config-specific build directory
+        std::filesystem::path build_dir = get_build_dir_for_config(base_build_dir, config);
+        
+        // If build dir doesn't exist, create it
+        if (!std::filesystem::exists(build_dir)) {
+            logger::print_status("Creating build directory: " + build_dir.string());
+            std::filesystem::create_directories(build_dir);
+        }
+        
+        // Always regenerate CMakeLists.txt to ensure it matches the current cforge.toml
+        std::filesystem::path cmakelists_path = project->path / "CMakeLists.txt";
+        logger::print_status("Generating CMakeLists.txt for project '" + project->name + "'...");
+        
+        // Remove existing CMakeLists.txt if it exists
+        if (std::filesystem::exists(cmakelists_path)) {
+            logger::print_verbose("Removing existing CMakeLists.txt");
+            std::filesystem::remove(cmakelists_path);
+        }
+        
+        // Generate new CMakeLists.txt
+        if (!generate_cmakelists_from_toml(project->path, project_config, verbose)) {
+            logger::print_error("Failed to generate CMakeLists.txt for project '" + project->name + "'");
             return false;
         }
-    }
-    
-    // Generate CMake options with dependency linking
-    std::vector<std::string> cmake_args = {
-        "-S", project.path.string(),
-        "-B", build_dir.string(),
-        "-DCMAKE_BUILD_TYPE=" + config
-    };
-    
-    // Add dependency linking options
-    std::vector<std::string> link_options = generate_cmake_linking_options(
-        project, projects_, config);
-    cmake_args.insert(cmake_args.end(), link_options.begin(), link_options.end());
-    
-    // Set jobs if specified
-    if (num_jobs > 0) {
-        cmake_args.push_back("-DCMAKE_BUILD_PARALLEL_LEVEL=" + std::to_string(num_jobs));
-    }
-    
-    // Run CMake configure
-    logger::print_status("Configuring project with CMake...");
-    bool configure_success = execute_tool("cmake", cmake_args, "", "CMake Configure", verbose);
-    
-    if (!configure_success) {
-        logger::print_error("Failed to configure project: " + project.name);
+        
+        logger::print_success("Generated CMakeLists.txt for project '" + project->name + "'");
+        
+        // Run CMake configure
+        std::vector<std::string> cmake_args;
+        cmake_args.push_back("-S");
+        cmake_args.push_back(".");
+        cmake_args.push_back("-B");
+        cmake_args.push_back(build_dir.string());
+        cmake_args.push_back("-G");
+        cmake_args.push_back(get_cmake_generator());
+        
+        // Add build type for non-multi-config generators
+        if (get_cmake_generator().find("Multi-Config") == std::string::npos) {
+            cmake_args.push_back("-DCMAKE_BUILD_TYPE=" + config);
+        }
+        
+        // Add extra arguments from cforge.toml if available
+        std::string args_key = "build.config." + to_lower_case(config) + ".cmake_args";
+        if (project_config.has_key(args_key)) {
+            std::vector<std::string> extra_args = project_config.get_string_array(args_key);
+            for (const auto& arg : extra_args) {
+                cmake_args.push_back(arg);
+            }
+        }
+        
+        // Run cmake configure
+        if (!run_cmake_configure(cmake_args, build_dir.string(), verbose)) {
+            logger::print_error("CMake configure failed for project '" + project->name + "'");
+            return false;
+        }
+        
+        // Run build
+        std::vector<std::string> build_args;
+        build_args.push_back("--build");
+        build_args.push_back(build_dir.string());
+        
+        // Add config for multi-config generators
+        if (get_cmake_generator().find("Multi-Config") != std::string::npos) {
+            build_args.push_back("--config");
+            build_args.push_back(config);
+        }
+        
+        // Add parallel jobs
+        if (num_jobs > 0) {
+            build_args.push_back("--parallel");
+            build_args.push_back(std::to_string(num_jobs));
+        }
+        
+        // Add target if specified
+        if (!target.empty()) {
+            build_args.push_back("--target");
+            build_args.push_back(target);
+        }
+        
+        // Add verbose flag if needed
+        if (verbose) {
+            build_args.push_back("--verbose");
+        }
+        
+        // Run build
+        if (!execute_tool("cmake", build_args, "", "Build " + project->name, verbose)) {
+            logger::print_error("Build failed for project '" + project->name + "'");
+            return false;
+        }
+        
+        logger::print_success("Project '" + project->name + "' built successfully");
+        
+        // Restore current directory
+        std::filesystem::current_path(current_dir);
+        return true;
+    } catch (const std::exception& ex) {
+        logger::print_error("Error building project '" + project_name + "': " + std::string(ex.what()));
+        // Restore current directory
+        std::filesystem::current_path(current_dir);
         return false;
     }
-    
-    // Build the project
-    std::vector<std::string> build_args = {
-        "--build", build_dir.string(),
-        "--config", config
-    };
-    
-    // Set parallel jobs for build
-    if (num_jobs > 0) {
-        build_args.push_back("--parallel");
-        build_args.push_back(std::to_string(num_jobs));
-    }
-    
-    logger::print_status("Building project: " + project.name);
-    bool build_success = execute_tool("cmake", build_args, "", "CMake Build", verbose);
-    
-    if (!build_success) {
-        logger::print_error("Failed to build project: " + project.name);
-        return false;
-    }
-    
-    logger::print_success("Successfully built project: " + project.name);
-    return true;
 }
 
 bool workspace::run_startup_project(const std::vector<std::string>& args, 

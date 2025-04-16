@@ -142,15 +142,32 @@ static bool clean_cmake_files(bool verbose) {
         
         if (std::filesystem::exists(filepath)) {
             try {
-                if (std::filesystem::is_directory(filepath)) {
-                    count += std::filesystem::remove_all(filepath);
+                if (file == "CMakeLists.txt") {
+                    // Only remove CMakeLists.txt if cforge.toml exists - it will be regenerated during build
+                    if (std::filesystem::exists(std::filesystem::current_path() / CFORGE_FILE)) {
+                        std::filesystem::remove(filepath);
+                        count++;
+                        if (verbose) {
+                            logger::print_verbose("Removed: " + filepath.string() + " (will be regenerated from cforge.toml)");
+                        }
+                    } else {
+                        // Skip CMakeLists.txt if no cforge.toml exists
+                        if (verbose) {
+                            logger::print_verbose("Preserving: " + filepath.string() + " (no cforge.toml found)");
+                        }
+                    }
                 } else {
-                    std::filesystem::remove(filepath);
-                    count++;
-                }
-                
-                if (verbose) {
-                    logger::print_verbose("Removed: " + filepath.string());
+                    // Remove other CMake files
+                    if (std::filesystem::is_directory(filepath)) {
+                        count += std::filesystem::remove_all(filepath);
+                    } else {
+                        std::filesystem::remove(filepath);
+                        count++;
+                    }
+                    
+                    if (verbose) {
+                        logger::print_verbose("Removed: " + filepath.string());
+                    }
                 }
             } catch (const std::exception& e) {
                 logger::print_error("Failed to remove " + filepath.string() + ": " + std::string(e.what()));
@@ -161,7 +178,11 @@ static bool clean_cmake_files(bool verbose) {
     
     if (count > 0) {
         logger::print_success("Cleaned " + std::to_string(count) + " CMake files/directories");
-        logger::print_status("CMakeLists.txt has been deleted. It will be regenerated when you run build.");
+        
+        // Check if CMakeLists.txt was removed and cforge.toml exists
+        if (std::filesystem::exists(std::filesystem::current_path() / CFORGE_FILE)) {
+            logger::print_status("CMakeLists.txt has been deleted. It will be regenerated from cforge.toml when you run build.");
+        }
     } else {
         logger::print_status("No CMake files found to clean");
     }

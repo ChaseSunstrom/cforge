@@ -407,85 +407,81 @@ static bool create_cforge_toml(
         return false;
     }
     
+    config << "# Project configuration for " << project_name << "\n\n";
+
     config << "[project]\n";
     config << "name = \"" << project_name << "\"\n";
     config << "version = \"0.1.0\"\n";
     config << "description = \"A C++ project created with cforge\"\n";
     config << "cpp_standard = \"" << cpp_version << "\"\n";
+    config << "binary_type = \"executable\"  # executable, shared_lib, static_lib, or header_only\n";
     config << "authors = [\"Your Name <your.email@example.com>\"]\n";
     config << "homepage = \"https://github.com/yourusername/" << project_name << "\"\n";
     config << "repository = \"https://github.com/yourusername/" << project_name << ".git\"\n";
     config << "license = \"MIT\"\n\n";
     
     config << "[build]\n";
-    config << "build_dir = \"build\"\n";
-    // For detailed configurations, you can specify build types
-    config << "build_type = \"Release\"  # Release, Debug, RelWithDebInfo, MinSizeRel\n";
-    // Set to true to clean the build directory before building
-    // clean = false
-    // Number of parallel jobs to use when building
-    // jobs = 4
+    config << "build_type = \"Debug\"  # Debug, Release, RelWithDebInfo, MinSizeRel\n";
+    config << "directory = \"build\"\n";
+    config << "source_dirs = [\"src\"]\n";
+    config << "include_dirs = [\"include\"]\n";
+    config << "# Uncomment to specify custom source patterns\n";
+    config << "# source_patterns = [\"src/*.cpp\", \"src/**/*.cpp\"]\n";
+    config << "# Uncomment to specify individual source files\n";
+    config << "# source_files = [\"src/main.cpp\", \"src/example.cpp\"]\n\n";
     
-    // Add custom build configurations
-    config << "# Custom build configurations\n";
-    config << "# You can define custom compiler flags for different build types\n";
+    // Add build configuration for different build types
     config << "[build.config.debug]\n";
-    config << "# Custom compiler defines for Debug builds\n";
     config << "defines = [\"DEBUG=1\", \"ENABLE_LOGGING=1\"]\n";
-    config << "# Custom compiler flags for Debug builds\n";
     config << "flags = [\"-g\", \"-O0\"]\n";
-    config << "# Custom CMake arguments for Debug builds\n";
     config << "cmake_args = [\"-DENABLE_TESTS=ON\"]\n\n";
     
     config << "[build.config.release]\n";
-    config << "# Custom compiler defines for Release builds\n";
-    config << "defines = [\"NDEBUG=1\", \"RELEASE=1\"]\n";
-    config << "# Custom compiler flags for Release builds\n";
+    config << "defines = [\"NDEBUG=1\"]\n";
     config << "flags = [\"-O3\"]\n";
-    config << "# Custom CMake arguments for Release builds\n";
     config << "cmake_args = [\"-DENABLE_TESTS=OFF\"]\n\n";
     
     config << "[build.config.relwithdebinfo]\n";
-    config << "# Custom compiler defines for RelWithDebInfo builds\n";
     config << "defines = [\"NDEBUG=1\"]\n";
-    config << "# Custom compiler flags for RelWithDebInfo builds\n";
     config << "flags = [\"-O2\", \"-g\"]\n";
-    config << "# Custom CMake arguments for RelWithDebInfo builds\n";
     config << "cmake_args = []\n\n";
     
     config << "[build.config.minsizerel]\n";
-    config << "# Custom compiler defines for MinSizeRel builds\n";
     config << "defines = [\"NDEBUG=1\"]\n";
-    config << "# Custom compiler flags for MinSizeRel builds\n";
     config << "flags = [\"-Os\"]\n";
-    config << "# Custom CMake arguments for MinSizeRel builds\n";
     config << "cmake_args = []\n\n";
     
     config << "[test]\n";
-    config << "# Enable or disable testing\n";
     config << "enabled = " << (with_tests ? "true" : "false") << "\n";
-    config << "# Test executable name (default: ${project_name}_tests)\n";
-    config << "# test_executable = \"${project_name}_tests\"\n";
-    config << "# Additional arguments to pass to the test executable\n";
-    config << "# args = [\"--gtest_filter=*\", \"--gtest_color=yes\"]\n";
-    config << "# Number of parallel test jobs\n";
-    config << "# jobs = 4\n\n";
+    config << "framework = \"Catch2\"  # Test framework: Catch2, GoogleTest\n";
+    config << "# test_executable = \"${project_name}_tests\"  # Custom test executable name\n";
+    config << "# args = [\"--verbose\"]  # Arguments to pass to the test executable\n\n";
     
     config << "[package]\n";
-    config << "# Enable or disable packaging\n";
     config << "enabled = true\n";
-    config << "# Package generators to use\n";
-    config << "generators = []\n";
+    config << "generators = []  # Package generators\n";
     config << "# Windows generators: ZIP, NSIS\n";
     config << "# Linux generators: TGZ, DEB, RPM\n";
     config << "# macOS generators: TGZ, DragNDrop\n";
     config << "vendor = \"Your Organization\"\n";
     config << "contact = \"Your Name <your.email@example.com>\"\n\n";
     
-    config << "# [dependencies]\n";
-    config << "# vcpkg = [\"fmt\", \"spdlog\"]\n";
-    config << "# vcpkg_triplet = \"x64-windows\"  # Specify the vcpkg triplet if needed\n";
-    config << "# vcpkg_path = \"/path/to/vcpkg\"  # Custom vcpkg path if needed\n";
+    config << "# Dependencies section\n";
+    config << "# [dependencies]\n\n";
+    
+    config << "# vcpkg dependencies\n";
+    config << "# [dependencies.vcpkg]\n";
+    config << "# fmt = \"9.1.0\"  # Package name = version\n";
+    config << "# curl = { version = \"7.80.0\", components = [\"ssl\"] }  # With components\n\n";
+    
+    config << "# git dependencies\n";
+    config << "# [dependencies.git]\n";
+    config << "# json = { url = \"https://github.com/nlohmann/json.git\", tag = \"v3.11.2\" }\n";
+    config << "# spdlog = { url = \"https://github.com/gabime/spdlog.git\", branch = \"v1.x\" }\n\n";
+    
+    config << "# system dependencies\n";
+    config << "# [dependencies.system]\n";
+    config << "# OpenGL = true  # System-provided dependency\n";
     
     config.close();
     logger::print_success("Created cforge.toml file");
@@ -1305,7 +1301,7 @@ cforge_int_t cforge_cmd_init(const cforge_context_t* ctx) {
                 logger::print_status("Creating project '" + proj_name + "' at " + project_dir.string());
                 
                 // Create the project with detailed logging
-                if (!create_project(project_dir, proj_name, cpp_standard, with_git, with_tests, "", "Debug")) {
+                if (!create_project(project_dir, proj_name, cpp_standard, with_git, with_tests)) {
                     logger::print_error("Failed to create project '" + proj_name + "'");
                     all_projects_success = false;
                     // Continue with other projects instead of stopping

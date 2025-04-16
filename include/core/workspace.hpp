@@ -167,147 +167,56 @@ private:
     std::string description_;
     std::vector<workspace_project> projects_;
 };
-
-/**
- * @brief Class for managing cforge workspaces
- */
 class workspace {
 public:
-    /**
-     * @brief Constructor
-     */
-    workspace() = default;
-    
-    /**
-     * @brief Destructor
-     */
-    ~workspace() = default;
-    
-    /**
-     * @brief Load a workspace configuration
-     * 
-     * @param workspace_path Path to the workspace directory
-     * @return true if successful
-     */
     bool load(const std::filesystem::path& workspace_path);
-    
-    /**
-     * @brief Check if a workspace is loaded
-     * 
-     * @return true if workspace is loaded
-     */
     bool is_loaded() const;
     
-    /**
-     * @brief Get the workspace name
-     * 
-     * @return Workspace name
-     */
     std::string get_name() const;
-    
-    /**
-     * @brief Get the workspace path
-     * 
-     * @return Path to the workspace
-     */
     std::filesystem::path get_path() const;
-    
-    /**
-     * @brief Get all projects in the workspace
-     * 
-     * @return Vector of workspace projects
-     */
     std::vector<workspace_project> get_projects() const;
     
-    /**
-     * @brief Get the default startup project
-     * 
-     * @return The startup project, or empty if none
-     */
     workspace_project get_startup_project() const;
-    
-    /**
-     * @brief Set the startup project
-     * 
-     * @param project_name Name of the project to set as startup
-     * @return true if successful
-     */
     bool set_startup_project(const std::string& project_name);
     
-    /**
-     * @brief Build all projects in the workspace
-     * 
-     * @param config Build configuration
-     * @param num_jobs Number of parallel jobs
-     * @param verbose Verbose output
-     * @return true if all projects built successfully
-     */
     bool build_all(const std::string& config, int num_jobs, bool verbose) const;
+    bool build_project(
+        const std::string& project_name, 
+        const std::string& config, 
+        int num_jobs, 
+        bool verbose,
+        const std::string& target = "") const;
     
-    /**
-     * @brief Build a specific project in the workspace
-     * 
-     * @param project_name Name of the project to build
-     * @param config Build configuration
-     * @param num_jobs Number of parallel jobs
-     * @param verbose Verbose output
-     * @return true if the project built successfully
-     */
-    bool build_project(const std::string& project_name, const std::string& config, 
-                       int num_jobs, bool verbose) const;
-    
-    /**
-     * @brief Run the startup project
-     * 
-     * @param args Command-line arguments for the executable
-     * @param config Build configuration
-     * @param verbose Verbose output
-     * @return true if successful
-     */
     bool run_startup_project(const std::vector<std::string>& args, 
-                            const std::string& config, bool verbose) const;
+                           const std::string& config, bool verbose) const;
+    bool run_project(const std::string& project_name, 
+                   const std::vector<std::string>& args,
+                   const std::string& config, bool verbose) const;
     
-    /**
-     * @brief Run a specific project
-     * 
-     * @param project_name Name of the project to run
-     * @param args Command-line arguments for the executable
-     * @param config Build configuration
-     * @param verbose Verbose output
-     * @return true if successful
-     */
-    bool run_project(const std::string& project_name, const std::vector<std::string>& args,
-                    const std::string& config, bool verbose) const;
-    
-    /**
-     * @brief Check if a directory is a workspace
-     * 
-     * @param dir Directory to check
-     * @return true if it's a workspace
-     */
     static bool is_workspace_dir(const std::filesystem::path& dir);
-    
-    /**
-     * @brief Create a new workspace
-     * 
-     * @param workspace_path Path to create the workspace at
-     * @param workspace_name Name of the workspace
-     * @return true if successful
-     */
     static bool create_workspace(const std::filesystem::path& workspace_path, 
-                                const std::string& workspace_name);
+                               const std::string& workspace_name);
+                               
+    // Helper method to get a project by name
+    const workspace_project* get_project_by_name(const std::string& name) const {
+        auto it = std::find_if(projects_.begin(), projects_.end(),
+                              [&name](const workspace_project& p) {
+                                  return p.name == name;
+                              });
+        if (it != projects_.end()) {
+            return &(*it);
+        }
+        return nullptr;
+    }
     
 private:
-    std::unique_ptr<toml_reader> config_ = nullptr;
-    std::filesystem::path workspace_path_;
+    void load_projects();
+    
+    std::unique_ptr<toml_reader> config_;
     std::string workspace_name_;
+    std::filesystem::path workspace_path_;
     std::vector<workspace_project> projects_;
     std::string startup_project_;
-    
-    /**
-     * @brief Load projects from workspace configuration
-     */
-    void load_projects();
-};
+}; 
 
 } // namespace cforge 
