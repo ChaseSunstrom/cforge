@@ -1060,104 +1060,6 @@ static bool create_project(
 }
 
 /**
- * @brief Initialize a workspace with multiple projects
- * 
- * @param workspace_name Name of the workspace
- * @param workspace_path Path where to create the workspace
- * @param project_names Names of projects to create in the workspace
- * @param cpp_version C++ standard version
- * @param with_tests Whether to include test files
- * @param with_git Whether to initialize git repository
- * @param verbose Verbose output
- * @return true if successful
- */
-static bool init_workspace(
-    const std::string& workspace_name,
-    const std::filesystem::path& workspace_path,
-    const std::vector<std::string>& project_names,
-    const std::string& cpp_version,
-    bool with_tests,
-    bool with_git,
-    bool verbose
-) {
-    logger::print_status("Initializing workspace...");
-    
-    // Create workspace directory if needed (double-check)
-    if (!std::filesystem::exists(workspace_path)) {
-        try {
-            bool created = std::filesystem::create_directories(workspace_path);
-            if (!created) {
-                logger::print_error("Failed to create workspace directory (returned false)");
-                return false;
-            }
-            logger::print_status("Created workspace directory: " + workspace_path.string());
-        } catch (const std::exception& ex) {
-            logger::print_error("Exception creating workspace directory: " + std::string(ex.what()));
-            return false;
-        }
-    }
-    
-    // Create workspace configuration file with correct path
-    std::filesystem::path config_path = workspace_path / WORKSPACE_FILE;
-    logger::print_status("Creating workspace config at: " + config_path.string());
-    
-    std::ofstream config_file(config_path);
-    if (!config_file.is_open()) {
-        logger::print_error("Failed to create workspace configuration file: " + config_path.string());
-        return false;
-    }
-    
-    // Write a basic TOML configuration
-    config_file << "[workspace]\n";
-    config_file << "name = \"" << workspace_name << "\"\n";
-    config_file << "description = \"A C++ workspace created with cforge\"\n\n";
-    
-    // Write projects list
-    config_file << "# Projects in format: name:path:is_startup_project\n";
-    config_file << "projects = [\n";
-    
-    for (size_t i = 0; i < project_names.size(); ++i) {
-        const auto& proj_name = project_names[i];
-        bool is_startup = (i == 0); // First project is startup by default
-        
-        config_file << "  \"" << proj_name << ":" 
-                    << proj_name << ":" // Path is the same as name by default
-                    << (is_startup ? "true" : "false") << "\"";
-        
-        if (i < project_names.size() - 1) {
-            config_file << ",";
-        }
-        config_file << "\n";
-    }
-    
-    config_file << "]\n\n";
-    config_file << "# Default startup project is the first project\n";
-    if (!project_names.empty()) {
-        config_file << "default_startup_project = \"" << project_names[0] << "\"\n";
-    }
-    
-    config_file.close();
-    logger::print_success("Created workspace configuration file");
-    
-    // Now create each project
-    for (const auto& proj_name : project_names) {
-        std::filesystem::path project_dir = workspace_path / proj_name;
-        logger::print_status("Creating project '" + proj_name + "' at " + project_dir.string());
-        
-        // Create the project with detailed logging
-        if (!create_project(project_dir, proj_name, cpp_version, with_git, verbose, with_tests)) {
-            logger::print_error("Failed to create project '" + proj_name + "'");
-            // Continue with other projects instead of stopping
-            continue;
-        }
-        
-        logger::print_success("Project '" + proj_name + "' created successfully");
-    }
-    
-    return true;
-}
-
-/**
  * @brief Handle the 'init' command
  * 
  * @param ctx Context containing parsed arguments
@@ -1189,11 +1091,12 @@ cforge_int_t cforge_cmd_init(const cforge_context_t* ctx) {
         bool with_tests = false;
         bool with_git = false;
         std::string template_name = "app";
+        bool has_projects_flag = false;
 
         // Process command line arguments - improved parsing
         if (ctx->args.args) {
             // First check for positional project name (before any flag)
-            if (ctx->args.args[0] && ctx->args.args[0][0] != '-') {
+            if (ctx->args.arg_count > 0 && ctx->args.args[0][0] != '-') {
                 project_name = ctx->args.args[0];
                 logger::print_status("Using positional project name: " + project_name);
             }
@@ -1243,6 +1146,8 @@ cforge_int_t cforge_cmd_init(const cforge_context_t* ctx) {
                 }
                 // Handle --projects or -p parameter
                 else if (arg == "--projects" || arg == "-p") {
+                    has_projects_flag = true;
+                    
                     // If the next argument is a flag or end of args, use empty project list
                     if (i+1 >= ctx->args.arg_count || ctx->args.args[i+1][0] == '-') {
                         logger::print_warning("--projects flag provided but no projects specified");
@@ -1272,6 +1177,7 @@ cforge_int_t cforge_cmd_init(const cforge_context_t* ctx) {
                 }
                 // Handle --projects=VALUE format
                 else if (arg.compare(0, 11, "--projects=") == 0) {
+                    has_projects_flag = true;
                     std::string projects_list = arg.substr(11);
                     project_names = parse_project_list(projects_list);
                     
@@ -1312,6 +1218,9 @@ cforge_int_t cforge_cmd_init(const cforge_context_t* ctx) {
             }
         }
         
+        // If user didn't set workspace flag but specified projects, don't force workspace mode
+        bool create_multiple_projects = has_projects_flag && !project_names.empty();
+        
         // If this is a workspace but no projects specified, use the project name as default project
         if (is_workspace && project_names.empty()) {
             project_names.push_back(project_name);
@@ -1324,6 +1233,12 @@ cforge_int_t cforge_cmd_init(const cforge_context_t* ctx) {
         if (is_workspace) {
             logger::print_status("- Workspace name: " + workspace_name);
             logger::print_status("- Project count: " + std::to_string(project_names.size()));
+            logger::print_status("- Projects: ");
+            for (const auto& proj : project_names) {
+                logger::print_status("  * " + proj);
+            }
+        } else if (create_multiple_projects) {
+            logger::print_status("- Creating multiple projects: " + std::to_string(project_names.size()));
             logger::print_status("- Projects: ");
             for (const auto& proj : project_names) {
                 logger::print_status("  * " + proj);
@@ -1511,16 +1426,85 @@ cforge_int_t cforge_cmd_init(const cforge_context_t* ctx) {
             
             return all_projects_success ? 0 : 1;
         }
+        // Handle multiple projects creation (without workspace)
+        else if (create_multiple_projects) {
+            logger::print_status("Creating " + std::to_string(project_names.size()) + " standalone projects...");
+            
+            bool all_projects_success = true;
+            
+            for (const auto& proj_name : project_names) {
+                // Create the project in a new directory named after the project
+                std::filesystem::path project_dir = std::filesystem::path(ctx->working_dir) / proj_name;
+                logger::print_status("Creating project '" + proj_name + "' at " + project_dir.string());
+                
+                // Create the directory if it doesn't exist
+                if (!std::filesystem::exists(project_dir)) {
+                    try {
+                        bool created = std::filesystem::create_directories(project_dir);
+                        if (!created) {
+                            logger::print_error("Failed to create project directory for '" + proj_name + "' (returned false)");
+                            all_projects_success = false;
+                            continue;
+                        }
+                    } catch (const std::exception& ex) {
+                        logger::print_error("Exception creating project directory for '" + proj_name + "': " + std::string(ex.what()));
+                        all_projects_success = false;
+                        continue;
+                    }
+                }
+                
+                // Create the project files
+                if (!create_project(project_dir, proj_name, cpp_standard, with_git, 
+                                  logger::get_verbosity() >= log_verbosity::VERBOSITY_VERBOSE, 
+                                  with_tests)) {
+                    logger::print_error("Failed to create project '" + proj_name + "'");
+                    all_projects_success = false;
+                    continue;
+                }
+                
+                logger::print_success("Project '" + proj_name + "' created successfully");
+            }
+            
+            if (all_projects_success) {
+                logger::print_success("All projects created successfully");
+            } else {
+                logger::print_warning("Some projects could not be created");
+            }
+            
+            return all_projects_success ? 0 : 1;
+        }
         // Handle single project creation
         else {
             logger::print_status("Creating project '" + project_name + "'...");
             
-            // Create the project in the current directory
-            std::filesystem::path project_dir = std::filesystem::path(ctx->working_dir);
+            // Decide whether to create in current directory or subdirectory
+            std::filesystem::path project_dir;
             
-            // Log current directory and project path for debugging
-            logger::print_status("Current directory: " + project_dir.string());
-            logger::print_status("Project will be created at: " + project_dir.string());
+            // If we're using a positional project name or explicit --name parameter,
+            // create a subdirectory; otherwise use the current directory
+            if (ctx->args.arg_count > 0 && ctx->args.args[0][0] != '-') {
+                // Use the provided project name to create a subdirectory
+                project_dir = std::filesystem::path(ctx->working_dir) / project_name;
+                logger::print_status("Project will be created in new directory: " + project_dir.string());
+                
+                // Create the directory if it doesn't exist
+                if (!std::filesystem::exists(project_dir)) {
+                    try {
+                        bool created = std::filesystem::create_directories(project_dir);
+                        if (!created) {
+                            logger::print_error("Failed to create project directory (returned false)");
+                            return 1;
+                        }
+                    } catch (const std::exception& ex) {
+                        logger::print_error("Exception creating project directory: " + std::string(ex.what()));
+                        return 1;
+                    }
+                }
+            } else {
+                // Create in the current directory
+                project_dir = std::filesystem::path(ctx->working_dir);
+                logger::print_status("Project will be created in current directory: " + project_dir.string());
+            }
             
             // Verify the directory is writable
             try {
