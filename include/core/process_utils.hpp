@@ -53,7 +53,7 @@ process_result execute_process(
     const std::string& working_dir = "",
     std::function<void(const std::string&)> stdout_callback = nullptr,
     std::function<void(const std::string&)> stderr_callback = nullptr,
-    int timeout_seconds = 60
+    int timeout_seconds = 5
 );
 
 /**
