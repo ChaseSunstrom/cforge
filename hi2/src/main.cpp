@@ -4,6 +4,7 @@
  */
 
 #include <iostream>
+#include <spdlog/spdlog.h>
 
 /**
  * @brief Main function
@@ -13,6 +14,9 @@
  * @return int Exit code
  */
 int main(int argc, char* argv[]) {
-    std::cout << "Hello from hi2!" << std::endl;
+    spdlog::info("Hello from hi2!");
     return 0;
 }
+
+
+asdfasdf

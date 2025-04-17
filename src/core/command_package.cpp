@@ -32,6 +32,13 @@ const char PATH_SEPARATOR = '\\';
 const char PATH_SEPARATOR = '/';
 #endif
 
+// Forward declaration of functions from command_build.cpp
+extern bool clone_git_dependencies(
+    const std::filesystem::path& project_dir,
+    const toml_reader& project_config,
+    bool verbose
+);
+
 /**
  * @brief Get build directory path based on base directory and configuration
  * 
@@ -48,6 +55,9 @@ static std::filesystem::path get_build_dir_for_config(
         return base_dir;
     }
     
+    logger::print_verbose("Looking for build directory for configuration: " + config);
+    logger::print_verbose("Base directory: " + base_dir);
+    
     // Convert config to lowercase for comparison
     std::string config_lower = config;
     std::transform(config_lower.begin(), config_lower.end(), config_lower.begin(), ::tolower);
@@ -55,26 +65,43 @@ static std::filesystem::path get_build_dir_for_config(
     // Try multiple build directory formats
     std::vector<std::filesystem::path> common_formats;
     
-    // Format: build-Debug, build-Release (most common for this project based on screenshot)
+    // Add the base directory itself first - it might be a multi-config generator output
+    common_formats.push_back(std::filesystem::path(base_dir));
+    
+    // Format: build/config for multi-config generators
+    common_formats.push_back(std::filesystem::path(base_dir) / config);
+    common_formats.push_back(std::filesystem::path(base_dir) / config_lower);
+    
+    // Format: build-Config (most common for this project based on screenshot)
     common_formats.push_back(std::filesystem::path("build-" + config));
-    
-    // Format: build/Debug, build/Release
-    common_formats.push_back(std::filesystem::path(base_dir + "/" + config));
-    
-    // Format: build-debug, build-release (lowercase)
     common_formats.push_back(std::filesystem::path("build-" + config_lower));
     
-    // Format: build_Debug, build_Release
-    common_formats.push_back(std::filesystem::path("build_" + config));
+    // Format: base_dir-Config
+    if (base_dir != "build") {
+        common_formats.push_back(std::filesystem::path(base_dir + "-" + config));
+        common_formats.push_back(std::filesystem::path(base_dir + "-" + config_lower));
+    }
     
-    // Format: build_debug, build_release (lowercase)
+    // Format: config (standalone config directory)
+    if (config != "Debug" && config != "Release") {
+        common_formats.push_back(std::filesystem::path(config));
+        common_formats.push_back(std::filesystem::path(config_lower));
+    }
+    
+    // Format: build_Config
+    common_formats.push_back(std::filesystem::path("build_" + config));
     common_formats.push_back(std::filesystem::path("build_" + config_lower));
     
-    // Original format: build-debug, build-release (base_dir-config)
-    common_formats.push_back(std::filesystem::path(base_dir + "-" + config_lower));
-    
-    // Fallback format: just base_dir
-    common_formats.push_back(std::filesystem::path(base_dir));
+    // Additional directories for specific configs
+    if (config == "Debug" || config == "Release") {
+        // Try build directory with parent path - common in workspaces
+        std::filesystem::path parent_dir = std::filesystem::path(base_dir).parent_path();
+        if (!parent_dir.empty()) {
+            common_formats.push_back(parent_dir / ("build-" + config_lower));
+            common_formats.push_back(parent_dir / "build" / config);
+            common_formats.push_back(parent_dir / "build" / config_lower);
+        }
+    }
     
     // Log which build directories we're checking
     logger::print_verbose("Checking for build directories:");
@@ -85,23 +112,39 @@ static std::filesystem::path get_build_dir_for_config(
     // Look for the first existing directory in our list
     for (const auto& path : common_formats) {
         if (std::filesystem::exists(path)) {
-            logger::print_verbose("Found existing build directory: " + path.string());
+            // Also check if this path has CMakeCache.txt - that's a good sign it's a build dir
+            if (std::filesystem::exists(path / "CMakeCache.txt")) {
+                logger::print_verbose("Found existing build directory with CMakeCache.txt: " + path.string());
+                return path;
+            } else {
+                logger::print_verbose("Found directory but no CMakeCache.txt: " + path.string());
+            }
+        }
+    }
+    
+    // Second pass - accept any existing directory even without CMakeCache.txt
+    for (const auto& path : common_formats) {
+        if (std::filesystem::exists(path)) {
+            logger::print_verbose("Using existing build directory (no CMakeCache.txt): " + path.string());
             return path;
         }
     }
     
     // If no directory exists, return the most likely format based on project
-    // Since the build system is using "build" as base and supports Debug config,
-    // we'll try to match how the build system creates directories
-    logger::print_verbose("No existing build directory found, using directory format based on configuration");
+    logger::print_verbose("No existing build directory found, using recommended format");
     
-    // Special handling for Debug configuration
+    // Special handling for specific configurations
     if (config == "Debug") {
-        return std::filesystem::path(base_dir + "-debug"); // lowercase for Debug config
+        logger::print_verbose("Using standard format for Debug: build-debug");
+        return std::filesystem::path("build-debug");
+    } else if (config == "Release") {
+        logger::print_verbose("Using standard format for Release: build-release");
+        return std::filesystem::path("build-release");
     }
     
     // For other configurations, use base-config format
-    return std::filesystem::path(base_dir + "-" + config_lower);
+    logger::print_verbose("Using general format for " + config + ": build-" + config_lower);
+    return std::filesystem::path("build-" + config_lower);
 }
 
 /**
@@ -175,9 +218,58 @@ static bool build_project(const cforge_context_t* ctx) {
     // Copy configuration if available
     if (ctx->args.config) {
         build_ctx.args.config = strdup(ctx->args.config);
+        logger::print_verbose("Building with configuration: " + std::string(ctx->args.config));
     } else {
-        build_ctx.args.config = nullptr;
+        // Default to Release if not specified - this is important for packaging
+        build_ctx.args.config = strdup("Release");
+        logger::print_verbose("No configuration specified, defaulting to Release for build");
     }
+    
+    // Check for explicit config in args
+    for (int i = 0; i < ctx->args.arg_count; ++i) {
+        if (ctx->args.args[i] && 
+            (strcmp(ctx->args.args[i], "--config") == 0 || strcmp(ctx->args.args[i], "-c") == 0) && 
+            i + 1 < ctx->args.arg_count && ctx->args.args[i + 1]) {
+            
+            // Override the configuration with the one from args
+            if (build_ctx.args.config) {
+                free((void*)build_ctx.args.config);
+            }
+            build_ctx.args.config = strdup(ctx->args.args[i + 1]);
+            logger::print_verbose("Using configuration from args: " + std::string(build_ctx.args.config));
+            break;
+        }
+    }
+    
+    // Check if we need to set up Git dependencies
+    std::filesystem::path project_dir = ctx->working_dir;
+    std::filesystem::path config_path = project_dir / "cforge.toml";
+    
+    if (std::filesystem::exists(config_path)) {
+        try {
+            // Load project configuration
+            toml::table config_table = toml::parse_file(config_path.string());
+            toml_reader project_config(config_table);
+            
+            // Check for Git dependencies
+            if (project_config.has_key("dependencies.git")) {
+                logger::print_status("Setting up Git dependencies before build...");
+                bool verbose = build_ctx.args.verbosity && strcmp(build_ctx.args.verbosity, "verbose") == 0;
+                
+                if (!clone_git_dependencies(project_dir, project_config, verbose)) {
+                    logger::print_error("Failed to clone Git dependencies");
+                    // Continue with build anyway
+                }
+            }
+        } catch (const std::exception& ex) {
+            logger::print_warning("Error checking for Git dependencies: " + std::string(ex.what()));
+            // Continue with build anyway
+        }
+    }
+    
+    // Print what configuration we're actually using for the build
+    logger::print_status("Building project: " + std::string(ctx->working_dir) + " [" + 
+        (build_ctx.args.config ? build_ctx.args.config : "default") + "]");
     
     // Allocate space for args to pass special flags to the build command
     // Use a simpler generator to avoid problems with Ninja Multi-Config
@@ -189,6 +281,8 @@ static bool build_project(const cforge_context_t* ctx) {
     build_ctx.args.args[1] = strdup(get_simple_generator().c_str());
     
     // Build the project
+    logger::print_status("Running build with configuration: " + 
+        std::string(build_ctx.args.config ? build_ctx.args.config : "default"));
     int result = cforge_cmd_build(&build_ctx);
     
     // Clean up allocated memory
@@ -692,80 +786,107 @@ static bool download_and_install_nsis(bool verbose) {
 }
 
 /**
- * @brief Check if a file is a package file based on its extension
+ * @brief Check if a file is a package file
  * 
  * @param filename Filename to check
- * @return bool True if the file is a package file
+ * @return bool true if the file is a package file
  */
 static bool is_package_file(const std::string& filename) {
-    return filename.find(".zip") != std::string::npos || 
-           filename.find(".exe") != std::string::npos || 
-           filename.find(".deb") != std::string::npos || 
-           filename.find(".rpm") != std::string::npos || 
-           filename.find(".dmg") != std::string::npos || 
-           filename.find(".tar.gz") != std::string::npos ||
-           filename.find(".msi") != std::string::npos;
+    // Common package extensions
+    static const std::vector<std::string> package_extensions = {
+        ".zip", ".tar.gz", ".tgz", ".tar.bz2", ".tbz2", ".tar", ".deb", ".rpm",
+        ".dmg", ".pkg", ".msi", ".exe", ".wixobj", ".wixpdb", ".7z"
+    };
+    
+    // Executable and recipe files to exclude
+    static const std::vector<std::string> excluded_patterns = {
+        "-setup.exe", "-installer.exe", 
+        "recipe.txt", "recipe.json", "recipe.xml",
+        ".wixobj", ".wixpdb", ".obj", ".ilk", ".pdb",
+        "CMakeFiles", "cmake_install", ".vcxproj", ".sln"
+    };
+    
+    std::string lower_filename = filename;
+    std::transform(lower_filename.begin(), lower_filename.end(), lower_filename.begin(), ::tolower);
+    
+    // Check if the file matches any exclusion pattern
+    for (const auto& pattern : excluded_patterns) {
+        if (lower_filename.find(pattern) != std::string::npos) {
+            return false;
+        }
+    }
+    
+    // Check for package extensions
+    for (const auto& ext : package_extensions) {
+        if (lower_filename.find(ext) != std::string::npos) {
+            // Skip installer EXEs but allow packaged EXEs
+            if (ext == ".exe" && 
+                (lower_filename.find("-setup.exe") != std::string::npos ||
+                 lower_filename.find("-installer.exe") != std::string::npos)) {
+                return false;
+            }
+            return true;
+        }
+    }
+    
+    return false;
 }
 
 /**
- * @brief Check if a file is a package file based on its path
+ * @brief Check if a path is a package file
  * 
  * @param path Path to check
- * @return bool True if the file is a package file
+ * @return bool true if the path is a package file
  */
 static bool is_package_file(const std::filesystem::path& path) {
     return is_package_file(path.filename().string());
 }
 
 /**
- * @brief Search for package files in a directory and its subdirectories
+ * @brief Find all package files in a directory
  * 
  * @param dir Directory to search
  * @param recursive Whether to search recursively
- * @return std::vector<std::filesystem::path> Paths to package files found
+ * @return std::vector<std::filesystem::path> List of package files
  */
-static std::vector<std::filesystem::path> find_package_files(const std::filesystem::path& dir, bool recursive = true) {
-    std::vector<std::filesystem::path> results;
+static std::vector<std::filesystem::path> find_package_files(
+    const std::filesystem::path& dir,
+    bool recursive = false)
+{
+    std::vector<std::filesystem::path> packages;
     
     if (!std::filesystem::exists(dir)) {
-        return results;
+        return packages;
     }
     
     try {
         if (recursive) {
             for (const auto& entry : std::filesystem::recursive_directory_iterator(dir)) {
                 if (entry.is_regular_file()) {
-                    std::string filename = entry.path().filename().string();
-                    if (is_package_file(filename)) {
-                        // Verify file exists and has size > 0
-                        std::error_code ec;
-                        if (std::filesystem::exists(entry.path(), ec) && 
-                            std::filesystem::file_size(entry.path(), ec) > 0) {
-                            results.push_back(entry.path());
-                        }
+                    // Skip intermediate directories
+                    if (entry.path().string().find("_CPack_Packages") != std::string::npos ||
+                        entry.path().string().find("temp") != std::string::npos ||
+                        entry.path().string().find("_tmp") != std::string::npos) {
+                        continue;
+                    }
+                    
+                    if (is_package_file(entry.path())) {
+                        packages.push_back(entry.path());
                     }
                 }
             }
         } else {
             for (const auto& entry : std::filesystem::directory_iterator(dir)) {
-                if (entry.is_regular_file()) {
-                    std::string filename = entry.path().filename().string();
-                    if (is_package_file(filename)) {
-                        // Verify file exists and has size > 0
-                        std::error_code ec;
-                        if (std::filesystem::exists(entry.path(), ec) && 
-                            std::filesystem::file_size(entry.path(), ec) > 0) {
-                            results.push_back(entry.path());
-                        }
-                    }
+                if (entry.is_regular_file() && is_package_file(entry.path())) {
+                    packages.push_back(entry.path());
                 }
             }
         }
     } catch (const std::exception& ex) {
-        logger::print_warning("Error searching directory " + dir.string() + ": " + std::string(ex.what()));
+        logger::print_verbose("Error finding package files: " + std::string(ex.what()));
     }
     
-    return results;
+    return packages;
 }
 
 /**
@@ -796,149 +917,62 @@ static bool is_final_package(const std::filesystem::path& path) {
 }
 
 /**
- * @brief Display only the final distribution packages
+ * @brief Display only final distribution packages, filtering out intermediate files
  * 
- * @param packages List of all package files found
- * @param config_name Build configuration name for display
- * @param project_name Project name for filtering
- * @return void
+ * @param packages List of package paths
+ * @param config_name Configuration name
+ * @param project_name Project name
  */
 static void display_only_final_packages(
-    const std::vector<std::filesystem::path>& packages, 
+    const std::vector<std::filesystem::path>& packages,
     const std::string& config_name,
     const std::string& project_name)
 {
-    std::set<std::string> reported_packages;
-    
-    // Get the timestamp from just 10 seconds before execution started for extremely strict filtering
-    auto now = std::filesystem::file_time_type::clock::now();
-    auto cutoff_time = now - std::chrono::seconds(10);  // Extremely short window
-    
-    // Track config-specific files
-    bool show_all_configs = config_name.empty() || config_name == "Release";
-    std::string config_lower;
-    if (!show_all_configs) {
-        config_lower = config_name;
-        std::transform(config_lower.begin(), config_lower.end(), config_lower.begin(), ::tolower);
+    if (packages.empty()) {
+        return;
     }
-
-    // First pass - filter and report packages
-    for (const auto& path : packages) {
-        // Always skip packages that were created too long ago (not in current run)
-        try {
-            auto last_write_time = std::filesystem::last_write_time(path);
-            if (last_write_time < cutoff_time) {
-                logger::print_verbose("Skipping old package (not from current run): " + path.string());
-                continue;
-            }
-            
-            // Extra filtering for specific configurations
-            if (!show_all_configs) {
-                std::string filename = path.filename().string();
-                std::string filename_lower = filename;
-                std::transform(filename_lower.begin(), filename_lower.end(), filename_lower.begin(), ::tolower);
-                
-                // Skip if filename doesn't contain the requested config 
-                // (except executables which might not have config in name)
-                if (filename_lower.find(config_lower) == std::string::npos && 
-                    path.extension().string() != ".exe") {
-                    logger::print_verbose("Skipping package for different config: " + path.string());
-                    continue;
-                }
-            }
-        } catch (const std::exception& ex) {
-            // If there's an error getting the timestamp, just proceed
-            logger::print_verbose("Error checking file time: " + std::string(ex.what()));
-        }
-        
-        // Add more filtering for better detection of currenty-generated packages only
-        std::string path_str = path.string();
-        
-        // Skip if not in a packages directory
-        size_t packages_pos = path_str.find("packages" + std::string(1, PATH_SEPARATOR));
-        if (packages_pos == std::string::npos) {
+    
+    logger::print_status("Package(s) created:");
+    
+    int count = 0;
+    for (const auto& package : packages) {
+        // Skip files in _CPack_Packages which are intermediates
+        if (package.string().find("_CPack_Packages") != std::string::npos ||
+            package.string().find("/temp/") != std::string::npos ||
+            package.string().find("\\temp\\") != std::string::npos ||
+            package.string().find("_tmp") != std::string::npos) {
             continue;
         }
         
-        // Skip if in a subdirectory
-        std::string subpath = path_str.substr(packages_pos + 9); // "packages/" is 9 chars
-        if (subpath.find(PATH_SEPARATOR) != std::string::npos) {
+        // Skip any intermediate files, recipe files, or similar
+        std::string filename = package.filename().string();
+        if (!is_package_file(filename)) {
             continue;
         }
         
-        // Get filename and extension
-        std::string filename = path.filename().string();
-        std::string ext = path.extension().string();
-        
-        // Track which package types we've seen
-        bool is_dist_package = ext == ".zip" || ext == ".exe" || ext == ".deb" || 
-                               ext == ".rpm" || ext == ".dmg" || ext == ".msi" || 
-                               (ext == ".gz" && path_str.find(".tar.gz") != std::string::npos);
-        
-        // Skip executables that don't have the project name prefix
-        // (to filter out compiler-generated executables like a.exe)
-        if ((ext == ".exe" || ext == "") && 
-            !project_name.empty() && 
-            filename.find(project_name) == std::string::npos) {
+        // Only display packages that match project name if specified
+        if (!project_name.empty() && filename.find(project_name) == std::string::npos) {
             continue;
         }
         
-        // Skip executables that are clearly test or utility files
-        if (ext == ".exe") {
-            if (filename == "a.exe" || 
-                filename.find("CMake") != std::string::npos ||
-                filename.find("Test") != std::string::npos ||
-                filename.find("test") != std::string::npos) {
-                continue;
-            }
-        }
-        
-        // Only show executables for all configs, but be strict about ZIP files matching the current config
-        if (!show_all_configs && ext == ".zip") {
-            std::string filename_lower = filename;
-            std::transform(filename_lower.begin(), filename_lower.end(), filename_lower.begin(), ::tolower);
-            
-            if (filename_lower.find(config_lower) == std::string::npos) {
-                logger::print_verbose("Skipping zip package not matching current config: " + filename);
-                continue;
-            }
-        }
-        
-        if (is_dist_package) {
-            // Avoid duplicates
-            if (reported_packages.find(filename) == reported_packages.end()) {
-                // Always show the absolute path for clarity
-                std::string display_name = path.string();
-                logger::print_success("Package created: " + display_name);
-                reported_packages.insert(filename);
-            }
-        }
-    }
-    
-    if (reported_packages.empty()) {
-        logger::print_warning("No distribution packages found.");
-        logger::print_status("Check that your project is configured correctly for packaging.");
-    }
-    
-    // Final summary of packages - log helpful information about missing package types
-    bool has_packages = !reported_packages.empty();
-    if (!has_packages) {
-        logger::print_status("To create packages, add one or more of the following to your project config:");
-        logger::print_status("  package.generators = [\"ZIP\"]   # Basic ZIP package, works everywhere");
-        logger::print_status("  package.generators = [\"NSIS\"]  # Windows installer (.exe)");
-        logger::print_status("  package.generators = [\"WIX\"]   # Windows MSI installer");
-        logger::print_status("  package.generators = [\"TGZ\"]   # Tarball for Linux/macOS");
-    }
-    
-    // Remind about config
-    if (!config_name.empty() && config_name != "Release") {
-        for (const auto& pkg_name : reported_packages) {
+        // Only display packages that match config if specified
+        if (!config_name.empty()) {
             std::string config_lower = config_name;
             std::transform(config_lower.begin(), config_lower.end(), config_lower.begin(), ::tolower);
-            if (pkg_name.find(config_lower) == std::string::npos) {
-                break;
+            
+            // Skip packages that don't contain the config name (for multi-config generators)
+            if (filename.find(config_lower) == std::string::npos) {
+                continue;
             }
         }
+        
+        logger::print_status("  " + package.string());
+        count++;
+    }
+    
+    // Add a note if we filtered out some packages
+    if (count < packages.size()) {
+        logger::print_verbose("Some intermediate files were filtered out from the display");
     }
 }
 
@@ -975,6 +1009,8 @@ static bool run_cpack(
     std::string cpack_command = find_cpack_path();
     
     logger::print_verbose("Using CPack command: " + cpack_command);
+    logger::print_verbose("Build directory: " + build_dir.string());
+    logger::print_verbose("Configuration: " + config_name);
     
     // Check if the build directory exists and contains CMakeCache.txt
     if (!std::filesystem::exists(build_dir)) {
@@ -997,6 +1033,7 @@ static bool run_cpack(
     if (!config_name.empty()) {
         cpack_args.push_back("-C");
         cpack_args.push_back(config_name);
+        logger::print_verbose("Using CPack config: " + config_name);
     }
     
     // Add generators if specified
@@ -1008,6 +1045,7 @@ static bool run_cpack(
             gen_str += generators[i];
         }
         cpack_args.push_back(gen_str);
+        logger::print_verbose("Using generators: " + gen_str);
     }
     
     // Specify a simpler package output path
@@ -1020,6 +1058,7 @@ static bool run_cpack(
     
     // Make sure the package directory is absolute
     package_dir = std::filesystem::absolute(package_dir);
+    logger::print_verbose("Package output directory: " + package_dir.string());
     
     // Add package output directory - use both ways for compatibility
     cpack_args.push_back("-B");
@@ -1079,6 +1118,40 @@ static bool run_cpack(
         
         // Direct file name pattern instead of using placeholders
         std::string package_file_name = pkg_name + "-" + pkg_version + "-win64-" + config_lower;
+        logger::print_verbose("Package file name: " + package_file_name);
+        
+        // Clean up existing packages with the same name to prevent "exists" errors
+        try {
+            logger::print_verbose("Cleaning up any existing packages with the same name pattern");
+            for (const auto& gen : generators) {
+                std::string gen_lower = gen;
+                std::transform(gen_lower.begin(), gen_lower.end(), gen_lower.begin(), ::tolower);
+                
+                // Construct common package filenames to check
+                std::vector<std::string> patterns_to_check = {
+                    package_file_name + ".zip",
+                    package_file_name + ".exe",
+                    package_file_name + ".msi",
+                    package_file_name + ".deb",
+                    package_file_name + ".rpm",
+                    package_file_name + ".dmg",
+                    package_file_name + ".tar.gz",
+                    package_file_name + ".tar.bz2",
+                    package_file_name + ".7z"
+                };
+                
+                for (const auto& pattern : patterns_to_check) {
+                    std::filesystem::path file_to_check = package_dir / pattern;
+                    if (std::filesystem::exists(file_to_check)) {
+                        logger::print_verbose("Removing existing package: " + file_to_check.string());
+                        std::filesystem::remove(file_to_check);
+                    }
+                }
+            }
+        } catch (const std::exception& ex) {
+            logger::print_verbose("Error cleaning up existing packages: " + std::string(ex.what()));
+            // Continue anyway
+        }
         
         // CPack variable to customize package filename - avoid placeholders
         cpack_args.push_back("-D");
@@ -1110,10 +1183,11 @@ static bool run_cpack(
     cpack_args.push_back("-D");
     cpack_args.push_back("CPACK_TEMPORARY_DIRECTORY=" + package_dir.string() + "/temp");
     
-    // Ensure the temporary directory exists and is clean
+    // Clear the CPack temporary directory - this is important to prevent "exists" errors
     std::filesystem::path temp_dir = package_dir / "temp";
     if (std::filesystem::exists(temp_dir)) {
         try {
+            logger::print_verbose("Cleaning temporary directory: " + temp_dir.string());
             std::filesystem::remove_all(temp_dir);
         } catch (const std::exception& ex) {
             logger::print_verbose("Failed to clean temporary directory: " + std::string(ex.what()));
@@ -1124,6 +1198,36 @@ static bool run_cpack(
     } catch (const std::exception& ex) {
         logger::print_verbose("Failed to create temporary directory: " + std::string(ex.what()));
     }
+
+    // Remove the _CPack_Packages directory to avoid conflicts
+    std::filesystem::path cpack_packages_dir = package_dir / "_CPack_Packages";
+    if (std::filesystem::exists(cpack_packages_dir)) {
+        try {
+            logger::print_verbose("Cleaning CPack packages directory: " + cpack_packages_dir.string());
+            std::filesystem::remove_all(cpack_packages_dir);
+        } catch (const std::exception& ex) {
+            logger::print_verbose("Failed to clean CPack packages directory: " + std::string(ex.what()));
+        }
+    }
+    
+    // Clean the build directory _CPack_Packages too
+    std::filesystem::path build_cpack_dir = build_dir / "_CPack_Packages";
+    if (std::filesystem::exists(build_cpack_dir)) {
+        try {
+            logger::print_verbose("Cleaning build CPack directory: " + build_cpack_dir.string());
+            std::filesystem::remove_all(build_cpack_dir);
+        } catch (const std::exception& ex) {
+            logger::print_verbose("Failed to clean build CPack directory: " + std::string(ex.what()));
+        }
+    }
+    
+    // Force CPack to regenerate files
+    cpack_args.push_back("-D");
+    cpack_args.push_back("CPACK_REMOVE_TOPLEVEL_DIRECTORY=ON");
+    
+    // Force package overwrite
+    cpack_args.push_back("-D");
+    cpack_args.push_back("CPACK_OVERWRITE_PACKAGING_FILES=ON");
     
     // Set a specific system name based on platform
     cpack_args.push_back("-D");
@@ -1134,6 +1238,14 @@ static bool run_cpack(
 #else
     cpack_args.push_back("CPACK_SYSTEM_NAME=linux");
 #endif
+    
+    // Exclude recipe files and certain executables from packages
+    cpack_args.push_back("-D");
+    cpack_args.push_back("CPACK_SOURCE_IGNORE_FILES=CMakeFiles;_CPack_;recipe.*;.*\\.obj;.*\\.ilk;.*\\.pdb;.*\\.vcxproj;.*\\.sln;.*-setup\\.exe;.*-installer\\.exe");
+    
+    // Specify pattern for binary installers to exclude
+    cpack_args.push_back("-D");
+    cpack_args.push_back("CPACK_PACKAGE_IGNORE_FILES=CMakeFiles;_CPack_;recipe.*;.*\\.obj;.*\\.ilk;.*\\.pdb;.*\\.vcxproj;.*\\.sln;.*-setup\\.exe;.*-installer\\.exe");
     
     // Add verbose flag if needed
     if (verbose) {
@@ -1963,11 +2075,13 @@ static bool package_single_project(
  * 
  * @param dir Directory to search for package files
  * @param project_name Optional project name to filter by
+ * @param exclude_intermediate Whether to exclude intermediate files
  * @return std::vector<std::filesystem::path> List of package files
  */
 static std::vector<std::filesystem::path> list_packages(
     const std::filesystem::path& dir,
-    const std::string& project_name = "")
+    const std::string& project_name = "",
+    bool exclude_intermediate = true)
 {
     std::vector<std::filesystem::path> packages;
     
@@ -1982,6 +2096,15 @@ static std::vector<std::filesystem::path> list_packages(
             }
             
             std::string filename = entry.path().filename().string();
+            
+            // Skip folders like _CPack_Packages and other intermediate paths
+            if (exclude_intermediate && 
+                (entry.path().string().find("_CPack_Packages") != std::string::npos ||
+                 entry.path().string().find("temp") != std::string::npos ||
+                 entry.path().string().find("_tmp") != std::string::npos)) {
+                continue;
+            }
+            
             if (is_package_file(filename)) {
                 // If project name is specified, check if the package belongs to the project
                 if (!project_name.empty()) {
@@ -2045,20 +2168,26 @@ cforge_int_t cforge_cmd_package(const cforge_context_t* ctx)
     
     // Parse common parameters
     
-    // Get the config
-    std::string config_name = "Debug"; // Default to Debug instead of Release
+    // Get the config - Allow either Debug or Release as default
+    std::string config_name = "Release"; // Default to Release if not specified
+    
+    // Check context first
     if (ctx->args.config && strlen(ctx->args.config) > 0) {
         config_name = ctx->args.config;
+        logger::print_verbose("Using configuration from context: " + config_name);
     } else {
         // Check for --config or -c flag
         for (int i = 0; i < ctx->args.arg_count; ++i) {
             std::string arg = ctx->args.args[i];
             if ((arg == "--config" || arg == "-c") && i + 1 < ctx->args.arg_count) {
                 config_name = ctx->args.args[i + 1];
+                logger::print_verbose("Using configuration from command line: " + config_name);
                 break;
             }
         }
     }
+    
+    logger::print_status("Using build configuration: " + config_name);
     
     // Check for build first flag
     bool skip_build = false;
@@ -2324,16 +2453,6 @@ cforge_int_t cforge_cmd_package(const cforge_context_t* ctx)
                     
                     logger::print_success("Project '" + specific_project + "' packaged successfully");
                     
-                    // List the packages created
-                    auto packages = list_packages(project_dir / "packages", project_name);
-                    
-                    if (!packages.empty()) {
-                        logger::print_status("Package(s) created:");
-                        for (const auto& package : packages) {
-                            logger::print_status(std::string("  ") + package.string());
-                        }
-                    }
-                    
                     return 0;
                 } else {
                     // Package all projects
@@ -2464,16 +2583,6 @@ cforge_int_t cforge_cmd_package(const cforge_context_t* ctx)
                         if (result) {
                             logger::print_success("Project '" + project + "' packaged successfully");
                             success_count++;
-                            
-                            // List the packages created
-                            auto packages = list_packages(project_dir / "packages", project_name);
-                            
-                            if (!packages.empty()) {
-                                logger::print_status("Package(s) created:");
-                                for (const auto& package : packages) {
-                                    logger::print_status(std::string("  ") + package.string());
-                                }
-                            }
                         } else {
                             logger::print_error("Failed to package project '" + project + "'");
                         }
@@ -2582,16 +2691,6 @@ cforge_int_t cforge_cmd_package(const cforge_context_t* ctx)
             }
             
             logger::print_success("Packaging completed successfully");
-            
-            // List the created packages
-            auto packages = list_packages(current_dir / "packages", project_name);
-            
-            if (!packages.empty()) {
-                logger::print_status("Package(s) created:");
-                for (const auto& package : packages) {
-                    logger::print_status(std::string("  ") + package.string());
-                }
-            }
             
             return 0;
         }

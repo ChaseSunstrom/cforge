@@ -1194,6 +1194,53 @@ static bool build_project(
         }
     }
     
+    // For workspace projects, we don't need to handle dependencies or generate CMakeLists.txt
+    if (!use_workspace_build && has_project_config) {
+        // Clone Git dependencies before generating CMakeLists.txt
+        if (project_config.has_key("dependencies.git")) {
+            logger::print_status("Setting up Git dependencies...");
+            try {
+                // Make sure we're in the project directory for relative paths to work
+                std::filesystem::current_path(project_dir);
+                
+                if (!clone_git_dependencies(project_dir, project_config, verbose)) {
+                    logger::print_error("Failed to clone Git dependencies");
+                    return false;
+                }
+                
+                logger::print_success("Git dependencies successfully set up");
+            } catch (const std::exception& ex) {
+                logger::print_error("Exception while setting up Git dependencies: " + std::string(ex.what()));
+                return false;
+            }
+        }
+        
+        // In non-workspace mode or if workspace doesn't have CMakeLists.txt, check if CMakeLists.txt needs to be generated
+        std::filesystem::path cmakelists_path = project_dir / "CMakeLists.txt";
+        std::filesystem::path timestamp_file = build_dir / ".cforge_cmakefile_timestamp";
+        
+        // Remove existing CMakeLists.txt if it exists
+        if (std::filesystem::exists(cmakelists_path)) {
+            logger::print_verbose("Removing existing CMakeLists.txt");
+            std::filesystem::remove(cmakelists_path);
+        }
+        
+        // Generate new CMakeLists.txt
+        if (!generate_cmakelists_from_toml(project_dir, project_config, verbose)) {
+            logger::print_error("Failed to generate CMakeLists.txt");
+            return false;
+        }
+        
+        // Update timestamp file
+        std::ofstream timestamp(timestamp_file);
+        if (timestamp) {
+            timestamp << "Generated: " << std::time(nullptr) << std::endl;
+            timestamp.close();
+        }
+        
+        logger::print_success("Generated CMakeLists.txt file from cforge.toml");
+    }
+    
     // Prepare CMake arguments
     std::vector<std::string> cmake_args;
     

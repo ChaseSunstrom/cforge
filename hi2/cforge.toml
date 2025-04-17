@@ -65,9 +65,9 @@ contact = "Your Name <your.email@example.com>"
 # curl = { version = "7.80.0", components = ["ssl"] }  # With components
 
 # git dependencies
-# [dependencies.git]
+[dependencies.git]
 # json = { url = "https://github.com/nlohmann/json.git", tag = "v3.11.2" }
-# spdlog = { url = "https://github.com/gabime/spdlog.git", branch = "v1.x" }
+spdlog = { url = "https://github.com/gabime/spdlog.git", branch = "v1.x" }
 
 # system dependencies
 # [dependencies.system]
