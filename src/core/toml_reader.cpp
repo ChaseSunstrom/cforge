@@ -19,6 +19,11 @@ namespace cforge {
 // Add constructor to initialize toml_data to nullptr
 toml_reader::toml_reader() : toml_data(nullptr) {}
 
+// Add constructor that takes a toml::table directly
+toml_reader::toml_reader(const toml::table& table) {
+    toml_data = new toml::table(table);
+}
+
 // Add destructor to clean up allocated memory
 toml_reader::~toml_reader() {
     if (toml_data) {

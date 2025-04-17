@@ -113,6 +113,10 @@ static bool run_cmake_configure(
 workspace_config::workspace_config() : name_("cpp-workspace"), description_("A C++ workspace") {
 }
 
+workspace_config::workspace_config(const std::string& workspace_file) : name_("cpp-workspace"), description_("A C++ workspace") {
+    load(workspace_file);
+}
+
 // Accessors for workspace_config
 void workspace_config::set_name(const std::string& name) {
     name_ = name;

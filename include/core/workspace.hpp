@@ -63,6 +63,13 @@ public:
      * @brief Constructor
      */
     workspace_config();
+
+    /**
+     * @brief Constructor
+     * 
+     * @param workspace_file Path to the workspace configuration file
+     */
+    workspace_config(const std::string& workspace_file);
     
     /**
      * @brief Load a workspace configuration file

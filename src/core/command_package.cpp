@@ -24,6 +24,8 @@
 
 using namespace cforge;
 
+namespace fs = std::filesystem;
+
 #ifdef _WIN32
 const char PATH_SEPARATOR = '\\';
 #else
@@ -447,8 +449,21 @@ static bool create_workspace_package(
     std::replace(safe_ps_cmd.begin(), safe_ps_cmd.end(), '/', '\\');
     cmd_args.push_back(safe_ps_cmd);
     
-    // Execute the command
-    success = execute_tool(zip_cmd, cmd_args, workspace_dir.string(), "Workspace ZIP Package", verbose);
+    // Print command for debugging
+    logger::print_status("Executing ZIP command: " + zip_cmd + " " + safe_ps_cmd);
+    
+    // Execute the command with explicit capture of output
+    process_result result = execute_process(zip_cmd, cmd_args, workspace_dir.string(), 
+                                           nullptr, nullptr, 60); // 60 second timeout
+    
+    if (result.success) {
+        logger::print_verbose("PowerShell command output: " + result.stdout_output);
+        success = true;
+    } else {
+        logger::print_error("PowerShell command failed with exit code: " + std::to_string(result.exit_code));
+        logger::print_error("Error output: " + result.stderr_output);
+        success = false;
+    }
 #else
     // macOS and Linux implementation using zip command
     std::string zip_cmd = "zip";
@@ -1944,6 +1959,76 @@ static bool package_single_project(
 }
 
 /**
+ * @brief List all package files in a directory
+ * 
+ * @param dir Directory to search for package files
+ * @param project_name Optional project name to filter by
+ * @return std::vector<std::filesystem::path> List of package files
+ */
+static std::vector<std::filesystem::path> list_packages(
+    const std::filesystem::path& dir,
+    const std::string& project_name = "")
+{
+    std::vector<std::filesystem::path> packages;
+    
+    if (!std::filesystem::exists(dir)) {
+        return packages;
+    }
+    
+    try {
+        for (const auto& entry : std::filesystem::directory_iterator(dir)) {
+            if (!entry.is_regular_file()) {
+                continue;
+            }
+            
+            std::string filename = entry.path().filename().string();
+            if (is_package_file(filename)) {
+                // If project name is specified, check if the package belongs to the project
+                if (!project_name.empty()) {
+                    if (filename.find(project_name) != std::string::npos) {
+                        packages.push_back(entry.path());
+                    }
+                } else {
+                    packages.push_back(entry.path());
+                }
+            }
+        }
+    } catch (const std::exception& ex) {
+        logger::print_verbose("Error listing packages: " + std::string(ex.what()));
+    }
+    
+    // Sort packages by modification time (newest first)
+    std::sort(packages.begin(), packages.end(), 
+        [](const std::filesystem::path& a, const std::filesystem::path& b) {
+            return std::filesystem::last_write_time(a) > std::filesystem::last_write_time(b);
+        });
+    
+    return packages;
+}
+
+/**
+ * @brief Join a vector of strings into a single string with a delimiter
+ * 
+ * @param strings Vector of strings to join
+ * @param delimiter Delimiter to use between strings
+ * @return std::string Joined string
+ */
+static std::string join_strings(const std::vector<std::string>& strings, const std::string& delimiter) {
+    std::string result;
+    bool first = true;
+    
+    for (const auto& str : strings) {
+        if (!first) {
+            result += delimiter;
+        }
+        result += str;
+        first = false;
+    }
+    
+    return result;
+}
+
+/**
  * @brief Handle the 'package' command
  * 
  * @param ctx Context containing parsed arguments
@@ -1954,10 +2039,26 @@ cforge_int_t cforge_cmd_package(const cforge_context_t* ctx)
     logger::print_status("Starting packaging process...");
     
     // Check if this is a workspace
-    std::filesystem::path workspace_file = std::filesystem::path(ctx->working_dir) / WORKSPACE_FILE;
+    std::filesystem::path current_dir = std::filesystem::path(ctx->working_dir);
+    std::filesystem::path workspace_file = current_dir / WORKSPACE_FILE;
     bool is_workspace = std::filesystem::exists(workspace_file);
     
     // Parse common parameters
+    
+    // Get the config
+    std::string config_name = "Debug"; // Default to Debug instead of Release
+    if (ctx->args.config && strlen(ctx->args.config) > 0) {
+        config_name = ctx->args.config;
+    } else {
+        // Check for --config or -c flag
+        for (int i = 0; i < ctx->args.arg_count; ++i) {
+            std::string arg = ctx->args.args[i];
+            if ((arg == "--config" || arg == "-c") && i + 1 < ctx->args.arg_count) {
+                config_name = ctx->args.args[i + 1];
+                break;
+            }
+        }
+    }
     
     // Check for build first flag
     bool skip_build = false;
@@ -1992,7 +2093,9 @@ cforge_int_t cforge_cmd_package(const cforge_context_t* ctx)
     
     // Check for specific project in workspace
     std::string specific_project;
-    if (ctx->args.args) {
+    if (ctx->args.project) {
+        specific_project = ctx->args.project;
+    } else {
         for (int i = 0; i < ctx->args.arg_count; ++i) {
             if ((strcmp(ctx->args.args[i], "--project") == 0 || 
                  strcmp(ctx->args.args[i], "-p") == 0) && 
@@ -2003,316 +2106,503 @@ cforge_int_t cforge_cmd_package(const cforge_context_t* ctx)
         }
     }
     
-    // Default build config
-    std::string build_config = "Release";
-    
-    // Get build config from args if specified
-    if (ctx->args.config && strlen(ctx->args.config) > 0) {
-        build_config = ctx->args.config;
-        logger::print_verbose("Using build configuration from argument: " + build_config);
-    } else if (ctx->args.args) {
-        for (int i = 0; i < ctx->args.arg_count; ++i) {
-            if ((strcmp(ctx->args.args[i], "--config") == 0 || 
-                 strcmp(ctx->args.args[i], "-c") == 0) && 
-                i + 1 < ctx->args.arg_count) {
-                build_config = ctx->args.args[i + 1];
-                logger::print_verbose("Using build configuration from command line: " + build_config);
-                break;
-            }
-        }
-    }
-
-    logger::print_status("Using build configuration: " + build_config);
-    
-    // If in a workspace, package projects in the workspace
-    if (is_workspace) {
-        logger::print_status("Packaging workspace projects");
-        
-        // Load workspace
-        workspace ws;
-        if (!ws.load(ctx->working_dir)) {
-            logger::print_error("Failed to load workspace configuration");
-            return 1;
-        }
-        
-        // Get workspace name
-        std::string workspace_name = ws.get_name();
-        if (workspace_name.empty()) {
-            workspace_name = std::filesystem::path(ctx->working_dir).filename().string();
-        }
-        
-        // Get all projects
-        std::vector<workspace_project> projects = ws.get_projects();
-        if (projects.empty()) {
-            logger::print_error("No projects found in workspace");
-            return 1;
-        }
-        
-        // Create workspace-level packages directory
-        std::filesystem::path workspace_package_dir = std::filesystem::path(ctx->working_dir) / "packages";
-        if (!std::filesystem::exists(workspace_package_dir)) {
+    try {
+        if (is_workspace) {
+            // Handle workspace packaging
+            logger::print_status("Packaging in workspace context: " + current_dir.string());
+            
+            // Load workspace configuration
+            toml::table workspace_table;
             try {
-                std::filesystem::create_directories(workspace_package_dir);
-                logger::print_status("Created workspace packages directory: " + workspace_package_dir.string());
-            } catch (const std::exception& ex) {
-                logger::print_warning("Failed to create workspace packages directory: " + std::string(ex.what()));
+                workspace_table = toml::parse_file(workspace_file.string());
+            } catch (const toml::parse_error& e) {
+                logger::print_error("Failed to parse workspace.toml: " + std::string(e.what()));
+                return 1;
             }
-        }
-        
-        // Package specific project if requested
-        if (!specific_project.empty()) {
-            bool found = false;
-            for (const auto& project : projects) {
-                if (project.name == specific_project) {
-                    found = true;
-                    logger::print_status("Packaging specific project: " + project.name);
-                    
-                    std::filesystem::path project_config_path = project.path / CFORGE_FILE;
-                    if (!std::filesystem::exists(project_config_path)) {
-                        logger::print_error("Project configuration file not found: " + project_config_path.string());
-                        return 1;
+            
+            // Create a toml_reader wrapper
+            toml_reader workspace_config(workspace_table);
+            
+            // If no config specified, check workspace default
+            if (config_name.empty()) {
+                config_name = workspace_config.get_string("workspace.build_type", "Debug");
+            }
+            
+            // If no generators specified, check workspace
+            if (generators.empty()) {
+                auto workspace_gens = workspace_config.get_string_array("package.generators");
+                if (!workspace_gens.empty()) {
+                    generators = workspace_gens;
+                    for (auto& gen : generators) {
+                        std::transform(gen.begin(), gen.end(), gen.begin(), ::toupper);
                     }
-                    
-                    toml_reader project_config;
-                    if (!project_config.load(project_config_path.string())) {
-                        logger::print_error("Failed to load project configuration");
-                        return 1;
-                    }
-                    
-                    // Use generators from config or default ones
-                    std::vector<std::string> project_generators = generators;
-                    if (project_generators.empty()) {
-                        project_generators = project_config.get_string_array("package.generators");
-                        if (project_generators.empty()) {
-                            project_generators = get_default_generators();
-                        } else {
-                            project_generators = uppercase_generators(project_generators);
-                        }
-                    }
-                    
-                    // Get build config from project config if not specified
-                    std::string project_build_config = build_config;
-                    if (project_build_config.empty()) {
-                        project_build_config = project_config.get_string("build.build_type", "Release");
-                    }
-                    
-                    logger::print_status("Using build configuration: " + project_build_config);
-                    
-                    // Package the project
-                    if (package_single_project(
-                            project.path, 
-                            project_config, 
-                            project_build_config, 
-                            skip_build, 
-                            project_generators, 
-                            verbose,
-                            ctx,
-                            workspace_package_dir)) {
-                        logger::print_success("Successfully packaged project: " + project.name);
-                        break;
-                    }
-                    
-                    logger::print_error("Failed to package project: " + project.name);
-                    return 1;
+                } else {
+                    // Default generators
+                    generators = get_default_generators();
                 }
             }
             
-            if (!found) {
-                logger::print_error("Project not found in workspace: " + specific_project);
-                return 1;
-            }
-        } else {
-            // First build all projects
-            bool all_build_success = true;
-            logger::print_status("Building all projects...");
-            for (const auto& project : projects) {
-                // Only print which project we're building, not all the details
-                logger::print_verbose("Building project: " + project.name);
+            // If no specific project, check if we should package all or just main
+            if (specific_project.empty()) {
+                // Check if only main project should be packaged
+                bool package_all = workspace_config.get_bool("package.all_projects", false);
                 
-                std::filesystem::path project_config_path = project.path / CFORGE_FILE;
-                if (!std::filesystem::exists(project_config_path)) {
-                    logger::print_warning("Project configuration file not found, skipping: " + project_config_path.string());
-                    continue;
-                }
-                
-                toml_reader project_config;
-                if (!project_config.load(project_config_path.string())) {
-                    logger::print_warning("Failed to load project configuration, skipping: " + project.name);
-                    continue;
-                }
-                
-                // Skip if packaging is disabled for this project
-                bool packaging_enabled = project_config.get_bool("package.enabled", true);
-                if (!packaging_enabled) {
-                    logger::print_status("Packaging is disabled for project: " + project.name);
-                    continue;
-                }
-                
-                // Get build config from project config if not specified
-                std::string project_build_config = build_config;
-                if (project_build_config.empty()) {
-                    project_build_config = project_config.get_string("build.build_type", "Release");
-                }
-                
-                // Skip build if requested
-                if (!skip_build) {
-                    // Create a modified context with the correct configuration
-                    cforge_context_t build_ctx;
+                if (!package_all) {
+                    // Try to get main project
+                    specific_project = workspace_config.get_string("workspace.main_project", "");
                     
-                    // Zero-initialize the context to avoid undefined behavior
-                    memset(&build_ctx, 0, sizeof(cforge_context_t));
-                    
-                    // Copy only the essential fields - working_dir is a char array
-                    std::string safe_path = project.path.string();
-                    strncpy(build_ctx.working_dir, safe_path.c_str(), sizeof(build_ctx.working_dir) - 1);
-                    build_ctx.working_dir[sizeof(build_ctx.working_dir) - 1] = '\0'; // Ensure null termination
-                    
-                    // Copy verbosity
-                    if (ctx->args.verbosity) {
-                        build_ctx.args.verbosity = strdup(ctx->args.verbosity);
-                    }
-                    
-                    // Safely copy the command structure
-                    build_ctx.args.command = strdup("build");
-                    
-                    // Set the build configuration
-                    build_ctx.args.config = strdup(project_build_config.c_str());
-                    
-                    // Allocate space for args to pass special flags to the build command
-                    // Use a simpler generator to avoid problems with Ninja Multi-Config
-                    build_ctx.args.arg_count = 2;  // -G "generator"
-                    build_ctx.args.args = (cforge_string_t*)malloc(build_ctx.args.arg_count * sizeof(cforge_string_t));
-                    
-                    // Set the generator flag
-                    build_ctx.args.args[0] = strdup("-G");
-                    build_ctx.args.args[1] = strdup(get_simple_generator().c_str());
-                    
-                    // Build the project
-                    bool build_success = build_project(&build_ctx);
-                    
-                    // Clean up allocated memory
-                    if (build_ctx.args.command) {
-                        free((void*)build_ctx.args.command);
-                    }
-                    if (build_ctx.args.config) {
-                        free((void*)build_ctx.args.config);
-                    }
-                    if (build_ctx.args.verbosity) {
-                        free((void*)build_ctx.args.verbosity);
-                    }
-                    
-                    // Clean up args array
-                    if (build_ctx.args.args) {
-                        for (int i = 0; i < build_ctx.args.arg_count; i++) {
-                            if (build_ctx.args.args[i]) {
-                                free(build_ctx.args.args[i]);
+                    // If main project is not set, try to find an executable project
+                    if (specific_project.empty()) {
+                        auto projects = workspace_config.get_string_array("workspace.projects");
+                        if (projects.empty()) {
+                            // Scan directory for projects
+                            for (const auto& entry : std::filesystem::directory_iterator(current_dir)) {
+                                if (entry.is_directory() && 
+                                    std::filesystem::exists(entry.path() / "cforge.toml") &&
+                                    entry.path().filename() != "build") {
+                                    
+                                    std::string project_name = entry.path().filename().string();
+                                    
+                                    // Check if this project has packaging enabled
+                                    std::filesystem::path config_path = entry.path() / "cforge.toml";
+                                    try {
+                                        toml::table project_table = toml::parse_file(config_path.string());
+                                        toml_reader project_config(project_table);
+                                        
+                                        if (project_config.get_bool("package.enabled", true)) {
+                                            specific_project = project_name;
+                                            logger::print_status("Found packagable project: " + specific_project);
+                                            break;
+                                        }
+                                    } catch (...) {
+                                        // If we can't read the config, continue to the next project
+                                        continue;
+                                    }
+                                }
+                            }
+                        } else {
+                            // Look for the first project with packaging enabled
+                            for (const auto& project_name : projects) {
+                                std::filesystem::path project_path = current_dir / project_name;
+                                
+                                if (std::filesystem::exists(project_path / "cforge.toml")) {
+                                    try {
+                                        toml::table project_table = toml::parse_file((project_path / "cforge.toml").string());
+                                        toml_reader project_config(project_table);
+                                        
+                                        if (project_config.get_bool("package.enabled", true)) {
+                                            specific_project = project_name;
+                                            logger::print_status("Found packagable project: " + specific_project);
+                                            break;
+                                        }
+                                    } catch (...) {
+                                        // If we can't read the config, continue to the next project
+                                        continue;
+                                    }
+                                }
                             }
                         }
-                        free(build_ctx.args.args);
                     }
                     
-                    if (!build_success) {
-                        logger::print_verbose("Failed to build project: " + project.name);
-                        all_build_success = false;
+                    if (specific_project.empty()) {
+                        logger::print_error("No packagable projects found in workspace");
+                        logger::print_status("Please specify a project with -p or set workspace.main_project in workspace.toml");
+                        return 1;
+                    }
+                    
+                    // Check if the specified project exists
+                    std::filesystem::path project_path = current_dir / specific_project;
+                    if (!std::filesystem::exists(project_path) || !std::filesystem::exists(project_path / "cforge.toml")) {
+                        logger::print_error("Project not found: " + specific_project);
+                        return 1;
+                    }
+                    
+                    logger::print_status("Packaging project: " + specific_project);
+                    
+                    // Build the project if needed
+                    if (!skip_build) {
+                        // Build project using the workspace configuration
+                        std::vector<std::string> build_args = {"build", "-p", specific_project, "-c", config_name};
+                        if (verbose) build_args.push_back("-v");
+                        
+                        // Create a command context for build
+                        cforge_context_t build_ctx;
+                        memset(&build_ctx, 0, sizeof(cforge_context_t));
+                        strncpy(build_ctx.working_dir, ctx->working_dir, sizeof(build_ctx.working_dir) - 1);
+                        build_ctx.working_dir[sizeof(build_ctx.working_dir) - 1] = '\0';
+                        
+                        build_ctx.args.command = strdup("build");
+                        build_ctx.args.project = strdup(specific_project.c_str());
+                        build_ctx.args.config = strdup(config_name.c_str());
+                        
+                        if (verbose) {
+                            build_ctx.args.verbosity = strdup("verbose");
+                        }
+                        
+                        int build_result = cforge_cmd_build(&build_ctx);
+                        
+                        // Free allocated memory
+                        free(build_ctx.args.command);
+                        free(build_ctx.args.project);
+                        free(build_ctx.args.config);
+                        if (build_ctx.args.verbosity) free(build_ctx.args.verbosity);
+                        
+                        if (build_result != 0) {
+                            logger::print_error("Build failed");
+                            return 1;
+                        }
                     } else {
-                        logger::print_verbose("Successfully built project: " + project.name);
+                        logger::print_status("Skipping build as requested");
+                    }
+                    
+                    // Load project configuration
+                    std::filesystem::path project_dir = current_dir / specific_project;
+                    std::filesystem::path config_path = project_dir / "cforge.toml";
+                    
+                    toml::table project_table;
+                    try {
+                        project_table = toml::parse_file(config_path.string());
+                    } catch (const toml::parse_error& e) {
+                        logger::print_error("Failed to parse cforge.toml for project '" + specific_project + "': " + std::string(e.what()));
+                        return 1;
+                    }
+                    
+                    toml_reader project_config(project_table);
+                    
+                    // Check if packaging is enabled for this project
+                    if (!project_config.get_bool("package.enabled", true)) {
+                        logger::print_error("Packaging is disabled for project '" + specific_project + "'");
+                        return 1;
+                    }
+                    
+                    // Determine build directory - use workspace-level build directory if enabled
+                    std::filesystem::path build_dir;
+                    if (workspace_config.get_bool("build.use_workspace_dir", true)) {
+                        // Use workspace build directory
+                        std::string build_dir_name = workspace_config.get_string("build.directory", "build");
+                        build_dir = current_dir / build_dir_name;
+                    } else {
+                        // Use project-specific build directory
+                        std::string build_dir_name = project_config.get_string("build.build_dir", "build");
+                        build_dir = project_dir / build_dir_name;
+                    }
+                    
+                    // If no generators specified, check project
+                    if (generators.empty()) {
+                        auto project_gens = project_config.get_string_array("package.generators");
+                        if (!project_gens.empty()) {
+                            generators = project_gens;
+                            for (auto& gen : generators) {
+                                std::transform(gen.begin(), gen.end(), gen.begin(), ::toupper);
+                            }
+                        } else {
+                            // Default generators
+                            generators = get_default_generators();
+                        }
+                    }
+                    
+                    // Get project name and version
+                    std::string project_name = project_config.get_string("project.name", specific_project);
+                    std::string project_version = project_config.get_string("project.version", "0.1.0");
+                    
+                    // Run CPack for this project
+                    std::filesystem::path config_build_dir = get_build_dir_for_config(build_dir.string(), config_name);
+                    
+                    bool result = run_cpack(
+                        config_build_dir,
+                        generators,
+                        config_name,
+                        verbose,
+                        project_name,
+                        project_version
+                    );
+                    
+                    if (!result) {
+                        logger::print_error("Failed to package project '" + specific_project + "'");
+                        return 1;
+                    }
+                    
+                    logger::print_success("Project '" + specific_project + "' packaged successfully");
+                    
+                    // List the packages created
+                    auto packages = list_packages(project_dir / "packages", project_name);
+                    
+                    if (!packages.empty()) {
+                        logger::print_status("Package(s) created:");
+                        for (const auto& package : packages) {
+                            logger::print_status(std::string("  ") + package.string());
+                        }
+                    }
+                    
+                    return 0;
+                } else {
+                    // Package all projects
+                    logger::print_status("Packaging all projects in workspace");
+                    
+                    // Get projects from workspace config or scan directory
+                    std::vector<std::string> projects = workspace_config.get_string_array("workspace.projects");
+                    
+                    if (projects.empty()) {
+                        // Scan directory for projects
+                        for (const auto& entry : std::filesystem::directory_iterator(current_dir)) {
+                            if (entry.is_directory() && 
+                                std::filesystem::exists(entry.path() / "cforge.toml") &&
+                                entry.path().filename() != "build") {
+                                
+                                projects.push_back(entry.path().filename().string());
+                            }
+                        }
+                    }
+                    
+                    if (projects.empty()) {
+                        logger::print_error("No projects found in workspace");
+                        return 1;
+                    }
+                    
+                    logger::print_status("Found " + std::to_string(projects.size()) + " projects in workspace");
+                    
+                    // Build all projects if needed
+                    if (!skip_build) {
+                        logger::print_status("Building all projects...");
+                        
+                        // Create a command context for build
+                        cforge_context_t build_ctx;
+                        memset(&build_ctx, 0, sizeof(cforge_context_t));
+                        strncpy(build_ctx.working_dir, ctx->working_dir, sizeof(build_ctx.working_dir) - 1);
+                        build_ctx.working_dir[sizeof(build_ctx.working_dir) - 1] = '\0';
+                        
+                        build_ctx.args.command = strdup("build");
+                        build_ctx.args.config = strdup(config_name.c_str());
+                        
+                        if (verbose) {
+                            build_ctx.args.verbosity = strdup("verbose");
+                        }
+                        
+                        int build_result = cforge_cmd_build(&build_ctx);
+                        
+                        // Free allocated memory
+                        free(build_ctx.args.command);
+                        free(build_ctx.args.config);
+                        if (build_ctx.args.verbosity) free(build_ctx.args.verbosity);
+                        
+                        if (build_result != 0) {
+                            logger::print_error("Build failed");
+                            return 1;
+                        }
+                    } else {
+                        logger::print_status("Skipping build as requested");
+                    }
+                    
+                    // Package each project
+                    int success_count = 0;
+                    for (const auto& project : projects) {
+                        // Load project configuration
+                        std::filesystem::path project_dir = current_dir / project;
+                        std::filesystem::path config_path = project_dir / "cforge.toml";
+                        
+                        if (!std::filesystem::exists(config_path)) {
+                            logger::print_warning("Skipping project '" + project + "' (missing cforge.toml)");
+                            continue;
+                        }
+                        
+                        toml::table project_table;
+                        try {
+                            project_table = toml::parse_file(config_path.string());
+                        } catch (const toml::parse_error& e) {
+                            logger::print_warning("Skipping project '" + project + "' (failed to parse cforge.toml)");
+                            continue;
+                        }
+                        
+                        toml_reader project_config(project_table);
+                        
+                        // Check if packaging is enabled for this project
+                        if (!project_config.get_bool("package.enabled", true)) {
+                            logger::print_status("Skipping project '" + project + "' (packaging disabled)");
+                            continue;
+                        }
+                        
+                        logger::print_status("Packaging project: " + project);
+                        
+                        // Determine build directory - use workspace-level build directory if enabled
+                        std::filesystem::path build_dir;
+                        if (workspace_config.get_bool("build.use_workspace_dir", true)) {
+                            // Use workspace build directory
+                            std::string build_dir_name = workspace_config.get_string("build.directory", "build");
+                            build_dir = current_dir / build_dir_name;
+                        } else {
+                            // Use project-specific build directory
+                            std::string build_dir_name = project_config.get_string("build.build_dir", "build");
+                            build_dir = project_dir / build_dir_name;
+                        }
+                        
+                        // Get project name and version
+                        std::string project_name = project_config.get_string("project.name", project);
+                        std::string project_version = project_config.get_string("project.version", "0.1.0");
+                        
+                        // Get project-specific generators if any
+                        std::vector<std::string> project_generators = generators;
+                        auto project_gens = project_config.get_string_array("package.generators");
+                        if (!project_gens.empty()) {
+                            project_generators = project_gens;
+                            for (auto& gen : project_generators) {
+                                std::transform(gen.begin(), gen.end(), gen.begin(), ::toupper);
+                            }
+                        }
+                        
+                        // Run CPack for this project
+                        std::filesystem::path config_build_dir = get_build_dir_for_config(build_dir.string(), config_name);
+                        
+                        bool result = run_cpack(
+                            config_build_dir,
+                            project_generators,
+                            config_name,
+                            verbose,
+                            project_name,
+                            project_version
+                        );
+                        
+                        if (result) {
+                            logger::print_success("Project '" + project + "' packaged successfully");
+                            success_count++;
+                            
+                            // List the packages created
+                            auto packages = list_packages(project_dir / "packages", project_name);
+                            
+                            if (!packages.empty()) {
+                                logger::print_status("Package(s) created:");
+                                for (const auto& package : packages) {
+                                    logger::print_status(std::string("  ") + package.string());
+                                }
+                            }
+                        } else {
+                            logger::print_error("Failed to package project '" + project + "'");
+                        }
+                    }
+                    
+                    if (success_count > 0) {
+                        logger::print_success("Successfully packaged " + std::to_string(success_count) + " out of " + std::to_string(projects.size()) + " projects");
+                        return (success_count == projects.size()) ? 0 : 1;
+                    } else {
+                        logger::print_error("Failed to package any projects");
+                        return 1;
+                    }
+                }
+            }
+        } else {
+            // Handle single project packaging
+            logger::print_status("Packaging in single project context");
+            
+            // Check if this is a valid cforge project
+            std::filesystem::path config_path = current_dir / CFORGE_FILE;
+            if (!std::filesystem::exists(config_path)) {
+                logger::print_error("Not a valid cforge project (missing " + std::string(CFORGE_FILE) + ")");
+                return 1;
+            }
+            
+            // Load project configuration
+            toml::table config_table;
+            try {
+                config_table = toml::parse_file(config_path.string());
+            } catch (const toml::parse_error& e) {
+                logger::print_error("Failed to parse " + std::string(CFORGE_FILE) + ": " + std::string(e.what()));
+                return 1;
+            }
+            
+            toml_reader project_config(config_table);
+            
+            // Get project name
+            std::string project_name = project_config.get_string("project.name", "");
+            if (project_name.empty()) {
+                project_name = std::filesystem::path(current_dir).filename().string();
+            }
+            
+            // Get project version
+            std::string project_version = project_config.get_string("project.version", "0.1.0");
+            
+            // Log project info
+            logger::print_status("Project: " + project_name);
+            logger::print_status("Version: " + project_version);
+            logger::print_status("Configuration: " + config_name);
+            
+            // Check if packaging is enabled
+            if (!project_config.get_bool("package.enabled", true)) {
+                logger::print_error("Packaging is disabled for this project");
+                logger::print_status("Set 'package.enabled = true' in cforge.toml to enable packaging");
+                return 1;
+            }
+            
+            // Build the project if needed
+            if (!skip_build) {
+                logger::print_status("Building project before packaging...");
+                
+                if (!build_project(ctx)) {
+                    logger::print_error("Build failed, cannot continue with packaging");
+                    return 1;
+                }
+                
+            } else {
+                logger::print_status("Skipping build as requested");
+            }
+            
+            // If no generators specified, check project
+            if (generators.empty()) {
+                generators = project_config.get_string_array("package.generators");
+                
+                if (generators.empty()) {
+                    // Use default generators for the platform
+                    generators = get_default_generators();
+                } else {
+                    // Make sure all generators are uppercase
+                    for (auto& gen : generators) {
+                        std::transform(gen.begin(), gen.end(), gen.begin(), ::toupper);
                     }
                 }
             }
             
-            if (!all_build_success && !skip_build) {
-                logger::print_warning("Some projects failed to build, but will continue with packaging");
-                logger::print_status("Attempting to package only the successfully built projects");
-            }
+            logger::print_status("Using package generators: " + join_strings(generators, ", "));
             
-            // Create the workspace package with all project outputs
-            bool workspace_pkg_success = create_workspace_package(
-                workspace_name, 
-                projects, 
-                build_config, 
-                verbose, 
-                std::filesystem::path(ctx->working_dir));
+            // Determine build directory
+            std::string build_dir_name = project_config.get_string("build.build_dir", "build");
+            std::filesystem::path build_dir = current_dir / build_dir_name;
+            std::filesystem::path config_build_dir = get_build_dir_for_config(build_dir.string(), config_name);
             
-            if (workspace_pkg_success) {
-                logger::print_success("Successfully packaged workspace: " + workspace_name);
-                return 0;
-            } else {
-                logger::print_error("Failed to create workspace package");
+            // Run CPack
+            bool result = run_cpack(
+                config_build_dir,
+                generators,
+                config_name,
+                verbose,
+                project_name,
+                project_version
+            );
+            
+            if (!result) {
+                logger::print_error("Packaging failed");
                 return 1;
             }
-        }
-        
-        return 0;
-    } else {
-        // Handle single project packaging
-        
-        // Check if the project file exists
-        if (!std::filesystem::exists(CFORGE_FILE)) {
-            logger::print_error("No " + std::string(CFORGE_FILE) + " file found in the current directory");
-            return 1;
-        }
-        
-        // Load project configuration
-        toml_reader config;
-        if (!config.load(CFORGE_FILE)) {
-            logger::print_error("Failed to load " + std::string(CFORGE_FILE) + " file");
-            return 1;
-        }
-        
-        // Check if packaging is enabled
-        bool packaging_enabled = config.get_bool("package.enabled", true);
-        
-        if (!packaging_enabled) {
-            logger::print_status("Packaging is disabled in the project configuration");
+            
+            logger::print_success("Packaging completed successfully");
+            
+            // List the created packages
+            auto packages = list_packages(current_dir / "packages", project_name);
+            
+            if (!packages.empty()) {
+                logger::print_status("Package(s) created:");
+                for (const auto& package : packages) {
+                    logger::print_status(std::string("  ") + package.string());
+                }
+            }
+            
             return 0;
         }
-        
-        // Get build type from project config if not already specified
-        if (build_config.empty()) {
-            build_config = config.get_string("build.build_type", "Release");
-        }
-        
-        logger::print_status("Using build configuration: " + build_config);
-        
-        // Use generators from config or default ones if not specified
-        if (generators.empty()) {
-            generators = config.get_string_array("package.generators");
-            if (generators.empty()) {
-                generators = get_default_generators();
-            } else {
-                generators = uppercase_generators(generators);
-            }
-        }
-        
-        // Get project name and version
-        std::string project_name = config.get_string("project.name", "");
-        std::string project_version = config.get_string("project.version", "");
-        
-        // Log the generators being used
-        if (!generators.empty()) {
-            std::string gen_str = "Using generators: ";
-            for (size_t i = 0; i < generators.size(); ++i) {
-                if (i > 0) gen_str += ", ";
-                gen_str += generators[i];
-            }
-            logger::print_status(gen_str);
-        }
-        
-        // Package the project
-        if (package_single_project(
-                ctx->working_dir, 
-                config, 
-                build_config, 
-                skip_build, 
-                generators, 
-                verbose,
-                ctx)) {
-            logger::print_success("Packages created successfully");
-            return 0;
-        }
-        
+    } catch (const std::exception& ex) {
+        logger::print_error("Exception: " + std::string(ex.what()));
+        return 1;
+    } catch (...) {
+        logger::print_error("Unknown exception occurred");
         return 1;
     }
+    
+    return 0;
 }
-
 

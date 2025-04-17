@@ -1,0 +1,88 @@
+# Example workspace.toml configuration file
+# This file configures a multi-project workspace in cforge
+
+# Workspace metadata
+[workspace]
+name = "my-cpp-workspace"    # Name of the workspace
+description = "A multi-project C++ workspace" # Optional description
+cpp_standard = "17"          # Default C++ standard for all projects
+projects = [                 # List of projects in the workspace
+    "app",                   # Main application
+    "common-lib",            # Common library used by app
+    "data-lib"               # Data handling library
+]
+
+# Default build settings for all projects
+[build]
+directory = "build"          # Base build directory for the workspace
+parallel = true              # Build projects in parallel when possible
+default_type = "Release"     # Default build type for all projects (Debug/Release/RelWithDebInfo/MinSizeRel)
+
+# Default compiler options for all projects
+[build.compiler]
+warnings = "all"             # Warning level: none, basic, all, or extra
+werror = false               # Treat warnings as errors
+optimize = true              # Enable optimization
+debug_info = true            # Include debug information
+
+# Configuration-specific settings that apply to all projects
+[build.config.debug]
+defines = ["DEBUG", "LOGGING_ENABLED"]
+optimize = false
+debug_info = true
+
+[build.config.release]
+defines = ["NDEBUG", "RELEASE_BUILD"]
+optimize = true
+debug_info = false
+
+# Shared dependencies for all projects
+[dependencies]
+directory = "deps"           # Shared directory for dependencies
+libraries = ["pthread", "dl"] # Global libraries to link in all projects
+
+# Common git dependencies shared across all projects
+[dependencies.git]
+fmt = { 
+    url = "https://github.com/fmtlib/fmt.git", 
+    tag = "9.1.0",
+    make_available = true, 
+    include = true, 
+    link = true
+}
+json = { 
+    url = "https://github.com/nlohmann/json.git", 
+    tag = "v3.11.2"
+}
+
+# Common vcpkg dependencies for all projects
+[dependencies.vcpkg]
+spdlog = "1.11.0"
+
+# System dependencies shared by all projects
+[dependencies.system]
+OpenGL = true
+
+# Project dependencies (which projects depend on other projects)
+[project-dependencies]
+# Project "app" depends on both library projects
+app = ["common-lib", "data-lib"]
+# Project "data-lib" depends on "common-lib"
+data-lib = ["common-lib"]
+# "common-lib" has no dependencies within the workspace
+
+# Advanced CMake options
+[cmake]
+minimum_version = "3.14"     # Minimum CMake version required
+generator = "Ninja"          # Optional: specify CMake generator
+build_shared_libs = true     # Build shared libraries by default
+export_compile_commands = true # Generate compile_commands.json for tools
+
+# Custom CMake variables to set in the workspace
+[cmake.variables]
+CMAKE_EXPORT_COMPILE_COMMANDS = "ON"
+CMAKE_POSITION_INDEPENDENT_CODE = "ON"
+
+# Custom CMake module paths to add
+[cmake.module_paths]
+paths = ["cmake/modules"]    # Additional CMake module paths 

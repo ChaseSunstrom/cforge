@@ -412,9 +412,8 @@ bool execute_tool(
         }
     }
     
-    // Show which tool we're running
+    // Show which tool we're running but only if verbose is true or no command_name provided
     std::string tool_name = command_name.empty() ? command : command_name;
-    logger::print_status("Running " + tool_name + "...");
     
     if (verbose) {
         logger::print_status("Command: " + cmd_str);
@@ -466,38 +465,46 @@ bool execute_tool(
     
     // Handle the result
     if (result.success) {
-        logger::print_success(tool_name + " completed successfully");
+        // Only print success messages for verbose mode or if it's not a command we're running often
+        if (verbose || (command_name != "CMake Configure" && command_name != "CMake Build")) {
+            // Success message already handled by the calling function
+        }
         return true;
     } else {
         if (result.exit_code == -1) {
             logger::print_error(tool_name + " failed: " + result.stderr_output);
         } else {
             logger::print_error(tool_name + " failed with exit code: " + std::to_string(result.exit_code));
-        }
-        
-        // Check if this is a build-related tool for better error formatting
-        bool is_build_tool = (command == "cmake" || command == "ninja" || command == "make" || 
-                            command.find("gcc") != std::string::npos || 
-                            command.find("clang") != std::string::npos ||
-                            command.find("cl.exe") != std::string::npos ||
-                            command.find("msbuild") != std::string::npos);
-        
-        // Use formatted error output for build tools
-        if (is_build_tool && !result.stderr_output.empty()) {
-            // Format the error output using Rust-like style
-            std::string formatted_error = format_build_errors(result.stderr_output);
-            // If the formatter didn't handle it (returned the original), print it ourselves
-            if (!formatted_error.empty()) {
-                logger::print_error(formatted_error);
-            }
-        } else {
-            // Always show error output, even in non-verbose mode
-            std::istringstream error_stream(result.stderr_output);
-            std::string line;
-            while (std::getline(error_stream, line)) {
-                if (!line.empty()) {
-                    logger::print_error(line);
+            
+            // Extract the most relevant error message
+            if (!result.stderr_output.empty()) {
+                // Keep error message concise - extract just key lines
+                std::string error_report = result.stderr_output;
+                
+                // If the error output is long, only show the last few meaningful lines
+                if (error_report.length() > 200) {
+                    size_t pos = error_report.find_last_of("\n", error_report.length() - 2);
+                    if (pos != std::string::npos && pos > 0) {
+                        // Move back a few newlines to get context
+                        int newline_count = 0;
+                        size_t context_pos = pos;
+                        
+                        while (newline_count < 3 && context_pos > 0) {
+                            context_pos = error_report.find_last_of("\n", context_pos - 1);
+                            newline_count++;
+                            if (context_pos == std::string::npos) {
+                                context_pos = 0;
+                                break;
+                            }
+                        }
+                        
+                        if (context_pos > 0) {
+                            error_report = "..." + error_report.substr(context_pos + 1);
+                        }
+                    }
                 }
+                
+                logger::print_error("Error: " + error_report);
             }
         }
         

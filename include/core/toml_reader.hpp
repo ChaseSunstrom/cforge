@@ -14,6 +14,8 @@
 #include "core/constants.h"
 #include "core/types.h"
 
+#include <toml++/toml.hpp>
+
 namespace cforge {
 
 /**
@@ -25,6 +27,12 @@ public:
      * @brief Constructor
      */
     toml_reader();
+
+    /**
+     * @brief Constructor that takes a toml::table directly
+     * @param table The TOML table to wrap
+     */
+    explicit toml_reader(const toml::table& table);
     
     /**
      * @brief Destructor

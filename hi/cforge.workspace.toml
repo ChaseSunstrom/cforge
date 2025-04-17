@@ -1,0 +1,11 @@
+[workspace]
+name = "hi"
+description = "A C++ workspace created with cforge"
+
+# Projects in format: name:path:is_startup_project
+projects = [
+  "proj2:proj2:true",
+  "proj1:proj1:true"
+]
+
+# Default startup project is the first project
