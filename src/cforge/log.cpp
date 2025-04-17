@@ -4,6 +4,7 @@
  */
 
 #include <iostream>
+#include <vector>
 
 #include "cforge/log.hpp"
 #include "core/types.h"
@@ -58,6 +59,13 @@ void logger::print_verbose(const std::string &message) {
     return;
   fmt::print(fg(fmt::color::gray), "  {} {}\n", "▶", message);
 }
+
+void logger::print_lines(const std::vector<std::string> &messages ) {
+  for (const auto &message : messages) {
+    print_status(message);
+  }
+}
+
 } // namespace cforge
 
 // C wrapper implementations

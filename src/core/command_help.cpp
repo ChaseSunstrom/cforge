@@ -249,93 +249,64 @@ cforge_int_t cforge_cmd_help(const cforge_context_t* ctx) {
         logger::print_status("  --add-to-path    Add installation directory to PATH environment variable");
         logger::print_status("  -v, --verbose    Show verbose output");
     } else if (specific_command == "config") {
-        logger::print_status("cforge.toml - Configuration file format");
-        logger::print_status("");
-        logger::print_status("The cforge.toml file is used to configure your project. It contains the following sections:");
-        logger::print_status("");
-        logger::print_status("[project]");
-        logger::print_status("  name = \"project-name\"       # Project name");
-        logger::print_status("  version = \"0.1.0\"         # Project version");
-        logger::print_status("  cpp_standard = \"17\"       # C++ standard to use");
-        logger::print_status("  binary_type = \"executable\" # Type of binary: executable, shared_lib, static_lib, or header_only");
-        logger::print_status("");
-        logger::print_status("[build]");
-        logger::print_status("  type = \"Release\"          # Build type (Debug/Release/RelWithDebInfo/MinSizeRel)");
-        logger::print_status("  directory = \"build\"       # Build directory");
-        logger::print_status("  source_dirs = [\"src\"]     # Directories containing source files");
-        logger::print_status("  source_files = [\"src/main.cpp\"] # Specific source files to include");
-        logger::print_status("  include_dirs = [\"include\"] # Directories containing header files");
-        logger::print_status("  libraries = [\"SDL2\"]      # Additional libraries to link");
-        logger::print_status("");
-        logger::print_status("[package]");
-        logger::print_status("  enabled = true             # Enable packaging");
-        logger::print_status("  generators = [\"ZIP\", \"NSIS\"] # Package generators");
-        logger::print_status("  vendor = \"Your Company\"   # Vendor name for packages");
-        logger::print_status("");
-        logger::print_status("[dependencies]");
-        logger::print_status("  directory = \"deps\"        # Custom directory for dependencies (default: deps)");
-        logger::print_status("  libraries = [\"SDL2\", \"OpenGL32\"] # Additional libraries to link");
-        logger::print_status("");
-        logger::print_status("  # vcpkg dependencies");
-        logger::print_status("  [dependencies.vcpkg]");
-        logger::print_status("  fmt = \"8.0.1\"             # Package name = version");
-        logger::print_status("  curl = { version = \"7.80.0\", components = [\"ssl\"] } # With components");
-        logger::print_status("");
-        logger::print_status("  # git dependencies - cloned to the dependencies directory");
-        logger::print_status("  [dependencies.git]");
-        logger::print_status("  json = { url = \"https://github.com/nlohmann/json.git\", tag = \"v3.11.2\" }");
-        logger::print_status("  spdlog = { url = \"https://github.com/gabime/spdlog.git\", branch = \"v1.x\" }");
-        logger::print_status("  fmt = { url = \"https://github.com/fmtlib/fmt.git\", tag = \"9.1.0\",");
-        logger::print_status("          make_available = true, # Include in CMake with FetchContent_MakeAvailable");
-        logger::print_status("          include = true,       # Add include directories");
-        logger::print_status("          link = true,         # Link against the library");
-        logger::print_status("          target_name = \"fmt::fmt\", # Custom target name for linking (optional)");
-        logger::print_status("          include_dirs = [\"include\"] # Custom include directories within the repo");
-        logger::print_status("        }");
-        logger::print_status("");
-        logger::print_status("  # Additional libraries to link against (not tied to dependencies)");
-        logger::print_status("  libraries = [\"SDL2\", \"OpenGL32\"]");
-        logger::print_status("");
-        logger::print_status("  # system dependencies");
-        logger::print_status("  [dependencies.system]");
-        logger::print_status("  OpenGL = true              # System-provided dependency");
-        logger::print_status("");
-        logger::print_status("[test]");
-        logger::print_status("  enabled = true             # Enable testing");
-        logger::print_status("  framework = \"Catch2\"      # Test framework to use");
-        logger::print_status("");
-        logger::print_status("For more information, refer to the docs/cforge.toml.example file in the repository.");
-        logger::print_status("");
-        logger::print_status("");
-        logger::print_status("workspace.toml - Workspace Configuration File Format");
-        logger::print_status("");
-        logger::print_status("The workspace.toml file is used to configure a multi-project workspace:");
-        logger::print_status("");
-        logger::print_status("[workspace]");
-        logger::print_status("  name = \"my-workspace\"      # Workspace name");
-        logger::print_status("  cpp_standard = \"17\"       # Default C++ standard for all projects");
-        logger::print_status("  projects = [\"app\", \"lib\"] # List of projects in the workspace");
-        logger::print_status("");
-        logger::print_status("[build]");
-        logger::print_status("  directory = \"build\"       # Build directory for the workspace");
-        logger::print_status("  parallel = true           # Build projects in parallel when possible");
-        logger::print_status("");
-        logger::print_status("[dependencies]");
-        logger::print_status("  directory = \"deps\"        # Shared dependencies directory for all projects");
-        logger::print_status("  libraries = [\"pthread\"]   # Global libraries to link in all projects");
-        logger::print_status("");
-        logger::print_status("  # Common git dependencies for all projects");
-        logger::print_status("  [dependencies.git]");
-        logger::print_status("  fmt = { url = \"https://github.com/fmtlib/fmt.git\", tag = \"9.1.0\" }");
-        logger::print_status("");
-        logger::print_status("  # Common vcpkg dependencies for all projects");
-        logger::print_status("  [dependencies.vcpkg]");
-        logger::print_status("  spdlog = \"1.11.0\"");
-        logger::print_status("");
-        logger::print_status("[dependencies.project]");
-        logger::print_status("  app = [\"lib\"]            # Project 'app' depends on project 'lib'");
-        logger::print_status("");
-        logger::print_status("Each project in the workspace can also have its own cforge.toml file.");
+        logger::print_lines({
+            "cforge.toml Configuration Guide:",
+            "",
+            "The cforge.toml file is the main configuration file for your project. It defines",
+            "project metadata, build settings, dependencies, and more.",
+            "",
+            "[project]",
+            "name = \"my-project\"        # Project name",
+            "version = \"0.1.0\"          # Project version",
+            "description = \"...\"        # Project description",
+            "authors = [\"Your Name\"]    # List of authors",
+            "cpp_standard = \"17\"        # C++ standard (11, 14, 17, 20, 23)",
+            "binary_type = \"executable\" # Type: executable, shared_lib, static_lib, header_only",
+            "",
+            "[build]",
+            "build_dir = \"build\"        # Build directory",
+            "build_type = \"Debug\"       # Default build type (Debug, Release, etc.)",
+            "include_dirs = [\"include\"] # Include directories",
+            "source_dirs = [\"src\"]      # Source directories",
+            "libraries = []               # Additional libraries to link against",
+            "",
+            "[package]",
+            "enabled = true               # Enable packaging",
+            "generators = [\"ZIP\"]       # Package generators (ZIP, TGZ, DEB, RPM, NSIS, etc.)",
+            "",
+            "[dependencies]",
+            "directory = \"deps\"         # Dependencies directory",
+            "",
+            "[dependencies.git.fmt]       # Git dependency example",
+            "url = \"https://github.com/fmtlib/fmt.git\"",
+            "tag = \"9.1.0\"              # A tag, branch, or commit hash to checkout",
+            "include = true               # Include in project (default: true)",
+            "link = true                  # Link with project (default: true)",
+            "",
+            "[dependencies.project.utils] # Project dependency within workspace",
+            "include_dirs = [\"include\"] # Include directories (relative to project)",
+            "include = true               # Include in project (default: true)",
+            "link = true                  # Link with project (default: true)",
+            "target_name = \"utils\"      # Target name (default: project name)",
+            "",
+            "[dependencies.vcpkg.sdl2]    # vcpkg dependency example",
+            "version = \"2.0.14\"         # Optional version",
+            "components = [\"main\"]      # Optional components",
+            "",
+            "[test]",
+            "enabled = true               # Enable testing",
+            "framework = \"Catch2\"       # Test framework",
+            "",
+            "workspace.toml Configuration (for multi-project workspaces):",
+            "",
+            "[workspace]",
+            "name = \"my-workspace\"      # Workspace name",
+            "description = \"...\"        # Workspace description",
+            "projects = [\"proj1\", \"proj2\"] # Projects in workspace",
+            "main_project = \"proj1\"     # Main project (used as default for commands)",
+            "cpp_standard = \"17\"        # Default C++ standard for workspace projects",
+            "build_type = \"Debug\"       # Default build type for workspace projects"
+        });
     } else {
         logger::print_error("Unknown command: " + specific_command);
         logger::print_status("Run 'cforge help' for a list of available commands");

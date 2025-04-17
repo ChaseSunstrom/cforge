@@ -22,6 +22,9 @@
 #include <thread>
 #include <algorithm>
 #include <cctype>
+#include <map>
+#include <set>
+#include <functional>
 
 using namespace cforge;
 
@@ -86,6 +89,34 @@ static std::string get_build_config(const cforge_context_t* ctx, const toml_read
     logger::print_verbose("No build configuration specified, defaulting to Release");
     return "Release";
 }
+
+/**
+ * @brief Check if the current directory is within a workspace
+ * 
+ * @param path Directory to check
+ * @return std::pair<bool, std::filesystem::path> Pair of (is_workspace, workspace_directory)
+ */
+std::pair<bool, std::filesystem::path> is_in_workspace(const std::filesystem::path& path) {
+    // Check if the current directory has a workspace.toml file
+    std::filesystem::path workspace_file = path / WORKSPACE_FILE;
+    if (std::filesystem::exists(workspace_file)) {
+        return {true, path};
+    }
+    
+    // Check parent directories
+    std::filesystem::path current = path;
+    while (current.has_parent_path() && current != current.parent_path()) {
+        current = current.parent_path();
+        workspace_file = current / WORKSPACE_FILE;
+        if (std::filesystem::exists(workspace_file)) {
+            return {true, current};
+        }
+    }
+    
+    // Not in a workspace
+    return {false, {}};
+}
+
 
 /**
  * @brief Get build directory path based on base directory and configuration
@@ -458,6 +489,9 @@ static bool generate_cmakelists_from_toml(
     
     logger::print_status("Generating CMakeLists.txt from cforge.toml...");
     
+    // Check if we're in a workspace
+    auto [is_workspace, workspace_dir] = is_in_workspace(project_dir);
+    
     // Create CMakeLists.txt
     std::ofstream cmakelists(cmakelists_path);
     if (!cmakelists.is_open()) {
@@ -765,6 +799,33 @@ static bool generate_cmakelists_from_toml(
                     if (!target_name.empty()) {
                         // Use the user-specified target name
                         cmakelists << "    " << target_name << "\n";
+                    } else if (dep == "fmt") {
+                        cmakelists << "    fmt::fmt\n";
+                    } else if (dep == "spdlog") {
+                        cmakelists << "    spdlog::spdlog\n";
+                    } else if (dep != "json" && dep != "nlohmann_json") {
+                        // Skip header-only libraries like json
+                        cmakelists << "    " << dep << "\n";
+                    }
+                }
+            }
+        }
+
+        // Add project dependencies to link if in a workspace
+        if (is_workspace && project_config.has_key("dependencies.project")) {
+            auto project_deps = project_config.get_table_keys("dependencies.project");
+            for (const auto& dep : project_deps) {
+                bool should_link = project_config.get_bool("dependencies.project." + dep + ".link", true);
+                if (should_link) {
+                    // Check for custom target name
+                    std::string target_name = project_config.get_string("dependencies.project." + dep + ".target_name", "");
+                    
+                    if (!target_name.empty()) {
+                        // Use the user-specified target name
+                        cmakelists << "    " << target_name << "\n";
+                    } else {
+                        // Use project name as target name
+                        cmakelists << "    " << dep << "\n";
                     }
                 }
             }
@@ -1001,32 +1062,6 @@ static std::string string_to_lower(const std::string& str) {
     return result;
 }
 
-/**
- * @brief Check if the current directory is within a workspace
- * 
- * @param path Directory to check
- * @return std::pair<bool, std::filesystem::path> Pair of (is_workspace, workspace_directory)
- */
-std::pair<bool, std::filesystem::path> is_in_workspace(const std::filesystem::path& path) {
-    // Check if the current directory has a workspace.toml file
-    std::filesystem::path workspace_file = path / WORKSPACE_FILE;
-    if (std::filesystem::exists(workspace_file)) {
-        return {true, path};
-    }
-    
-    // Check parent directories
-    std::filesystem::path current = path;
-    while (current.has_parent_path() && current != current.parent_path()) {
-        current = current.parent_path();
-        workspace_file = current / WORKSPACE_FILE;
-        if (std::filesystem::exists(workspace_file)) {
-            return {true, current};
-        }
-    }
-    
-    // Not in a workspace
-    return {false, {}};
-}
 
 /**
  * @brief Build the project with CMake
@@ -1036,6 +1071,7 @@ std::pair<bool, std::filesystem::path> is_in_workspace(const std::filesystem::pa
  * @param num_jobs Number of parallel jobs (0 for default)
  * @param verbose Verbose output
  * @param target Optional target to build
+ * @param built_projects Set of already built projects to avoid rebuilding
  * @return bool Success flag
  */
 static bool build_project(
@@ -1043,10 +1079,18 @@ static bool build_project(
     const std::string& build_config,
     int num_jobs,
     bool verbose,
-    const std::string& target = ""
+    const std::string& target = "",
+    std::set<std::string>* built_projects = nullptr
 ) {
     // Get project name from directory
     std::string project_name = project_dir.filename().string();
+    
+    // If we're tracking built projects, check if this one is already done
+    if (built_projects && built_projects->find(project_name) != built_projects->end()) {
+        logger::print_verbose("Project '" + project_name + "' already built, skipping");
+        return true;
+    }
+    
     logger::print_status("Building project: " + project_name + " [" + build_config + "]");
     
     // Load project configuration
@@ -1082,6 +1126,45 @@ static bool build_project(
             logger::print_status("Using workspace-level CMakeLists.txt for build");
             use_workspace_build = true;
         }
+        
+        // Check for project dependencies if we're building a specific project
+        if (has_project_config && !use_workspace_build && built_projects) {
+            // Check for project dependencies
+            if (project_config.has_key("dependencies.project")) {
+                auto project_deps = project_config.get_table_keys("dependencies.project");
+                
+                if (!project_deps.empty()) {
+                    logger::print_status("Checking project dependencies...");
+                    
+                    // Build dependencies first
+                    for (const auto& dep : project_deps) {
+                        // Skip if already built
+                        if (built_projects->find(dep) != built_projects->end()) {
+                            logger::print_verbose("Dependency '" + dep + "' already built, skipping");
+                            continue;
+                        }
+                        
+                        // Find the project directory
+                        std::filesystem::path dep_path = workspace_dir / dep;
+                        if (!std::filesystem::exists(dep_path) || !std::filesystem::exists(dep_path / "cforge.toml")) {
+                            logger::print_warning("Dependency project '" + dep + "' not found in workspace");
+                            continue;
+                        }
+                        
+                        logger::print_status("Building dependency: " + dep);
+                        
+                        // Build the dependency
+                        if (!build_project(dep_path, build_config, num_jobs, verbose, "", built_projects)) {
+                            logger::print_error("Failed to build dependency '" + dep + "', cannot continue with '" + project_name + "'");
+                            return false;
+                        }
+                        
+                        // Mark as built
+                        built_projects->insert(dep);
+                    }
+                }
+            }
+        }
     }
     
     // Use the right directory for building
@@ -1109,103 +1192,6 @@ static bool build_project(
             logger::print_error("Failed to create build directory: " + std::string(e.what()));
             return false;
         }
-    }
-    
-    // For workspace projects, we don't need to handle dependencies or generate CMakeLists.txt
-    if (!use_workspace_build && has_project_config) {
-        // Clone Git dependencies before generating CMakeLists.txt
-        if (project_config.has_key("dependencies.git")) {
-            logger::print_status("Setting up Git dependencies...");
-            try {
-                // Make sure we're in the project directory for relative paths to work
-                std::filesystem::current_path(project_dir);
-                
-                if (!clone_git_dependencies(project_dir, project_config, verbose)) {
-                    logger::print_error("Failed to clone Git dependencies");
-                    return false;
-                }
-                
-// Verify that dependencies were actually cloned
-            std::string deps_dir = project_config.get_string("dependencies.directory", "deps");
-            auto git_deps = project_config.get_table_keys("dependencies.git");
-            
-            for (const auto& dep : git_deps) {
-                std::string url = project_config.get_string("dependencies.git." + dep + ".url", "");
-                if (url.empty()) continue;
-                
-                std::filesystem::path dep_path = project_dir / deps_dir / dep;
-                if (!std::filesystem::exists(dep_path)) {
-                    logger::print_error("Dependency '" + dep + "' was not properly cloned to: " + dep_path.string());
-                    logger::print_status("Attempting to clone it again...");
-                    
-                    // Create the dependency directory
-                    std::filesystem::create_directories(dep_path.parent_path());
-                    
-                    // Direct git clone as a fallback
-                    std::vector<std::string> clone_args = {"clone", url, dep_path.string(), "--quiet"};
-                    if (verbose) {
-                        clone_args.pop_back(); // Remove --quiet for verbose output
-                    }
-                    
-                    if (!execute_tool("git", clone_args, "", "Git Clone for " + dep, verbose)) {
-                        logger::print_error("Failed to clone dependency: " + dep);
-                        logger::print_status("Please check your internet connection and Git installation.");
-                        return false;
-                    }
-                    
-                    // Checkout specific ref if provided
-                    std::string tag = project_config.get_string("dependencies.git." + dep + ".tag", "");
-                    std::string branch = project_config.get_string("dependencies.git." + dep + ".branch", "");
-                    std::string commit = project_config.get_string("dependencies.git." + dep + ".commit", "");
-                    std::string ref = tag;
-                    if (ref.empty()) ref = branch;
-                    if (ref.empty()) ref = commit;
-                    
-                    if (!ref.empty()) {
-                        std::vector<std::string> checkout_args = {"checkout", ref, "--quiet"};
-                        if (verbose) {
-                            checkout_args.pop_back(); // Remove --quiet for verbose output
-                        }
-                        
-                        if (!execute_tool("git", checkout_args, dep_path.string(), "Git Checkout for " + dep, verbose)) {
-                            logger::print_error("Failed to checkout " + ref + " for dependency: " + dep);
-                            return false;
-                        }
-                    }
-                }
-            }
-            
-            logger::print_success("Git dependencies successfully set up");
-            } catch (const std::exception& ex) {
-                logger::print_error("Exception while setting up Git dependencies: " + std::string(ex.what()));
-                return false;
-            }
-        }
-        
-        // In non-workspace mode or if workspace doesn't have CMakeLists.txt, check if CMakeLists.txt needs to be generated
-        std::filesystem::path cmakelists_path = project_dir / "CMakeLists.txt";
-        std::filesystem::path timestamp_file = build_dir / ".cforge_cmakefile_timestamp";
-        
-        // Remove existing CMakeLists.txt if it exists
-        if (std::filesystem::exists(cmakelists_path)) {
-            logger::print_verbose("Removing existing CMakeLists.txt");
-            std::filesystem::remove(cmakelists_path);
-        }
-        
-        // Generate new CMakeLists.txt
-        if (!generate_cmakelists_from_toml(project_dir, project_config, verbose)) {
-            logger::print_error("Failed to generate CMakeLists.txt");
-            return false;
-        }
-        
-        // Update timestamp file
-        std::ofstream timestamp(timestamp_file);
-        if (timestamp) {
-            timestamp << "Generated: " << std::time(nullptr) << std::endl;
-            timestamp.close();
-        }
-        
-        logger::print_success("Generated CMakeLists.txt file from cforge.toml");
     }
     
     // Prepare CMake arguments
@@ -1354,6 +1340,12 @@ static bool build_project(
     }
     
     logger::print_success("Project '" + project_name + "' built successfully");
+    
+    // Mark as built if we're tracking
+    if (built_projects) {
+        built_projects->insert(project_name);
+    }
+    
     return true;
 }
 
@@ -1545,6 +1537,96 @@ static bool generate_workspace_cmakelists(
         logger::print_warning("No projects found in workspace");
     } else {
         logger::print_status("Found " + std::to_string(projects.size()) + " projects in workspace");
+        
+        // First, analyze project dependencies to determine the correct order
+        std::map<std::string, std::vector<std::string>> project_dependencies;
+        
+        // Collect all project dependencies
+        for (const auto& project : projects) {
+            std::filesystem::path project_config_path = workspace_dir / project / "cforge.toml";
+            if (std::filesystem::exists(project_config_path)) {
+                try {
+                    toml::table project_table = toml::parse_file(project_config_path.string());
+                    toml_reader project_config(project_table);
+                    
+                    // Check for project dependencies
+                    if (project_config.has_key("dependencies.project")) {
+                        auto project_deps = project_config.get_table_keys("dependencies.project");
+                        project_dependencies[project] = project_deps;
+                        logger::print_verbose("Project '" + project + "' depends on " + std::to_string(project_deps.size()) + " other workspace projects");
+                    } else {
+                        // No dependencies
+                        project_dependencies[project] = std::vector<std::string>();
+                    }
+                } catch (const toml::parse_error& e) {
+                    logger::print_warning("Failed to parse cforge.toml for project '" + project + "': " + std::string(e.what()));
+                    // Assume no dependencies if we can't parse the file
+                    project_dependencies[project] = std::vector<std::string>();
+                }
+            } else {
+                // No config file, assume no dependencies
+                project_dependencies[project] = std::vector<std::string>();
+            }
+        }
+        
+        // Function to check for circular dependencies
+        std::function<bool(const std::string&, std::set<std::string>&, std::set<std::string>&)> detect_cycle = 
+            [&](const std::string& project, std::set<std::string>& visited, std::set<std::string>& in_path) {
+                if (in_path.find(project) != in_path.end()) return true; // Circular dependency found
+                if (visited.find(project) != visited.end()) return false; // Already processed
+                
+                visited.insert(project);
+                in_path.insert(project);
+                
+                for (const auto& dep : project_dependencies[project]) {
+                    if (detect_cycle(dep, visited, in_path)) return true;
+                }
+                
+                in_path.erase(project);
+                return false;
+            };
+        
+        // Check for circular dependencies
+        std::set<std::string> visited, in_path;
+        bool has_circular = false;
+        for (const auto& project : projects) {
+            if (visited.find(project) == visited.end()) {
+                if (detect_cycle(project, visited, in_path)) {
+                    logger::print_error("Circular dependency detected involving project '" + project + "'");
+                    has_circular = true;
+                    break;
+                }
+            }
+        }
+        
+        if (has_circular) {
+            logger::print_warning("Circular dependencies found, projects will be added in original order");
+        } else {
+            // Sort projects based on dependencies (topological sort)
+            std::vector<std::string> sorted_projects;
+            visited.clear();
+            
+            std::function<void(const std::string&)> visit = [&](const std::string& project) {
+                if (visited.find(project) != visited.end()) return;
+                visited.insert(project);
+                
+                for (const auto& dep : project_dependencies[project]) {
+                    visit(dep);
+                }
+                
+                sorted_projects.push_back(project);
+            };
+            
+            for (const auto& project : projects) {
+                visit(project);
+            }
+            
+            // Update the projects list to respect dependency order
+            if (!sorted_projects.empty()) {
+                projects = sorted_projects;
+                logger::print_verbose("Projects sorted by dependency order");
+            }
+        }
         
         // Add each project
         for (const auto& project : projects) {
@@ -1740,6 +1822,7 @@ cforge_int_t cforge_cmd_build(const cforge_context_t* ctx) {
             
             // Build projects individually
             bool at_least_one_success = false;
+            std::set<std::string> built_projects;
             
             for (const auto& entry : std::filesystem::directory_iterator(workspace_dir)) {
                 if (entry.is_directory() && 
@@ -1747,7 +1830,13 @@ cforge_int_t cforge_cmd_build(const cforge_context_t* ctx) {
                     entry.path().filename() != "build") {
                     std::string project = entry.path().filename().string();
                     
-                    bool project_success = build_project(entry.path(), config_name, num_jobs, verbose, target);
+                    // Skip if already built through dependencies
+                    if (built_projects.find(project) != built_projects.end()) {
+                        logger::print_verbose("Project '" + project + "' already built as a dependency, skipping");
+                        continue;
+                    }
+                    
+                    bool project_success = build_project(entry.path(), config_name, num_jobs, verbose, target, &built_projects);
                     
                     if (project_success) {
                         at_least_one_success = true;
@@ -1773,7 +1862,72 @@ cforge_int_t cforge_cmd_build(const cforge_context_t* ctx) {
         }
     }
     
-    
     return result;
+}
+
+/**
+ * @brief Configure project dependencies in CMakeLists.txt
+ * 
+ * @param workspace_dir Workspace directory
+ * @param project_dir Project directory
+ * @param project_config Project configuration from cforge.toml
+ * @param cmakelists CMakeLists.txt output stream
+ */
+static void configure_project_dependencies_in_cmake(
+    const std::filesystem::path& workspace_dir,
+    const std::filesystem::path& project_dir,
+    const toml_reader& project_config,
+    std::ofstream& cmakelists
+) {
+    // Check if we have project dependencies
+    if (!project_config.has_key("dependencies.project")) {
+        return;
+    }
+
+    cmakelists << "# Workspace project dependencies\n";
+    
+    // Loop through all project dependencies
+    auto project_deps = project_config.get_table_keys("dependencies.project");
+    for (const auto& dep : project_deps) {
+        // Check if the project exists in the workspace
+        std::filesystem::path dep_path = workspace_dir / dep;
+        if (!std::filesystem::exists(dep_path) || !std::filesystem::exists(dep_path / "cforge.toml")) {
+            cmakelists << "# WARNING: Dependency project '" << dep << "' not found in workspace\n";
+            continue;
+        }
+        
+        // Get dependency options
+        bool include = project_config.get_bool("dependencies.project." + dep + ".include", true);
+        bool link = project_config.get_bool("dependencies.project." + dep + ".link", true);
+        std::string target_name = project_config.get_string("dependencies.project." + dep + ".target_name", "");
+        
+        cmakelists << "# Project dependency: " << dep << "\n";
+        
+        // If target name not specified, use the project name
+        if (target_name.empty()) {
+            target_name = dep;
+        }
+        
+        // Process include directories if needed
+        if (include) {
+            cmakelists << "# Include directories for project dependency '" << dep << "'\n";
+            
+            std::vector<std::string> include_dirs;
+            std::string include_dirs_key = "dependencies.project." + dep + ".include_dirs";
+            
+            if (project_config.has_key(include_dirs_key)) {
+                include_dirs = project_config.get_string_array(include_dirs_key);
+            } else {
+                // Default include directories
+                include_dirs.push_back("include");
+                include_dirs.push_back(".");
+            }
+            
+            for (const auto& inc_dir : include_dirs) {
+                cmakelists << "include_directories(\"${CMAKE_CURRENT_SOURCE_DIR}/../" << dep << "/" << inc_dir << "\")\n";
+            }
+            cmakelists << "\n";
+        }
+    }
 }
 
