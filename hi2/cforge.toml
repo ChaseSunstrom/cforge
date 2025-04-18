@@ -1,6 +1,7 @@
 # Project configuration for hi2
 
 [project]
+type = "project"  # project, workspace, or component
 name = "hi2"
 version = "0.1.0"
 description = "A C++ project created with cforge"

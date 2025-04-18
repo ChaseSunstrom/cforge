@@ -13,6 +13,7 @@
 #include <cstdio>
 #include <iostream>
 #include "cforge/log.hpp"
+#include "core/error_format.hpp"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -55,6 +56,14 @@ process_result execute_process(
     std::function<void(const std::string&)> stderr_callback = nullptr,
     int timeout_seconds = 5
 );
+
+/**
+ * @brief Convert a string to lowercase
+ * 
+ * @param str String to convert
+ * @return std::string Lowercase string
+ */
+std::string string_to_lower(const std::string& str);
 
 /**
  * @brief Execute a process with captured output and format for cforge logging

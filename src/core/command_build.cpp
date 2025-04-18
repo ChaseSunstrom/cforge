@@ -25,6 +25,10 @@
 #include <map>
 #include <set>
 #include <functional>
+#include <sstream>
+#include <ctime>
+#include <fmt/core.h>
+#include <fmt/color.h>
 
 using namespace cforge;
 
@@ -135,8 +139,7 @@ static std::filesystem::path get_build_dir_for_config(
     }
     
     // Transform config name to lowercase for directory naming
-    std::string config_lower = config;
-    std::transform(config_lower.begin(), config_lower.end(), config_lower.begin(), ::tolower);
+    std::string config_lower = string_to_lower(config);
 
     // For Ninja Multi-Config, we don't append the config to the build directory
     std::string generator = get_cmake_generator();
@@ -219,7 +222,7 @@ static bool is_cmake_available() {
  * @param verbose Verbose output flag
  * @return bool Success flag
  */
-static bool clone_git_dependencies(
+bool clone_git_dependencies(
     const std::filesystem::path& project_dir,
     const toml_reader& project_config,
     bool verbose
@@ -1049,18 +1052,6 @@ static bool run_cmake_configure(
     return cmake_success;
 }
 
-/**
- * @brief Convert a string to lowercase
- * 
- * @param str String to convert
- * @return std::string Lowercase string
- */
-static std::string string_to_lower(const std::string& str) {
-    std::string result = str;
-    std::transform(result.begin(), result.end(), result.begin(), 
-                  [](unsigned char c){ return std::tolower(c); });
-    return result;
-}
 
 
 /**
@@ -1325,43 +1316,45 @@ static bool build_project(
     logger::print_status("Configuring with CMake...");
     bool configure_result = run_cmake_configure(cmake_args, build_dir.string(), verbose);
     
-    // If configuration failed, restore directory and return
     if (!configure_result) {
-        try {
-            std::filesystem::current_path(original_dir);
-        } catch (...) {
-            // Ignore errors when restoring directory after failure
-        }
         logger::print_error("CMake configuration failed for project: " + project_name);
+        std::filesystem::current_path(original_dir);
         return false;
     }
     
+    // Run CMake build
+    logger::print_status("Building with CMake...");
     
-    std::vector<std::string> build_args = {"--build", "."};
+    // Set up build arguments
+    std::vector<std::string> build_args = {
+        "--build", "."
+    };
     
-    // Add configuration if not using multi-config generator
+    // Add config
     if (!is_multi_config_generator(generator)) {
+        // For single-config generators, we don't need to specify the config
+        // It was already set during configure
+    } else {
         build_args.push_back("--config");
         build_args.push_back(build_config);
     }
     
-    // Add parallel jobs flag
+    // Add parallel build flag with appropriate jobs
     if (num_jobs > 0) {
-        build_args.push_back("-j");
+        build_args.push_back("--parallel");
         build_args.push_back(std::to_string(num_jobs));
+        logger::print_verbose("Using parallel build with " + std::to_string(num_jobs) + " jobs");
     } else {
-        // Auto-detect number of cores and use that
-        int cores = std::thread::hardware_concurrency();
-        if (cores > 0) {
-            build_args.push_back("-j");
-            build_args.push_back(std::to_string(cores));
-        }
+        // Default to number of logical cores
+        build_args.push_back("--parallel");
+        logger::print_verbose("Using parallel build with default number of jobs");
     }
     
     // Add target if specified
     if (!target.empty()) {
         build_args.push_back("--target");
         build_args.push_back(target);
+        logger::print_status("Building target: " + target);
     }
     
     // Add verbose flag
@@ -1369,7 +1362,7 @@ static bool build_project(
         build_args.push_back("--verbose");
     }
     
-    // Run CMake build
+    // Run the build
     bool build_result = execute_tool("cmake", build_args, "", "CMake Build", verbose, 0);
     
     // Restore original directory
@@ -1378,22 +1371,48 @@ static bool build_project(
         logger::print_verbose("Restored working directory to: " + original_dir.string());
     } catch (const std::filesystem::filesystem_error& e) {
         logger::print_warning("Failed to restore directory: " + std::string(e.what()));
-        // Continue anyway since the build is already complete
+        // Continue anyway
     }
     
-    if (!build_result) {
-        logger::print_error("Build failed");
+    if (build_result) {
+        logger::print_success("Built project: " + project_name + " [" + build_config + "]");
+        
+        // If we're tracking built projects, add this one
+        if (built_projects) {
+            built_projects->insert(project_name);
+        }
+        
+        return true;
+    } else {
+        logger::print_error("Failed to build project: " + project_name + " [" + build_config + "]");
+        
+        // Check for common build errors and provide more helpful messages
+        std::filesystem::path cmake_error_log = build_dir / "CMakeFiles" / "CMakeError.log";
+        if (std::filesystem::exists(cmake_error_log)) {
+            logger::print_status("Checking CMake error log for additional information...");
+            try {
+                std::ifstream error_log(cmake_error_log);
+                if (error_log.is_open()) {
+                    std::string error_content((std::istreambuf_iterator<char>(error_log)),
+                                              std::istreambuf_iterator<char>());
+                    
+                    // Only show a short preview of the error log
+                    if (!error_content.empty()) {
+                        if (error_content.length() > 500) {
+                            error_content = error_content.substr(0, 500) + "...\n(error log truncated)";
+                        }
+                        logger::print_error("CMake Error Log:\n" + error_content);
+                        logger::print_status("Full error log available at: " + cmake_error_log.string());
+                    }
+                }
+            } catch (const std::exception& ex) {
+                logger::print_warning("Could not read CMake error log: " + std::string(ex.what()));
+            }
+        }
+        
+        logger::print_status("For more detailed build information, try running with -v/--verbose flag");
         return false;
     }
-    
-    logger::print_success("Project '" + project_name + "' built successfully");
-    
-    // Mark as built if we're tracking
-    if (built_projects) {
-        built_projects->insert(project_name);
-    }
-    
-    return true;
 }
 
 /**

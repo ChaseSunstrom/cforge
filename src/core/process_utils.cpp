@@ -9,6 +9,8 @@
 #include <algorithm>
 #include <chrono>
 #include <filesystem>
+#include <fmt/core.h>
+#include <fmt/color.h>
 
 namespace cforge {
 
@@ -393,15 +395,50 @@ process_result execute_process(
 }
 #endif
 
+std::string string_to_lower(const std::string& str) {
+    std::string result = str;
+    std::transform(result.begin(), result.end(), result.begin(), 
+                  [](unsigned char c){ return std::tolower(c); });
+    return result;
+}
+
+
 // Common implementation for both platforms
 bool execute_tool(
     const std::string& command,
     const std::vector<std::string>& args,
     const std::string& working_dir,
-    const std::string& command_name,
+    const std::string& tool_name,
     bool verbose,
     int timeout_seconds
 ) {
+    std::string tool_name_lower = string_to_lower(tool_name);
+
+    // Check if the command is for a build tool that should use the error formatter
+    bool is_build_tool = false;
+    if (tool_name_lower == "cmake" || 
+        tool_name_lower == "cpack" || 
+        tool_name_lower == "ctest" || 
+        tool_name_lower == "make" || 
+        tool_name_lower == "ninja" || 
+        tool_name_lower == "cl" || 
+        tool_name_lower == "gcc" || 
+        tool_name_lower == "clang" || 
+        tool_name_lower == "g++" || 
+        tool_name_lower == "clang++" || 
+        tool_name_lower == "ar" || 
+        tool_name_lower == "ld" ||
+        tool_name_lower.find("visual studio") != std::string::npos ||
+        // Also check for common compiler commands in the command string
+        command.find("cmake") != std::string::npos ||
+        command.find("cpack") != std::string::npos ||  // Also check command for cpack
+        command.find("ctest") != std::string::npos ||
+        command.find("cl.exe") != std::string::npos ||
+        command.find("link.exe") != std::string::npos)
+    {
+        is_build_tool = true;
+    }
+    
     // Create a formatted command string for logging
     std::string cmd_str = command;
     for (const auto& arg : args) {
@@ -413,7 +450,7 @@ bool execute_tool(
     }
     
     // Show which tool we're running but only if verbose is true or no command_name provided
-    std::string tool_name = command_name.empty() ? command : command_name;
+    std::string tool_name_to_use = tool_name.empty() ? command : tool_name;
     
     if (verbose) {
         logger::print_status("Command: " + cmd_str);
@@ -425,7 +462,7 @@ bool execute_tool(
     // Process stdout in real-time if in verbose mode
     std::function<void(const std::string&)> stdout_callback = nullptr;
     if (verbose) {
-        stdout_callback = [&command_name](const std::string& chunk) {
+        stdout_callback = [&tool_name](const std::string& chunk) {
             std::string line;
             std::istringstream ss(chunk);
             while (std::getline(ss, line)) {
@@ -439,7 +476,7 @@ bool execute_tool(
     // Process stderr in real-time
     std::function<void(const std::string&)> stderr_callback = nullptr;
     if (verbose) {
-        stderr_callback = [&command_name](const std::string& chunk) {
+        stderr_callback = [&tool_name](const std::string& chunk) {
             std::string line;
             std::istringstream ss(chunk);
             while (std::getline(ss, line)) {
@@ -457,59 +494,113 @@ bool execute_tool(
         timeout_seconds
     );
     
-    // Handle case where errors are in stdout instead of stderr
-    if (!result.success && result.stderr_output.empty() && !result.stdout_output.empty()) {
-        // Some cmake versions output errors to stdout instead of stderr
-        result.stderr_output = result.stdout_output;
+    // Always show output/errors for failed commands regardless of verbose mode
+    if (!result.success) {
+        // Log for debugging, but don't print directly to users
+        logger::print_verbose("Command failed with exit code: " + std::to_string(result.exit_code));
+    } else if (verbose) {
+        // Only show for successful commands if verbose mode is on
+        if (!result.stdout_output.empty()) {
+            logger::print_verbose("Tool output:\n" + result.stdout_output);
+        }
+        if (!result.stderr_output.empty()) {
+            logger::print_verbose("Tool errors:\n" + result.stderr_output);
+        }
     }
     
-    // Handle the result
-    if (result.success) {
-        // Only print success messages for verbose mode or if it's not a command we're running often
-        if (verbose || (command_name != "CMake Configure" && command_name != "CMake Build")) {
-            // Success message already handled by the calling function
-        }
-        return true;
-    } else {
-        if (result.exit_code == -1) {
-            logger::print_error(tool_name + " failed: " + result.stderr_output);
-        } else {
-            logger::print_error(tool_name + " failed with exit code: " + std::to_string(result.exit_code));
-            
-            // Extract the most relevant error message
-            if (!result.stderr_output.empty()) {
-                // Keep error message concise - extract just key lines
-                std::string error_report = result.stderr_output;
-                
-                // If the error output is long, only show the last few meaningful lines
-                if (error_report.length() > 200) {
-                    size_t pos = error_report.find_last_of("\n", error_report.length() - 2);
-                    if (pos != std::string::npos && pos > 0) {
-                        // Move back a few newlines to get context
-                        int newline_count = 0;
-                        size_t context_pos = pos;
-                        
-                        while (newline_count < 3 && context_pos > 0) {
-                            context_pos = error_report.find_last_of("\n", context_pos - 1);
-                            newline_count++;
-                            if (context_pos == std::string::npos) {
-                                context_pos = 0;
-                                break;
-                            }
-                        }
-                        
-                        if (context_pos > 0) {
-                            error_report = "..." + error_report.substr(context_pos + 1);
-                        }
-                    }
+    // Always try to format and display errors using the Rust-style formatter
+    if (!result.success) {
+        // For both stdout and stderr, try to format errors using our nice formatter
+        bool found_errors = false;
+        
+        if (!result.stderr_output.empty()) {
+            // Format with our error formatter to make errors more readable
+            std::string formatted_errors = format_build_errors(result.stderr_output);
+            if (!formatted_errors.empty()) {
+                if (!found_errors) {
+                    // Use fmt::format with color for the error header
+                    fmt::print(fg(fmt::color::cyan) | fmt::emphasis::bold, "→ Error details:\n");
+                    found_errors = true;
                 }
-                
-                logger::print_error("Error: " + error_report);
+                fmt::print("{}", formatted_errors);
             }
         }
         
-        return false;
+        // Also check for errors in stdout (some tools like CMake output errors there)
+        if (!result.stdout_output.empty() && 
+            (result.stdout_output.find("error") != std::string::npos || 
+             result.stdout_output.find("Error") != std::string::npos ||
+             result.stdout_output.find("ERROR") != std::string::npos)) {
+             
+            std::string formatted_stdout_errors = format_build_errors(result.stdout_output);
+            if (!formatted_stdout_errors.empty()) {
+                if (!found_errors) {
+                    // Use fmt::format with color for the error header
+                    fmt::print(fg(fmt::color::cyan) | fmt::emphasis::bold, "→ Error details:\n");
+                    found_errors = true;
+                }
+                fmt::print("{}", formatted_stdout_errors);
+            }
+        }
+        
+        // If our formatter didn't produce anything useful, fall back to simple error display
+        if (!found_errors) {
+            // For non-build tools or if formatter failed, extract relevant error messages
+            bool printed_error_header = false;
+            
+            if (!result.stderr_output.empty()) {
+                std::istringstream error_stream(result.stderr_output);
+                std::string line;
+                
+                while (std::getline(error_stream, line)) {
+                    // Skip empty lines or common information messages
+                    if (line.empty() || 
+                        line.find("--") == 0 ||
+                        line.find("MSBuild") == 0) {
+                        continue;
+                    }
+                    
+                    // Focus on lines with "error" in them
+                    if (line.find("error") != std::string::npos || 
+                        line.find("Error") != std::string::npos ||
+                        line.find("ERROR") != std::string::npos) {
+                        
+                        if (!printed_error_header) {
+                            // Use color for the error header
+                            fmt::print(fg(fmt::color::crimson) | fmt::emphasis::bold, "→ Command failed:\n");
+                            printed_error_header = true;
+                        }
+                        
+                        // Print the actual error line with color
+                        fmt::print(fg(fmt::color::light_pink), "    {}\n", line);
+                    }
+                }
+            }
+            
+            if (!result.stdout_output.empty() && !printed_error_header) {
+                std::istringstream output_stream(result.stdout_output);
+                std::string line;
+                
+                while (std::getline(output_stream, line)) {
+                    if (line.find("error") != std::string::npos || 
+                        line.find("Error") != std::string::npos ||
+                        line.find("ERROR") != std::string::npos) {
+                        
+                        if (!printed_error_header) {
+                            // Use color for the error header
+                            fmt::print(fg(fmt::color::crimson) | fmt::emphasis::bold, "→ Command failed:\n");
+                            printed_error_header = true;
+                        }
+                        
+                        // Print the actual error line with color
+                        fmt::print(fg(fmt::color::light_pink), "    {}\n", line);
+                    }
+                }
+            }
+        }
     }
+    
+    return result.exit_code == 0;
 }
 
 // Add a utility function to check if a command is available in the PATH

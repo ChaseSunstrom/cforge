@@ -56,6 +56,14 @@ std::string format_build_errors(const std::string& error_output);
 void print_diagnostic(const Diagnostic& diagnostic);
 
 /**
+ * @brief Format a diagnostic to a string in Rust-like style
+ * 
+ * @param diagnostic The diagnostic to format
+ * @return std::string Formatted diagnostic string
+ */
+std::string format_diagnostic_to_string(const Diagnostic& diagnostic);
+
+/**
  * @brief Extract diagnostics from compiler error output
  * 
  * @param error_output Raw error output from compiler or linker

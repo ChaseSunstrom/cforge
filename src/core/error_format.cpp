@@ -10,6 +10,7 @@
 #include <fstream>
 #include <regex>
 #include <map>
+#include <iomanip>
 
 // Add header-only mode for fmt library
 #define FMT_HEADER_ONLY
@@ -30,21 +31,217 @@ const auto LOCATION_COLOR = fmt::fg(fmt::color::light_blue);
 const auto HIGHLIGHT_COLOR = fmt::fg(fmt::color::red);
 const auto CARET_COLOR = fmt::fg(fmt::color::orange_red);
 
+// Define error code prefixes for different tools to use when original codes aren't available
+namespace ErrorCodePrefix {
+    const std::string GCC_CLANG = "GCC";
+    const std::string MSVC = "MSVC";
+    const std::string CMAKE = "CM";
+    const std::string NINJA = "NJ";
+    const std::string LINKER = "LNK";
+    const std::string GENERIC = "ERR";
+}
+
 std::string format_build_errors(const std::string& error_output) {
-    auto diagnostics = extract_diagnostics(error_output);
+    std::vector<Diagnostic> diagnostics = extract_diagnostics(error_output);
     
-    // If no diagnostics were parsed, just return the raw output
+    // Skip formatting if no diagnostics found
     if (diagnostics.empty()) {
-        return error_output;
+        return "";
     }
     
-    // Print all diagnostics
+    // Filter out CMake noise, keeping only relevant errors
+    std::vector<Diagnostic> filtered_diagnostics;
+    
     for (const auto& diag : diagnostics) {
-        print_diagnostic(diag);
+        // Skip CMake configuration/generation messages that aren't errors
+        if (diag.message.find("CMake is re-running") != std::string::npos ||
+            diag.message.find("Selecting Windows SDK") != std::string::npos ||
+            diag.message.find("Building with") != std::string::npos ||
+            diag.message.find("Configuring done") != std::string::npos ||
+            diag.message.find("Generating done") != std::string::npos ||
+            diag.message.find("Build files have been written") != std::string::npos) {
+            continue;
+        }
+        
+        // Keep compiler errors, warnings, linker errors, etc.
+        filtered_diagnostics.push_back(diag);
     }
     
-    // Return empty string since we've already printed the diagnostics
-    return "";
+    // If after filtering we have no diagnostics, return empty string
+    if (filtered_diagnostics.empty()) {
+        return "";
+    }
+    
+    // Format the diagnostics to a string
+    std::stringstream ss;
+    for (const auto& diag : filtered_diagnostics) {
+        // Format diagnostic to string instead of printing directly
+        ss << format_diagnostic_to_string(diag);
+    }
+    
+    return ss.str();
+}
+
+// Add a new function to format a diagnostic to string
+std::string format_diagnostic_to_string(const Diagnostic& diag) {
+    std::stringstream ss;
+    
+    // Determine the level-specific formatting and colors
+    std::string level_str;
+    std::string level_label;
+    fmt::color level_color;
+    
+    switch (diag.level) {
+        case DiagnosticLevel::ERROR:
+            level_str = "error";
+            level_label = "ERROR";
+            level_color = fmt::color::crimson;
+            break;
+        case DiagnosticLevel::WARNING:
+            level_str = "warning";
+            level_label = "WARN";
+            level_color = fmt::color::gold;
+            break;
+        case DiagnosticLevel::NOTE:
+            level_str = "note";
+            level_label = "NOTE";
+            level_color = fmt::color::cyan;
+            break;
+        case DiagnosticLevel::HELP:
+            level_str = "help";
+            level_label = "HELP";
+            level_color = fmt::color::lime_green;
+            break;
+    }
+    
+    // Format the error header - first line with error code and message
+    // Use color formatting
+    ss << fmt::format(fg(level_color), "{}", level_label)
+       << fmt::format(fg(fmt::color::white), "[")
+       << fmt::format(fg(fmt::color::light_blue), "{}", diag.code)
+       << fmt::format(fg(fmt::color::white), "]: ")
+       << fmt::format(fg(fmt::color::white), "{}", diag.message) << "\n";
+    
+    // Format file location information if available - second line with path
+    if (!diag.file_path.empty()) {
+        ss << fmt::format(fg(fmt::color::light_blue), " --> ")
+           << fmt::format(fg(fmt::color::white), "{}", diag.file_path);
+        
+        if (diag.line_number > 0) {
+            ss << fmt::format(fg(fmt::color::white), ":")
+               << fmt::format(fg(fmt::color::yellow), "{}", diag.line_number);
+            if (diag.column_number > 0) {
+                ss << fmt::format(fg(fmt::color::white), ":")
+                   << fmt::format(fg(fmt::color::yellow), "{}", diag.column_number);
+            }
+        }
+        ss << "\n";
+    }
+    
+    // Add visual spacing
+    if (diag.line_number > 0) {
+        ss << fmt::format(fg(fmt::color::light_blue), "  |\n");
+    }
+    
+    // Format the code snippet if available with line number and content
+    if (!diag.line_content.empty()) {
+        // Print line number and code
+        ss << fmt::format(fg(fmt::color::yellow), "{:3}", diag.line_number)
+           << fmt::format(fg(fmt::color::light_blue), " | ")
+           << fmt::format(fg(fmt::color::white), "{}", diag.line_content) << "\n";
+        
+        // Print error pointer with carets pointing to the relevant part
+        ss << fmt::format(fg(fmt::color::light_blue), "    | ");
+        
+        // If we have a column number, show carets at that point
+        if (diag.column_number > 0) {
+            size_t token_start = std::max(0, diag.column_number - 1);
+            size_t token_length = 1; // Default to 1 character if we can't determine the length
+            
+            // Try to determine the token length if we have an identifier
+            if (token_start < diag.line_content.length()) {
+                if (std::isalnum(diag.line_content[token_start]) || diag.line_content[token_start] == '_') {
+                    // Find beginning of the identifier
+                    while (token_start > 0 && 
+                           (std::isalnum(diag.line_content[token_start-1]) || 
+                            diag.line_content[token_start-1] == '_')) {
+                        token_start--;
+                    }
+                    
+                    // Find the end of the identifier
+                    size_t token_end = token_start;
+                    while (token_end < diag.line_content.length() && 
+                           (std::isalnum(diag.line_content[token_end]) || 
+                            diag.line_content[token_end] == '_')) {
+                        token_end++;
+                    }
+                    
+                    token_length = token_end - token_start;
+                }
+            }
+            
+            // Print spaces up to the token start
+            for (size_t i = 0; i < token_start; i++) {
+                ss << " ";
+            }
+            
+            // Print carets under the entire token in the error color
+            std::string carets(token_length, '^');
+            ss << fmt::format(fg(level_color), "{}", carets) << "\n";
+        } else {
+            // If no column, just show a caret at the beginning of the line
+            ss << fmt::format(fg(level_color), "^") << "\n";
+        }
+    }
+    
+    // Add another visual spacing
+    ss << fmt::format(fg(fmt::color::light_blue), "  |\n");
+    
+    // Format help text if available to provide context and suggestions
+    if (!diag.help_text.empty()) {
+        ss << fmt::format(fg(fmt::color::lime_green), "help: ") 
+           << fmt::format(fg(fmt::color::white), "{}", diag.help_text) << "\n";
+    } else {
+        // Generate helpful suggestions based on error type if no explicit help text
+        if (diag.level == DiagnosticLevel::ERROR) {
+            // Common error types and helpful suggestions
+            std::string help_text;
+            if (diag.message.find("missing type specifier") != std::string::npos) {
+                help_text = "every declaration needs a type - add an appropriate type before the variable or function";
+            } else if (diag.message.find("missing ';'") != std::string::npos) {
+                help_text = "statement requires a semicolon at the end";
+            } else if (diag.message.find("undeclared") != std::string::npos || 
+                       diag.message.find("not declared") != std::string::npos) {
+                help_text = "make sure this identifier is declared before use or check for typos";
+            } else if (diag.message.find("no matching") != std::string::npos) {
+                help_text = "no function matches these argument types - check parameters or add appropriate overload";
+            } else if (diag.message.find("cannot convert") != std::string::npos) {
+                help_text = "types are incompatible - add an explicit cast or use compatible types";
+            }
+            
+            if (!help_text.empty()) {
+                ss << fmt::format(fg(fmt::color::lime_green), "help: ")
+                   << fmt::format(fg(fmt::color::white), "{}", help_text) << "\n";
+            }
+        } else if (diag.level == DiagnosticLevel::WARNING) {
+            std::string help_text;
+            if (diag.message.find("unused") != std::string::npos) {
+                help_text = "consider using this variable or remove it to avoid warnings";
+            } else if (diag.message.find("deprecated") != std::string::npos) {
+                help_text = "this feature is deprecated - consider using a more modern alternative";
+            }
+            
+            if (!help_text.empty()) {
+                ss << fmt::format(fg(fmt::color::lime_green), "help: ")
+                   << fmt::format(fg(fmt::color::white), "{}", help_text) << "\n";
+            }
+        }
+    }
+    
+    // Add a newline for spacing between diagnostics
+    ss << "\n";
+    
+    return ss.str();
 }
 
 void print_diagnostic(const Diagnostic& diagnostic) {
@@ -97,20 +294,63 @@ void print_diagnostic(const Diagnostic& diagnostic) {
     // Print the code snippet if available
     if (!diagnostic.line_content.empty()) {
         // Print line number
-        fmt::print("{:>4} | ", diagnostic.line_number);
+        fmt::print(LOCATION_COLOR, "{:>4} | ", diagnostic.line_number);
         
-        // Print the line content
-        fmt::print("{}\n", diagnostic.line_content);
-        
-        // Print the error caret pointing to the column
         if (diagnostic.column_number > 0) {
-            fmt::print("{:>4} | ", "");
-            // Print spaces up to the column
-            for (int i = 1; i < diagnostic.column_number; i++) {
+            // Find the start of the relevant token
+            size_t token_start = std::max(0, diagnostic.column_number - 1);
+            size_t token_length = 1; // Default to 1 if we can't determine the actual length
+            
+            // Try to find the token boundary
+            if (token_start < diagnostic.line_content.length()) {
+                // If it's an identifier, find the whole word
+                if (std::isalnum(diagnostic.line_content[token_start]) || 
+                    diagnostic.line_content[token_start] == '_') {
+                    // Find the beginning of the identifier
+                    while (token_start > 0 && 
+                           (std::isalnum(diagnostic.line_content[token_start-1]) || 
+                            diagnostic.line_content[token_start-1] == '_')) {
+                        token_start--;
+                    }
+                    
+                    // Find the end of the identifier
+                    size_t token_end = token_start;
+                    while (token_end < diagnostic.line_content.length() && 
+                           (std::isalnum(diagnostic.line_content[token_end]) || 
+                            diagnostic.line_content[token_end] == '_')) {
+                        token_end++;
+                    }
+                    
+                    token_length = token_end - token_start;
+                }
+            }
+            
+            // Print the line with the problematic token highlighted
+            std::string before = diagnostic.line_content.substr(0, token_start);
+            std::string token = diagnostic.line_content.substr(token_start, token_length);
+            std::string after = diagnostic.line_content.substr(token_start + token_length);
+            
+            fmt::print("{}", before);
+            fmt::print(HIGHLIGHT_COLOR | fmt::emphasis::bold, "{}", token);
+            fmt::print("{}\n", after);
+            
+            // Print the error caret pointing to the column
+            fmt::print(LOCATION_COLOR, "{:>4} | ", "");
+            
+            // Print spaces up to the token start
+            for (size_t i = 0; i < token_start; i++) {
                 fmt::print(" ");
             }
-            // Print the caret
-            fmt::print(CARET_COLOR | fmt::emphasis::bold, "^\n");
+            
+            // Print carets under the entire token
+            for (size_t i = 0; i < token_length; i++) {
+                fmt::print(CARET_COLOR | fmt::emphasis::bold, "^");
+            }
+            
+            fmt::print("\n");
+        } else {
+            // Simple line printing without highlighting if we don't have column info
+            fmt::print("{}\n", diagnostic.line_content);
         }
     }
     
@@ -148,8 +388,12 @@ std::vector<Diagnostic> parse_gcc_clang_errors(const std::string& error_output) 
     
     // Regular expression to match GCC/Clang error format
     // Example: file.cpp:10:15: error: 'foo' was not declared in this scope
-    std::regex error_regex(R"(([^:]+):(\d+):(\d+):\s+(error|warning|note):\s+([^:]+)(?:\[([^\]]+)\])?)"
-                         R"(|([^:]+):(\d+):\s+(error|warning|note):\s+([^:]+)(?:\[([^\]]+)\])?)");
+    // Also capture compiler-specific error codes like [-Wunused-variable]
+    std::regex error_regex(R"(([^:]+):(\d+):(\d+):\s+(error|warning|note):\s+([^:]+)(?:\[([-\w]+)\])?)"
+                         R"(|([^:]+):(\d+):\s+(error|warning|note):\s+([^:]+)(?:\[([-\w]+)\])?)");
+    
+    // Also try to match more specific error codes that might be present
+    std::regex error_code_regex(R"(error\s+(\d+):)"); // For GCC error numbers
     
     std::string line;
     std::istringstream stream(error_output);
@@ -169,28 +413,36 @@ std::vector<Diagnostic> parse_gcc_clang_errors(const std::string& error_output) 
                 std::string level_str = matches[4].str();
                 diag.message = matches[5].str();
                 
-                // Use a more specific error code based on message content
-                if (matches[6].matched) {
+                // Use the actual compiler warning/error code if provided
+                if (matches[6].matched && !matches[6].str().empty()) {
+                    // Extract the warning code (like -Wunused-variable)
                     diag.code = matches[6].str();
                 } else {
-                    // Generate a meaningful error code based on the message
-                    if (diag.message.find("expected") != std::string::npos) {
-                        diag.code = "E1001"; // syntax error - expected something
-                    } else if (diag.message.find("undeclared") != std::string::npos || 
-                               diag.message.find("not declared") != std::string::npos) {
-                        diag.code = "E1002"; // undeclared identifier
-                    } else if (diag.message.find("undefined") != std::string::npos) {
-                        diag.code = "E1003"; // undefined reference/symbol
-                    } else if (diag.message.find("cannot convert") != std::string::npos || 
-                               diag.message.find("invalid conversion") != std::string::npos) {
-                        diag.code = "E1004"; // type conversion error
-                    } else if (diag.message.find("no matching") != std::string::npos) {
-                        diag.code = "E1005"; // no matching function/method
-                    } else if (diag.message.find("redefinition") != std::string::npos || 
-                               diag.message.find("already defined") != std::string::npos) {
-                        diag.code = "E1006"; // redefinition error
+                    // Look for error code in the message
+                    std::smatch code_match;
+                    if (std::regex_search(diag.message, code_match, error_code_regex)) {
+                        diag.code = "E" + code_match[1].str();
                     } else {
-                        diag.code = "E1000"; // generic error
+                        // Use a prefix based on the message content
+                        diag.code = ErrorCodePrefix::GCC_CLANG;
+                        
+                        // Add a more specific suffix based on the message
+                        if (diag.message.find("expected") != std::string::npos) {
+                            diag.code += "-SYNTAX"; // syntax error - expected something
+                        } else if (diag.message.find("undeclared") != std::string::npos || 
+                                   diag.message.find("not declared") != std::string::npos) {
+                            diag.code += "-UNDECL"; // undeclared identifier
+                        } else if (diag.message.find("undefined") != std::string::npos) {
+                            diag.code += "-UNDEF"; // undefined reference/symbol
+                        } else if (diag.message.find("cannot convert") != std::string::npos || 
+                                   diag.message.find("invalid conversion") != std::string::npos) {
+                            diag.code += "-CONV"; // type conversion error
+                        } else if (diag.message.find("no matching") != std::string::npos) {
+                            diag.code += "-NOMATCH"; // no matching function/method
+                        } else if (diag.message.find("redefinition") != std::string::npos || 
+                                   diag.message.find("already defined") != std::string::npos) {
+                            diag.code += "-REDEF"; // redefinition error
+                        }
                     }
                 }
                 
@@ -199,26 +451,22 @@ std::vector<Diagnostic> parse_gcc_clang_errors(const std::string& error_output) 
                 } else if (level_str == "warning") {
                     diag.level = DiagnosticLevel::WARNING;
                     
-                    // If it's a warning and no specific code was provided, use W prefix
-                    if (!matches[6].matched) {
+                    // If we don't have an actual warning code, use the content
+                    if (diag.code == ErrorCodePrefix::GCC_CLANG) {
                         if (diag.message.find("unused") != std::string::npos) {
-                            diag.code = "W2001"; // unused variable/function
+                            diag.code += "-UNUSED"; // unused variable/function
                         } else if (diag.message.find("implicit") != std::string::npos) {
-                            diag.code = "W2002"; // implicit conversion
+                            diag.code += "-IMPLICIT"; // implicit conversion
                         } else if (diag.message.find("deprecated") != std::string::npos) {
-                            diag.code = "W2003"; // deprecated feature
-                        } else {
-                            diag.code = "W2000"; // generic warning
+                            diag.code += "-DEPR"; // deprecated feature
                         }
                     }
                 } else if (level_str == "note") {
                     diag.level = DiagnosticLevel::NOTE;
-                    // Use N prefix for notes
-                    if (!matches[6].matched) {
-                        diag.code = "N3000";
-                    }
                 }
-            } else if (matches[9].matched) {  // Second pattern without column number
+            }
+            // ... similar changes for the second pattern without column number
+            else if (matches[9].matched) {  // Second pattern without column number
                 diag.file_path = matches[7].str();
                 diag.line_number = std::stoi(matches[8].str());
                 diag.column_number = 0;
@@ -226,28 +474,36 @@ std::vector<Diagnostic> parse_gcc_clang_errors(const std::string& error_output) 
                 std::string level_str = matches[9].str();
                 diag.message = matches[10].str();
                 
-                // Use a more specific error code based on message content
-                if (matches[11].matched) {
+                // Use the actual compiler warning/error code if provided
+                if (matches[11].matched && !matches[11].str().empty()) {
+                    // Extract the warning code (like -Wunused-variable)
                     diag.code = matches[11].str();
                 } else {
-                    // Generate a meaningful error code based on the message
-                    if (diag.message.find("expected") != std::string::npos) {
-                        diag.code = "E1001"; // syntax error - expected something
-                    } else if (diag.message.find("undeclared") != std::string::npos || 
-                               diag.message.find("not declared") != std::string::npos) {
-                        diag.code = "E1002"; // undeclared identifier
-                    } else if (diag.message.find("undefined") != std::string::npos) {
-                        diag.code = "E1003"; // undefined reference/symbol
-                    } else if (diag.message.find("cannot convert") != std::string::npos || 
-                               diag.message.find("invalid conversion") != std::string::npos) {
-                        diag.code = "E1004"; // type conversion error
-                    } else if (diag.message.find("no matching") != std::string::npos) {
-                        diag.code = "E1005"; // no matching function/method
-                    } else if (diag.message.find("redefinition") != std::string::npos || 
-                               diag.message.find("already defined") != std::string::npos) {
-                        diag.code = "E1006"; // redefinition error
+                    // Look for error code in the message
+                    std::smatch code_match;
+                    if (std::regex_search(diag.message, code_match, error_code_regex)) {
+                        diag.code = "E" + code_match[1].str();
                     } else {
-                        diag.code = "E1000"; // generic error
+                        // Use a prefix based on the message content
+                        diag.code = ErrorCodePrefix::GCC_CLANG;
+                        
+                        // Add a more specific suffix based on the message
+                        if (diag.message.find("expected") != std::string::npos) {
+                            diag.code += "-SYNTAX"; // syntax error - expected something
+                        } else if (diag.message.find("undeclared") != std::string::npos || 
+                                   diag.message.find("not declared") != std::string::npos) {
+                            diag.code += "-UNDECL"; // undeclared identifier
+                        } else if (diag.message.find("undefined") != std::string::npos) {
+                            diag.code += "-UNDEF"; // undefined reference/symbol
+                        } else if (diag.message.find("cannot convert") != std::string::npos || 
+                                   diag.message.find("invalid conversion") != std::string::npos) {
+                            diag.code += "-CONV"; // type conversion error
+                        } else if (diag.message.find("no matching") != std::string::npos) {
+                            diag.code += "-NOMATCH"; // no matching function/method
+                        } else if (diag.message.find("redefinition") != std::string::npos || 
+                                   diag.message.find("already defined") != std::string::npos) {
+                            diag.code += "-REDEF"; // redefinition error
+                        }
                     }
                 }
                 
@@ -256,24 +512,18 @@ std::vector<Diagnostic> parse_gcc_clang_errors(const std::string& error_output) 
                 } else if (level_str == "warning") {
                     diag.level = DiagnosticLevel::WARNING;
                     
-                    // If it's a warning and no specific code was provided, use W prefix
-                    if (!matches[11].matched) {
+                    // If we don't have an actual warning code, use the content
+                    if (diag.code == ErrorCodePrefix::GCC_CLANG) {
                         if (diag.message.find("unused") != std::string::npos) {
-                            diag.code = "W2001"; // unused variable/function
+                            diag.code += "-UNUSED"; // unused variable/function
                         } else if (diag.message.find("implicit") != std::string::npos) {
-                            diag.code = "W2002"; // implicit conversion
+                            diag.code += "-IMPLICIT"; // implicit conversion
                         } else if (diag.message.find("deprecated") != std::string::npos) {
-                            diag.code = "W2003"; // deprecated feature
-                        } else {
-                            diag.code = "W2000"; // generic warning
+                            diag.code += "-DEPR"; // deprecated feature
                         }
                     }
                 } else if (level_str == "note") {
                     diag.level = DiagnosticLevel::NOTE;
-                    // Use N prefix for notes
-                    if (!matches[11].matched) {
-                        diag.code = "N3000";
-                    }
                 }
             }
             
@@ -330,12 +580,20 @@ std::vector<Diagnostic> parse_msvc_errors(const std::string& error_output) {
     // Example: C:\path\to\file.cpp(10,15): error C2065: 'foo': undeclared identifier
     std::regex error_regex(R"(([^(]+)\((\d+)(?:,(\d+))?\):\s+(error|warning|note)\s+([A-Z]\d+):\s+(.+))");
     
+    // Parse follow-up context lines that sometimes appear after the main error
+    std::regex context_regex(R"((?:\s{2,}|\t+)(.+))");
+    
     std::string line;
     std::istringstream stream(error_output);
     std::map<std::string, std::string> file_contents;
     
+    // Keep track of the current diagnostic for adding context
+    Diagnostic* current_diag = nullptr;
+    
     while (std::getline(stream, line)) {
         std::smatch matches;
+        
+        // Match main error/warning line
         if (std::regex_search(line, matches, error_regex)) {
             Diagnostic diag;
             
@@ -344,7 +602,7 @@ std::vector<Diagnostic> parse_msvc_errors(const std::string& error_output) {
             diag.column_number = matches[3].matched ? std::stoi(matches[3].str()) : 0;
             
             std::string level_str = matches[4].str();
-            diag.code = matches[5].str();
+            diag.code = matches[5].str(); // Use the actual MSVC error code (e.g., C2065)
             diag.message = matches[6].str();
             
             if (level_str == "error") {
@@ -355,9 +613,8 @@ std::vector<Diagnostic> parse_msvc_errors(const std::string& error_output) {
                 diag.level = DiagnosticLevel::NOTE;
             }
             
-            // Try to extract line content if possible
+            // Try to extract line content directly from the file
             if (!diag.file_path.empty() && diag.line_number > 0) {
-                // Same file content extraction as in parse_gcc_clang_errors
                 if (file_contents.find(diag.file_path) == file_contents.end()) {
                     try {
                         std::ifstream file(diag.file_path);
@@ -376,9 +633,14 @@ std::vector<Diagnostic> parse_msvc_errors(const std::string& error_output) {
                     std::string file_line;
                     int current_line = 0;
                     
+                    // Read until we reach the target line
                     while (std::getline(file_stream, file_line) && current_line < diag.line_number) {
                         current_line++;
                         if (current_line == diag.line_number) {
+                            // Remove any trailing whitespace from the line
+                            while (!file_line.empty() && isspace(file_line.back())) {
+                                file_line.pop_back();
+                            }
                             diag.line_content = file_line;
                             break;
                         }
@@ -386,16 +648,61 @@ std::vector<Diagnostic> parse_msvc_errors(const std::string& error_output) {
                 }
             }
             
-            // Add MSVC-specific help text
-            if (diag.code == "C2065") {
-                diag.help_text = "The identifier is not declared in this scope";
-            } else if (diag.code == "C2143") {
-                diag.help_text = "Check for missing syntax elements";
-            } else if (diag.code == "C3861") {
-                diag.help_text = "Function not found, check for typos or missing includes";
+            // Add MSVC-specific help text based on error code
+            switch (std::stoi(diag.code.substr(1))) { // Remove the C prefix and convert to int
+                case 2065: // C2065: 'identifier': undeclared identifier
+                    diag.help_text = "The identifier is not declared in this scope. Check for typos or missing includes.";
+                    break;
+                case 2146: // C2146: syntax error: missing ';' before identifier
+                    diag.help_text = "Add a semicolon after the previous statement.";
+                    break;
+                case 2143: // C2143: syntax error: missing ';' before 'type'
+                    diag.help_text = "Check for missing semicolons or unmatched braces.";
+                    break;
+                case 3861: // C3861: 'identifier': identifier not found
+                    diag.help_text = "Function not found. Check for typos, missing includes, or if the function needs to be declared before use.";
+                    break;
+                case 4430: // C4430: missing type specifier - int assumed
+                    diag.help_text = "C++ requires a type specifier for all declarations. Add the appropriate type.";
+                    break;
+                case 2059: // C2059: syntax error: 'token'
+                    diag.help_text = "Check for syntax errors like missing braces, parentheses, or misplaced tokens.";
+                    break;
+                case 2664: // C2664: cannot convert argument
+                    diag.help_text = "The types of arguments don't match the function parameters. Check parameter types.";
+                    break;
+                case 2782: // C2782: template parameter not used in parameter types
+                    diag.help_text = "Specify the template arguments explicitly or adjust your code to use the template parameter.";
+                    break;
+                default:
+                    // General guidance for other error codes
+                    if (diag.message.find("syntax error") != std::string::npos) {
+                        diag.help_text = "Check syntax around this line. Look for missing punctuation or mismatched braces.";
+                    } else if (diag.message.find("undeclared") != std::string::npos) {
+                        diag.help_text = "Make sure this identifier is declared before use or check for typos.";
+                    }
+                    break;
             }
             
             diagnostics.push_back(diag);
+            current_diag = &diagnostics.back();
+        }
+        // Match context lines that might follow the main error
+        else if (current_diag != nullptr && std::regex_search(line, matches, context_regex)) {
+            std::string context = matches[1].str();
+            
+            // If the line contains a source code snippet, add it as help text
+            if (context.find("see declaration of") != std::string::npos ||
+                context.find("see reference to") != std::string::npos) {
+                if (!current_diag->help_text.empty()) {
+                    current_diag->help_text += " " + context;
+                } else {
+                    current_diag->help_text = context;
+                }
+            }
+        } else {
+            // Reset current diagnostic pointer if we've moved to a new error
+            current_diag = nullptr;
         }
     }
     
@@ -409,6 +716,9 @@ std::vector<Diagnostic> parse_cmake_errors(const std::string& error_output) {
     // Example: CMake Error at CMakeLists.txt:10 (add_executable): Target "my_target" already exists.
     std::regex error_regex(R"(CMake\s+(Error|Warning)(?:\s+at\s+([^:]+):(\d+)\s+\(([^)]+)\))?:\s+(.+))");
     
+    // Also try to match error codes in the format "CMake Error: Error 0x... " or similar
+    std::regex cmake_error_code_regex(R"(Error\s+(\w+\d+))");
+    
     std::string line;
     std::istringstream stream(error_output);
     
@@ -418,67 +728,58 @@ std::vector<Diagnostic> parse_cmake_errors(const std::string& error_output) {
             Diagnostic diag;
             
             std::string level_str = matches[1].str();
+            std::string message = matches[5].str();
+            
+            // Try to extract error code from message if present
+            std::smatch code_match;
+            if (std::regex_search(message, code_match, cmake_error_code_regex)) {
+                diag.code = code_match[1].str();
+            } else {
+                diag.code = ErrorCodePrefix::CMAKE;
+            }
+            
             if (level_str == "Error") {
                 diag.level = DiagnosticLevel::ERROR;
-                diag.code = "CMake0001";
+                if (diag.code == ErrorCodePrefix::CMAKE) {
+                    diag.code += "-ERROR";
+                }
             } else if (level_str == "Warning") {
                 diag.level = DiagnosticLevel::WARNING;
-                diag.code = "CMake0002";
+                if (diag.code == ErrorCodePrefix::CMAKE) {
+                    diag.code += "-WARN";
+                }
             }
             
             if (matches[2].matched) {
                 diag.file_path = matches[2].str();
                 diag.line_number = std::stoi(matches[3].str());
                 std::string command = matches[4].str();
-                std::string message = matches[5].str();
                 diag.message = message + " (in " + command + ")";
                 
-                // Assign more specific error codes based on command
-                if (level_str == "Error") {
-                    if (command == "find_package") {
-                        diag.code = "CM1001"; // package not found
-                    } else if (command == "add_executable" || command == "add_library") {
-                        diag.code = "CM1002"; // target definition error
-                    } else if (command == "target_link_libraries") {
-                        diag.code = "CM1003"; // linking error
-                    } else if (command == "include") {
-                        diag.code = "CM1004"; // include error
-                    } else {
-                        diag.code = "CM1000"; // generic CMake error
-                    }
-                } else if (level_str == "Warning") {
-                    if (command == "find_package") {
-                        diag.code = "CM2001"; // package warning
-                    } else if (command.find("deprecated") != std::string::npos) {
-                        diag.code = "CM2002"; // deprecation warning
-                    } else {
-                        diag.code = "CM2000"; // generic CMake warning
-                    }
+                // Add command context to the error code
+                if (diag.code == ErrorCodePrefix::CMAKE + "-ERROR" || 
+                    diag.code == ErrorCodePrefix::CMAKE + "-WARN") {
+                    diag.code += "-" + command;
                 }
             } else {
                 // For errors not associated with a specific file
-                std::string message = matches[5].str();
                 diag.message = message;
                 
-                // Assign more specific error codes based on message content
-                if (level_str == "Error") {
+                // Add more context to the error code based on message content
+                if (diag.code == ErrorCodePrefix::CMAKE + "-ERROR") {
                     if (message.find("Could not find") != std::string::npos || 
                         message.find("not found") != std::string::npos) {
-                        diag.code = "CM1001"; // not found error
+                        diag.code += "-NOTFOUND";
                     } else if (message.find("already exists") != std::string::npos) {
-                        diag.code = "CM1005"; // duplicate definition
+                        diag.code += "-DUPLICATE";
                     } else if (message.find("syntax error") != std::string::npos) {
-                        diag.code = "CM1006"; // syntax error
-                    } else {
-                        diag.code = "CM1000"; // generic CMake error
+                        diag.code += "-SYNTAX";
                     }
-                } else if (level_str == "Warning") {
+                } else if (diag.code == ErrorCodePrefix::CMAKE + "-WARN") {
                     if (message.find("deprecated") != std::string::npos) {
-                        diag.code = "CM2002"; // deprecation warning
+                        diag.code += "-DEPR";
                     } else if (message.find("unused") != std::string::npos) {
-                        diag.code = "CM2003"; // unused variable/target
-                    } else {
-                        diag.code = "CM2000"; // generic CMake warning
+                        diag.code += "-UNUSED";
                     }
                 }
             }
@@ -500,6 +801,9 @@ std::vector<Diagnostic> parse_ninja_errors(const std::string& error_output) {
     // Example: ninja: error: build.ninja:10: syntax error
     std::regex error_regex(R"(ninja:\s+(error|warning):\s+(?:([^:]+):(\d+):\s+)?(.+))");
     
+    // Try to extract error codes if present in messages
+    std::regex ninja_code_regex(R"(error\s+(\w+\d+):)");
+    
     std::string line;
     std::istringstream stream(error_output);
     
@@ -509,46 +813,50 @@ std::vector<Diagnostic> parse_ninja_errors(const std::string& error_output) {
             Diagnostic diag;
             
             std::string level_str = matches[1].str();
-            if (level_str == "error") {
-                diag.level = DiagnosticLevel::ERROR;
-                diag.code = "NINJA0001";
-            } else if (level_str == "warning") {
-                diag.level = DiagnosticLevel::WARNING;
-                diag.code = "NINJA0002";
+            diag.message = matches[4].str();
+            
+            // Try to extract error code from the message
+            std::smatch code_match;
+            if (std::regex_search(diag.message, code_match, ninja_code_regex)) {
+                diag.code = code_match[1].str();
+            } else {
+                diag.code = ErrorCodePrefix::NINJA;
+                
+                if (level_str == "error") {
+                    diag.level = DiagnosticLevel::ERROR;
+                    diag.code += "-ERROR";
+                    
+                    // Add specific context based on the message
+                    std::string message = diag.message;
+                    if (message.find("syntax error") != std::string::npos) {
+                        diag.code += "-SYNTAX";
+                    } else if (message.find("multiple rules") != std::string::npos) {
+                        diag.code += "-MULTIPLE";
+                    } else if (message.find("missing") != std::string::npos) {
+                        diag.code += "-MISSING";
+                    } else if (message.find("stopping") != std::string::npos || 
+                               message.find("failed") != std::string::npos) {
+                        diag.code += "-FAILED";
+                    } else if (message.find("unknown") != std::string::npos) {
+                        diag.code += "-UNKNOWN";
+                    }
+                } else if (level_str == "warning") {
+                    diag.level = DiagnosticLevel::WARNING;
+                    diag.code += "-WARN";
+                    
+                    // Add specific context based on the message
+                    std::string message = diag.message;
+                    if (message.find("duplicate") != std::string::npos) {
+                        diag.code += "-DUPLICATE";
+                    } else if (message.find("deprecated") != std::string::npos) {
+                        diag.code += "-DEPR";
+                    }
+                }
             }
             
             if (matches[2].matched) {
                 diag.file_path = matches[2].str();
                 diag.line_number = std::stoi(matches[3].str());
-            }
-            
-            diag.message = matches[4].str();
-            std::string message = diag.message;
-            
-            // More specific error codes for ninja
-            if (level_str == "error") {
-                if (message.find("syntax error") != std::string::npos) {
-                    diag.code = "NJ1001"; // syntax error
-                } else if (message.find("multiple rules") != std::string::npos) {
-                    diag.code = "NJ1002"; // multiple rules for one target
-                } else if (message.find("missing") != std::string::npos) {
-                    diag.code = "NJ1003"; // missing input
-                } else if (message.find("stopping") != std::string::npos || 
-                           message.find("failed") != std::string::npos) {
-                    diag.code = "NJ1004"; // build stopped
-                } else if (message.find("unknown") != std::string::npos) {
-                    diag.code = "NJ1005"; // unknown target/variable
-                } else {
-                    diag.code = "NJ1000"; // generic ninja error
-                }
-            } else if (level_str == "warning") {
-                if (message.find("duplicate") != std::string::npos) {
-                    diag.code = "NJ2001"; // duplicate definition
-                } else if (message.find("deprecated") != std::string::npos) {
-                    diag.code = "NJ2002"; // deprecated feature
-                } else {
-                    diag.code = "NJ2000"; // generic ninja warning
-                }
             }
             
             // Add help text
@@ -577,6 +885,9 @@ std::vector<Diagnostic> parse_linker_errors(const std::string& error_output) {
     // Generic reference pattern: "referenced by file.obj"
     std::regex reference_regex(R"(>>>\s*referenced by\s*([^:\n]+))");
     
+    // Try to extract specific error codes
+    std::regex linker_code_regex(R"(error\s+(\w+\d+):)");
+    
     std::string line;
     std::istringstream stream(error_output);
     std::string current_error;
@@ -595,17 +906,23 @@ std::vector<Diagnostic> parse_linker_errors(const std::string& error_output) {
             diag.line_number = 0;
             diag.column_number = 0;
             
-            // Generate a more specific error code based on the message
-            if (message.find("undefined symbol") != std::string::npos) {
-                diag.code = "L4001"; // undefined symbol
-            } else if (message.find("duplicate symbol") != std::string::npos) {
-                diag.code = "L4002"; // duplicate symbol
-            } else if (message.find("cannot open") != std::string::npos) {
-                diag.code = "L4003"; // cannot open file
-            } else if (message.find("unresolved") != std::string::npos) {
-                diag.code = "L4004"; // unresolved external
+            // Try to extract error code from the message
+            std::smatch code_match;
+            if (std::regex_search(message, code_match, linker_code_regex)) {
+                diag.code = code_match[1].str();
             } else {
-                diag.code = "L4000"; // generic linker error
+                diag.code = "LLD";
+                
+                // Add specific context based on the message
+                if (message.find("undefined symbol") != std::string::npos) {
+                    diag.code += "-UNDEFINED";
+                } else if (message.find("duplicate symbol") != std::string::npos) {
+                    diag.code += "-DUPLICATE";
+                } else if (message.find("cannot open") != std::string::npos) {
+                    diag.code += "-NOTFOUND";
+                } else if (message.find("unresolved") != std::string::npos) {
+                    diag.code += "-UNRESOLVED";
+                }
             }
             
             diagnostics.push_back(diag);
@@ -621,20 +938,26 @@ std::vector<Diagnostic> parse_linker_errors(const std::string& error_output) {
             diag.line_number = 0;
             diag.column_number = 0;
             
-            // Generate a more specific error code based on the message
-            if (message.find("undefined reference") != std::string::npos || 
-                message.find("undefined symbol") != std::string::npos) {
-                diag.code = "L4001"; // undefined symbol
-            } else if (message.find("duplicate symbol") != std::string::npos || 
-                       message.find("multiple definition") != std::string::npos) {
-                diag.code = "L4002"; // duplicate symbol
-            } else if (message.find("cannot find") != std::string::npos || 
-                       message.find("cannot open") != std::string::npos) {
-                diag.code = "L4003"; // cannot open file
-            } else if (message.find("unresolved") != std::string::npos) {
-                diag.code = "L4004"; // unresolved external
+            // Try to extract error code from the message
+            std::smatch code_match;
+            if (std::regex_search(message, code_match, linker_code_regex)) {
+                diag.code = code_match[1].str();
             } else {
-                diag.code = "L4000"; // generic linker error
+                diag.code = "LD";
+                
+                // Add specific context based on the message
+                if (message.find("undefined reference") != std::string::npos || 
+                    message.find("undefined symbol") != std::string::npos) {
+                    diag.code += "-UNDEFINED";
+                } else if (message.find("duplicate symbol") != std::string::npos || 
+                           message.find("multiple definition") != std::string::npos) {
+                    diag.code += "-DUPLICATE";
+                } else if (message.find("cannot find") != std::string::npos || 
+                           message.find("cannot open") != std::string::npos) {
+                    diag.code += "-NOTFOUND";
+                } else if (message.find("unresolved") != std::string::npos) {
+                    diag.code += "-UNRESOLVED";
+                }
             }
             
             diagnostics.push_back(diag);

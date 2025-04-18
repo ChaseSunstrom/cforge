@@ -10,6 +10,7 @@
 #include "core/toml_reader.hpp"
 #include "core/workspace.hpp"
 #include "cforge/log.hpp"
+#include "core/error_format.hpp"
 
 #include <filesystem>
 #include <string>
@@ -31,13 +32,6 @@ const char PATH_SEPARATOR = '\\';
 #else
 const char PATH_SEPARATOR = '/';
 #endif
-
-// Forward declaration of functions from command_build.cpp
-extern bool clone_git_dependencies(
-    const std::filesystem::path& project_dir,
-    const toml_reader& project_config,
-    bool verbose
-);
 
 /**
  * @brief Get build directory path based on base directory and configuration
@@ -245,44 +239,21 @@ static bool build_project(const cforge_context_t* ctx) {
     std::filesystem::path project_dir = ctx->working_dir;
     std::filesystem::path config_path = project_dir / "cforge.toml";
     
-    if (std::filesystem::exists(config_path)) {
-        try {
-            // Load project configuration
-            toml::table config_table = toml::parse_file(config_path.string());
-            toml_reader project_config(config_table);
-            
-            // Check for Git dependencies
-            if (project_config.has_key("dependencies.git")) {
-                logger::print_status("Setting up Git dependencies before build...");
-                bool verbose = build_ctx.args.verbosity && strcmp(build_ctx.args.verbosity, "verbose") == 0;
-                
-                if (!clone_git_dependencies(project_dir, project_config, verbose)) {
-                    logger::print_error("Failed to clone Git dependencies");
-                    // Continue with build anyway
-                }
-            }
-        } catch (const std::exception& ex) {
-            logger::print_warning("Error checking for Git dependencies: " + std::string(ex.what()));
-            // Continue with build anyway
-        }
-    }
-    
-    // Print what configuration we're actually using for the build
-    logger::print_status("Building project: " + std::string(ctx->working_dir) + " [" + 
-        (build_ctx.args.config ? build_ctx.args.config : "default") + "]");
-    
     // Allocate space for args to pass special flags to the build command
     // Use a simpler generator to avoid problems with Ninja Multi-Config
-    build_ctx.args.arg_count = 2;  // -G "generator"
+    build_ctx.args.arg_count = 4;  // -G "generator" + --config CONFIG_NAME
     build_ctx.args.args = (cforge_string_t*)malloc(build_ctx.args.arg_count * sizeof(cforge_string_t));
     
     // Set the generator flag
     build_ctx.args.args[0] = strdup("-G");
     build_ctx.args.args[1] = strdup(get_simple_generator().c_str());
     
+    // Add explicit --config parameter to ensure build uses correct config
+    // This is needed to ensure we don't use Debug when Release is specified
+    build_ctx.args.args[2] = strdup("--config");
+    build_ctx.args.args[3] = strdup(build_ctx.args.config ? build_ctx.args.config : "Release");
+    
     // Build the project
-    logger::print_status("Running build with configuration: " + 
-        std::string(build_ctx.args.config ? build_ctx.args.config : "default"));
     int result = cforge_cmd_build(&build_ctx);
     
     // Clean up allocated memory
@@ -555,7 +526,18 @@ static bool create_workspace_package(
         success = true;
     } else {
         logger::print_error("PowerShell command failed with exit code: " + std::to_string(result.exit_code));
-        logger::print_error("Error output: " + result.stderr_output);
+        
+        // Use our fancy error formatter for the output
+        if (!result.stderr_output.empty()) {
+            std::string formatted_output = format_build_errors(result.stderr_output);
+            if (formatted_output.empty()) {
+                // Successful formatting already printed the output
+            } else {
+                // Fall back to simple error message if formatting failed or returned content
+                logger::print_error("Error output: " + formatted_output);
+            }
+        }
+        
         success = false;
     }
 #else
@@ -1023,6 +1005,62 @@ static bool run_cpack(
         return false;
     }
     
+    // Before running CPack, clean up any executables in the bin directory
+    // to avoid "file exists" errors when packaging
+    std::filesystem::path bin_dir = build_dir / "bin";
+    if (std::filesystem::exists(bin_dir)) {
+        try {
+            logger::print_verbose("Cleaning bin directory to avoid file conflicts: " + bin_dir.string());
+            
+            // If a "Release" or "Debug" subdirectory exists, also clean it
+            std::filesystem::path release_dir = bin_dir / "Release";
+            std::filesystem::path debug_dir = bin_dir / "Debug";
+            std::filesystem::path config_dir = bin_dir / config_name;
+            
+            if (std::filesystem::exists(release_dir)) {
+                // For each EXE file in the directory, check if it has _release suffix and remove it if so
+                for (const auto& entry : std::filesystem::directory_iterator(release_dir)) {
+                    if (entry.is_regular_file() && entry.path().extension() == ".exe") {
+                        std::string filename = entry.path().filename().string();
+                        if (filename.find("_release") != std::string::npos) {
+                            logger::print_verbose("Removing conflicting file: " + entry.path().string());
+                            std::filesystem::remove(entry.path());
+                        }
+                    }
+                }
+            }
+            
+            if (std::filesystem::exists(debug_dir)) {
+                // For each EXE file in the directory, check if it has _debug suffix and remove it if so
+                for (const auto& entry : std::filesystem::directory_iterator(debug_dir)) {
+                    if (entry.is_regular_file() && entry.path().extension() == ".exe") {
+                        std::string filename = entry.path().filename().string();
+                        if (filename.find("_debug") != std::string::npos) {
+                            logger::print_verbose("Removing conflicting file: " + entry.path().string());
+                            std::filesystem::remove(entry.path());
+                        }
+                    }
+                }
+            }
+            
+            if (std::filesystem::exists(config_dir) && config_dir != release_dir && config_dir != debug_dir) {
+                // For each EXE file in the directory, check if it has _config suffix and remove it if so
+                for (const auto& entry : std::filesystem::directory_iterator(config_dir)) {
+                    if (entry.is_regular_file() && entry.path().extension() == ".exe") {
+                        std::string filename = entry.path().filename().string();
+                        if (filename.find("_" + std::string(config_name.begin(), config_name.end())) != std::string::npos) {
+                            logger::print_verbose("Removing conflicting file: " + entry.path().string());
+                            std::filesystem::remove(entry.path());
+                        }
+                    }
+                }
+            }
+        } catch (const std::exception& ex) {
+            logger::print_verbose("Error cleaning bin directory: " + std::string(ex.what()));
+            // Continue anyway
+        }
+    }
+    
     // Build the cpack command
     logger::print_status("Creating packages with CPack...");
     
@@ -1059,6 +1097,71 @@ static bool run_cpack(
     // Make sure the package directory is absolute
     package_dir = std::filesystem::absolute(package_dir);
     logger::print_verbose("Package output directory: " + package_dir.string());
+
+    // IMPORTANT: Clean up any existing packages with the same base name
+    try {
+        std::string config_lower = config_name;
+        std::transform(config_lower.begin(), config_lower.end(), config_lower.begin(), ::tolower);
+        
+        // Get project info for cleanup
+        std::string pkg_name = project_name;
+        std::string pkg_version = project_version;
+        
+        // If not provided, try to get project info from CMakeCache.txt
+        if (pkg_name.empty() || pkg_version.empty()) {
+            // Try to read project name and version from CMakeCache.txt
+            std::filesystem::path cmake_cache = build_dir / "CMakeCache.txt";
+            if (std::filesystem::exists(cmake_cache)) {
+                try {
+                    std::ifstream cache_file(cmake_cache);
+                    std::string line;
+                    while (std::getline(cache_file, line)) {
+                        if (pkg_name.empty() && line.find("CMAKE_PROJECT_NAME:") != std::string::npos) {
+                            size_t pos = line.find('=');
+                            if (pos != std::string::npos) {
+                                pkg_name = line.substr(pos + 1);
+                            }
+                        } else if (pkg_version.empty() && 
+                                   (line.find("CMAKE_PROJECT_VERSION:") != std::string::npos ||
+                                   line.find("PROJECT_VERSION:") != std::string::npos)) {
+                            size_t pos = line.find('=');
+                            if (pos != std::string::npos) {
+                                pkg_version = line.substr(pos + 1);
+                            }
+                        }
+                    }
+                } catch (...) {
+                    // Ignore errors reading the cache
+                }
+            }
+        }
+        
+        // If still empty, fall back to directory name
+        if (pkg_name.empty()) {
+            pkg_name = build_dir.parent_path().filename().string();
+        }
+        if (pkg_version.empty()) {
+            pkg_version = "1.0.0";
+        }
+        
+        // First cleanup ALL packages in the output directory to ensure no conflicts
+        logger::print_verbose("Cleaning package directory: " + package_dir.string());
+        for (const auto& entry : std::filesystem::directory_iterator(package_dir)) {
+            if (entry.is_regular_file()) {
+                std::string filename = entry.path().filename().string();
+                if (filename.find(pkg_name) != std::string::npos) {
+                    logger::print_verbose("Removing existing package file: " + entry.path().string());
+                    std::filesystem::remove(entry.path());
+                }
+            }
+        }
+    } catch (const std::exception& ex) {
+        logger::print_verbose("Error cleaning packages: " + std::string(ex.what()));
+        // Continue anyway
+    }
+    
+    // Force OVERWRITE flag to CPack
+    cpack_args.push_back("--force");
     
     // Add package output directory - use both ways for compatibility
     cpack_args.push_back("-B");
@@ -1079,7 +1182,7 @@ static bool run_cpack(
         std::string pkg_name = project_name;
         std::string pkg_version = project_version;
         
-        // If not provided, try to get project info from CMakeCache
+        // If not provided, try to get project info from CMakeCache.txt
         if (pkg_name.empty() || pkg_version.empty()) {
             // Try to read project name and version from CMakeCache.txt
             std::filesystem::path cmake_cache = build_dir / "CMakeCache.txt";
@@ -1239,18 +1342,35 @@ static bool run_cpack(
     cpack_args.push_back("CPACK_SYSTEM_NAME=linux");
 #endif
     
-    // Exclude recipe files and certain executables from packages
+    // Exclude recipe files and certain executables from packages - use simple patterns
     cpack_args.push_back("-D");
-    cpack_args.push_back("CPACK_SOURCE_IGNORE_FILES=CMakeFiles;_CPack_;recipe.*;.*\\.obj;.*\\.ilk;.*\\.pdb;.*\\.vcxproj;.*\\.sln;.*-setup\\.exe;.*-installer\\.exe");
+    cpack_args.push_back("CPACK_SOURCE_IGNORE_FILES=CMakeFiles;_CPack_Packages;recipe;obj;ilk;pdb;vcxproj;sln");
     
-    // Specify pattern for binary installers to exclude
+    // Specify pattern for binary installers to exclude - use simple patterns 
     cpack_args.push_back("-D");
-    cpack_args.push_back("CPACK_PACKAGE_IGNORE_FILES=CMakeFiles;_CPack_;recipe.*;.*\\.obj;.*\\.ilk;.*\\.pdb;.*\\.vcxproj;.*\\.sln;.*-setup\\.exe;.*-installer\\.exe");
+    cpack_args.push_back("CPACK_PACKAGE_IGNORE_FILES=CMakeFiles;_CPack_Packages;recipe;obj;ilk;pdb;vcxproj;sln");
     
     // Add verbose flag if needed
     if (verbose) {
         cpack_args.push_back("--verbose");
     }
+    
+    // Always add -R flag (recursive), which is required for component-based installation
+    // to work properly, especially with some generators like ZIP
+    bool has_R = false;
+    for (const auto& arg : cpack_args) {
+        if (arg == "-R") {
+            has_R = true;
+            break;
+        }
+    }
+    
+    /*
+    if (!has_R) {
+        logger::print_verbose("Adding -R flag for recursive component installation");
+        cpack_args.push_back("-R");
+    }
+    */
     
     // Always log the full command for easier debugging
     std::string full_cmd = cpack_command;
@@ -1268,14 +1388,13 @@ static bool run_cpack(
     // Reduce memory pressure by not keeping the full command in memory
     full_cmd.clear();
 
-    // Build a proper cleanup for the packages directory to make sure no temp files remain
-    // and to clean up any stale temporary files from previous runs
+    // Deep cleanup package directory to make sure no temp files remain
     auto deep_cleanup_package_dir = [&package_dir]() {
         if (!std::filesystem::exists(package_dir)) {
             return;
         }
         
-        logger::print_verbose("Cleaning package directory: " + package_dir.string());
+        logger::print_verbose("Deep cleaning package directory: " + package_dir.string());
         
         // Remove the _CPack_Packages directory
         std::filesystem::path cpack_packages_dir = package_dir / "_CPack_Packages";
@@ -1297,6 +1416,7 @@ static bool run_cpack(
                     if (dirname.find("_CPack_") != std::string::npos ||
                         dirname.find("_cmake") != std::string::npos ||
                         dirname.find("_tmp") != std::string::npos ||
+                        dirname.find("temp") != std::string::npos ||
                         dirname.find("<") != std::string::npos) { // Remove directories with placeholders
                         logger::print_verbose("Removing intermediate directory: " + entry.path().string());
                         std::filesystem::remove_all(entry.path());
@@ -1314,7 +1434,7 @@ static bool run_cpack(
     // Execute with output capture - use a try/catch to handle any exceptions
     bool result_success = false;
     try {
-        // Use a simpler execution approach to avoid memory issues in debug mode
+        // Use execute_tool with CPack as command name so that our error formatting is applied
         result_success = execute_tool(cpack_command, cpack_args, build_dir.string(), "CPack", verbose, 300);
     } catch (const std::exception& ex) {
         logger::print_error("Exception during CPack execution: " + std::string(ex.what()));
@@ -1779,12 +1899,17 @@ static bool package_single_project(
         
         // Allocate space for args to pass special flags to the build command
         // Use a simpler generator to avoid problems with Ninja Multi-Config
-        build_ctx.args.arg_count = 2;  // -G "generator"
+        build_ctx.args.arg_count = 4;  // -G "generator" + --config CONFIG_NAME
         build_ctx.args.args = (cforge_string_t*)malloc(build_ctx.args.arg_count * sizeof(cforge_string_t));
         
         // Set the generator flag
         build_ctx.args.args[0] = strdup("-G");
         build_ctx.args.args[1] = strdup(get_simple_generator().c_str());
+        
+        // Add explicit --config parameter to ensure build uses correct config
+        // This is needed to ensure we don't use Debug when Release is specified
+        build_ctx.args.args[2] = strdup("--config");
+        build_ctx.args.args[3] = strdup(build_ctx.args.config ? build_ctx.args.config : "Release");
         
         // Build the project
         bool build_success = build_project(&build_ctx);
@@ -1960,12 +2085,17 @@ static bool package_single_project(
         
         // Allocate space for args to pass special flags to the build command
         // Use a simpler generator to avoid problems with Ninja Multi-Config
-        build_ctx.args.arg_count = 2;  // -G "generator"
+        build_ctx.args.arg_count = 4;  // -G "generator" + --config CONFIG_NAME
         build_ctx.args.args = (cforge_string_t*)malloc(build_ctx.args.arg_count * sizeof(cforge_string_t));
         
         // Set the generator flag
         build_ctx.args.args[0] = strdup("-G");
         build_ctx.args.args[1] = strdup(get_simple_generator().c_str());
+        
+        // Add explicit --config parameter to ensure build uses correct config
+        // This is needed to ensure we don't use Debug when Release is specified
+        build_ctx.args.args[2] = strdup("--config");
+        build_ctx.args.args[3] = strdup(build_ctx.args.config ? build_ctx.args.config : "Release");
         
         // Build the project
         bool build_success = build_project(&build_ctx);

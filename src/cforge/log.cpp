@@ -54,7 +54,15 @@ void logger::print_step(const std::string &action, const std::string &target) {
 }
 
 void logger::print_verbose(const std::string &message) {
-  // Only print in verbose mode
+  // Always print error messages regardless of verbosity level
+  if (message.find("error") != std::string::npos || 
+      message.find("Error") != std::string::npos ||
+      message.find("ERROR") != std::string::npos) {
+    fmt::print(fg(fmt::color::red), "  {} {}\n", "⚠", message);
+    return;
+  }
+  
+  // Only print non-error messages in verbose mode
   if (s_verbosity != log_verbosity::VERBOSITY_VERBOSE)
     return;
   fmt::print(fg(fmt::color::gray), "  {} {}\n", "▶", message);

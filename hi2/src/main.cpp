@@ -14,9 +14,10 @@
  * @return int Exit code
  */
 int main(int argc, char* argv[]) {
+    // Silence unused parameter warnings
+    (void)argc;
+    (void)argv;
+    
     spdlog::info("Hello from hi2!");
     return 0;
 }
-
-
-asdfasdf
