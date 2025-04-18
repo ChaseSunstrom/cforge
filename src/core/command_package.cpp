@@ -1342,6 +1342,13 @@ static bool run_cpack(
     cpack_args.push_back("CPACK_SYSTEM_NAME=linux");
 #endif
     
+    // Make sure we add the correct configuration-specific binary directory
+    // This is crucial for finding binaries in the correct location
+    cpack_args.push_back("-D");
+    cpack_args.push_back("CMAKE_INSTALL_BINDIR=bin/" + config_name);
+    cpack_args.push_back("-D");
+    cpack_args.push_back("CMAKE_INSTALL_LIBDIR=lib/" + config_name);
+    
     // Exclude recipe files and certain executables from packages - use simple patterns
     cpack_args.push_back("-D");
     cpack_args.push_back("CPACK_SOURCE_IGNORE_FILES=CMakeFiles;_CPack_Packages;recipe;obj;ilk;pdb;vcxproj;sln");
@@ -1355,6 +1362,7 @@ static bool run_cpack(
         cpack_args.push_back("--verbose");
     }
     
+    /*
     // Always add -R flag (recursive), which is required for component-based installation
     // to work properly, especially with some generators like ZIP
     bool has_R = false;
@@ -1365,12 +1373,14 @@ static bool run_cpack(
         }
     }
     
-    /*
     if (!has_R) {
         logger::print_verbose("Adding -R flag for recursive component installation");
         cpack_args.push_back("-R");
     }
     */
+    
+    // Also ensure we are properly configuring component-based installation
+    cpack_args.push_back("-DCPACK_COMPONENTS_GROUPING=ALL_COMPONENTS_IN_ONE");
     
     // Always log the full command for easier debugging
     std::string full_cmd = cpack_command;
@@ -2298,23 +2308,43 @@ cforge_int_t cforge_cmd_package(const cforge_context_t* ctx)
     
     // Parse common parameters
     
-    // Get the config - Allow either Debug or Release as default
-    std::string config_name = "Release"; // Default to Release if not specified
+    // Get the config - default is empty initially
+    std::string config_name;
     
-    // Check context first
-    if (ctx->args.config && strlen(ctx->args.config) > 0) {
-        config_name = ctx->args.config;
-        logger::print_verbose("Using configuration from context: " + config_name);
-    } else {
-        // Check for --config or -c flag
-        for (int i = 0; i < ctx->args.arg_count; ++i) {
-            std::string arg = ctx->args.args[i];
-            if ((arg == "--config" || arg == "-c") && i + 1 < ctx->args.arg_count) {
+    // Extract configuration from command line arguments
+    for (int i = 0; i < ctx->args.arg_count; ++i) {
+        std::string arg = ctx->args.args[i];
+        if (arg == "--config" || arg == "-c") {
+            if (i + 1 < ctx->args.arg_count) {
                 config_name = ctx->args.args[i + 1];
                 logger::print_verbose("Using configuration from command line: " + config_name);
                 break;
             }
+        } else if (arg.substr(0, 9) == "--config=") {
+            config_name = arg.substr(9);
+            logger::print_verbose("Using configuration from command line: " + config_name);
+            break;
         }
+    }
+    
+    // Check ctx.args.config if config_name is still empty
+    if (config_name.empty() && ctx->args.config != nullptr && strlen(ctx->args.config) > 0) {
+        config_name = ctx->args.config;
+        logger::print_verbose("Using configuration from context: " + config_name);
+    }
+    
+    // If still empty, default to Release
+    if (config_name.empty()) {
+        config_name = "Release"; // Default to Release if not specified
+        logger::print_verbose("No configuration specified, using default: " + config_name);
+    }
+    
+    // Normalize standard config names
+    std::string config_lower = string_to_lower(config_name);
+    if (config_lower == "debug" || config_lower == "release" || 
+        config_lower == "relwithdebinfo" || config_lower == "minsizerel") {
+        config_name = config_lower;
+        config_name[0] = std::toupper(config_name[0]);
     }
     
     logger::print_status("Using build configuration: " + config_name);
@@ -2493,21 +2523,31 @@ cforge_int_t cforge_cmd_package(const cforge_context_t* ctx)
                         build_ctx.args.command = strdup("build");
                         build_ctx.args.project = strdup(specific_project.c_str());
                         build_ctx.args.config = strdup(config_name.c_str());
-                        
-                        if (verbose) {
-                            build_ctx.args.verbosity = strdup("verbose");
+
+                        // Fill in the arguments
+                        build_ctx.args.args = new char*[build_args.size() + 1];
+                        build_ctx.args.arg_count = build_args.size();
+                        for (size_t i = 0; i < build_args.size(); ++i) {
+                            build_ctx.args.args[i] = strdup(build_args[i].c_str());
                         }
+                        build_ctx.args.args[build_args.size()] = nullptr;
                         
-                        int build_result = cforge_cmd_build(&build_ctx);
+                        // Set the configuration explicitly
+                        build_ctx.args.config = strdup(config_name.c_str());
                         
-                        // Free allocated memory
-                        free(build_ctx.args.command);
-                        free(build_ctx.args.project);
-                        free(build_ctx.args.config);
-                        if (build_ctx.args.verbosity) free(build_ctx.args.verbosity);
+                        // Run the build command
+                        logger::print_status("Building project before packaging: " + specific_project);
+                        cforge_int_t build_result = cforge_cmd_build(&build_ctx);
+                        
+                        // Clean up
+                        for (size_t i = 0; i < build_args.size(); ++i) {
+                            free(build_ctx.args.args[i]);
+                        }
+                        delete[] build_ctx.args.args;
+                        free((void*)build_ctx.args.config);
                         
                         if (build_result != 0) {
-                            logger::print_error("Build failed");
+                            logger::print_error("Failed to build project: " + specific_project);
                             return 1;
                         }
                     } else {

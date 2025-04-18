@@ -519,7 +519,7 @@ bool execute_tool(
             if (!formatted_errors.empty()) {
                 if (!found_errors) {
                     // Use fmt::format with color for the error header
-                    fmt::print(fg(fmt::color::cyan) | fmt::emphasis::bold, "→ Error details:\n");
+                    fmt::print(fg(fmt::color::crimson) | fmt::emphasis::bold, "→ Error details:\n");
                     found_errors = true;
                 }
                 fmt::print("{}", formatted_errors);
@@ -536,7 +536,7 @@ bool execute_tool(
             if (!formatted_stdout_errors.empty()) {
                 if (!found_errors) {
                     // Use fmt::format with color for the error header
-                    fmt::print(fg(fmt::color::cyan) | fmt::emphasis::bold, "→ Error details:\n");
+                    fmt::print(fg(fmt::color::crimson) | fmt::emphasis::bold, "→ Error details:\n");
                     found_errors = true;
                 }
                 fmt::print("{}", formatted_stdout_errors);

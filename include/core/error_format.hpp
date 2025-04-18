@@ -111,4 +111,12 @@ std::vector<Diagnostic> parse_ninja_errors(const std::string& error_output);
  */
 std::vector<Diagnostic> parse_linker_errors(const std::string& error_output);
 
+/**
+ * @brief Parse CPack errors
+ * 
+ * @param error_output Raw error output
+ * @return Vector of extracted diagnostics
+ */
+std::vector<Diagnostic> parse_cpack_errors(const std::string& error_output);
+
 } // namespace cforge 

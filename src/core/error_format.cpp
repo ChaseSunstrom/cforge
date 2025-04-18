@@ -39,6 +39,7 @@ namespace ErrorCodePrefix {
     const std::string NINJA = "NJ";
     const std::string LINKER = "LNK";
     const std::string GENERIC = "ERR";
+    const std::string CPACK = "CP";  // Add CPack prefix
 }
 
 std::string format_build_errors(const std::string& error_output) {
@@ -372,6 +373,7 @@ std::vector<Diagnostic> extract_diagnostics(const std::string& error_output) {
     auto cmake_diags = parse_cmake_errors(error_output);
     auto ninja_diags = parse_ninja_errors(error_output);
     auto linker_diags = parse_linker_errors(error_output);
+    auto cpack_diags = parse_cpack_errors(error_output);  // Add CPack errors
     
     // Combine all diagnostics
     all_diagnostics.insert(all_diagnostics.end(), gcc_clang_diags.begin(), gcc_clang_diags.end());
@@ -379,6 +381,7 @@ std::vector<Diagnostic> extract_diagnostics(const std::string& error_output) {
     all_diagnostics.insert(all_diagnostics.end(), cmake_diags.begin(), cmake_diags.end());
     all_diagnostics.insert(all_diagnostics.end(), ninja_diags.begin(), ninja_diags.end());
     all_diagnostics.insert(all_diagnostics.end(), linker_diags.begin(), linker_diags.end());
+    all_diagnostics.insert(all_diagnostics.end(), cpack_diags.begin(), cpack_diags.end());  // Add CPack diagnostics
     
     return all_diagnostics;
 }
@@ -993,6 +996,91 @@ std::vector<Diagnostic> parse_linker_errors(const std::string& error_output) {
                     last_diag.help_text += "Also referenced in: " + file_ref + "\n";
                 }
             }
+        }
+    }
+    
+    return diagnostics;
+}
+
+// Add function to parse CPack errors
+std::vector<Diagnostic> parse_cpack_errors(const std::string& error_output) {
+    std::vector<Diagnostic> diagnostics;
+    
+    // Regular expression for CPack error format
+    // Example: CPack Error: Error when generating package: project_name
+    std::regex cpack_error_regex(R"(CPack\s+(Error|Warning):\s+(.+))");
+    
+    // Try to match errors in CMake install files that reference CPack
+    std::regex cmake_cpack_error_regex(R"(CMake\s+Error\s+at\s+([^:]+):(\d+)\s+\(([^)]+)\):\s+CPack\s+Error:\s+(.+))");
+    
+    std::string line;
+    std::istringstream stream(error_output);
+    
+    while (std::getline(stream, line)) {
+        std::smatch matches;
+        
+        // First try to match direct CPack errors
+        if (std::regex_search(line, matches, cpack_error_regex)) {
+            Diagnostic diag;
+            
+            std::string level_str = matches[1].str();
+            std::string message = matches[2].str();
+            
+            diag.code = ErrorCodePrefix::CPACK;
+            diag.message = message;
+            
+            if (level_str == "Error") {
+                diag.level = DiagnosticLevel::ERROR;
+                diag.code += "-ERROR";
+                
+                // Add more specific error code suffix based on message
+                if (message.find("generating package") != std::string::npos) {
+                    diag.code += "-GEN";
+                    diag.help_text = "Check your package configuration in cforge.toml. Make sure to specify valid generators.";
+                } else if (message.find("file exists") != std::string::npos) {
+                    diag.code += "-EXISTS";
+                    diag.help_text = "Remove existing package files or use a different package name.";
+                } else if (message.find("could not find") != std::string::npos || 
+                           message.find("not found") != std::string::npos) {
+                    diag.code += "-NOTFOUND";
+                    diag.help_text = "Check that all required dependencies and files are available.";
+                }
+            } else if (level_str == "Warning") {
+                diag.level = DiagnosticLevel::WARNING;
+                diag.code += "-WARN";
+            }
+            
+            diagnostics.push_back(diag);
+        }
+        // Then try to match CPack errors embedded in CMake errors
+        else if (std::regex_search(line, matches, cmake_cpack_error_regex)) {
+            Diagnostic diag;
+            
+            diag.file_path = matches[1].str();
+            diag.line_number = std::stoi(matches[2].str());
+            std::string cmake_command = matches[3].str();
+            std::string message = matches[4].str();
+            
+            diag.code = ErrorCodePrefix::CPACK;
+            
+            // If this is from cmake_install.cmake, it's likely a packaging error
+            if (diag.file_path.find("cmake_install.cmake") != std::string::npos) {
+                diag.code += "-INSTALL";
+            } else {
+                diag.code += "-" + cmake_command;
+            }
+            
+            diag.message = message;
+            diag.level = DiagnosticLevel::ERROR;
+            
+            // Add specific help based on the error message
+            if (message.find("Error when generating package") != std::string::npos) {
+                diag.help_text = "Check that you have specified valid generators in your package configuration. For Windows, try using 'ZIP' generator.";
+            } else if (message.find("Could not find") != std::string::npos) {
+                diag.help_text = "Make sure all required files and dependencies are available.";
+            }
+            
+            diagnostics.push_back(diag);
         }
     }
     
