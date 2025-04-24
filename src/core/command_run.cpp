@@ -289,14 +289,14 @@ static std::string get_build_config(const cforge_context_t *ctx,
 static bool build_project_for_run(const std::filesystem::path &project_dir,
                                   const std::string &config, bool verbose) {
   std::string build_cmd = "cmake";
-  // Determine source directory containing CMakeLists
-  std::filesystem::path cmake_src = project_dir / "CMakeLists.txt";
+  // Source directory for CMake
+  std::filesystem::path source_dir = project_dir;
   std::filesystem::path build_dir = project_dir / "build";
-  if (!std::filesystem::exists(cmake_src)) {
-    // Fallback: check for generated CMakeLists in build directory
+  // If top-level CMakeLists.txt missing, try build directory
+  if (!std::filesystem::exists(project_dir / "CMakeLists.txt")) {
     std::filesystem::path build_cmake = build_dir / "CMakeLists.txt";
     if (std::filesystem::exists(build_cmake)) {
-      cmake_src = build_dir; // use build dir as source
+      source_dir = build_dir;
       logger::print_verbose("Using CMakeLists.txt from build directory");
     } else {
       logger::print_error("CMakeLists.txt not found in project or build directory");
@@ -317,7 +317,7 @@ static bool build_project_for_run(const std::filesystem::path &project_dir,
   // Configure the project
   logger::print_status("Configuring project...");
   std::vector<std::string> config_args = {
-      "-S", cmake_src.string(),
+      "-S", source_dir.string(),
       "-B", build_dir.string(),
       "-DCMAKE_BUILD_TYPE=" + config
   };

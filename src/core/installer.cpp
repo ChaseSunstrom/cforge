@@ -50,10 +50,23 @@ bool installer::install(const std::string &install_path, bool add_to_path) {
 
   logger::print_status("Installing cforge to: " + target_path.string());
 
+  // Ensure parent directory exists
+  {
+    auto parent_dir = target_path.parent_path();
+    if (!std::filesystem::exists(parent_dir)) {
+      try {
+        std::filesystem::create_directories(parent_dir);
+        print_verbose("Created parent directory: " + parent_dir.string());
+      } catch (const std::exception &e) {
+        logger::print_error("Failed to create parent directory: " + std::string(e.what()));
+        return false;
+      }
+    }
+  }
+
   // Check if path is writable
   if (!is_path_writeable(target_path)) {
-    logger::print_error("Installation path is not writable: " +
-                        target_path.string());
+    logger::print_error("Installation path is not writable: " + target_path.string());
     return false;
   }
 
@@ -122,8 +135,16 @@ bool installer::update() {
 bool installer::install_project(const std::string &project_path,
                                 const std::string &install_path,
                                 bool add_to_path,
-                                const std::string &project_name_override) {
-  logger::print_status("Installing project from: " + project_path);
+                                const std::string &project_name_override,
+                                const std::string &build_config,
+                                const std::string &env_var) {
+  // Report project source in verbose mode to avoid duplication
+  print_verbose("Installing project from: " + project_path);
+
+  // Determine build configuration (default to Release)
+  std::string cfg = build_config.empty() ? "Release" : build_config;
+  // Determine install path
+  std::string effective_install_path = install_path;
 
   // Check if project exists
   std::filesystem::path project_dir(project_path);
@@ -163,27 +184,39 @@ bool installer::install_project(const std::string &project_path,
 
   // Determine install path
   std::filesystem::path target_path;
-  if (install_path.empty()) {
+  if (effective_install_path.empty()) {
     if (project_type == "executable") {
       // For executables, install to a standard bin location
       std::filesystem::path platform_path = get_platform_specific_path();
-      target_path =
-          std::filesystem::path(platform_path) / "installed" / project_name;
+      target_path = platform_path / "installed" / project_name;
     } else {
       // For libraries, install to a standard lib location
       std::filesystem::path platform_path = get_platform_specific_path();
-      target_path = std::filesystem::path(platform_path) / "lib" / project_name;
+      target_path = platform_path / "lib" / project_name;
     }
   } else {
-    target_path = install_path;
+    target_path = effective_install_path;
   }
 
   logger::print_status("Installing to: " + target_path.string());
 
+  // Ensure parent directory exists for project install
+  {
+    auto parent_dir = target_path.parent_path();
+    if (!std::filesystem::exists(parent_dir)) {
+      try {
+        std::filesystem::create_directories(parent_dir);
+        print_verbose("Created install parent directory: " + parent_dir.string());
+      } catch (const std::exception &e) {
+        logger::print_error("Failed to create install parent directory: " + std::string(e.what()));
+        return false;
+      }
+    }
+  }
+
   // Check if path is writable
   if (!is_path_writeable(target_path)) {
-    logger::print_error("Installation path is not writable: " +
-                        target_path.string());
+    logger::print_error("Installation path is not writable: " + target_path.string());
     return false;
   }
 
@@ -198,8 +231,8 @@ bool installer::install_project(const std::string &project_path,
     }
   }
 
-  // Build the project first
-  logger::print_status("Building project before installation...");
+  // Build the project first (verbose)
+  print_verbose("Building project before installation...");
 
   // Change to project directory
   std::filesystem::path original_path = std::filesystem::current_path();
@@ -222,17 +255,14 @@ bool installer::install_project(const std::string &project_path,
       }
     }
 
-    // Check if CMakeCache.txt exists and remove it to avoid generator platform
-    // mismatch issues
+    // Check if CMakeCache.txt exists and remove it to avoid generator platform mismatch issues
     std::filesystem::path cmake_cache = build_dir / "CMakeCache.txt";
     if (std::filesystem::exists(cmake_cache)) {
       try {
-        logger::print_status(
-            "Removing existing CMake cache to avoid platform mismatch issues");
+        print_verbose("Removing existing CMake cache to avoid platform mismatch issues");
         std::filesystem::remove(cmake_cache);
       } catch (const std::exception &ex) {
-        logger::print_warning("Failed to remove CMake cache: " +
-                              std::string(ex.what()));
+        logger::print_warning("Failed to remove CMake cache: " + std::string(ex.what()));
       }
     }
 
@@ -240,16 +270,15 @@ bool installer::install_project(const std::string &project_path,
     std::filesystem::path cmake_files = build_dir / "CMakeFiles";
     if (std::filesystem::exists(cmake_files)) {
       try {
-        logger::print_status("Removing existing CMake files");
+        print_verbose("Removing existing CMake files");
         std::filesystem::remove_all(cmake_files);
       } catch (const std::exception &ex) {
-        logger::print_warning("Failed to remove CMake files: " +
-                              std::string(ex.what()));
+        logger::print_warning("Failed to remove CMake files: " + std::string(ex.what()));
       }
     }
 
-    // Run CMake configuration step
-    logger::print_status("Configuring project with CMake...");
+    // Run CMake configuration step (verbose)
+    print_verbose("Configuring project with CMake...");
     std::filesystem::current_path(build_dir);
 
     try {
@@ -272,21 +301,27 @@ bool installer::install_project(const std::string &project_path,
         std::vector<std::string> cmake_args = {"..", "-G", "Ninja",
                                                "-DCMAKE_BUILD_TYPE=Release"};
         build_success = execute_tool("cmake", cmake_args, build_dir.string(),
-                                     "CMake Configure", true, 120);
+                                     "CMake Configure", 
+                                     logger::get_verbosity() == log_verbosity::VERBOSITY_VERBOSE,
+                                     120);
 
         if (build_success) {
           // Build the project with Ninja
           logger::print_status("Building project in Release mode...");
           std::vector<std::string> ninja_args = {};
           build_success = execute_tool("ninja", ninja_args, build_dir.string(),
-                                       "Ninja Build", true, 300);
+                                       "Ninja Build", 
+                                       logger::get_verbosity() == log_verbosity::VERBOSITY_VERBOSE,
+                                       300);
         }
       } else {
         // Fallback to Visual Studio generator
         logger::print_status("Ninja not found, using Visual Studio generator");
         std::vector<std::string> cmake_args = {"..", "-A", "x64"};
         build_success = execute_tool("cmake", cmake_args, build_dir.string(),
-                                     "CMake Configure", true, 120);
+                                     "CMake Configure", 
+                                     logger::get_verbosity() == log_verbosity::VERBOSITY_VERBOSE,
+                                     120);
 
         if (build_success) {
           // Build the project with CMake
@@ -294,7 +329,9 @@ bool installer::install_project(const std::string &project_path,
           std::vector<std::string> build_args = {"--build", ".", "--config",
                                                  "Release"};
           build_success = execute_tool("cmake", build_args, build_dir.string(),
-                                       "CMake Build", true, 300);
+                                       "CMake Build", 
+                                       logger::get_verbosity() == log_verbosity::VERBOSITY_VERBOSE,
+                                       300);
         }
       }
 #else
@@ -313,7 +350,9 @@ bool installer::install_project(const std::string &project_path,
       std::vector<std::string> cmake_args = {"..",
                                              "-DCMAKE_BUILD_TYPE=Release"};
       build_success = execute_tool("cmake", cmake_args, build_dir.string(),
-                                   "CMake Configure", true, 120);
+                                   "CMake Configure", 
+                                   logger::get_verbosity() == log_verbosity::VERBOSITY_VERBOSE,
+                                   120);
 
       if (build_success) {
         if (!make_available) {
@@ -326,13 +365,14 @@ bool installer::install_project(const std::string &project_path,
         logger::print_status("Building project in Release mode...");
         std::vector<std::string> make_args = {"-j4"};
         build_success = execute_tool("make", make_args, build_dir.string(),
-                                     "Make Build", true, 300);
+                                     "Make Build", 
+                                     logger::get_verbosity() == log_verbosity::VERBOSITY_VERBOSE,
+                                     300);
       }
 #endif
 
       if (!build_success) {
-        logger::print_warning("Build process failed. Will attempt to install "
-                              "anyway in case pre-built binaries exist.");
+        logger::print_warning("Build process failed; attempting installation anyway.");
       }
     } catch (const std::exception &ex) {
       logger::print_warning("Error during build: " + std::string(ex.what()));
@@ -341,7 +381,7 @@ bool installer::install_project(const std::string &project_path,
   } else {
     // No CMake, try looking for a Makefile
     if (std::filesystem::exists(project_dir / "Makefile")) {
-      logger::print_status("Building project with Makefile...");
+      print_verbose("Building project with Makefile...");
       try {
 #ifdef _WIN32
         bool make_available = is_command_available("make") ||
@@ -380,17 +420,15 @@ bool installer::install_project(const std::string &project_path,
       }
     } else {
       // Assume the project is pre-built
-      logger::print_status(
-          "No build system detected. Assuming pre-built project.");
+      print_verbose("No build system detected. Assuming pre-built project.");
       build_success = true;
     }
   }
 
   if (!build_success) {
-    logger::print_warning("Build process failed or was skipped. Will try to "
-                          "find pre-built executables.");
+    logger::print_warning("Build failed or skipped; searching for pre-built executables.");
   } else {
-    logger::print_success("Build completed successfully.");
+    print_verbose("Build completed successfully.");
   }
 
   // Restore original path
@@ -627,10 +665,9 @@ bool installer::install_project(const std::string &project_path,
       }
     }
 
-    // Create executable links or shortcuts for the installed application
+    // Create executable links or shortcuts for the installed application (verbose)
     if (!create_executable_links(target_path)) {
-      logger::print_warning(
-          "Failed to create executable links for installed application");
+      print_verbose("Failed to create executable links for installed application");
     }
   } else {
     // For libraries, copy everything except exclude patterns
@@ -681,25 +718,24 @@ bool installer::install_project(const std::string &project_path,
     }
   }
 
-  // Create executable links or shortcuts for the installed application
+  // Create executable links or shortcuts for the installed application (verbose)
   if (!create_executable_links(target_path)) {
-    logger::print_warning(
-        "Failed to create executable links for installed application");
+    print_verbose("Failed to create executable links for installed application");
   }
 
-  // Update PATH environment variable if requested
-  if (add_to_path) {
-    if (!update_path_env(target_path)) {
-      logger::print_warning("Failed to update PATH environment variable");
-    } else {
-      logger::print_success(
-          "Added installation directory to PATH environment variable");
-    }
+  // Update PATH environment variable for installed project
+  if (!update_path_env(target_path)) {
+    logger::print_warning("Failed to update PATH environment variable");
+  } else {
+    logger::print_status("Added installation directory to PATH environment variable");
   }
 
-  logger::print_success("Project " + project_name +
-                        " has been installed successfully to " +
-                        target_path.string());
+  // Set custom environment variable if requested
+  if (!project_name_override.empty()) {
+    update_env_var(project_name_override, target_path);
+  }
+
+  logger::print_success("Project " + project_name + " installed to " + target_path.string());
   return true;
 }
 
@@ -1385,6 +1421,24 @@ installer::read_project_config(const std::string &project_path) const {
   }
 
   return reader;
+}
+
+bool installer::update_env_var(const std::string &var_name,
+                               const std::filesystem::path &value) const {
+  std::string val = value.string();
+#ifdef _WIN32
+  if (!SetEnvironmentVariableA(var_name.c_str(), val.c_str())) {
+    logger::print_error("Failed to set environment variable " + var_name);
+    return false;
+  }
+#else
+  if (setenv(var_name.c_str(), val.c_str(), 1) != 0) {
+    logger::print_error("Failed to set environment variable " + var_name);
+    return false;
+  }
+#endif
+  logger::print_status("Set environment variable " + var_name + " = " + val);
+  return true;
 }
 
 } // namespace cforge

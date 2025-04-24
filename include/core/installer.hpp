@@ -55,12 +55,16 @@ public:
    * @param add_to_path Whether to add the installation bin directory to PATH
    * @param project_name_override Optional override for the project name when
    * installing
+   * @param build_config Build configuration for the project
+   * @param env_var Environment variable to set for the project
    * @return True if installation was successful
    */
   bool install_project(const std::string &project_path,
                        const std::string &install_path = "",
                        bool add_to_path = false,
-                       const std::string &project_name_override = "");
+                       const std::string &project_name_override = "",
+                       const std::string &build_config = "",
+                       const std::string &env_var = "");
 
   /**
    * @brief Get the default installation path
@@ -79,6 +83,15 @@ public:
    * @return Path to cforge installation
    */
   std::string get_install_location() const;
+
+  /**
+   * @brief Set a custom environment variable to the given path
+   * @param var_name Name of the environment variable to set
+   * @param value Path to assign to the env var
+   * @return True if succeeded
+   */
+  bool update_env_var(const std::string &var_name,
+                      const std::filesystem::path &value) const;
 
 private:
   /**

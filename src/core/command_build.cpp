@@ -318,7 +318,7 @@ bool clone_git_dependencies(const std::filesystem::path &project_dir,
       }
 
       bool fetch_result = execute_tool("git", fetch_args, dep_path.string(),
-                                       "Git Fetch for " + dep, verbose);
+                                       "Git Fetch for " + dep, verbose, 600);
 
       if (!fetch_result) {
         logger::print_warning("Failed to fetch updates for '" + dep +
@@ -337,7 +337,7 @@ bool clone_git_dependencies(const std::filesystem::path &project_dir,
 
         bool checkout_result =
             execute_tool("git", checkout_args, dep_path.string(),
-                         "Git Checkout for " + dep, verbose);
+                         "Git Checkout for " + dep, verbose, 600);
 
         if (!checkout_result) {
           logger::print_warning("Failed to checkout " + ref + " for '" + dep +
@@ -355,7 +355,7 @@ bool clone_git_dependencies(const std::filesystem::path &project_dir,
       }
 
       bool clone_result =
-          execute_tool("git", clone_args, "", "Git Clone for " + dep, verbose);
+          execute_tool("git", clone_args, "", "Git Clone for " + dep, verbose, 600);
 
       if (!clone_result) {
         logger::print_error("Failed to clone dependency '" + dep + "' from " +
@@ -375,7 +375,7 @@ bool clone_git_dependencies(const std::filesystem::path &project_dir,
 
         bool checkout_result =
             execute_tool("git", checkout_args, dep_path.string(),
-                         "Git Checkout for " + dep, verbose);
+                         "Git Checkout for " + dep, verbose, 600);
 
         if (!checkout_result) {
           logger::print_error("Failed to checkout " + ref +
@@ -535,6 +535,27 @@ generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
   // Path to CMakeLists.txt in project directory
   std::filesystem::path cmakelists_path = project_dir / "CMakeLists.txt";
   
+  // Compute hash of cforge.toml to detect changes
+  std::filesystem::path toml_path = project_dir / CFORGE_FILE;
+  std::string toml_content;
+  {
+    std::ifstream toml_in(toml_path);
+    std::ostringstream oss;
+    oss << toml_in.rdbuf();
+    toml_content = oss.str();
+  }
+  std::string current_hash = std::to_string(std::hash<std::string>{}(toml_content));
+  std::filesystem::path hash_file = project_dir / ".cforge_toml_hash";
+  if (std::filesystem::exists(cmakelists_path) && std::filesystem::exists(hash_file)) {
+    std::ifstream hash_in(hash_file);
+    std::string old_hash;
+    std::getline(hash_in, old_hash);
+    if (old_hash == current_hash) {
+      logger::print_verbose("No changes in cforge.toml, skipping CMakeLists.txt regeneration");
+      return true;
+    }
+  }
+
   // Skip generation if CMakeLists.txt already exists in project folder
   bool file_exists = std::filesystem::exists(cmakelists_path);
   
@@ -979,6 +1000,12 @@ generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
   cmakelists.close();
   logger::print_verbose("Generated CMakeLists.txt in project directory: " +
                         cmakelists_path.string());
+  // Save hash of cforge.toml for caching
+  {
+    std::ofstream hash_out(hash_file);
+    hash_out << current_hash;
+  }
+  logger::print_success("Generated CMakeLists.txt file in project directory");
   return true;
 }
 
@@ -1420,7 +1447,7 @@ static bool build_project(const std::filesystem::path &project_dir,
 
   // Run the build
   bool build_result =
-      execute_tool("cmake", build_args, "", "CMake Build", verbose, 0);
+      execute_tool("cmake", build_args, "", "CMake Build", verbose);
 
   // Restore original directory
   try {

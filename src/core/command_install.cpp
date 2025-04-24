@@ -16,7 +16,7 @@
 using namespace cforge;
 
 /**
- * @brief Handle the 'install' command
+ * @brief Handle the 'install' command: install the current project or specified source
  *
  * @param ctx Context containing parsed arguments
  * @return cforge_int_t Exit code (0 for success)
@@ -27,107 +27,105 @@ cforge_int_t cforge_cmd_install(const cforge_context_t *ctx) {
     for (int i = 0; i < ctx->args.arg_count; i++) {
       if (strcmp(ctx->args.args[i], "--help") == 0 ||
           strcmp(ctx->args.args[i], "-h") == 0) {
-        // Create a new context with "install" as the first argument
+        // Show install usage
         cforge_context_t help_ctx = *ctx;
-        static const char *help_args[] = {"install", NULL};
+        static const char *help_args[] = {"install", "--help", NULL};
         help_ctx.args.args = (cforge_string_t *)help_args;
-        help_ctx.args.arg_count = 1;
+        help_ctx.args.arg_count = 2;
         return cforge_cmd_help(&help_ctx);
       }
     }
   }
 
-  logger::print_header("Installing cforge");
-
+  // Parse install flags
   installer installer_instance;
 
-  // Parse arguments
   std::string project_source;
   std::string install_path;
   std::string project_name_override;
   bool add_to_path = false;
+  bool have_from = false, have_to = false;
+  std::string build_config;
+  std::string env_var;
 
-  // Check for flags and positional args
   if (ctx->args.args) {
     for (int i = 0; i < ctx->args.arg_count; ++i) {
       std::string arg = ctx->args.args[i];
+      // Build configuration for install
+      if ((arg == "--config" || arg == "-c") && i+1 < ctx->args.arg_count) {
+        build_config = ctx->args.args[++i];
+        logger::print_status("Using build configuration: " + build_config);
+        continue;
+      } else if (arg.rfind("--config=",0) == 0) {
+        build_config = arg.substr(9);
+        logger::print_status("Using build configuration: " + build_config);
+        continue;
+      }
       if (arg == "--add-to-path") {
         add_to_path = true;
         logger::print_status("Will add to PATH environment variable");
-      } else if ((arg == "--path" || arg == "-p") &&
-                 i + 1 < ctx->args.arg_count) {
-        install_path = ctx->args.args[++i];
-        logger::print_status("Installation path: " + install_path);
+      } else if (arg == "--from" && i+1 < ctx->args.arg_count) {
+        project_source = ctx->args.args[++i]; have_from = true;
+        logger::print_status("Source: " + project_source);
+      } else if (arg == "--to" && i+1 < ctx->args.arg_count) {
+        install_path = ctx->args.args[++i]; have_to = true;
+        logger::print_status("Target install path: " + install_path);
       } else if ((arg == "--name" || arg == "-n") &&
                  i + 1 < ctx->args.arg_count) {
         project_name_override = ctx->args.args[++i];
         logger::print_status("Project name override: " + project_name_override);
-      } else if (project_source.empty()) {
-        // First non-flag argument as project source
+      } else if (arg == "--env" && i+1 < ctx->args.arg_count) {
+        // Set environment variable name for installation
+        env_var = ctx->args.args[++i];
+        logger::print_status("Environment variable to set: " + env_var);
+      } else if (!have_from && project_source.empty() && arg.rfind("-",0)!=0) {
+        // positional first => source
         project_source = arg;
       }
     }
   }
 
-  bool success = false;
+  // Determine project source: explicit or cwd
+  if (!have_from) {
+    std::filesystem::path cwd(ctx->working_dir);
+    if (std::filesystem::exists(cwd / CFORGE_FILE) || std::filesystem::exists(cwd / WORKSPACE_FILE)) {
+      project_source = cwd.string();
+      // Verbose reporting of detected project
+      logger::print_verbose("Detected project in current directory: " + project_source);
+    } else {
+      logger::print_error("No cforge project or workspace found. Provide source with '--from'.");
+      return 1;
+    }
+  }
 
-  if (project_source.empty()) {
-    // Installing cforge itself
-    logger::print_status("Installing cforge");
-    success = installer_instance.install(install_path, add_to_path);
-  } else {
-    // Installing a project from local path or git URL
+  // Install the project source
+  {
     std::string source = project_source;
     bool needs_cleanup = false;
-
-    // Detect git URL
-    if (source.rfind("http://", 0) == 0 || source.rfind("https://", 0) == 0 ||
-        source.find("@") != std::string::npos) {
-      // Clone to temporary directory
-      std::filesystem::path temp_dir =
-          std::filesystem::temp_directory_path() / "cforge_install_temp";
-      if (std::filesystem::exists(temp_dir)) {
-        std::filesystem::remove_all(temp_dir);
-      }
+    // Git clone if URL
+    if (source.rfind("http://",0)==0 || source.rfind("https://",0)==0 || source.find("@")!=std::string::npos) {
+      auto temp_dir = std::filesystem::temp_directory_path() / "cforge_install_temp";
+      if (std::filesystem::exists(temp_dir)) std::filesystem::remove_all(temp_dir);
       std::filesystem::create_directories(temp_dir);
-
       logger::print_status("Cloning project from Git: " + source);
-      bool clone_ok = execute_tool("git", {"clone", source, temp_dir.string()},
-                                   "", "Git Clone", add_to_path);
-      if (!clone_ok) {
+      if (!execute_tool("git", {"clone", source, temp_dir.string()}, "", "Git Clone", add_to_path)) {
         logger::print_error("Git clone failed: " + source);
         return 1;
       }
-      source = temp_dir.string();
-      needs_cleanup = true;
+      source = temp_dir.string(); needs_cleanup = true;
     }
-
-    logger::print_status("Installing project from: " + source);
-    success = installer_instance.install_project(
-        source, install_path, add_to_path, project_name_override);
-
-    // Clean up cloned repo
-    if (needs_cleanup) {
-      try {
-        std::filesystem::remove_all(source);
-      } catch (...) {
-      }
-    }
+    // Verbose install source logging
+    logger::print_verbose("Installing project from: " + source);
+    bool success = installer_instance.install_project(
+        source,
+        install_path,
+        add_to_path,
+        project_name_override,
+        build_config,
+        env_var);
+    if (needs_cleanup) { try { std::filesystem::remove_all(source); } catch(...) {} }
+    if (!success) { logger::print_error("Project installation failed"); return 1; }
   }
-
-  if (success) {
-    if (project_source.empty()) {
-      logger::print_success("cforge has been installed successfully");
-      if (install_path.empty()) {
-        logger::print_status("Installation path: " +
-                             installer_instance.get_default_install_path());
-      }
-    } else {
-      logger::print_success("Project has been installed successfully");
-    }
-    return 0;
-  } else {
-    logger::print_error("Installation failed");
-    return 1;
-  }
+  logger::print_success("Project installed successfully");
+  return 0;
 }

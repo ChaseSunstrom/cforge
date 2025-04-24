@@ -41,7 +41,7 @@ cforge_int_t cforge_cmd_help(const cforge_context_t *ctx) {
     logger::print_status("  package  Create a package for distribution");
     logger::print_status("  add      Add a dependency to the project");
     logger::print_status("  remove   Remove a dependency from the project");
-    logger::print_status("  update   Update dependencies");
+    logger::print_status("  update   Update cforge");
     logger::print_status("  vcpkg    Manage vcpkg dependencies");
     logger::print_status("  version  Show version information");
     logger::print_status("  help     Show help for a specific command");
@@ -158,6 +158,8 @@ cforge_int_t cforge_cmd_help(const cforge_context_t *ctx) {
         "  --cmake-files          Also clean CMake temporary files");
     logger::print_status(
         "  --regenerate           Regenerate CMake files after cleaning");
+    logger::print_status(
+        "  --deep                 Remove dependencies directory (deep clean)");
     logger::print_status("  -v, --verbose          Show verbose output");
   } else if (specific_command == "run") {
     logger::print_status("cforge run - Build and run the project");
@@ -270,7 +272,7 @@ cforge_int_t cforge_cmd_help(const cforge_context_t *ctx) {
     logger::print_status("Options:");
     logger::print_status("  -v, --verbose    Show verbose output");
   } else if (specific_command == "update") {
-    logger::print_status("cforge update - Update dependencies");
+    logger::print_status("cforge update - Update cforge");
     logger::print_status("");
     logger::print_status("Usage: cforge update [options]");
     logger::print_status("");
@@ -295,27 +297,13 @@ cforge_int_t cforge_cmd_help(const cforge_context_t *ctx) {
     logger::print_status("Arguments:");
     logger::print_status("  command          Command to show help for");
   } else if (specific_command == "install") {
-    logger::print_status(
-        "cforge install - Install a cforge project to the system");
+    logger::print_status("cforge install - Install a project");
     logger::print_status("");
     logger::print_status("Usage: cforge install [options]");
     logger::print_status("");
     logger::print_status("Options:");
-    logger::print_status("  --prefix=<path>  Installation prefix (default: "
-                         "/usr/local on Unix, Program Files on Windows)");
-    logger::print_status("  --user           Install to user directory instead "
-                         "of system directory");
-    logger::print_status("  --add-to-path    Add installation directory to "
-                         "PATH environment variable");
-    logger::print_status("  -v, --verbose    Show verbose output");
-    logger::print_status("");
-    logger::print_status("Installing a project:");
-    logger::print_status(
-        "  cforge install <project_dir> [install_path] [options]");
-    logger::print_status("");
-    logger::print_status("  Options:");
-    logger::print_status("  --add-to-path    Add installation directory to "
-                         "PATH environment variable");
+    logger::print_status("  --to <path>    Install to a specific path");
+    logger::print_status("  --from <path>  Install from a specific path");
     logger::print_status("  -v, --verbose    Show verbose output");
   } else if (specific_command == "config") {
     logger::print_lines(

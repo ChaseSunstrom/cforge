@@ -82,38 +82,14 @@ static bool clean_build_directory(const std::filesystem::path &build_dir,
     return true;
   }
 
-  logger::print_status("Cleaning build directory: " + build_dir.string());
+  logger::print_status("Removing build directory: " + build_dir.string());
 
   try {
-    // Count number of files and directories removed
-    int count = 0;
-
-    // Iterate through directory and remove everything except .gitkeep files
-    for (const auto &entry : std::filesystem::directory_iterator(build_dir)) {
-      // Skip .gitkeep files
-      if (entry.path().filename() == ".gitkeep") {
-        continue;
-      }
-
-      if (std::filesystem::is_directory(entry.path())) {
-        count += std::filesystem::remove_all(entry.path());
-        if (verbose) {
-          logger::print_verbose("Removed directory: " + entry.path().string());
-        }
-      } else {
-        std::filesystem::remove(entry.path());
-        count++;
-        if (verbose) {
-          logger::print_verbose("Removed file: " + entry.path().string());
-        }
-      }
-    }
-
-    logger::print_success("Cleaned " + std::to_string(count) +
-                          " files/directories from " + build_dir.string());
+    std::filesystem::remove_all(build_dir);
+    logger::print_success("Removed build directory: " + build_dir.string());
     return true;
   } catch (const std::exception &e) {
-    logger::print_error("Failed to clean build directory: " +
+    logger::print_error("Failed to remove build directory: " +
                         std::string(e.what()));
     return false;
   }
@@ -303,23 +279,24 @@ cforge_int_t cforge_cmd_clean(const cforge_context_t *ctx) {
   bool clean_cmake =
       true; // Clean CMake files by default since we regenerate CMakeLists.txt
   bool regenerate = false; // Regenerate CMake files after cleaning
+  bool deep = false; // Deep clean: remove dependencies directory
 
   bool verbose = logger::get_verbosity() == log_verbosity::VERBOSITY_VERBOSE;
 
   // Parse arguments
-  if (ctx->args.args) {
-    for (int i = 0; ctx->args.args[i]; ++i) {
-      std::string arg = ctx->args.args[i];
+  for (int i = 0; i < ctx->args.arg_count; ++i) {
+    std::string arg = ctx->args.args[i];
 
-      if (arg == "--all") {
-        clean_all = true;
-      } else if (arg == "--no-cmake") {
-        clean_cmake = false; // Only way to disable cleaning CMake files
-      } else if (arg == "--regenerate") {
-        regenerate = true;
-      } else if ((arg == "--config" || arg == "-c") && ctx->args.args[i + 1]) {
-        config_name = ctx->args.args[++i];
-      }
+    if (arg == "--all") {
+      clean_all = true;
+    } else if (arg == "--no-cmake") {
+      clean_cmake = false; // Only way to disable cleaning CMake files
+    } else if (arg == "--regenerate") {
+      regenerate = true;
+    } else if (arg == "--deep") {
+      deep = true;
+    } else if ((arg == "--config" || arg == "-c") && (i + 1) < ctx->args.arg_count) {
+      config_name = ctx->args.args[++i];
     }
   }
 
@@ -350,6 +327,24 @@ cforge_int_t cforge_cmd_clean(const cforge_context_t *ctx) {
   for (const auto &build_dir : build_dirs) {
     if (!clean_build_directory(build_dir, verbose)) {
       all_cleaned = false;
+    }
+  }
+
+  // Remove dependencies directory if deep clean specified
+  if (deep) {
+    std::string deps_dir = config.get_string("dependencies.directory", "deps");
+    std::filesystem::path deps_path = project_dir / deps_dir;
+    if (std::filesystem::exists(deps_path)) {
+      logger::print_status("Removing dependencies directory: " + deps_path.string());
+      try {
+        std::filesystem::remove_all(deps_path);
+        logger::print_success("Removed dependencies directory: " + deps_path.string());
+      } catch (const std::exception &e) {
+        logger::print_error("Failed to remove dependencies directory: " + std::string(e.what()));
+        all_cleaned = false;
+      }
+    } else {
+      logger::print_status("Dependencies directory does not exist, nothing to clean: " + deps_path.string());
     }
   }
 
