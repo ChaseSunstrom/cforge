@@ -76,8 +76,7 @@ cforge_int_t cforge_main(cforge_int_t argc, cforge_string_t argv[]) {
   // Show completion message if command succeeded
   if (result == 0 && !cforge_is_quiet()) {
     cforge_print_success("Command completed successfully");
-  }
-  else if (result != 0) {
+  } else if (result != 0) {
     cforge_print_error("Command failed");
   }
 

@@ -17,9 +17,9 @@ extern "C" {
  * @brief C-compatible enum for logging verbosity levels
  */
 typedef enum {
-  CFORGE_VERBOSITY_QUIET,   /**< Minimal output, only errors */
-  CFORGE_VERBOSITY_NORMAL,  /**< Standard output level */
-  CFORGE_VERBOSITY_VERBOSE  /**< Detailed output for debugging */
+  CFORGE_VERBOSITY_QUIET,  /**< Minimal output, only errors */
+  CFORGE_VERBOSITY_NORMAL, /**< Standard output level */
+  CFORGE_VERBOSITY_VERBOSE /**< Detailed output for debugging */
 } cforge_log_verbosity_t;
 
 // C wrapper functions
@@ -93,9 +93,9 @@ namespace cforge {
  * @brief C++ enum class for logging verbosity levels
  */
 enum class log_verbosity {
-  VERBOSITY_QUIET,   /**< Minimal output, only errors */
-  VERBOSITY_NORMAL,  /**< Standard output level */
-  VERBOSITY_VERBOSE  /**< Detailed output for debugging */
+  VERBOSITY_QUIET,  /**< Minimal output, only errors */
+  VERBOSITY_NORMAL, /**< Standard output level */
+  VERBOSITY_VERBOSE /**< Detailed output for debugging */
 };
 
 /**
@@ -109,50 +109,50 @@ public:
    * @param level The verbosity level to set
    */
   static void set_verbosity(log_verbosity level);
-  
+
   /**
    * @brief Gets the current verbosity level
    * @return The current verbosity level
    */
   static log_verbosity get_verbosity();
-  
+
   /**
    * @brief Prints a header message
    * @param message The message to print
    */
   static void print_header(const std::string &message);
-  
+
   /**
    * @brief Prints a status message
    * @param message The message to print
    */
   static void print_status(const std::string &message);
-  
+
   /**
    * @brief Prints a success message
    * @param message The message to print
    */
   static void print_success(const std::string &message);
-  
+
   /**
    * @brief Prints a warning message
    * @param message The message to print
    */
   static void print_warning(const std::string &message);
-  
+
   /**
    * @brief Prints an error message
    * @param message The message to print
    */
   static void print_error(const std::string &message);
-  
+
   /**
    * @brief Prints a step message with action and target
    * @param action The action being performed
    * @param target The target of the action
    */
   static void print_step(const std::string &action, const std::string &target);
-  
+
   /**
    * @brief Prints a verbose message (only shown in verbose mode)
    * @param message The message to print

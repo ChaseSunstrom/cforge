@@ -28,12 +28,12 @@ void cforge_parse_args(cforge_int_t argc, cforge_string_t argv[],
   }
 
   args->command = argv[1];
-  
+
   // Allocate memory for additional arguments
   // We allocate for all possible arguments to simplify management
   args->args = (cforge_string_t *)malloc((argc - 1) * sizeof(cforge_string_t));
   args->arg_count = 0;
-  
+
   if (!args->args) {
     // Handle memory allocation failure
     args->command = NULL;
@@ -44,7 +44,7 @@ void cforge_parse_args(cforge_int_t argc, cforge_string_t argv[],
   for (cforge_int_t i = 2; i < argc; i++) {
     // Store all arguments in args->args for better access in command handlers
     args->args[args->arg_count++] = argv[i];
-    
+
     // Also check for specific options
     if (strcmp(argv[i], "--config") == 0 && i + 1 < argc) {
       args->config = argv[++i];
@@ -66,7 +66,7 @@ void cforge_parse_args(cforge_int_t argc, cforge_string_t argv[],
       // The first non-option argument is the project
       args->project = argv[i];
     }
-    
+
     // Handle --config=value format
     if (strncmp(argv[i], "--config=", 9) == 0) {
       args->config = argv[i] + 9;

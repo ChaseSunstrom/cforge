@@ -1,18 +1,18 @@
-#include "core/commands.hpp"
-#include "core/command.h"
 #include "cforge/log.hpp"
-#include <string>
+#include "core/command.h"
+#include "core/commands.hpp"
 #include <iostream>
+#include <string>
 
 using namespace cforge;
 
 /**
  * @brief Dispatch command based on command line arguments
- * 
+ *
  * @param ctx Context containing parsed arguments
  * @return cforge_int_t Exit code (0 for success)
  */
-extern "C" cforge_int_t cforge_dispatch_command(const cforge_context_t* ctx) {
+extern "C" cforge_int_t cforge_dispatch_command(const cforge_context_t *ctx) {
   // Check if command is null
   if (!ctx->args.command) {
     // No command specified, show help
@@ -61,4 +61,4 @@ extern "C" cforge_int_t cforge_dispatch_command(const cforge_context_t* ctx) {
     logger::print_status("Run 'cforge help' for usage information");
     return 1;
   }
-} 
+}
