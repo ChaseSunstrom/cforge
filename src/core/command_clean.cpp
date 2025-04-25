@@ -5,6 +5,7 @@
 
 #include "cforge/log.hpp"
 #include "core/commands.hpp"
+#include "core/workspace.hpp"
 #include "core/constants.h"
 #include "core/file_system.h"
 #include "core/process_utils.hpp"
@@ -253,6 +254,78 @@ static bool regenerate_cmake_files(const std::filesystem::path &project_dir,
  * @return cforge_int_t Exit code (0 for success)
  */
 cforge_int_t cforge_cmd_clean(const cforge_context_t *ctx) {
+  // Check for workspace clean
+  std::filesystem::path current_dir(ctx->working_dir);
+  if (std::filesystem::exists(current_dir / WORKSPACE_FILE)) {
+    // Workspace cleaning
+    logger::print_status("Cleaning workspace: " + current_dir.string());
+    // Load workspace
+    workspace ws;
+    if (!ws.load(current_dir)) {
+      logger::print_error("Failed to load workspace for cleaning");
+      return 1;
+    }
+    // Parse clean arguments
+    bool clean_all = false;
+    bool clean_cmake = true;
+    bool regenerate = false;
+    bool deep = false;
+    std::string config_name;
+    bool verbose = logger::get_verbosity() == log_verbosity::VERBOSITY_VERBOSE;
+    for (int i = 0; i < ctx->args.arg_count; ++i) {
+      std::string arg = ctx->args.args[i];
+      if (arg == "--all") clean_all = true;
+      else if (arg == "--no-cmake") clean_cmake = false;
+      else if (arg == "--regenerate") regenerate = true;
+      else if (arg == "--deep") deep = true;
+      else if ((arg == "--config" || arg == "-c") && i+1 < ctx->args.arg_count) config_name = ctx->args.args[++i];
+    }
+    // Clean each project
+    bool all_cleaned = true;
+    for (auto &pr : ws.get_projects()) {
+      std::filesystem::path project_dir = pr.path;
+      logger::print_status("Cleaning project: " + pr.name);
+      // Load project config
+      toml_reader proj_cfg;
+      proj_cfg.load((project_dir / CFORGE_FILE).string());
+      std::string base_build_dir = proj_cfg.get_string("build.build_dir", DEFAULT_BUILD_DIR);
+      // Determine build directories
+      std::vector<std::filesystem::path> build_dirs;
+      if (clean_all) {
+        for (const auto &dir : find_all_build_dirs(base_build_dir))
+          build_dirs.push_back(project_dir / dir);
+      } else {
+        std::filesystem::path bd = get_build_dir_for_config(base_build_dir, config_name);
+        if (bd.is_relative()) bd = project_dir / bd;
+        build_dirs.push_back(bd);
+      }
+      // Clean CMake files
+      if (clean_cmake) {
+        auto old_cwd = std::filesystem::current_path();
+        std::filesystem::current_path(project_dir);
+        clean_cmake_files(verbose);
+        std::filesystem::current_path(old_cwd);
+      }
+      // Remove build directories
+      for (auto &bd : build_dirs) {
+        if (!clean_build_directory(bd, verbose)) all_cleaned = false;
+        if (regenerate) {
+          regenerate_cmake_files(project_dir, bd, config_name, verbose);
+        }
+      }
+      // Deep remove dependencies
+      if (deep) {
+        std::string deps_dir = proj_cfg.get_string("dependencies.directory", "deps");
+        std::filesystem::path deps_path = project_dir / deps_dir;
+        if (std::filesystem::exists(deps_path)) {
+          logger::print_status("Removing dependencies directory: " + deps_path.string());
+          try { std::filesystem::remove_all(deps_path); }
+          catch (...) { all_cleaned = false; }
+        }
+      }
+    }
+    return all_cleaned ? 0 : 1;
+  }
   // Check if cforge.toml exists
   if (!std::filesystem::exists(CFORGE_FILE)) {
     logger::print_error("Not a valid cforge project (missing " +

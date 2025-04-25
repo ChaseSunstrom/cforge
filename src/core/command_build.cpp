@@ -154,9 +154,9 @@ get_build_dir_for_config(const std::string &base_dir,
   // Transform config name to lowercase for directory naming
   std::string config_lower = string_to_lower(config);
 
-  // For Ninja Multi-Config, we don't append the config to the build directory
+  // For multi-config generators (VS, Xcode, Ninja Multi-Config), keep a single build dir
   std::string generator = get_cmake_generator();
-  if (generator.find("Ninja Multi-Config") != std::string::npos) {
+  if (is_multi_config_generator(generator)) {
     // Create the build directory if it doesn't exist
     std::filesystem::path build_path(base_dir);
     if (!std::filesystem::exists(build_path)) {
@@ -554,6 +554,10 @@ generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
       logger::print_verbose("No changes in cforge.toml, skipping CMakeLists.txt regeneration");
       return true;
     }
+  } else {
+    std::ofstream hash_out(hash_file);
+    hash_out << current_hash;
+    hash_out.close();
   }
 
   // Skip generation if CMakeLists.txt already exists in project folder
@@ -1171,81 +1175,18 @@ static bool build_project(const std::filesystem::path &project_dir,
   // Create a toml_reader wrapper for consistent API
   toml_reader project_config(config_table);
 
-  // Check if we're in a workspace
+  // Check if we're in a workspace and workspace CMakeLists exists
   auto [is_workspace, workspace_dir] = is_in_workspace(project_dir);
   bool use_workspace_build = false;
-
-  if (is_workspace) {
-    // Only print this if we're in a workspace but not already at the workspace
-    // root
-    if (project_dir != workspace_dir) {
-      logger::print_status("Detected workspace at: " + workspace_dir.string());
-    }
-
-    // Check if workspace has a CMakeLists.txt
-    if (std::filesystem::exists(workspace_dir / "CMakeLists.txt")) {
-      logger::print_status("Using workspace-level CMakeLists.txt for build");
-      use_workspace_build = true;
-    }
-
-    // Check for project dependencies if we're building a specific project
-    if (has_project_config && !use_workspace_build && built_projects) {
-      // Check for project dependencies
-      if (project_config.has_key("dependencies.project")) {
-        auto project_deps =
-            project_config.get_table_keys("dependencies.project");
-
-        if (!project_deps.empty()) {
-          logger::print_status("Checking project dependencies...");
-
-          // Build dependencies first
-          for (const auto &dep : project_deps) {
-            // Skip if already built
-            if (built_projects->find(dep) != built_projects->end()) {
-              logger::print_verbose("Dependency '" + dep +
-                                    "' already built, skipping");
-              continue;
-            }
-
-            // Find the project directory
-            std::filesystem::path dep_path = workspace_dir / dep;
-            if (!std::filesystem::exists(dep_path) ||
-                !std::filesystem::exists(dep_path / "cforge.toml")) {
-              logger::print_warning("Dependency project '" + dep +
-                                    "' not found in workspace");
-              continue;
-            }
-
-            logger::print_status("Building dependency: " + dep);
-
-            // Build the dependency
-            if (!build_project(dep_path, build_config, num_jobs, verbose, "",
-                               built_projects)) {
-              logger::print_error("Failed to build dependency '" + dep +
-                                  "', cannot continue with '" + project_name +
-                                  "'");
-              return false;
-            }
-
-            // Mark as built
-            built_projects->insert(dep);
-          }
-        }
-      }
-    }
+  if (is_workspace && project_dir == workspace_dir &&
+      std::filesystem::exists(workspace_dir / "CMakeLists.txt")) {
+    logger::print_status("Using workspace-level CMakeLists.txt for build");
+    use_workspace_build = true;
   }
-
-  // Use the right directory for building
-  std::filesystem::path build_base_dir;
-  std::filesystem::path source_dir;
-
-  if (use_workspace_build) {
-    build_base_dir = workspace_dir / "build";
-    source_dir = workspace_dir;
-  } else {
-    build_base_dir = project_dir / "build";
-    source_dir = project_dir;
-  }
+  // Determine build and source directories
+  std::filesystem::path build_base_dir = use_workspace_build ?
+      workspace_dir / DEFAULT_BUILD_DIR : project_dir / DEFAULT_BUILD_DIR;
+  std::filesystem::path source_dir = use_workspace_build ? workspace_dir : project_dir;
 
   // Get the config-specific build directory
   std::filesystem::path build_dir =
@@ -1264,8 +1205,7 @@ static bool build_project(const std::filesystem::path &project_dir,
     }
   }
 
-  // For workspace projects, we don't need to handle dependencies or generate
-  // CMakeLists.txt
+  // Handle project-level dependencies and CMakeLists generation (skip in workspace build)
   if (!use_workspace_build && has_project_config) {
     // Clone Git dependencies before generating CMakeLists.txt
     if (project_config.has_key("dependencies.git")) {
@@ -1304,7 +1244,6 @@ static bool build_project(const std::filesystem::path &project_dir,
       timestamp.close();
     }
 
-    logger::print_success("Generated CMakeLists.txt file in project directory");
   }
 
   // Prepare CMake arguments
@@ -2000,105 +1939,31 @@ cforge_int_t cforge_cmd_build(const cforge_context_t *ctx) {
   int result = 0;
 
   if (is_workspace) {
-    logger::print_status("Building in workspace context: " +
-                         current_dir.string());
-
-    if (project_name.empty()) {
-      logger::print_status("Building all projects in workspace");
-
-      // Check if we have a workspace CMakeLists.txt
-      if (std::filesystem::exists(workspace_dir / "CMakeLists.txt")) {
-
-        // Clean the workspace build directory if force_regenerate is set
-        if (force_regenerate) {
-          try {
-            std::filesystem::path workspace_build_config_dir =
-                get_build_dir_for_config(workspace_dir.string(), config_name);
-
-            if (std::filesystem::exists(workspace_build_config_dir)) {
-              // Remove only CMake files, not actual build outputs
-              if (std::filesystem::exists(workspace_build_config_dir /
-                                          "CMakeCache.txt")) {
-                std::filesystem::remove(workspace_build_config_dir /
-                                        "CMakeCache.txt");
-              }
-
-              // Remove CMakeFiles directory
-              if (std::filesystem::exists(workspace_build_config_dir /
-                                          "CMakeFiles")) {
-                std::filesystem::remove_all(workspace_build_config_dir /
-                                            "CMakeFiles");
-              }
-            }
-
-            logger::print_status("Cleaned old CMake cache for workspace build");
-          } catch (const std::filesystem::filesystem_error &e) {
-            logger::print_warning(
-                "Failed to clean workspace build directory: " +
-                std::string(e.what()));
-            // Continue anyway
-          }
-        }
-
-        // First try to build the entire workspace at once
-        if (build_project(workspace_dir, config_name, num_jobs, verbose,
-                          target)) {
-          logger::print_success("Workspace built successfully");
-          return 0;
-        }
-
-        // If workspace build fails, try building each project individually
-        logger::print_warning(
-            "Workspace build failed, trying to build projects individually");
-      } else {
-        logger::print_warning("No workspace-level CMakeLists.txt found");
-        logger::print_status("You may want to use --gen-workspace-cmake to "
-                             "create one for improved build efficiency");
-      }
-
-      // Build projects individually
-      bool at_least_one_success = false;
-      std::set<std::string> built_projects;
-
-      for (const auto &entry :
-           std::filesystem::directory_iterator(workspace_dir)) {
-        if (entry.is_directory() &&
-            std::filesystem::exists(entry.path() / "cforge.toml") &&
-            entry.path().filename() != "build") {
-          std::string project = entry.path().filename().string();
-
-          // Skip if already built through dependencies
-          if (built_projects.find(project) != built_projects.end()) {
-            logger::print_verbose("Project '" + project +
-                                  "' already built as a dependency, skipping");
-            continue;
-          }
-
-          bool project_success =
-              build_project(entry.path(), config_name, num_jobs, verbose,
-                            target, &built_projects);
-
-          if (project_success) {
-            at_least_one_success = true;
-            // Just print a simple success message without repeating "built
-            // successfully"
-            logger::print_success("Project '" + project + "' completed");
-          } else {
-            logger::print_error("Failed to build project: " + project);
-            result = 1;
-          }
-        }
-      }
-
-      if (at_least_one_success) {
-        logger::print_status("Some projects built successfully");
-      }
-      if (!at_least_one_success) {
-        logger::print_error("All projects failed to build");
+    logger::print_status("Building in workspace context: " + workspace_dir.string());
+    if (!project_name.empty()) {
+      // Build only the specified project in workspace
+      std::filesystem::path proj_dir = workspace_dir / project_name;
+      if (!std::filesystem::exists(proj_dir / CFORGE_FILE)) {
+        logger::print_error("Project '" + project_name + "' not found in workspace");
         return 1;
       }
+      logger::print_status("Building project: " + project_name);
+      if (!build_project(proj_dir, config_name, num_jobs, verbose, target)) {
+        logger::print_error("Failed to build project: " + project_name);
+        return 1;
+      }
+      return 0;
     }
+    // Build the entire workspace
+    logger::print_status("Building workspace: " + workspace_dir.string());
+    if (!build_project(workspace_dir, config_name, num_jobs, verbose, target)) {
+      logger::print_error("Workspace build failed");
+      return 1;
+    }
+    logger::print_success("Workspace built successfully");
+    return 0;
   } else {
+    // Single project build outside workspace
     if (!build_project(current_dir, config_name, num_jobs, verbose, target)) {
       return 1;
     }

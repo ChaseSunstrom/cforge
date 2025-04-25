@@ -5,6 +5,8 @@
 
 #include <iostream>
 
+#include "spdlog/spdlog.h"
+
 /**
  * @brief Main function
  * 
@@ -14,5 +16,6 @@
  */
 int main(int argc, char* argv[]) {
     std::cout << "Hello from proj1!" << std::endl;
+    spdlog::log(spdlog::level::info, "Hello from proj1!");
     return 0;
 }
