@@ -35,8 +35,6 @@ inline void print_verbose(const std::string &message) {
   }
 }
 
-installer::installer() {}
-
 std::string installer::get_current_version() const { return CFORGE_VERSION; }
 
 bool installer::install(const std::string &install_path, bool add_to_path) {
@@ -443,23 +441,36 @@ bool installer::install_project(const std::string &project_path,
     // For executables, only copy the binary and necessary resources
     logger::print_status("Installing executable...");
 
-    // Copy the binary - check both Release and Debug folders
-    std::filesystem::path bin_dir = project_dir / "bin" / "Release";
-    bool found_executable = false;
-
-    // If Release directory doesn't exist, try Debug
-    if (!std::filesystem::exists(bin_dir)) {
-      bin_dir = project_dir / "bin" / "Debug";
-      print_verbose("Release directory not found, trying Debug directory: " +
-                    bin_dir.string());
+    // Create 'bin' subdirectory in the install path
+    std::filesystem::path install_bin = target_path / "bin";
+    if (!std::filesystem::exists(install_bin)) {
+      try {
+        std::filesystem::create_directories(install_bin);
+        print_verbose("Created install 'bin' directory: " + install_bin.string());
+      } catch (const std::exception &e) {
+        logger::print_warning("Failed to create install bin directory: " + std::string(e.what()));
+      }
     }
 
-    // Also check the bin directory directly
+    // Copy the binary - from build output directory
+    std::filesystem::path bin_dir = project_dir / "build" / "bin" / cfg;
+    print_verbose("Looking for executables in: " + bin_dir.string());
+    bool found_executable = false;
+
+    // Fallback: check build/bin
+    if (!std::filesystem::exists(bin_dir)) {
+      bin_dir = project_dir / "build" / "bin";
+      print_verbose("Fallback to build/bin: " + bin_dir.string());
+    }
+    // Fallback: check project/bin/<config>
+    if (!std::filesystem::exists(bin_dir)) {
+      bin_dir = project_dir / "bin" / cfg;
+      print_verbose("Fallback to project/bin/config: " + bin_dir.string());
+    }
+    // Fallback: check project/bin
     if (!std::filesystem::exists(bin_dir)) {
       bin_dir = project_dir / "bin";
-      print_verbose(
-          "Neither Release nor Debug directory found, trying bin directory: " +
-          bin_dir.string());
+      print_verbose("Fallback to project/bin: " + bin_dir.string());
     }
 
     // Function to check if an executable is a valid project executable and not
@@ -542,12 +553,11 @@ bool installer::install_project(const std::string &project_path,
 #endif
             print_verbose("Using project executable: " + entry.path().string());
             try {
-              std::filesystem::create_directories(target_path);
               std::filesystem::copy_file(
-                  entry.path(), target_path / entry.path().filename(),
+                  entry.path(), install_bin / entry.path().filename(),
                   std::filesystem::copy_options::overwrite_existing);
               print_verbose("Copied " + entry.path().string() + " to " +
-                            (target_path / entry.path().filename()).string());
+                            (install_bin / entry.path().filename()).string());
               found_executable = true;
             } catch (const std::exception &ex) {
               logger::print_error("Failed to copy binary: " +
@@ -595,14 +605,12 @@ bool installer::install_project(const std::string &project_path,
               }
 #endif
               try {
-                std::filesystem::create_directories(target_path);
                 std::filesystem::copy_file(
-                    entry.path(), target_path / entry.path().filename(),
+                    entry.path(), install_bin / entry.path().filename(),
                     std::filesystem::copy_options::overwrite_existing);
                 print_verbose("Copied " + entry.path().string() + " to " +
-                              (target_path / entry.path().filename()).string());
+                              (install_bin / entry.path().filename()).string());
                 found_executable = true;
-                break; // Stop after finding first valid executable
               } catch (const std::exception &ex) {
                 logger::print_error("Failed to copy binary: " +
                                     std::string(ex.what()));
@@ -632,14 +640,12 @@ bool installer::install_project(const std::string &project_path,
 
             print_verbose("Found executable: " + entry.path().string());
             try {
-              std::filesystem::create_directories(target_path);
               std::filesystem::copy_file(
-                  entry.path(), target_path / entry.path().filename(),
+                  entry.path(), install_bin / entry.path().filename(),
                   std::filesystem::copy_options::overwrite_existing);
               print_verbose("Copied " + entry.path().string() + " to " +
-                            (target_path / entry.path().filename()).string());
+                            (install_bin / entry.path().filename()).string());
               found_executable = true;
-              break; // Stop after finding first executable
             } catch (const std::exception &ex) {
               logger::print_error("Failed to copy binary: " +
                                   std::string(ex.what()));
@@ -665,10 +671,7 @@ bool installer::install_project(const std::string &project_path,
       }
     }
 
-    // Create executable links or shortcuts for the installed application (verbose)
-    if (!create_executable_links(target_path)) {
-      print_verbose("Failed to create executable links for installed application");
-    }
+    // Skip default link creation; executables already placed in install/bin
   } else {
     // For libraries, copy everything except exclude patterns
     if (!copy_files(project_dir, target_path, exclude_patterns)) {
@@ -718,16 +721,12 @@ bool installer::install_project(const std::string &project_path,
     }
   }
 
-  // Create executable links or shortcuts for the installed application (verbose)
-  if (!create_executable_links(target_path)) {
-    print_verbose("Failed to create executable links for installed application");
-  }
-
-  // Update PATH environment variable for installed project
-  if (!update_path_env(target_path)) {
+  // Update PATH to include install/bin
+  std::filesystem::path install_bin = target_path / "bin";
+  if (!update_path_env(install_bin)) {
     logger::print_warning("Failed to update PATH environment variable");
   } else {
-    logger::print_status("Added installation directory to PATH environment variable");
+    logger::print_status("Added installation 'bin' to PATH environment variable");
   }
 
   // Set custom environment variable if requested

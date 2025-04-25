@@ -25,7 +25,7 @@ public:
   /**
    * @brief Constructor
    */
-  installer();
+  installer() = default;
 
   /**
    * @brief Get the current version of cforge

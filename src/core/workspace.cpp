@@ -164,8 +164,7 @@ bool workspace::load(const std::filesystem::path &workspace_path) {
   load_projects();
 
   // Get the default startup project
-  startup_project_ =
-      config_->get_string("workspace.default_startup_project", "");
+  startup_project_ = config_->get_string("workspace.main_project", "");
 
   return true;
 }
@@ -1088,7 +1087,7 @@ bool workspace::create_workspace(const std::filesystem::path &workspace_path,
   config_file << "name = \"" << workspace_name << "\"\n";
   config_file << "description = \"A C++ workspace created with cforge\"\n";
   config_file << "projects = []\n";
-  config_file << "# default_startup_project = \"main_project\"\n";
+  config_file << "# main_project = \"main_project\"\n";
 
   config_file.close();
 
@@ -1253,10 +1252,9 @@ bool workspace_config::load(const std::string &workspace_file) {
   }
 
   // Check for default startup project
-  std::string default_startup =
-      reader.get_string("workspace.default_startup_project", "");
-  if (!default_startup.empty()) {
-    set_startup_project(default_startup);
+  std::string main_project = reader.get_string("workspace.main_project", "");
+  if (!main_project.empty()) {
+    set_startup_project(main_project);
   }
 
   return true;
@@ -1289,7 +1287,7 @@ bool workspace_config::save(const std::string &workspace_file) const {
 
   // Write startup project if found
   if (!startup_project.empty()) {
-    file << "default_startup_project = \"" << startup_project << "\"\n\n";
+    file << "main_project = \"" << startup_project << "\"\n\n";
   }
 
   // Write projects as a string array
