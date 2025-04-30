@@ -19,14 +19,6 @@
 
 namespace cforge {
 
-// Utility functions - defined at the top to avoid "used before declared" errors
-static std::string to_lower_case(const std::string &str) {
-  std::string result = str;
-  std::transform(result.begin(), result.end(), result.begin(),
-                 [](unsigned char c) { return std::tolower(c); });
-  return result;
-}
-
 static std::string get_cmake_generator() {
 #ifdef _WIN32
   // Check if Ninja is available - prefer it if it is
@@ -458,181 +450,639 @@ generate_cmake_linking_options(const workspace_project &project,
   return options;
 }
 
+std::pair<bool, std::filesystem::path>
+is_in_workspace(const std::filesystem::path &path) {
+  // Check if the current directory has a workspace.toml file
+  std::filesystem::path workspace_file = path / WORKSPACE_FILE;
+  if (std::filesystem::exists(workspace_file)) {
+    return {true, path};
+  }
+
+  // Check parent directories
+  std::filesystem::path current = path;
+  while (current.has_parent_path() && current != current.parent_path()) {
+    current = current.parent_path();
+    workspace_file = current / WORKSPACE_FILE;
+    if (std::filesystem::exists(workspace_file)) {
+      return {true, current};
+    }
+  }
+
+  // Not in a workspace
+  return {false, {}};
+}
+
+void
+configure_git_dependencies_in_cmake(const toml_reader &project_config,
+                                    const std::string &deps_dir,
+                                    std::ofstream &cmakelists) {
+  // Check if we have Git dependencies
+  if (!project_config.has_key("dependencies.git")) {
+    return;
+  }
+
+  cmakelists << "# Git dependencies\n";
+  cmakelists << "include(FetchContent)\n";
+
+  // Make sure the dependencies directory exists
+  cmakelists << "# Ensure dependencies directory exists\n";
+  cmakelists << "set(DEPS_DIR \"${CMAKE_CURRENT_SOURCE_DIR}/" << deps_dir
+             << "\")\n";
+  cmakelists << "file(MAKE_DIRECTORY ${DEPS_DIR})\n\n";
+
+  // Loop through all git dependencies
+  auto git_deps = project_config.get_table_keys("dependencies.git");
+  for (const auto &dep : git_deps) {
+    std::string url =
+        project_config.get_string("dependencies.git." + dep + ".url", "");
+    if (url.empty()) {
+      continue;
+    }
+
+    // Get reference (tag, branch, or commit)
+    std::string tag =
+        project_config.get_string("dependencies.git." + dep + ".tag", "");
+    std::string branch =
+        project_config.get_string("dependencies.git." + dep + ".branch", "");
+    std::string commit =
+        project_config.get_string("dependencies.git." + dep + ".commit", "");
+
+    // Get dependency options
+    bool make_available = project_config.get_bool(
+        "dependencies.git." + dep + ".make_available", true);
+    bool include =
+        project_config.get_bool("dependencies.git." + dep + ".include", true);
+    bool link =
+        project_config.get_bool("dependencies.git." + dep + ".link", true);
+    std::string target_name = project_config.get_string(
+        "dependencies.git." + dep + ".target_name", "");
+
+    cmakelists << "# " << dep << " dependency\n";
+    cmakelists << "message(STATUS \"Setting up " << dep << " dependency from "
+               << url << "\")\n";
+
+    // FetchContent declaration
+    cmakelists << "FetchContent_Declare(" << dep << "\n";
+    cmakelists << "    SOURCE_DIR ${DEPS_DIR}/" << dep << "\n";
+    cmakelists << ")\n";
+
+    // Process include directories
+    if (include) {
+      cmakelists << "# Include directories for " << dep << "\n";
+
+      std::vector<std::string> include_dirs;
+      std::string include_dirs_key =
+          "dependencies.git." + dep + ".include_dirs";
+
+      if (project_config.has_key(include_dirs_key)) {
+        include_dirs = project_config.get_string_array(include_dirs_key);
+      } else {
+        // Default include directories
+        include_dirs.push_back("include");
+        include_dirs.push_back(".");
+      }
+
+      for (const auto &inc_dir : include_dirs) {
+        cmakelists << "include_directories(${DEPS_DIR}/" << dep << "/"
+                   << inc_dir << ")\n";
+      }
+      cmakelists << "\n";
+    }
+
+    // Special handling for common libraries
+    if (dep == "json" || dep == "nlohmann_json") {
+      // For nlohmann/json, we typically don't need to build anything
+      cmakelists << "# For nlohmann/json, we just need the include directory\n";
+      cmakelists << "FetchContent_GetProperties(" << dep << ")\n";
+      cmakelists << "if(NOT " << dep << "_POPULATED)\n";
+      cmakelists
+          << "    message(STATUS \"Making nlohmann/json available...\")\n";
+      cmakelists << "    FetchContent_Populate(" << dep << ")\n";
+      cmakelists << "endif()\n\n";
+    } else if (dep == "fmt") {
+      // For fmt, we need to build the library
+      cmakelists << "# For fmt, we need to build the library\n";
+      cmakelists << "set(FMT_TEST OFF CACHE BOOL \"\" FORCE)\n";
+      cmakelists << "set(FMT_DOC OFF CACHE BOOL \"\" FORCE)\n";
+      cmakelists << "set(FMT_SYSTEM_HEADERS ON CACHE BOOL \"\" FORCE)\n";
+      cmakelists << "FetchContent_MakeAvailable(" << dep << ")\n\n";
+    } else if (dep == "spdlog") {
+      // For spdlog, similar configuration
+      cmakelists << "# For spdlog, configure options\n";
+      cmakelists << "set(SPDLOG_BUILD_EXAMPLES OFF CACHE BOOL \"\" FORCE)\n";
+      cmakelists << "set(SPDLOG_BUILD_TESTS OFF CACHE BOOL \"\" FORCE)\n";
+      if (make_available) {
+        cmakelists << "FetchContent_MakeAvailable(" << dep << ")\n\n";
+      } else {
+        cmakelists << "FetchContent_GetProperties(" << dep << ")\n";
+        cmakelists << "if(NOT " << dep << "_POPULATED)\n";
+        cmakelists << "    FetchContent_Populate(" << dep << ")\n";
+        cmakelists << "endif()\n\n";
+      }
+    } else {
+      // General case for other dependencies
+      if (make_available) {
+        cmakelists << "FetchContent_MakeAvailable(" << dep << ")\n\n";
+      } else {
+        cmakelists << "FetchContent_GetProperties(" << dep << ")\n";
+        cmakelists << "if(NOT " << dep << "_POPULATED)\n";
+        cmakelists << "    FetchContent_Populate(" << dep << ")\n";
+        cmakelists << "endif()\n\n";
+      }
+    }
+  }
+}
+
+
 /**
- * @brief Generate CMakeLists.txt from project configuration
+ * @brief Generate a CMakeLists.txt file from cforge.toml configuration
  *
  * @param project_dir Project directory
  * @param project_config Project configuration from cforge.toml
  * @param verbose Verbose output flag
  * @return bool Success flag
  */
-static bool
-generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
+bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
                               const toml_reader &project_config, bool verbose) {
+  // Path to CMakeLists.txt in project directory
   std::filesystem::path cmakelists_path = project_dir / "CMakeLists.txt";
-
-  // Check if we need to generate the file
+  
+  // Check if existing CMakeLists.txt is present
+  bool has_cmake = std::filesystem::exists(cmakelists_path);
+  // Compute hash of cforge.toml to detect changes
+  std::filesystem::path toml_path = project_dir / CFORGE_FILE;
+  std::string toml_content;
+  {
+    std::ifstream toml_in(toml_path);
+    std::ostringstream oss;
+    oss << toml_in.rdbuf();
+    toml_content = oss.str();
+  }
+  std::string current_hash = std::to_string(std::hash<std::string>{}(toml_content));
+  std::filesystem::path hash_file = project_dir / ".cforge_toml_hash";
+  // If hash file exists and matches and CMakeLists exists, skip regeneration
+  if (std::filesystem::exists(hash_file)) {
+    std::ifstream hash_in(hash_file);
+    std::string old_hash;
+    std::getline(hash_in, old_hash);
+    if (old_hash == current_hash && has_cmake) {
+      logger::print_verbose("No changes in cforge.toml, skipping CMakeLists.txt regeneration");
+      return true;
+    }
+  }
+  // Update hash file with current TOML hash
+  {
+    std::ofstream hash_out(hash_file, std::ios::trunc);
+    hash_out << current_hash;
+  }
+  // Regenerate CMakeLists.txt
+  logger::print_status("Generating CMakeLists.txt from cforge.toml...");
+  
+  // Skip generation if CMakeLists.txt already exists in project folder
   bool file_exists = std::filesystem::exists(cmakelists_path);
-
+  
   if (file_exists) {
-    // If the file already exists, we don't need to generate it
-    logger::print_verbose("CMakeLists.txt already exists, using existing file");
+    logger::print_verbose("CMakeLists.txt already exists in project directory, using existing file");
     return true;
   }
+  
+  logger::print_status("Generating CMakeLists.txt from cforge.toml...");
+  
+  // Check if we're in a workspace
+  auto [is_workspace, workspace_dir] = is_in_workspace(project_dir);
+  
+  // Create CMakeLists.txt in the project directory
+  std::ofstream cmakelists(cmakelists_path);
+  if (!cmakelists.is_open()) {
+    logger::print_error("Failed to create CMakeLists.txt in project directory");
+    return false;
+  }
 
-  logger::print_status(
-      "Generating CMakeLists.txt from cforge.toml configuration");
+  // Get the right build directory for the configuration
+  std::string build_config =
+      project_config.get_string("build.build_type", "Debug");
+  std::filesystem::path build_base_dir = project_dir / "build";
+  std::filesystem::path build_dir =
+      get_build_dir_for_config(build_base_dir.string(), build_config);
 
-  // Get project name and version from configuration
+  // Create build directory if it doesn't exist
+  if (!std::filesystem::exists(build_dir)) {
+    logger::print_verbose("Creating build directory: " + build_dir.string());
+    try {
+      std::filesystem::create_directories(build_dir);
+    } catch (const std::filesystem::filesystem_error &e) {
+      logger::print_error("Failed to create build directory: " +
+                          std::string(e.what()));
+      return false;
+    }
+  }
+
+  // Get project metadata
   std::string project_name =
       project_config.get_string("project.name", "cpp-project");
   std::string project_version =
       project_config.get_string("project.version", "0.1.0");
   std::string project_description = project_config.get_string(
       "project.description", "A C++ project created with cforge");
-  std::string cpp_standard =
-      project_config.get_string("project.cpp_standard", "17");
 
-  // Open the file for writing
-  std::ofstream cmakelists(cmakelists_path);
-  if (!cmakelists) {
-    logger::print_error("Failed to create CMakeLists.txt");
-    return false;
-  }
+  // Write initial CMake configuration
+  cmakelists << "# CMakeLists.txt for " << project_name << " v"
+             << project_version << "\n";
+  cmakelists << "# Generated by cforge - C++ project management tool\n\n";
 
   cmakelists << "cmake_minimum_required(VERSION 3.14)\n\n";
+  cmakelists << "# Project configuration\n";
   cmakelists << "project(" << project_name << " VERSION " << project_version
              << " LANGUAGES CXX)\n\n";
 
-  // C++ standard
+  // Include the original project source directory
+  cmakelists << "# Set source directory\n";
+  {
+    // Normalize path to use forward slashes for CMake
+    std::string src_dir = project_dir.string();
+    std::replace(src_dir.begin(), src_dir.end(), '\\', '/');
+    cmakelists << "set(SOURCE_DIR \"" << src_dir << "\")\n\n";
+  }
+
+  // Get author information
+  std::vector<std::string> authors =
+      project_config.get_string_array("project.authors");
+  std::string author_string;
+  if (!authors.empty()) {
+    for (size_t i = 0; i < authors.size(); ++i) {
+      if (i > 0)
+        author_string += ", ";
+      author_string += authors[i];
+    }
+  } else {
+    author_string = "CForge User";
+  }
+
+  // Project description
+  cmakelists << "# Project description\n";
+  cmakelists << "set(PROJECT_DESCRIPTION \"" << project_description << "\")\n";
+  cmakelists << "set(PROJECT_AUTHOR \"" << author_string << "\")\n\n";
+
+  // Get C++ standard
+  std::string cpp_standard =
+      project_config.get_string("project.cpp_standard", "17");
+
+  // Set C++ standard
   cmakelists << "# Set C++ standard\n";
   cmakelists << "set(CMAKE_CXX_STANDARD " << cpp_standard << ")\n";
   cmakelists << "set(CMAKE_CXX_STANDARD_REQUIRED ON)\n";
   cmakelists << "set(CMAKE_CXX_EXTENSIONS OFF)\n\n";
 
-  // Output directories
+  // Get binary type (executable, shared_lib, static_lib, or header_only)
+  std::string binary_type =
+      project_config.get_string("project.binary_type", "executable");
+
+  // Get build settings
+  std::string build_type =
+      project_config.get_string("build.build_type", "Debug");
+
+  // Set up build configurations
+  cmakelists << "# Build configurations\n";
+  cmakelists << "if(NOT CMAKE_BUILD_TYPE)\n";
+  cmakelists << "    set(CMAKE_BUILD_TYPE \"" << build_type << "\")\n";
+  cmakelists << "endif()\n\n";
+
+  cmakelists << "message(STATUS \"Building with ${CMAKE_BUILD_TYPE} "
+                "configuration\")\n\n";
+
+  // Set up output directories
   cmakelists << "# Set output directories\n";
-  cmakelists << "set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)\n";
-  cmakelists << "set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)\n";
-  cmakelists
-      << "set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)\n\n";
+  cmakelists << "set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "
+                "\"${CMAKE_BINARY_DIR}/lib/${CMAKE_BUILD_TYPE}\")\n";
+  cmakelists << "set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "
+                "\"${CMAKE_BINARY_DIR}/lib/${CMAKE_BUILD_TYPE}\")\n";
+  cmakelists << "set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "
+                "\"${CMAKE_BINARY_DIR}/bin/${CMAKE_BUILD_TYPE}\")\n\n";
 
-  // vcpkg integration
-  cmakelists
-      << "# vcpkg integration - uncomment the line below if using vcpkg\n";
-  cmakelists << "# set(CMAKE_TOOLCHAIN_FILE "
-                "\"$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake\" CACHE "
-                "STRING \"\")\n\n";
+  // Get dependencies directory (default: deps)
+  std::string deps_dir =
+      project_config.get_string("dependencies.directory", "deps");
 
-  // Dependencies
-  cmakelists << "# Find dependencies (if using vcpkg)\n";
-  cmakelists << "# find_package(SomePackage REQUIRED)\n\n";
+  // Handle Git dependencies
+  configure_git_dependencies_in_cmake(project_config, deps_dir, cmakelists);
 
-  // Source files
+  // Check for vcpkg dependencies and add toolchain file if needed
+  if (project_config.has_key("dependencies.vcpkg")) {
+    cmakelists << "# vcpkg integration\n";
+    cmakelists << "if(DEFINED ENV{VCPKG_ROOT})\n";
+    cmakelists << "    set(CMAKE_TOOLCHAIN_FILE "
+                  "\"$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake\"\n";
+    cmakelists << "        CACHE STRING \"Vcpkg toolchain file\")\n";
+    cmakelists << "elseif(EXISTS "
+                  "\"${CMAKE_CURRENT_SOURCE_DIR}/vcpkg/scripts/buildsystems/"
+                  "vcpkg.cmake\")\n";
+    cmakelists << "    set(CMAKE_TOOLCHAIN_FILE "
+                  "\"${CMAKE_CURRENT_SOURCE_DIR}/vcpkg/scripts/buildsystems/"
+                  "vcpkg.cmake\"\n";
+    cmakelists << "        CACHE STRING \"Vcpkg toolchain file\")\n";
+    cmakelists << "endif()\n\n";
+  }
+
+  // Add vcpkg dependencies
+  if (project_config.has_key("dependencies.vcpkg")) {
+    cmakelists << "# Dependencies\n";
+
+    // Iterate through all vcpkg dependencies
+    auto vcpkg_deps = project_config.get_table_keys("dependencies.vcpkg");
+    for (const auto &dep : vcpkg_deps) {
+      std::string version;
+      std::vector<std::string> components;
+
+      // Check if dependency is specified with version and components
+      if (project_config.has_key("dependencies.vcpkg." + dep + ".version")) {
+        version = project_config.get_string(
+            "dependencies.vcpkg." + dep + ".version", "");
+
+        // Check for components
+        if (project_config.has_key("dependencies.vcpkg." + dep +
+                                   ".components")) {
+          components = project_config.get_string_array("dependencies.vcpkg." +
+                                                       dep + ".components");
+        }
+      } else {
+        // Simple dependency specification
+        version = project_config.get_string("dependencies.vcpkg." + dep, "");
+      }
+
+      cmakelists << "# Find " << dep << "\n";
+      if (!version.empty()) {
+        cmakelists << "find_package(" << dep << " " << version;
+      } else {
+        cmakelists << "find_package(" << dep;
+      }
+
+      // Add components if any
+      if (!components.empty()) {
+        cmakelists << " COMPONENTS";
+        for (const auto &comp : components) {
+          cmakelists << " " << comp;
+        }
+      }
+
+      cmakelists << " REQUIRED)\n";
+    }
+    cmakelists << "\n";
+  }
+
+  // Source files - use the original project source directory
   cmakelists << "# Add source files\n";
-  cmakelists << "file(GLOB_RECURSE SOURCES src/*.cpp)\n\n";
-
-  // Define the executable name
-  cmakelists << "# Define executable name with configuration suffix\n";
-  cmakelists << "string(TOLOWER \"${CMAKE_BUILD_TYPE}\" build_type_lower)\n";
-  cmakelists << "set(EXECUTABLE_NAME ${PROJECT_NAME}_${build_type_lower})\n\n";
-
-  // Add executable
-  cmakelists << "# Add executable\n";
-  cmakelists << "add_executable(${EXECUTABLE_NAME} ${SOURCES})\n\n";
-
-  // Include directories
-  cmakelists << "# Include directories\n";
-  cmakelists << "target_include_directories(${EXECUTABLE_NAME} PRIVATE\n";
-  cmakelists << "    ${CMAKE_CURRENT_SOURCE_DIR}/include\n";
+  cmakelists << "file(GLOB_RECURSE SOURCES\n";
+  cmakelists << "    \"${SOURCE_DIR}/src/*.cpp\"\n";
+  cmakelists << "    \"${SOURCE_DIR}/src/*.c\"\n";
   cmakelists << ")\n\n";
+
+  // Check for additional sources
+  if (project_config.has_key("project.additional_sources")) {
+    auto additional_sources =
+        project_config.get_string_array("project.additional_sources");
+    if (!additional_sources.empty()) {
+      cmakelists << "# Add additional source files\n";
+      for (const auto &source : additional_sources) {
+        cmakelists << "file(GLOB_RECURSE ADDITIONAL_SOURCES_" << source
+                   << " \"${SOURCE_DIR}/" << source << "\")\n";
+        cmakelists << "list(APPEND SOURCES ${ADDITIONAL_SOURCES_" << source
+                   << "})\n";
+      }
+      cmakelists << "\n";
+    }
+  }
+
+  // Define target
+  cmakelists << "# Add target\n";
+  if (binary_type == "executable") {
+    cmakelists << "add_executable(${PROJECT_NAME} ${SOURCES})\n\n";
+  } else if (binary_type == "shared_lib") {
+    cmakelists << "add_library(${PROJECT_NAME} SHARED ${SOURCES})\n\n";
+  } else if (binary_type == "static_lib") {
+    cmakelists << "add_library(${PROJECT_NAME} STATIC ${SOURCES})\n\n";
+  } else if (binary_type == "header_only") {
+    cmakelists << "add_library(${PROJECT_NAME} INTERFACE)\n\n";
+  } else {
+    // Default to executable
+    cmakelists << "add_executable(${PROJECT_NAME} ${SOURCES})\n\n";
+  }
+
+  // Add include directories - use the original project include directory
+  if (binary_type == "header_only") {
+    cmakelists << "# Include directories\n";
+    cmakelists << "target_include_directories(${PROJECT_NAME} INTERFACE\n";
+    cmakelists << "    \"${SOURCE_DIR}/include\"\n";
+    cmakelists << ")\n\n";
+  } else {
+    cmakelists << "# Include directories\n";
+    cmakelists << "target_include_directories(${PROJECT_NAME} PUBLIC\n";
+    cmakelists << "    \"${SOURCE_DIR}/include\"\n";
+    cmakelists << ")\n\n";
+  }
+
+  // Add additional include directories
+  if (project_config.has_key("project.additional_includes")) {
+    auto additional_includes =
+        project_config.get_string_array("project.additional_includes");
+    if (!additional_includes.empty()) {
+      cmakelists << "# Add additional include directories\n";
+      for (const auto &include : additional_includes) {
+        if (binary_type == "header_only") {
+          cmakelists << "target_include_directories(${PROJECT_NAME} INTERFACE "
+                        "\"${SOURCE_DIR}/"
+                     << include << "\")\n";
+        } else {
+          cmakelists << "target_include_directories(${PROJECT_NAME} PUBLIC "
+                        "\"${SOURCE_DIR}/"
+                     << include << "\")\n";
+        }
+      }
+      cmakelists << "\n";
+    }
+  }
+
+  // Add compiler definitions
+  if (project_config.has_key("project.definitions")) {
+    auto definitions = project_config.get_string_array("project.definitions");
+    if (!definitions.empty()) {
+      cmakelists << "# Add compiler definitions\n";
+      for (const auto &def : definitions) {
+        if (binary_type == "header_only") {
+          cmakelists << "target_compile_definitions(${PROJECT_NAME} INTERFACE "
+                     << def << ")\n";
+        } else {
+          cmakelists << "target_compile_definitions(${PROJECT_NAME} PUBLIC "
+                     << def << ")\n";
+        }
+      }
+      cmakelists << "\n";
+    }
+  }
 
   // Link libraries
   cmakelists << "# Link libraries\n";
-  cmakelists
-      << "# target_link_libraries(${EXECUTABLE_NAME} PRIVATE SomePackage)\n\n";
+  if (binary_type == "header_only") {
+    cmakelists << "target_link_libraries(${PROJECT_NAME} INTERFACE\n";
+  } else {
+    cmakelists << "target_link_libraries(${PROJECT_NAME} PUBLIC\n";
+  }
 
-  // Compiler warnings
-  cmakelists << "# Enable compiler warnings\n";
-  cmakelists << "if(MSVC)\n";
-  cmakelists << "    target_compile_options(${EXECUTABLE_NAME} PRIVATE /W4)\n";
-  cmakelists << "else()\n";
-  cmakelists << "    target_compile_options(${EXECUTABLE_NAME} PRIVATE -Wall "
-                "-Wextra -Wpedantic)\n";
-  cmakelists << "endif()\n\n";
+  // Standard libraries
+  cmakelists << "    ${CMAKE_THREAD_LIBS_INIT}\n";
 
-  // Tests - check if tests are explicitly enabled in the configuration
-  bool tests_enabled = project_config.get_bool("test.enabled", false);
+  // Link vcpkg dependencies
+  if (project_config.has_key("dependencies.vcpkg")) {
+    auto vcpkg_deps = project_config.get_table_keys("dependencies.vcpkg");
+    for (const auto &dep : vcpkg_deps) {
+      cmakelists << "    " << dep << "::" << dep << "\n";
+    }
+  }
 
-  // Only add test-related configuration if tests are explicitly enabled
-  if (tests_enabled) {
-    cmakelists << "# Testing configuration\n";
-    cmakelists << "enable_testing()\n";
-    cmakelists << "option(BUILD_TESTING \"Build the testing tree.\" ON)\n\n";
+  // Link Git dependencies
+  if (project_config.has_key("dependencies.git")) {
+    auto git_deps = project_config.get_table_keys("dependencies.git");
+    for (const auto &dep : git_deps) {
+      // Check if this dependency should be linked
+      bool link =
+          project_config.get_bool("dependencies.git." + dep + ".link", true);
 
+      if (link) {
+        cmakelists << "    " << dep << "::" << dep << "\n";
+      }
+    }
+  }
+
+  // Add additional libraries
+  if (project_config.has_key("build.libraries")) {
+    auto libraries = project_config.get_string_array("build.libraries");
+    for (const auto &lib : libraries) {
+      cmakelists << "    " << lib << "\n";
+    }
+  }
+
+  cmakelists << ")\n\n";
+
+  // Add compiler options
+  cmakelists << "# Compiler options\n";
+  if (binary_type == "header_only") {
+    // Header-only libraries don't have compile options
+    cmakelists << "# No compile options for header-only libraries\n\n";
+  } else {
+    cmakelists << "if(MSVC)\n";
+    cmakelists << "    target_compile_options(${PROJECT_NAME} PRIVATE /W4)\n";
+    cmakelists << "else()\n";
+    cmakelists << "    target_compile_options(${PROJECT_NAME} PRIVATE -Wall "
+                  "-Wextra -Wpedantic)\n";
+    cmakelists << "endif()\n\n";
+  }
+
+  // Add tests if available
+  cmakelists << "# Tests\n";
+  std::filesystem::path tests_dir = project_dir / "tests";
+  if (std::filesystem::exists(tests_dir) &&
+      std::filesystem::is_directory(tests_dir)) {
     cmakelists << "if(BUILD_TESTING)\n";
-    cmakelists << "    # Add test directory\n";
-    cmakelists << "    add_subdirectory(tests)\n";
+    cmakelists << "    enable_testing()\n";
+    cmakelists << "    add_subdirectory(\"${SOURCE_DIR}/tests\" "
+                  "${CMAKE_BINARY_DIR}/tests)\n";
     cmakelists << "endif()\n\n";
   } else {
-    cmakelists << "# Testing is disabled by default\n";
-    cmakelists << "# To enable testing, set test.enabled=true in cforge.toml "
-                  "and create a tests directory\n\n";
+    cmakelists << "# No tests directory found\n\n";
   }
 
   // Installation
-  cmakelists << "# Installation configuration\n";
-  cmakelists << "install(TARGETS ${EXECUTABLE_NAME}\n";
-  cmakelists << "    RUNTIME DESTINATION bin\n";
-  cmakelists << "    LIBRARY DESTINATION lib\n";
-  cmakelists << "    ARCHIVE DESTINATION lib\n";
-  cmakelists << ")\n\n";
+  cmakelists << "# Installation\n";
+  cmakelists << "include(GNUInstallDirs)\n";
 
-  cmakelists << "# Install headers\n";
-  cmakelists << "install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/\n";
-  cmakelists << "    DESTINATION include\n";
-  cmakelists << "    FILES_MATCHING PATTERN \"*.h\" PATTERN \"*.hpp\"\n";
-  cmakelists << ")\n\n";
+  if (binary_type == "executable") {
+    // For executables
+    cmakelists << "install(TARGETS ${PROJECT_NAME}\n";
+    cmakelists << "    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}\n";
+    cmakelists << "    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}\n";
+    cmakelists << "    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}\n";
+    cmakelists << ")\n\n";
 
-  // CPack
-  cmakelists << "# Packaging configuration with CPack\n";
-  cmakelists << "include(CPack)\n";
-  cmakelists << "set(CPACK_PACKAGE_NAME ${PROJECT_NAME})\n";
-  cmakelists << "set(CPACK_PACKAGE_VERSION ${PROJECT_VERSION})\n";
-  cmakelists << "set(CPACK_PACKAGE_DESCRIPTION_SUMMARY \"${PROJECT_NAME} - "
-             << project_description << "\")\n";
-  cmakelists << "set(CPACK_PACKAGE_VENDOR \"Your Organization\")\n";
-  cmakelists << "set(CPACK_PACKAGE_DESCRIPTION_FILE "
-                "\"${CMAKE_CURRENT_SOURCE_DIR}/README.md\")\n";
-  cmakelists << "set(CPACK_RESOURCE_FILE_LICENSE "
-                "\"${CMAKE_CURRENT_SOURCE_DIR}/LICENSE\")\n\n";
+    // Also copy PDB files for Windows Debug builds
+    cmakelists << "if(MSVC AND CMAKE_BUILD_TYPE STREQUAL \"Debug\")\n";
+    cmakelists << "    install(FILES "
+                  "\"${CMAKE_BINARY_DIR}/bin/${CMAKE_BUILD_TYPE}/"
+                  "$<TARGET_FILE_NAME:${PROJECT_NAME}>.pdb\"\n";
+    cmakelists << "            DESTINATION ${CMAKE_INSTALL_BINDIR}\n";
+    cmakelists << "            CONFIGURATIONS Debug)\n";
+    cmakelists << "endif()\n\n";
+  } else if (binary_type == "shared_lib" || binary_type == "static_lib") {
+    // For libraries
+    cmakelists << "install(TARGETS ${PROJECT_NAME}\n";
+    cmakelists << "    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}\n";
+    cmakelists << "    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}\n";
+    cmakelists << "    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}\n";
+    cmakelists << ")\n\n";
 
-  // OS specific packaging settings
-  cmakelists << "# OS specific packaging settings\n";
-  cmakelists << "if(WIN32)\n";
-  cmakelists << "    set(CPACK_GENERATOR \"ZIP;NSIS\")\n";
-  cmakelists << "    set(CPACK_NSIS_PACKAGE_NAME \"${PROJECT_NAME}\")\n";
-  cmakelists << "    set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL ON)\n";
-  cmakelists << "elseif(APPLE)\n";
-  cmakelists << "    set(CPACK_GENERATOR \"TGZ;DragNDrop\")\n";
-  cmakelists << "else()\n";
-  cmakelists << "    set(CPACK_GENERATOR \"TGZ;DEB\")\n";
-  cmakelists << "    set(CPACK_DEBIAN_PACKAGE_MAINTAINER \"Your Name\")\n";
-  cmakelists << "    set(CPACK_DEBIAN_PACKAGE_SECTION \"devel\")\n";
-  cmakelists << "endif()\n";
+    // Install headers
+    cmakelists << "install(DIRECTORY \"${SOURCE_DIR}/include/\"\n";
+    cmakelists << "    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}\n";
+    cmakelists << "    FILES_MATCHING PATTERN \"*.h\" PATTERN \"*.hpp\"\n";
+    cmakelists << ")\n\n";
+  } else if (binary_type == "header_only") {
+    // For header-only libraries
+    cmakelists << "install(TARGETS ${PROJECT_NAME}\n";
+    cmakelists << "    EXPORT ${PROJECT_NAME}Targets\n";
+    cmakelists << ")\n\n";
 
-  cmakelists.close();
-
-  if (verbose) {
-    logger::print_verbose(
-        "Generated CMakeLists.txt with the following configuration:");
-    logger::print_verbose("- Project name: " + project_name);
-    logger::print_verbose("- C++ standard: " + cpp_standard);
-    logger::print_verbose("- Tests enabled: " +
-                          std::string(tests_enabled ? "yes" : "no"));
+    // Install headers
+    cmakelists << "install(DIRECTORY \"${SOURCE_DIR}/include/\"\n";
+    cmakelists << "    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}\n";
+    cmakelists << "    FILES_MATCHING PATTERN \"*.h\" PATTERN \"*.hpp\"\n";
+    cmakelists << ")\n\n";
   }
 
-  logger::print_success("Generated CMakeLists.txt file");
+  // CPack configuration
+  cmakelists << "# CPack configuration\n";
+  cmakelists << "set(CPACK_PACKAGE_NAME ${PROJECT_NAME})\n";
+  cmakelists << "set(CPACK_PACKAGE_VERSION ${PROJECT_VERSION})\n";
+  cmakelists << "set(CPACK_PACKAGE_VENDOR \"${PROJECT_AUTHOR}\")\n";
+  cmakelists
+      << "set(CPACK_PACKAGE_DESCRIPTION_SUMMARY \"${PROJECT_DESCRIPTION}\")\n";
+  cmakelists << "set(CPACK_RESOURCE_FILE_LICENSE \"${SOURCE_DIR}/LICENSE\")\n";
+  cmakelists
+      << "set(CPACK_RESOURCE_FILE_README \"${SOURCE_DIR}/README.md\")\n\n";
+
+  // OS-specific settings
+  cmakelists << "# OS-specific settings\n";
+  cmakelists << "if(WIN32)\n";
+  cmakelists << "    set(CPACK_GENERATOR \"ZIP;NSIS\")\n";
+  cmakelists << "    set(CPACK_NSIS_MODIFY_PATH ON)\n";
+  cmakelists << "elseif(APPLE)\n";
+  cmakelists << "    set(CPACK_GENERATOR \"ZIP;TGZ;DragNDrop\")\n";
+  cmakelists << "else()\n";
+  cmakelists << "    set(CPACK_GENERATOR \"ZIP;TGZ;DEB\")\n";
+  cmakelists << "endif()\n\n";
+
+  // Binary packages with config
+  cmakelists << "# Binary packages with config\n";
+  cmakelists << "set(CPACK_PACKAGE_FILE_NAME "
+                "\"${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}-${CMAKE_"
+                "SYSTEM_NAME}-${CMAKE_BUILD_TYPE}\")\n\n";
+
+  // Components
+  cmakelists << "# Component-based installation\n";
+  cmakelists << "set(CPACK_COMPONENTS_ALL Runtime Development)\n";
+  cmakelists << "set(CPACK_COMPONENT_RUNTIME_DISPLAY_NAME \"Runtime Files\")\n";
+  cmakelists << "set(CPACK_COMPONENT_DEVELOPMENT_DISPLAY_NAME \"Development "
+                "Files\")\n";
+  cmakelists << "set(CPACK_COMPONENT_RUNTIME_DESCRIPTION \"Runtime libraries "
+                "and executables\")\n";
+  cmakelists << "set(CPACK_COMPONENT_DEVELOPMENT_DESCRIPTION \"Development "
+                "headers and libraries\")\n\n";
+
+  // Include CPack
+  cmakelists << "# Include CPack\n";
+  cmakelists << "include(CPack)\n";
+
+  cmakelists.close();
+  logger::print_verbose("Generated CMakeLists.txt in project directory: " +
+                        cmakelists_path.string());
+  logger::print_success("Generated CMakeLists.txt file in project directory");
   return true;
 }
 
@@ -902,7 +1352,7 @@ bool workspace::build_project(const std::string &project_name,
 
     // Add extra arguments from cforge.toml if available
     std::string args_key =
-        "build.config." + to_lower_case(config) + ".cmake_args";
+        "build.config." + string_to_lower(config) + ".cmake_args";
     if (project_config.has_key(args_key)) {
       std::vector<std::string> extra_args =
           project_config.get_string_array(args_key);
@@ -1184,6 +1634,369 @@ void workspace::load_projects() {
       }
     }
   }
+}
+
+bool generate_workspace_cmakelists(const std::filesystem::path &workspace_dir,
+                                   const toml_reader &workspace_config,
+                                   bool verbose) {
+  // Compute hash of workspace configuration to detect changes
+  std::filesystem::path toml_path = workspace_dir / WORKSPACE_FILE;
+  std::string toml_content;
+  {
+    std::ifstream toml_in(toml_path);
+    std::ostringstream oss;
+    oss << toml_in.rdbuf();
+    toml_content = oss.str();
+  }
+  std::string current_hash = std::to_string(std::hash<std::string>{}(toml_content));
+  std::filesystem::path hash_file = workspace_dir / ".cforge_workspace_toml_hash";
+  std::filesystem::path cmakelists_path = workspace_dir / "CMakeLists.txt";
+  bool has_ws_cmake = std::filesystem::exists(cmakelists_path);
+  if (std::filesystem::exists(hash_file)) {
+    std::ifstream hash_in(hash_file);
+    std::string old_hash;
+    std::getline(hash_in, old_hash);
+    // Skip regeneration only if hash unchanged and CMakeLists exists
+    if (old_hash == current_hash && has_ws_cmake) {
+      logger::print_verbose("No changes in " + std::string(WORKSPACE_FILE) + ", skipping workspace CMakeLists.txt generation");
+      return true;
+    }
+  }
+  // Update hash file with current workspace TOML hash
+  {
+    std::ofstream hash_out(hash_file, std::ios::trunc);
+    hash_out << current_hash;
+  }
+  logger::print_status("Generating workspace CMakeLists.txt from " + std::string(WORKSPACE_FILE));
+
+  logger::print_status(
+      "Generating workspace CMakeLists.txt from workspace.toml...");
+
+  // Create CMakeLists.txt if needed
+  std::ofstream cmakelists(cmakelists_path);
+  if (!cmakelists.is_open()) {
+    logger::print_error("Failed to create workspace CMakeLists.txt");
+    return false;
+  }
+
+  // Get workspace metadata
+  std::string workspace_name =
+      workspace_config.get_string("workspace.name", "cpp-workspace");
+  std::string workspace_description = workspace_config.get_string(
+      "workspace.description", "A C++ workspace created with cforge");
+
+  // Write initial CMake configuration
+  cmakelists << "# Workspace CMakeLists.txt for " << workspace_name << "\n";
+  cmakelists << "# Generated by cforge - C++ project management tool\n\n";
+
+  cmakelists << "cmake_minimum_required(VERSION 3.14)\n\n";
+  cmakelists << "# Workspace configuration\n";
+  cmakelists << "project(" << workspace_name << " LANGUAGES CXX)\n\n";
+
+  // Workspace description
+  cmakelists << "# Workspace description\n";
+  cmakelists << "set(WORKSPACE_DESCRIPTION \"" << workspace_description
+             << "\")\n\n";
+
+  // Common build settings
+  cmakelists << "# Common build settings\n";
+  cmakelists << "set(CMAKE_CXX_STANDARD "
+             << workspace_config.get_string("workspace.cpp_standard", "17")
+             << ")\n";
+  cmakelists << "set(CMAKE_CXX_STANDARD_REQUIRED ON)\n";
+  cmakelists << "set(CMAKE_CXX_EXTENSIONS OFF)\n\n";
+
+  // Set up build configurations
+  std::string build_type =
+      workspace_config.get_string("workspace.build_type", "Debug");
+  cmakelists << "# Build configuration\n";
+  cmakelists << "if(NOT CMAKE_BUILD_TYPE)\n";
+  cmakelists << "    set(CMAKE_BUILD_TYPE \"" << build_type << "\")\n";
+  cmakelists << "endif()\n\n";
+
+  cmakelists << "message(STATUS \"Building workspace with ${CMAKE_BUILD_TYPE} "
+                "configuration\")\n\n";
+
+  // Set up output directories
+  cmakelists << "# Set output directories\n";
+  cmakelists << "set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "
+                "\"${CMAKE_BINARY_DIR}/lib/${CMAKE_BUILD_TYPE}\")\n";
+  cmakelists << "set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "
+                "\"${CMAKE_BINARY_DIR}/lib/${CMAKE_BUILD_TYPE}\")\n";
+  cmakelists << "set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "
+                "\"${CMAKE_BINARY_DIR}/bin/${CMAKE_BUILD_TYPE}\")\n\n";
+
+  // Check for workspace-wide dependencies
+  if (workspace_config.has_key("dependencies.git")) {
+    std::string deps_dir =
+        workspace_config.get_string("dependencies.directory", "deps");
+    cmakelists << "# Workspace-level Git dependencies\n";
+    configure_git_dependencies_in_cmake(workspace_config, deps_dir, cmakelists);
+  }
+
+  // Check for vcpkg dependencies
+  if (workspace_config.has_key("dependencies.vcpkg")) {
+    cmakelists << "# vcpkg integration\n";
+    cmakelists << "if(DEFINED ENV{VCPKG_ROOT})\n";
+    cmakelists << "    set(CMAKE_TOOLCHAIN_FILE "
+                  "\"$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake\"\n";
+    cmakelists << "        CACHE STRING \"Vcpkg toolchain file\")\n";
+    cmakelists << "elseif(EXISTS "
+                  "\"${CMAKE_CURRENT_SOURCE_DIR}/vcpkg/scripts/buildsystems/"
+                  "vcpkg.cmake\")\n";
+    cmakelists << "    set(CMAKE_TOOLCHAIN_FILE "
+                  "\"${CMAKE_CURRENT_SOURCE_DIR}/vcpkg/scripts/buildsystems/"
+                  "vcpkg.cmake\"\n";
+    cmakelists << "        CACHE STRING \"Vcpkg toolchain file\")\n";
+    cmakelists << "endif()\n\n";
+
+    // Add vcpkg dependencies
+    cmakelists << "# Dependencies\n";
+    auto vcpkg_deps = workspace_config.get_table_keys("dependencies.vcpkg");
+    for (const auto &dep : vcpkg_deps) {
+      std::string version = workspace_config.get_string(
+          "dependencies.vcpkg." + dep + ".version", "");
+      std::vector<std::string> components = workspace_config.get_string_array(
+          "dependencies.vcpkg." + dep + ".components");
+
+      // Add find_package command
+      cmakelists << "find_package(" << dep;
+
+      // Add version if specified
+      if (!version.empty()) {
+        cmakelists << " " << version;
+      }
+
+      // Add components if specified
+      if (!components.empty()) {
+        cmakelists << " COMPONENTS";
+        for (const auto &comp : components) {
+          cmakelists << " " << comp;
+        }
+      }
+
+      cmakelists << " REQUIRED)\n";
+    }
+    cmakelists << "\n";
+  }
+
+  // Add Thread package
+  cmakelists << "find_package(Threads REQUIRED)\n\n";
+
+  // Add all projects
+  cmakelists << "# Add all projects in the workspace\n";
+
+  // Discover projects in the workspace
+  std::vector<std::string> projects;
+  for (const auto &entry : std::filesystem::directory_iterator(workspace_dir)) {
+    if (entry.is_directory() &&
+        std::filesystem::exists(entry.path() / "cforge.toml") &&
+        entry.path().filename() != "build") {
+      projects.push_back(entry.path().filename().string());
+    }
+  }
+
+  if (workspace_config.has_key("workspace.projects")) {
+    // Use projects defined in the workspace configuration
+    auto config_projects =
+        workspace_config.get_string_array("workspace.projects");
+    if (!config_projects.empty()) {
+      projects = config_projects;
+    }
+  }
+
+  if (projects.empty()) {
+    logger::print_warning("No projects found in workspace");
+  } else {
+    logger::print_status("Found " + std::to_string(projects.size()) +
+                         " projects in workspace");
+
+    // First, analyze project dependencies to determine the correct order
+    std::map<std::string, std::vector<std::string>> project_dependencies;
+
+    // Collect all project dependencies
+    for (const auto &project : projects) {
+      std::filesystem::path project_config_path =
+          workspace_dir / project / "cforge.toml";
+      if (std::filesystem::exists(project_config_path)) {
+        try {
+          toml::table project_table =
+              toml::parse_file(project_config_path.string());
+          toml_reader project_config(project_table);
+
+          // Check for project dependencies
+          if (project_config.has_key("dependencies.project")) {
+            auto project_deps =
+                project_config.get_table_keys("dependencies.project");
+            project_dependencies[project] = project_deps;
+            logger::print_verbose("Project '" + project + "' depends on " +
+                                  std::to_string(project_deps.size()) +
+                                  " other workspace projects");
+          } else {
+            // No dependencies
+            project_dependencies[project] = std::vector<std::string>();
+          }
+        } catch (const toml::parse_error &e) {
+          logger::print_warning("Failed to parse cforge.toml for project '" +
+                                project + "': " + std::string(e.what()));
+          // Assume no dependencies if we can't parse the file
+          project_dependencies[project] = std::vector<std::string>();
+        }
+      } else {
+        // No config file, assume no dependencies
+        project_dependencies[project] = std::vector<std::string>();
+      }
+    }
+
+    // Function to check for circular dependencies
+    std::function<bool(const std::string &, std::set<std::string> &,
+                       std::set<std::string> &)>
+        detect_cycle = [&](const std::string &project,
+                           std::set<std::string> &visited,
+                           std::set<std::string> &in_path) {
+          if (in_path.find(project) != in_path.end())
+            return true; // Circular dependency found
+          if (visited.find(project) != visited.end())
+            return false; // Already processed
+
+          visited.insert(project);
+          in_path.insert(project);
+
+          for (const auto &dep : project_dependencies[project]) {
+            if (detect_cycle(dep, visited, in_path))
+              return true;
+          }
+
+          in_path.erase(project);
+          return false;
+        };
+
+    // Check for circular dependencies
+    std::set<std::string> visited, in_path;
+    bool has_circular = false;
+    for (const auto &project : projects) {
+      if (visited.find(project) == visited.end()) {
+        if (detect_cycle(project, visited, in_path)) {
+          logger::print_error(
+              "Circular dependency detected involving project '" + project +
+              "'");
+          has_circular = true;
+          break;
+        }
+      }
+    }
+
+    if (has_circular) {
+      logger::print_warning("Circular dependencies found, projects will be "
+                            "added in original order");
+    } else {
+      // Sort projects based on dependencies (topological sort)
+      std::vector<std::string> sorted_projects;
+      visited.clear();
+
+      std::function<void(const std::string &)> visit =
+          [&](const std::string &project) {
+            if (visited.find(project) != visited.end())
+              return;
+            visited.insert(project);
+
+            for (const auto &dep : project_dependencies[project]) {
+              visit(dep);
+            }
+
+            sorted_projects.push_back(project);
+          };
+
+      for (const auto &project : projects) {
+        visit(project);
+      }
+
+      // Update the projects list to respect dependency order
+      if (!sorted_projects.empty()) {
+        projects = sorted_projects;
+        logger::print_verbose("Projects sorted by dependency order");
+      }
+    }
+
+    // Add each project
+    for (const auto &project : projects) {
+      cmakelists << "# Project: " << project << "\n";
+      cmakelists << "if(EXISTS \"${CMAKE_CURRENT_SOURCE_DIR}/" << project
+                 << "/CMakeLists.txt\")\n";
+      cmakelists << "    add_subdirectory(" << project << ")\n";
+      cmakelists << "else()\n";
+      cmakelists << "    message(WARNING \"Project " << project
+                 << " has no CMakeLists.txt file\")\n";
+      cmakelists << "endif()\n\n";
+    }
+  }
+
+  // Workspace-level targets
+  if (workspace_config.has_key("workspace.targets")) {
+    cmakelists << "# Workspace-level targets\n";
+    auto targets = workspace_config.get_table_keys("workspace.targets");
+
+    for (const auto &target : targets) {
+      std::string target_type = workspace_config.get_string(
+          "workspace.targets." + target + ".type", "custom");
+      cmakelists << "# Target: " << target << " (Type: " << target_type
+                 << ")\n";
+
+      if (target_type == "executable") {
+        // Handle executable targets
+        std::vector<std::string> sources = workspace_config.get_string_array(
+            "workspace.targets." + target + ".sources");
+
+        if (!sources.empty()) {
+          cmakelists << "add_executable(" << target << "\n";
+          for (const auto &source : sources) {
+            cmakelists << "    " << source << "\n";
+          }
+          cmakelists << ")\n";
+
+          // Add dependencies
+          auto dependencies = workspace_config.get_string_array(
+              "workspace.targets." + target + ".depends");
+          if (!dependencies.empty()) {
+            cmakelists << "add_dependencies(" << target << "\n";
+            for (const auto &dep : dependencies) {
+              cmakelists << "    " << dep << "\n";
+            }
+            cmakelists << ")\n";
+          }
+
+          // Link libraries
+          auto libraries = workspace_config.get_string_array(
+              "workspace.targets." + target + ".links");
+          if (!libraries.empty()) {
+            cmakelists << "target_link_libraries(" << target << " PRIVATE\n";
+            for (const auto &lib : libraries) {
+              cmakelists << "    " << lib << "\n";
+            }
+            cmakelists << ")\n";
+          }
+
+          cmakelists << "\n";
+        }
+      } else if (target_type == "custom") {
+        // Handle custom targets
+        std::string command = workspace_config.get_string(
+            "workspace.targets." + target + ".command", "");
+        if (!command.empty()) {
+          cmakelists << "add_custom_target(" << target << "\n";
+          cmakelists << "    COMMAND " << command << "\n";
+          cmakelists << "    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}\n";
+          cmakelists << "    COMMENT \"Running custom target " << target
+                     << "\"\n";
+          cmakelists << ")\n\n";
+        }
+      }
+    }
+  }
+
+  cmakelists.close();
+  logger::print_success("Generated workspace CMakeLists.txt file");
+  return true;
 }
 
 bool workspace_config::load(const std::string &workspace_file) {

@@ -257,14 +257,8 @@ cforge_int_t cforge_cmd_clean(const cforge_context_t *ctx) {
   // Check for workspace clean
   std::filesystem::path current_dir(ctx->working_dir);
   if (std::filesystem::exists(current_dir / WORKSPACE_FILE)) {
-    // Workspace cleaning
-    logger::print_status("Cleaning workspace: " + current_dir.string());
-    // Load workspace
-    workspace ws;
-    if (!ws.load(current_dir)) {
-      logger::print_error("Failed to load workspace for cleaning");
-      return 1;
-    }
+    // Workspace cleaning: only clean root workspace build outputs
+    logger::print_status("Cleaning workspace build outputs");
     // Parse clean arguments
     bool clean_all = false;
     bool clean_cmake = true;
@@ -278,53 +272,64 @@ cforge_int_t cforge_cmd_clean(const cforge_context_t *ctx) {
       else if (arg == "--no-cmake") clean_cmake = false;
       else if (arg == "--regenerate") regenerate = true;
       else if (arg == "--deep") deep = true;
-      else if ((arg == "--config" || arg == "-c") && i+1 < ctx->args.arg_count) config_name = ctx->args.args[++i];
-    }
-    // Clean each project
-    bool all_cleaned = true;
-    for (auto &pr : ws.get_projects()) {
-      std::filesystem::path project_dir = pr.path;
-      logger::print_status("Cleaning project: " + pr.name);
-      // Load project config
-      toml_reader proj_cfg;
-      proj_cfg.load((project_dir / CFORGE_FILE).string());
-      std::string base_build_dir = proj_cfg.get_string("build.build_dir", DEFAULT_BUILD_DIR);
-      // Determine build directories
-      std::vector<std::filesystem::path> build_dirs;
-      if (clean_all) {
-        for (const auto &dir : find_all_build_dirs(base_build_dir))
-          build_dirs.push_back(project_dir / dir);
-      } else {
-        std::filesystem::path bd = get_build_dir_for_config(base_build_dir, config_name);
-        if (bd.is_relative()) bd = project_dir / bd;
-        build_dirs.push_back(bd);
-      }
-      // Clean CMake files
-      if (clean_cmake) {
-        auto old_cwd = std::filesystem::current_path();
-        std::filesystem::current_path(project_dir);
-        clean_cmake_files(verbose);
-        std::filesystem::current_path(old_cwd);
-      }
-      // Remove build directories
-      for (auto &bd : build_dirs) {
-        if (!clean_build_directory(bd, verbose)) all_cleaned = false;
-        if (regenerate) {
-          regenerate_cmake_files(project_dir, bd, config_name, verbose);
-        }
-      }
-      // Deep remove dependencies
-      if (deep) {
-        std::string deps_dir = proj_cfg.get_string("dependencies.directory", "deps");
-        std::filesystem::path deps_path = project_dir / deps_dir;
-        if (std::filesystem::exists(deps_path)) {
-          logger::print_status("Removing dependencies directory: " + deps_path.string());
-          try { std::filesystem::remove_all(deps_path); }
-          catch (...) { all_cleaned = false; }
-        }
+      else if ((arg == "--config" || arg == "-c") && i+1 < ctx->args.arg_count) {
+        config_name = ctx->args.args[++i];
       }
     }
-    return all_cleaned ? 0 : 1;
+    // Determine workspace build directory(s)
+    std::filesystem::path base_build = current_dir / DEFAULT_BUILD_DIR;
+    std::vector<std::filesystem::path> build_dirs;
+    if (clean_all) {
+      // Clean all config-specific build dirs as before
+      for (const auto &dir : find_all_build_dirs(base_build.string())) {
+        build_dirs.push_back(current_dir / dir);
+      }
+    } else {
+      // Always clean the base build directory in workspace
+      logger::print_status("Cleaning workspace build directory: " + base_build.string());
+      build_dirs.push_back(base_build);
+    }
+    // Clean CMake files in workspace root
+    if (clean_cmake) {
+      auto old_cwd = std::filesystem::current_path();
+      std::filesystem::current_path(current_dir);
+      clean_cmake_files(verbose);
+      std::filesystem::current_path(old_cwd);
+      // Also remove workspace CMakeLists.txt if present
+      std::filesystem::path ws_cmake = current_dir / "CMakeLists.txt";
+      if (std::filesystem::exists(ws_cmake)) {
+        logger::print_status("Removing workspace CMakeLists.txt: " + ws_cmake.string());
+        try {
+          std::filesystem::remove(ws_cmake);
+          logger::print_success("Removed workspace CMakeLists.txt");
+        } catch (const std::exception &e) {
+          logger::print_error("Failed to remove workspace CMakeLists.txt: " + std::string(e.what()));
+        }
+      }
+
+      // Also clean CMake files in each project directory
+      workspace ws;
+      if (ws.load(current_dir)) {
+        auto projects = ws.get_projects();
+        for (const auto &proj : projects) {
+          std::filesystem::path proj_path = proj.path;
+          logger::print_status("Cleaning CMake files in project: " + proj_path.string());
+          auto p_old = std::filesystem::current_path();
+          std::filesystem::current_path(proj_path);
+          clean_cmake_files(verbose);
+          std::filesystem::current_path(p_old);
+        }
+      }
+    }
+    // Remove build directories
+    for (auto &bd : build_dirs) {
+      clean_build_directory(bd, verbose);
+      if (regenerate) {
+        regenerate_cmake_files(current_dir, bd, config_name, verbose);
+      }
+    }
+    logger::print_success("Workspace clean complete");
+    return 0;
   }
   // Check if cforge.toml exists
   if (!std::filesystem::exists(CFORGE_FILE)) {

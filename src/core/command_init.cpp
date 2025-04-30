@@ -1467,9 +1467,9 @@ cforge_int_t cforge_cmd_init(const cforge_context_t *ctx) {
       }
 
       config_file << "]\n\n";
-      config_file << "# Default startup project is the first project\n";
+      config_file << "# Main project is the first project\n";
       if (!project_names.empty()) {
-        config_file << "default_startup_project = \"" << project_names[0]
+        config_file << "main_project = \"" << project_names[0]
                     << "\"\n";
       }
 

@@ -44,6 +44,8 @@ split_project_list(const std::string &project_list) {
   return result;
 }
 
+
+
 /**
  * @brief Represents a project within a workspace
  */
@@ -223,5 +225,53 @@ private:
   std::vector<workspace_project> projects_;
   std::string startup_project_;
 };
+
+
+/**
+ * @brief Generate a CMakeLists.txt file from cforge.toml configuration
+ *
+ * @param project_dir Project directory
+ * @param project_config Project configuration from cforge.toml
+ * @param verbose Verbose output flag
+ * @return bool Success flag
+ */
+bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
+                                    const toml_reader &project_config,
+                                    bool verbose);
+
+/**
+ * @brief Generate a workspace-level CMakeLists.txt file from workspace configuration
+ *
+ * @param workspace_dir Workspace directory
+ * @param workspace_config Workspace configuration from cforge.workspace.toml
+ * @param verbose Verbose output flag
+ * @return bool Success flag
+ */
+bool generate_workspace_cmakelists(const std::filesystem::path &workspace_dir,
+                                   const toml_reader &workspace_config,
+                                   bool verbose);
+
+
+                                  /**
+ * @brief Check if the current directory is within a workspace
+ *
+ * @param path Directory to check
+ * @return std::pair<bool, std::filesystem::path> Pair of (is_workspace,
+ * workspace_directory)
+ */
+std::pair<bool, std::filesystem::path> is_in_workspace(const std::filesystem::path &path);
+
+/**
+ * @brief Add Git dependencies configuration to CMakeLists.txt
+ *
+ * @param project_dir Project directory
+ * @param project_config Project configuration from cforge.toml
+ * @param deps_dir Dependencies directory
+ * @param cmakelists CMakeLists.txt output stream
+ */
+void
+configure_git_dependencies_in_cmake(const toml_reader &project_config,
+                                    const std::string &deps_dir,
+                                    std::ofstream &cmakelists);
 
 } // namespace cforge

@@ -452,14 +452,34 @@ bool installer::install_project(const std::string &project_path,
       }
     }
 
-    // Copy the binary - from build output directory
-    std::filesystem::path bin_dir = project_dir / "build" / "bin" / cfg;
+    // Copy the binary - from build output directory or shared workspace build
+    // Detect if project is inside a workspace
+    std::filesystem::path current = project_dir;
+    std::filesystem::path workspace_root;
+    bool in_workspace = false;
+    while (true) {
+      if (std::filesystem::exists(current / WORKSPACE_FILE)) {
+        workspace_root = current;
+        in_workspace = true;
+        break;
+      }
+      if (current == current.parent_path()) break;
+      current = current.parent_path();
+    }
+    std::filesystem::path build_base;
+    if (in_workspace) {
+      build_base = workspace_root / DEFAULT_BUILD_DIR;
+      logger::print_verbose("Using workspace build directory for install: " + build_base.string());
+    } else {
+      build_base = project_dir / DEFAULT_BUILD_DIR;
+    }
+    std::filesystem::path bin_dir = build_base / "bin" / cfg;
     print_verbose("Looking for executables in: " + bin_dir.string());
     bool found_executable = false;
 
     // Fallback: check build/bin
     if (!std::filesystem::exists(bin_dir)) {
-      bin_dir = project_dir / "build" / "bin";
+      bin_dir = build_base / "bin";
       print_verbose("Fallback to build/bin: " + bin_dir.string());
     }
     // Fallback: check project/bin/<config>
