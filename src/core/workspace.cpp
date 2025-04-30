@@ -1667,6 +1667,7 @@ bool generate_workspace_cmakelists(const std::filesystem::path &workspace_dir,
     std::ofstream hash_out(hash_file, std::ios::trunc);
     hash_out << current_hash;
   }
+  // Generating workspace CMakeLists.txt
   logger::print_status("Generating workspace CMakeLists.txt from " + std::string(WORKSPACE_FILE));
 
   logger::print_status(

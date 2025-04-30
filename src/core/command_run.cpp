@@ -459,7 +459,7 @@ cforge_int_t cforge_cmd_run(const cforge_context_t *ctx) {
       // Ensure workspace CMakeLists.txt exists (generate if needed)
       std::filesystem::path ws_cmake = project_dir / "CMakeLists.txt";
       if (!std::filesystem::exists(ws_cmake)) {
-        logger::print_status("Generating workspace CMakeLists.txt for run");
+        logger::print_verbose("Generating workspace CMakeLists.txt for run");
         toml_reader ws_cfg(toml::parse_file((project_dir / WORKSPACE_FILE).string()));
         if (!generate_workspace_cmakelists(project_dir, ws_cfg, verbose)) {
           logger::print_error("Failed to generate workspace CMakeLists.txt");
