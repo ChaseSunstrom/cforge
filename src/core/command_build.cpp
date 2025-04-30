@@ -35,6 +35,9 @@ using namespace cforge;
 // Default build configuration if not specified
 #define DEFAULT_BUILD_CONFIG "Release"
 
+// Force CMakeLists regeneration flag (set by --force-regenerate)
+static bool force_cmake_regen = false;
+
 /**
  * @brief Get the generator string for CMake based on platform
  *
@@ -154,15 +157,17 @@ get_build_dir_for_config(const std::string &base_dir,
   // Transform config name to lowercase for directory naming
   std::string config_lower = string_to_lower(config);
 
-  // For Ninja Multi-Config, we don't append the config to the build directory
+  // For multi-config generators (Visual Studio, Ninja Multi-Config, Xcode), we don't append the config
   std::string generator = get_cmake_generator();
-  if (generator.find("Ninja Multi-Config") != std::string::npos) {
+  if (generator.find("Multi-Config") != std::string::npos ||
+      generator.find("Visual Studio") != std::string::npos ||
+      generator.find("Xcode") != std::string::npos) {
     // Create the build directory if it doesn't exist
     std::filesystem::path build_path(base_dir);
     if (!std::filesystem::exists(build_path)) {
       std::filesystem::create_directories(build_path);
     }
-    return base_dir;
+    return build_path;
   }
 
   // Format build directory based on configuration
@@ -546,7 +551,7 @@ generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
   }
   std::string current_hash = std::to_string(std::hash<std::string>{}(toml_content));
   std::filesystem::path hash_file = project_dir / ".cforge_toml_hash";
-  if (std::filesystem::exists(cmakelists_path) && std::filesystem::exists(hash_file)) {
+  if (!force_cmake_regen && std::filesystem::exists(cmakelists_path) && std::filesystem::exists(hash_file)) {
     std::ifstream hash_in(hash_file);
     std::string old_hash;
     std::getline(hash_in, old_hash);
@@ -556,14 +561,6 @@ generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
     }
   }
 
-  // Skip generation if CMakeLists.txt already exists in project folder
-  bool file_exists = std::filesystem::exists(cmakelists_path);
-  
-  if (file_exists) {
-    logger::print_verbose("CMakeLists.txt already exists in project directory, using existing file");
-    return true;
-  }
-  
   logger::print_status("Generating CMakeLists.txt from cforge.toml...");
   
   // Check if we're in a workspace
@@ -669,13 +666,16 @@ generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
                 "configuration\")\n\n";
 
   // Set up output directories
-  cmakelists << "# Set output directories\n";
-  cmakelists << "set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "
-                "\"${CMAKE_BINARY_DIR}/lib/${CMAKE_BUILD_TYPE}\")\n";
-  cmakelists << "set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "
-                "\"${CMAKE_BINARY_DIR}/lib/${CMAKE_BUILD_TYPE}\")\n";
-  cmakelists << "set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "
-                "\"${CMAKE_BINARY_DIR}/bin/${CMAKE_BUILD_TYPE}\")\n\n";
+  cmakelists << "# Set up output directories\n";
+  cmakelists << "if(CMAKE_CONFIGURATION_TYPES)\n";
+  cmakelists << "    set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY \"${CMAKE_BINARY_DIR}/lib\")\n";
+  cmakelists << "    set(CMAKE_LIBRARY_OUTPUT_DIRECTORY \"${CMAKE_BINARY_DIR}/lib\")\n";
+  cmakelists << "    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY \"${CMAKE_BINARY_DIR}/bin\")\n";
+  cmakelists << "else()\n";
+  cmakelists << "    set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY \"${CMAKE_BINARY_DIR}/lib/${CMAKE_BUILD_TYPE}\")\n";
+  cmakelists << "    set(CMAKE_LIBRARY_OUTPUT_DIRECTORY \"${CMAKE_BINARY_DIR}/lib/${CMAKE_BUILD_TYPE}\")\n";
+  cmakelists << "    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY \"${CMAKE_BINARY_DIR}/bin/${CMAKE_BUILD_TYPE}\")\n";
+  cmakelists << "endif()\n\n";
 
   // Get dependencies directory (default: deps)
   std::string deps_dir =
@@ -1000,12 +1000,13 @@ generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
   cmakelists.close();
   logger::print_verbose("Generated CMakeLists.txt in project directory: " +
                         cmakelists_path.string());
+  
   // Save hash of cforge.toml for caching
   {
     std::ofstream hash_out(hash_file);
     hash_out << current_hash;
   }
-  logger::print_success("Generated CMakeLists.txt file in project directory");
+
   return true;
 }
 
@@ -1173,78 +1174,25 @@ static bool build_project(const std::filesystem::path &project_dir,
 
   // Check if we're in a workspace
   auto [is_workspace, workspace_dir] = is_in_workspace(project_dir);
-  bool use_workspace_build = false;
-
-  if (is_workspace) {
-    // Only print this if we're in a workspace but not already at the workspace
-    // root
-    if (project_dir != workspace_dir) {
-      logger::print_status("Detected workspace at: " + workspace_dir.string());
-    }
-
-    // Check if workspace has a CMakeLists.txt
-    if (std::filesystem::exists(workspace_dir / "CMakeLists.txt")) {
-      logger::print_status("Using workspace-level CMakeLists.txt for build");
-      use_workspace_build = true;
-    }
-
-    // Check for project dependencies if we're building a specific project
-    if (has_project_config && !use_workspace_build && built_projects) {
-      // Check for project dependencies
-      if (project_config.has_key("dependencies.project")) {
-        auto project_deps =
-            project_config.get_table_keys("dependencies.project");
-
-        if (!project_deps.empty()) {
-          logger::print_status("Checking project dependencies...");
-
-          // Build dependencies first
-          for (const auto &dep : project_deps) {
-            // Skip if already built
-            if (built_projects->find(dep) != built_projects->end()) {
-              logger::print_verbose("Dependency '" + dep +
-                                    "' already built, skipping");
-              continue;
-            }
-
-            // Find the project directory
-            std::filesystem::path dep_path = workspace_dir / dep;
-            if (!std::filesystem::exists(dep_path) ||
-                !std::filesystem::exists(dep_path / "cforge.toml")) {
-              logger::print_warning("Dependency project '" + dep +
-                                    "' not found in workspace");
-              continue;
-            }
-
-            logger::print_status("Building dependency: " + dep);
-
-            // Build the dependency
-            if (!build_project(dep_path, build_config, num_jobs, verbose, "",
-                               built_projects)) {
-              logger::print_error("Failed to build dependency '" + dep +
-                                  "', cannot continue with '" + project_name +
-                                  "'");
-              return false;
-            }
-
-            // Mark as built
-            built_projects->insert(dep);
-          }
-        }
-      }
-    }
-  }
+  // Always build each project in its own build directory, even inside a workspace
+  bool use_workspace_build = false;  // ignore workspace build dir for nested projects
 
   // Use the right directory for building
   std::filesystem::path build_base_dir;
-  std::filesystem::path source_dir;
+  std::filesystem::path source_dir = project_dir;
 
   if (use_workspace_build) {
-    build_base_dir = workspace_dir / "build";
-    source_dir = workspace_dir;
+    // Load workspace build directory name
+    toml_reader ws_config;
+    std::string ws_build = DEFAULT_BUILD_DIR;
+    if (ws_config.load((workspace_dir / WORKSPACE_FILE).string())) {
+      ws_build = ws_config.get_string("workspace.build_dir", DEFAULT_BUILD_DIR);
+    }
+    // Place each project under workspace_root/build/<project_name>
+    build_base_dir = workspace_dir / ws_build / project_name;
   } else {
-    build_base_dir = project_dir / "build";
-    source_dir = project_dir;
+    // Use project-specific build directory
+    build_base_dir = project_dir / project_config.get_string("build.build_dir", DEFAULT_BUILD_DIR);
   }
 
   // Get the config-specific build directory
@@ -1264,9 +1212,8 @@ static bool build_project(const std::filesystem::path &project_dir,
     }
   }
 
-  // For workspace projects, we don't need to handle dependencies or generate
-  // CMakeLists.txt
-  if (!use_workspace_build && has_project_config) {
+  // Always generate project-level CMakeLists.txt from cforge.toml when present
+  if (has_project_config) {
     // Clone Git dependencies before generating CMakeLists.txt
     if (project_config.has_key("dependencies.git")) {
       logger::print_status("Setting up Git dependencies...");
@@ -1287,23 +1234,11 @@ static bool build_project(const std::filesystem::path &project_dir,
       }
     }
 
-    // Generate CMakeLists.txt in the build directory
-    std::filesystem::path timestamp_file =
-        build_dir / ".cforge_cmakefile_timestamp";
-
-    // Generate new CMakeLists.txt in the build directory
+    // Generate or update CMakeLists.txt based on cforge.toml
     if (!generate_cmakelists_from_toml(project_dir, project_config, verbose)) {
       logger::print_error("Failed to generate CMakeLists.txt in project directory");
       return false;
     }
-
-    // Update timestamp file
-    std::ofstream timestamp(timestamp_file);
-    if (timestamp) {
-      timestamp << "Generated: " << std::time(nullptr) << std::endl;
-      timestamp.close();
-    }
-
     logger::print_success("Generated CMakeLists.txt file in project directory");
   }
 
@@ -1626,13 +1561,16 @@ generate_workspace_cmakelists(const std::filesystem::path &workspace_dir,
                 "configuration\")\n\n";
 
   // Set up output directories
-  cmakelists << "# Set output directories\n";
-  cmakelists << "set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "
-                "\"${CMAKE_BINARY_DIR}/lib/${CMAKE_BUILD_TYPE}\")\n";
-  cmakelists << "set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "
-                "\"${CMAKE_BINARY_DIR}/lib/${CMAKE_BUILD_TYPE}\")\n";
-  cmakelists << "set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "
-                "\"${CMAKE_BINARY_DIR}/bin/${CMAKE_BUILD_TYPE}\")\n\n";
+  cmakelists << "# Set up output directories\n";
+  cmakelists << "if(CMAKE_CONFIGURATION_TYPES)\n";
+  cmakelists << "    set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY \"${CMAKE_BINARY_DIR}/lib\")\n";
+  cmakelists << "    set(CMAKE_LIBRARY_OUTPUT_DIRECTORY \"${CMAKE_BINARY_DIR}/lib\")\n";
+  cmakelists << "    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY \"${CMAKE_BINARY_DIR}/bin\")\n";
+  cmakelists << "else()\n";
+  cmakelists << "    set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY \"${CMAKE_BINARY_DIR}/lib/${CMAKE_BUILD_TYPE}\")\n";
+  cmakelists << "    set(CMAKE_LIBRARY_OUTPUT_DIRECTORY \"${CMAKE_BINARY_DIR}/lib/${CMAKE_BUILD_TYPE}\")\n";
+  cmakelists << "    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY \"${CMAKE_BINARY_DIR}/bin/${CMAKE_BUILD_TYPE}\")\n";
+  cmakelists << "endif()\n\n";
 
   // Check for workspace-wide dependencies
   if (workspace_config.has_key("dependencies.git")) {
@@ -2000,105 +1938,163 @@ cforge_int_t cforge_cmd_build(const cforge_context_t *ctx) {
   int result = 0;
 
   if (is_workspace) {
-    logger::print_status("Building in workspace context: " +
-                         current_dir.string());
-
-    if (project_name.empty()) {
-      logger::print_status("Building all projects in workspace");
-
-      // Check if we have a workspace CMakeLists.txt
-      if (std::filesystem::exists(workspace_dir / "CMakeLists.txt")) {
-
-        // Clean the workspace build directory if force_regenerate is set
-        if (force_regenerate) {
-          try {
-            std::filesystem::path workspace_build_config_dir =
-                get_build_dir_for_config(workspace_dir.string(), config_name);
-
-            if (std::filesystem::exists(workspace_build_config_dir)) {
-              // Remove only CMake files, not actual build outputs
-              if (std::filesystem::exists(workspace_build_config_dir /
-                                          "CMakeCache.txt")) {
-                std::filesystem::remove(workspace_build_config_dir /
-                                        "CMakeCache.txt");
-              }
-
-              // Remove CMakeFiles directory
-              if (std::filesystem::exists(workspace_build_config_dir /
-                                          "CMakeFiles")) {
-                std::filesystem::remove_all(workspace_build_config_dir /
-                                            "CMakeFiles");
-              }
-            }
-
-            logger::print_status("Cleaned old CMake cache for workspace build");
-          } catch (const std::filesystem::filesystem_error &e) {
-            logger::print_warning(
-                "Failed to clean workspace build directory: " +
-                std::string(e.what()));
-            // Continue anyway
-          }
-        }
-
-        // First try to build the entire workspace at once
-        if (build_project(workspace_dir, config_name, num_jobs, verbose,
-                          target)) {
-          logger::print_success("Workspace built successfully");
-          return 0;
-        }
-
-        // If workspace build fails, try building each project individually
-        logger::print_warning(
-            "Workspace build failed, trying to build projects individually");
-      } else {
-        logger::print_warning("No workspace-level CMakeLists.txt found");
-        logger::print_status("You may want to use --gen-workspace-cmake to "
-                             "create one for improved build efficiency");
-      }
-
-      // Build projects individually
-      bool at_least_one_success = false;
-      std::set<std::string> built_projects;
-
-      for (const auto &entry :
-           std::filesystem::directory_iterator(workspace_dir)) {
-        if (entry.is_directory() &&
-            std::filesystem::exists(entry.path() / "cforge.toml") &&
-            entry.path().filename() != "build") {
-          std::string project = entry.path().filename().string();
-
-          // Skip if already built through dependencies
-          if (built_projects.find(project) != built_projects.end()) {
-            logger::print_verbose("Project '" + project +
-                                  "' already built as a dependency, skipping");
-            continue;
-          }
-
-          bool project_success =
-              build_project(entry.path(), config_name, num_jobs, verbose,
-                            target, &built_projects);
-
-          if (project_success) {
-            at_least_one_success = true;
-            // Just print a simple success message without repeating "built
-            // successfully"
-            logger::print_success("Project '" + project + "' completed");
-          } else {
-            logger::print_error("Failed to build project: " + project);
-            result = 1;
-          }
-        }
-      }
-
-      if (at_least_one_success) {
-        logger::print_status("Some projects built successfully");
-      }
-      if (!at_least_one_success) {
-        logger::print_error("All projects failed to build");
+    logger::print_status("Building in workspace context: " + current_dir.string());
+    // Build a specific project if requested
+    if (!project_name.empty()) {
+      std::filesystem::path proj_dir = workspace_dir / project_name;
+      if (!std::filesystem::exists(proj_dir) ||
+          !std::filesystem::exists(proj_dir / CFORGE_FILE)) {
+        logger::print_error("Workspace project not found: " + project_name);
         return 1;
       }
+      // Build with dependency tracking
+      if (!build_project(proj_dir, config_name, num_jobs, verbose, target)) {
+        logger::print_error("Failed to build project: " + project_name);
+        return 1;
+      }
+      return 0;
+    }
+    // Build all projects in workspace
+    logger::print_status("Building all projects in workspace");
+
+    // Auto-generate workspace CMakeLists.txt based on workspace.toml, with caching
+    {
+      std::filesystem::path toml_path = workspace_dir / WORKSPACE_FILE;
+      std::filesystem::path cmake_path = workspace_dir / "CMakeLists.txt";
+      std::filesystem::path hash_file = workspace_dir / ".cforge_workspace_hash";
+      // Read workspace.toml content for hashing
+      std::ifstream toml_in(toml_path);
+      std::ostringstream ss;
+      ss << toml_in.rdbuf();
+      std::string toml_content = ss.str();
+      std::string current_hash = std::to_string(std::hash<std::string>{}(toml_content));
+      if (std::filesystem::exists(cmake_path) && std::filesystem::exists(hash_file)) {
+        std::ifstream in(hash_file);
+        std::string old_hash;
+        std::getline(in, old_hash);
+        if (old_hash == current_hash) {
+          logger::print_verbose("No changes in workspace.toml, skipping workspace CMakeLists.txt regeneration");
+        } else {
+          generate_workspace_cmakelists(workspace_dir, toml_reader(toml::parse_file(toml_path.string())), verbose);
+          std::ofstream out(hash_file);
+          out << current_hash;
+        }
+      } else {
+        // Generate CMakeLists.txt fresh
+        generate_workspace_cmakelists(workspace_dir, toml_reader(toml::parse_file(toml_path.string())), verbose);
+        std::ofstream out(hash_file);
+        out << current_hash;
+      }
+    }
+
+    // Also auto-generate project-level CMakeLists.txt for each workspace project
+    for (const auto &entry : std::filesystem::directory_iterator(workspace_dir)) {
+      if (entry.is_directory()) {
+        std::filesystem::path project_toml = entry.path() / CFORGE_FILE;
+        if (std::filesystem::exists(project_toml)) {
+          toml_reader project_config(toml::parse_file(project_toml.string()));
+          if (!generate_cmakelists_from_toml(entry.path(), project_config, verbose)) {
+            logger::print_error("Failed to generate CMakeLists.txt for project: " + entry.path().filename().string());
+          } else {
+            logger::print_verbose("Auto-generated CMakeLists.txt for project: " + entry.path().filename().string());
+          }
+        }
+      }
+    }
+
+    // Check if we have a workspace CMakeLists.txt
+    if (std::filesystem::exists(workspace_dir / "CMakeLists.txt")) {
+
+      // Clean the workspace build directory if force_regenerate is set
+      if (force_regenerate) {
+        try {
+          std::filesystem::path workspace_build_config_dir =
+              get_build_dir_for_config(workspace_dir.string(), config_name);
+
+          if (std::filesystem::exists(workspace_build_config_dir)) {
+            // Remove only CMake files, not actual build outputs
+            if (std::filesystem::exists(workspace_build_config_dir /
+                                        "CMakeCache.txt")) {
+              std::filesystem::remove(workspace_build_config_dir /
+                                      "CMakeCache.txt");
+            }
+
+            // Remove CMakeFiles directory
+            if (std::filesystem::exists(workspace_build_config_dir /
+                                        "CMakeFiles")) {
+              std::filesystem::remove_all(workspace_build_config_dir /
+                                          "CMakeFiles");
+            }
+          }
+
+          logger::print_status("Cleaned old CMake cache for workspace build");
+        } catch (const std::filesystem::filesystem_error &e) {
+          logger::print_warning(
+              "Failed to clean workspace build directory: " +
+              std::string(e.what()));
+          // Continue anyway
+        }
+      }
+
+      // First try to build the entire workspace at once
+      if (build_project(workspace_dir, config_name, num_jobs, verbose,
+                        target)) {
+        logger::print_success("Workspace built successfully");
+        return 0;
+      }
+
+      // If workspace build fails, try building each project individually
+      logger::print_warning(
+          "Workspace build failed, trying to build projects individually");
+    } else {
+      logger::print_warning("No workspace-level CMakeLists.txt found");
+      logger::print_status("You may want to use --gen-workspace-cmake to "
+                           "create one for improved build efficiency");
+    }
+
+    // Build projects individually
+    bool at_least_one_success = false;
+    std::set<std::string> built_projects;
+
+    for (const auto &entry :
+         std::filesystem::directory_iterator(workspace_dir)) {
+      if (entry.is_directory() &&
+          std::filesystem::exists(entry.path() / "cforge.toml") &&
+          entry.path().filename() != "build") {
+        std::string project = entry.path().filename().string();
+
+        // Skip if already built through dependencies
+        if (built_projects.find(project) != built_projects.end()) {
+          logger::print_verbose("Project '" + project +
+                                "' already built as a dependency, skipping");
+          continue;
+        }
+
+        bool project_success =
+            build_project(entry.path(), config_name, num_jobs, verbose,
+                          target, &built_projects);
+
+        if (project_success) {
+          at_least_one_success = true;
+          // Just print a simple success message without repeating "built
+          // successfully"
+          logger::print_success("Project '" + project + "' completed");
+        } else {
+          logger::print_error("Failed to build project: " + project);
+          result = 1;
+        }
+      }
+    }
+
+    if (at_least_one_success) {
+      logger::print_status("Some projects built successfully");
+    }
+    if (!at_least_one_success) {
+      logger::print_error("All projects failed to build");
+      return 1;
     }
   } else {
+    // Single project build
     if (!build_project(current_dir, config_name, num_jobs, verbose, target)) {
       return 1;
     }

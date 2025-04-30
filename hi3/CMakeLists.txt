@@ -6,25 +6,46 @@ cmake_minimum_required(VERSION 3.14)
 # Workspace configuration
 project(hi3 LANGUAGES CXX)
 
-# Set C++ standard for the entire workspace
+# Workspace description
+set(WORKSPACE_DESCRIPTION "A C++ workspace created with cforge")
+
+# Common build settings
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# Set output directories for the workspace
-set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
-set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+# Build configuration
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE "Debug")
+endif()
 
-# Enable testing for the workspace
-enable_testing()
+message(STATUS "Building workspace with ${CMAKE_BUILD_TYPE} configuration")
+
+# Set up output directories
+if(CMAKE_CONFIGURATION_TYPES)
+    set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
+    set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+else()
+    set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib/${CMAKE_BUILD_TYPE}")
+    set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib/${CMAKE_BUILD_TYPE}")
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/${CMAKE_BUILD_TYPE}")
+endif()
+
+find_package(Threads REQUIRED)
 
 # Add all projects in the workspace
-add_subdirectory(proj1)
-add_subdirectory(proj2)
+# Project: proj1
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/proj1/CMakeLists.txt")
+    add_subdirectory(proj1)
+else()
+    message(WARNING "Project proj1 has no CMakeLists.txt file")
+endif()
 
-# Print workspace configuration details
-message(STATUS "Configured workspace: hi3")
-message(STATUS "  - C++ Standard: ${CMAKE_CXX_STANDARD}")
-message(STATUS "  - Build Type: ${CMAKE_BUILD_TYPE}")
-message(STATUS "  - Projects: proj1, proj2")
+# Project: proj2
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/proj2/CMakeLists.txt")
+    add_subdirectory(proj2)
+else()
+    message(WARNING "Project proj2 has no CMakeLists.txt file")
+endif()
+

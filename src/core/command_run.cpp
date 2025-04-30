@@ -19,35 +19,47 @@
 #include <iostream>
 #include <string>
 #include <vector>
+#include <set>
 
 using namespace cforge;
 
 /**
- * @brief Get build directory path based on base directory and configuration
+ * @brief Determine CMake generator to detect multi-config support
+ */
+static std::string get_cmake_generator() {
+#ifdef _WIN32
+  if (is_command_available("ninja", 15)) {
+    return "Ninja Multi-Config";
+  }
+  return "Visual Studio 17 2022";
+#else
+  return "Unix Makefiles";
+#endif
+}
+
+/**
+ * @brief Get build directory path based on base directory and configuration, respecting multi-config generators
  */
 static std::filesystem::path
 get_build_dir_for_config(const std::string &base_dir,
                          const std::string &config) {
-  // If config is empty, use the base directory
-  if (config.empty()) {
-    return base_dir;
+  std::string generator = get_cmake_generator();
+  bool multi = generator.find("Multi-Config") != std::string::npos ||
+               generator.find("Visual Studio") != std::string::npos;
+  std::filesystem::path build_path(base_dir);
+  if (multi || config.empty()) {
+    if (!std::filesystem::exists(build_path))
+      std::filesystem::create_directories(build_path);
+    return build_path;
   }
-
-  // Transform config name to lowercase for directory naming
-  std::string config_lower = config;
-  std::transform(config_lower.begin(), config_lower.end(), config_lower.begin(),
-                 ::tolower);
-
-  // Format build directory based on configuration
-  std::string build_dir = base_dir + "-" + config_lower;
-
-  // Create the build directory if it doesn't exist
-  std::filesystem::path build_path(build_dir);
-  if (!std::filesystem::exists(build_path)) {
+  // Single-config: append lowercase config
+  std::string cfg = config;
+  std::transform(cfg.begin(), cfg.end(), cfg.begin(), ::tolower);
+  std::string dir = base_dir + "-" + cfg;
+  build_path = dir;
+  if (!std::filesystem::exists(build_path))
     std::filesystem::create_directories(build_path);
-  }
-
-  return build_dir;
+  return build_path;
 }
 
 /**
@@ -74,14 +86,20 @@ find_project_executable(const std::filesystem::path &project_path,
   std::transform(config_lower.begin(), config_lower.end(), config_lower.begin(),
                  ::tolower);
 
+  // Determine actual build base directory (absolute or project-relative)
+  std::filesystem::path build_base = build_dir;
+  if (!build_base.is_absolute()) {
+    build_base = project_path / build_dir;
+  }
+
   // Define common executable locations to search
   std::vector<std::filesystem::path> search_paths = {
-      project_path / build_dir / "bin",
-      project_path / build_dir / "bin" / config,
-      project_path / build_dir / "bin" / config_lower,
-      project_path / build_dir / config,
-      project_path / build_dir / config_lower,
-      project_path / build_dir,
+      build_base / "bin",
+      build_base / "bin" / config,
+      build_base / "bin" / config_lower,
+      build_base / config,
+      build_base / config_lower,
+      build_base,
       project_path / "bin",
       project_path / "bin" / config,
       project_path / "bin" / config_lower};
@@ -418,237 +436,69 @@ cforge_int_t cforge_cmd_run(const cforge_context_t *ctx) {
     std::filesystem::path workspace_file = project_dir / WORKSPACE_FILE;
     bool is_workspace = std::filesystem::exists(workspace_file);
 
-    // Handle workspace
+    // Handle workspace: run only the startup projects marked in workspace.toml
     if (is_workspace) {
-      // Log that this is a workspace
-      logger::print_status("Running in workspace context: " +
-                           project_dir.string());
-
-      // Load workspace configuration
-      toml::table workspace_table;
-      try {
-        workspace_table = toml::parse_file(workspace_file.string());
-
-        // Create a toml_reader wrapper
-        toml_reader workspace_config(workspace_table);
-
-        // If no config specified, check workspace default
-        if (config.empty()) {
-          config = workspace_config.get_string("workspace.build_type", "Debug");
-        }
-
-        // If no specific project, check workspace for main project
-        if (specific_project.empty()) {
-          // Check for default project in workspace
-          specific_project =
-              workspace_config.get_string("workspace.main_project", "");
-
-          // If no main project specified, check for all projects and use the
-          // first executable
-          if (specific_project.empty()) {
-            auto projects =
-                workspace_config.get_string_array("workspace.projects");
-            if (projects.empty()) {
-              // Scan directory for projects
-              for (const auto &entry :
-                   std::filesystem::directory_iterator(project_dir)) {
-                if (entry.is_directory() &&
-                    std::filesystem::exists(entry.path() / "cforge.toml") &&
-                    entry.path().filename() != "build") {
-
-                  std::string project_name = entry.path().filename().string();
-
-                  // Check if this is an executable project
-                  std::filesystem::path config_path =
-                      entry.path() / "cforge.toml";
-                  try {
-                    toml::table project_table =
-                        toml::parse_file(config_path.string());
-                    toml_reader project_config(project_table);
-
-                    std::string binary_type = project_config.get_string(
-                        "project.binary_type", "executable");
-                    if (binary_type == "executable") {
-                      specific_project = project_name;
-                      logger::print_status("Found executable project: " +
-                                           specific_project);
-                      break;
-                    }
-                  } catch (...) {
-                    // If we can't read the config, continue to the next project
-                    continue;
-                  }
-                }
-              }
-            } else {
-              // Use the first project in the list
-              for (const auto &project_name : projects) {
-                std::filesystem::path project_path = project_dir / project_name;
-
-                if (std::filesystem::exists(project_path / "cforge.toml")) {
-                  try {
-                    toml::table project_table = toml::parse_file(
-                        (project_path / "cforge.toml").string());
-                    toml_reader project_config(project_table);
-
-                    std::string binary_type = project_config.get_string(
-                        "project.binary_type", "executable");
-                    if (binary_type == "executable") {
-                      specific_project = project_name;
-                      logger::print_status("Found executable project: " +
-                                           specific_project);
-                      break;
-                    }
-                  } catch (...) {
-                    // If we can't read the config, continue to the next project
-                    continue;
-                  }
-                }
-              }
-            }
-
-            if (specific_project.empty()) {
-              logger::print_error("No executable projects found in workspace");
-              logger::print_status("Please specify a project with -p or set "
-                                   "workspace.main_project in workspace.toml");
-              return 1;
-            }
-          }
-        }
-
-        // Check if the specified project exists
-        std::filesystem::path project_path = project_dir / specific_project;
-        if (!std::filesystem::exists(project_path) ||
-            !std::filesystem::exists(project_path / "cforge.toml")) {
-          logger::print_error("Project not found: " + specific_project);
-          return 1;
-        }
-
-        logger::print_status("Running project: " + specific_project);
-
-        // Build the project if needed
-        if (!skip_build) {
-          // Build project using the workspace configuration
-          std::vector<std::string> build_args = {
-              "build", "-p", specific_project, "-c", config};
-          if (verbose)
-            build_args.push_back("-v");
-
-          // Create a command context for build
-          cforge_context_t build_ctx;
-          memset(&build_ctx, 0, sizeof(cforge_context_t));
-          strncpy(build_ctx.working_dir, ctx->working_dir,
-                  sizeof(build_ctx.working_dir) - 1);
-          build_ctx.working_dir[sizeof(build_ctx.working_dir) - 1] = '\0';
-
-          build_ctx.args.command = strdup("build");
-          build_ctx.args.project = strdup(specific_project.c_str());
-          build_ctx.args.config = strdup(config.c_str());
-
-          if (verbose) {
-            build_ctx.args.verbosity = strdup("verbose");
-          }
-
-          int build_result = cforge_cmd_build(&build_ctx);
-
-          // Free allocated memory
-          free(build_ctx.args.command);
-          free(build_ctx.args.project);
-          free(build_ctx.args.config);
-          if (build_ctx.args.verbosity)
-            free(build_ctx.args.verbosity);
-
-          if (build_result != 0) {
-            logger::print_error("Build failed");
-            return 1;
-          }
-        } else {
-          logger::print_status("Skipping build as requested");
-        }
-
-        // Check project binary type
-        std::filesystem::path config_path = project_path / "cforge.toml";
-        toml::table project_table = toml::parse_file(config_path.string());
-        toml_reader project_config(project_table);
-
-        std::string binary_type =
-            project_config.get_string("project.binary_type", "executable");
-        if (binary_type != "executable") {
-          logger::print_error("Project '" + specific_project +
-                              "' is not an executable");
-          return 1;
-        }
-
-        // Determine build directory - use workspace-level build directory if
-        // enabled
-        std::filesystem::path build_dir;
-        if (workspace_config.get_bool("build.use_workspace_dir", true)) {
-          // Use workspace build directory
-          std::string build_dir_name =
-              workspace_config.get_string("build.directory", "build");
-          build_dir = project_dir / build_dir_name;
-        } else {
-          // Use project-specific build directory
-          std::string build_dir_name =
-              project_config.get_string("build.build_dir", "build");
-          build_dir = project_path / build_dir_name;
-        }
-
-        // Get project name from config
-        std::string project_name =
-            project_config.get_string("project.name", specific_project);
-
-        // Find the executable
-        std::filesystem::path executable = find_project_executable(
-            project_path, build_dir.string(), config, project_name);
-
-        if (executable.empty()) {
-          logger::print_error("Executable not found for project: " +
-                              specific_project);
-          return 1;
-        }
-
-        // Run the executable
-        logger::print_status("Running executable: " +
-                             executable.filename().string());
-
-        // Display program output header
-        logger::print_status("Program Output\n────────────");
-
-        // Create callbacks to display raw program output
-        std::function<void(const std::string &)> stdout_callback =
-            [](const std::string &chunk) { std::cout << chunk << std::flush; };
-
-        std::function<void(const std::string &)> stderr_callback =
-            [](const std::string &chunk) { std::cerr << chunk << std::flush; };
-
-        // Convert extra_args to a vector
-        std::vector<std::string> args_vec = extra_args;
-
-        // Execute the program with output handling
-        process_result result = execute_process(
-            executable.string(), args_vec, project_path.string(),
-            stdout_callback, stderr_callback,
-            0 // No timeout
-        );
-
-        // Add a separator line after program output
-        std::cout << std::endl;
-
-        if (result.success) {
-          logger::print_success("Program exited with code 0");
-          return 0;
-        } else {
-          logger::print_error("Program exited with code: " +
-                              std::to_string(result.exit_code));
-          return result.exit_code;
-        }
-
-      } catch (const toml::parse_error &e) {
-        logger::print_error("Failed to parse workspace.toml: " +
-                            std::string(e.what()));
+      logger::print_status("Running in workspace context: " + project_dir.string());
+      toml_reader workspace_config(toml::parse_file(workspace_file.string()));
+      if (config.empty()) {
+        config = workspace_config.get_string("workspace.build_type", "Debug");
+      }
+      // Collect startup projects
+      std::vector<std::string> entries = workspace_config.get_string_array("workspace.projects");
+      std::vector<std::string> to_run;
+      for (const auto &e : entries) {
+        size_t p1 = e.find(':'); size_t p2 = e.find(':', p1+1);
+        if (p1 == std::string::npos || p2 == std::string::npos) continue;
+        std::string name = e.substr(0, p1);
+        std::string flag = e.substr(p2+1);
+        std::transform(flag.begin(), flag.end(), flag.begin(), ::tolower);
+        if (flag == "true") to_run.push_back(name);
+      }
+      if (to_run.empty()) {
+        std::string main = workspace_config.get_string("workspace.main_project", "");
+        if (!main.empty()) to_run.push_back(main);
+      }
+      if (to_run.empty()) {
+        logger::print_error("No startup projects defined in workspace.toml");
         return 1;
       }
+      // Run each
+      std::set<std::string> built;
+      auto stdout_cb = [](const std::string &c){ std::cout << c << std::flush; };
+      auto stderr_cb = [](const std::string &c){ std::cerr << c << std::flush; };
+      for (const auto &proj_name : to_run) {
+        auto proj_path = project_dir / proj_name;
+        if (!std::filesystem::exists(proj_path / CFORGE_FILE)) {
+          logger::print_warning("Skipping missing project: " + proj_name);
+          continue;
+        }
+        logger::print_status("Running project: " + proj_name);
+        if (!skip_build && !built.count(proj_name)) {
+          if (!build_project_for_run(proj_path, config, verbose)) {
+            logger::print_error("Build failed for: " + proj_name);
+            continue;
+          }
+          built.insert(proj_name);
+        }
+        toml_reader pconf(toml::parse_file((proj_path / CFORGE_FILE).string()));
+        if (pconf.get_string("project.binary_type", "executable") != "executable") {
+          continue;
+        }
+        std::string real = pconf.get_string("project.name", proj_name);
+        auto exe = find_project_executable(proj_path, "build", config, real);
+        if (exe.empty()) {
+          logger::print_error("Executable not found: " + proj_name);
+          continue;
+        }
+        logger::print_status("Executing: " + exe.filename().string());
+        auto res = execute_process(exe.string(), extra_args, proj_path.string(), stdout_cb, stderr_cb, 0);
+        std::cout << std::endl;
+        if (!res.success)
+          logger::print_error("Exited " + std::to_string(res.exit_code) + ": " + proj_name);
+        else
+          logger::print_success("Exited successfully: " + proj_name);
+      }
+      return 0;
     } else {
       // Handle single project run
       logger::print_status("Running in single project context");

@@ -8,6 +8,7 @@
 #include "core/constants.h"
 #include "core/installer.hpp"
 #include "core/process_utils.hpp"
+#include "core/workspace_utils.hpp"
 
 #include <cstring>
 #include <filesystem>
@@ -90,7 +91,6 @@ cforge_int_t cforge_cmd_install(const cforge_context_t *ctx) {
     std::filesystem::path cwd(ctx->working_dir);
     if (std::filesystem::exists(cwd / CFORGE_FILE) || std::filesystem::exists(cwd / WORKSPACE_FILE)) {
       project_source = cwd.string();
-      // Verbose reporting of detected project
       logger::print_verbose("Detected project in current directory: " + project_source);
     } else {
       logger::print_error("No cforge project or workspace found. Provide source with '--from'.");
@@ -98,34 +98,78 @@ cforge_int_t cforge_cmd_install(const cforge_context_t *ctx) {
     }
   }
 
-  // Install the project source
-  {
-    std::string source = project_source;
-    bool needs_cleanup = false;
-    // Git clone if URL
-    if (source.rfind("http://",0)==0 || source.rfind("https://",0)==0 || source.find("@")!=std::string::npos) {
-      auto temp_dir = std::filesystem::temp_directory_path() / "cforge_install_temp";
-      if (std::filesystem::exists(temp_dir)) std::filesystem::remove_all(temp_dir);
-      std::filesystem::create_directories(temp_dir);
-      logger::print_status("Cloning project from Git: " + source);
-      if (!execute_tool("git", {"clone", source, temp_dir.string()}, "", "Git Clone", add_to_path)) {
-        logger::print_error("Git clone failed: " + source);
-        return 1;
-      }
-      source = temp_dir.string(); needs_cleanup = true;
-    }
-    // Verbose install source logging
-    logger::print_verbose("Installing project from: " + source);
-    bool success = installer_instance.install_project(
-        source,
+  std::filesystem::path source_path(project_source);
+  bool is_workspace = std::filesystem::exists(source_path / WORKSPACE_FILE);
+
+  // Helper to install a single project path
+  auto install_proj = [&](const std::string &proj_dir) {
+    installer_instance.install_project(
+        proj_dir,
         install_path,
         add_to_path,
         project_name_override,
         build_config,
         env_var);
-    if (needs_cleanup) { try { std::filesystem::remove_all(source); } catch(...) {} }
-    if (!success) { logger::print_error("Project installation failed"); return 1; }
+  };
+
+  if (is_workspace) {
+    logger::print_status("Installing workspace projects from: " + project_source);
+    // Load workspace.toml and determine main startup project
+    toml_reader ws_cfg(toml::parse_file((source_path / WORKSPACE_FILE).string()));
+    std::string main_project = ws_cfg.get_string("workspace.main_project", "");
+    // Get sorted project list
+    auto names = get_workspace_projects(source_path);
+    auto sorted = topo_sort_projects(source_path, names);
+    // Install libraries and the main executable
+    for (const auto &name : sorted) {
+      std::filesystem::path proj_path = source_path / name;
+      std::filesystem::path cfg = proj_path / CFORGE_FILE;
+      if (!std::filesystem::exists(cfg)) {
+        logger::print_warning("Skipping non-project directory: " + name);
+        continue;
+      }
+      toml_reader proj_cfg(toml::parse_file(cfg.string()));
+      std::string proj_type = proj_cfg.get_string("project.type", "executable");
+      // Skip executables that are not the main startup
+      if (proj_type == "executable" && name != main_project) {
+        logger::print_verbose("Skipping non-startup executable project: " + name);
+        continue;
+      }
+      logger::print_status("Installing project: " + name);
+      install_proj(proj_path.string());
+    }
+  } else {
+    // Install single project or cforge itself
+    // Install the project source
+    {
+      std::string source = project_source;
+      bool needs_cleanup = false;
+      // Git clone if URL
+      if (source.rfind("http://",0)==0 || source.rfind("https://",0)==0 || source.find("@")!=std::string::npos) {
+        auto temp_dir = std::filesystem::temp_directory_path() / "cforge_install_temp";
+        if (std::filesystem::exists(temp_dir)) std::filesystem::remove_all(temp_dir);
+        std::filesystem::create_directories(temp_dir);
+        logger::print_status("Cloning project from Git: " + source);
+        if (!execute_tool("git", {"clone", source, temp_dir.string()}, "", "Git Clone", add_to_path)) {
+          logger::print_error("Git clone failed: " + source);
+          return 1;
+        }
+        source = temp_dir.string(); needs_cleanup = true;
+      }
+      // Verbose install source logging
+      logger::print_verbose("Installing project from: " + source);
+      bool success = installer_instance.install_project(
+          source,
+          install_path,
+          add_to_path,
+          project_name_override,
+          build_config,
+          env_var);
+      if (needs_cleanup) { try { std::filesystem::remove_all(source); } catch(...) {} }
+      if (!success) { logger::print_error("Project installation failed"); return 1; }
+    }
+    logger::print_success("Project installed successfully");
   }
-  logger::print_success("Project installed successfully");
+  logger::print_success("Install command completed");
   return 0;
 }

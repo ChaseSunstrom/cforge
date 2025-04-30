@@ -9,6 +9,7 @@
 #include "core/file_system.h"
 #include "core/process_utils.hpp"
 #include "core/toml_reader.hpp"
+#include "core/workspace_utils.hpp"
 
 #include <algorithm>
 #include <filesystem>
@@ -246,123 +247,55 @@ static bool regenerate_cmake_files(const std::filesystem::path &project_dir,
   return true;
 }
 
-/**
- * @brief Handle the 'clean' command
- *
- * @param ctx Context containing parsed arguments
- * @return cforge_int_t Exit code (0 for success)
- */
+typedef std::filesystem::path Path;
+
 cforge_int_t cforge_cmd_clean(const cforge_context_t *ctx) {
-  // Check if cforge.toml exists
-  if (!std::filesystem::exists(CFORGE_FILE)) {
-    logger::print_error("Not a valid cforge project (missing " +
-                        std::string(CFORGE_FILE) + ")");
-    return 1;
-  }
-
-  // Load project configuration
-  toml_reader config;
-  if (!config.load(CFORGE_FILE)) {
-    logger::print_error("Failed to parse " + std::string(CFORGE_FILE));
-    return 1;
-  }
-
-  // Get project directory
-  std::filesystem::path project_dir = ctx->working_dir;
-
-  // Get base build directory from config
-  std::string base_build_dir = config.get_string("build.build_dir", "build");
-
-  // Check arguments
-  std::string config_name; // Specific configuration to clean
-  bool clean_all = false;  // Clean all configurations
-  bool clean_cmake =
-      true; // Clean CMake files by default since we regenerate CMakeLists.txt
-  bool regenerate = false; // Regenerate CMake files after cleaning
-  bool deep = false; // Deep clean: remove dependencies directory
-
+  Path cwd(ctx->working_dir);
+  bool is_workspace = std::filesystem::exists(cwd / WORKSPACE_FILE);
   bool verbose = logger::get_verbosity() == log_verbosity::VERBOSITY_VERBOSE;
-
-  // Parse arguments
+  bool deep = false;
+  bool regenerate = false;
   for (int i = 0; i < ctx->args.arg_count; ++i) {
     std::string arg = ctx->args.args[i];
+    if (arg == "--deep") deep = true;
+    if (arg == "--regenerate") regenerate = true;
+  }
 
-    if (arg == "--all") {
-      clean_all = true;
-    } else if (arg == "--no-cmake") {
-      clean_cmake = false; // Only way to disable cleaning CMake files
-    } else if (arg == "--regenerate") {
-      regenerate = true;
-    } else if (arg == "--deep") {
-      deep = true;
-    } else if ((arg == "--config" || arg == "-c") && (i + 1) < ctx->args.arg_count) {
-      config_name = ctx->args.args[++i];
+  // Helper to clean a single project
+  auto clean_project = [&](const Path &proj_dir) {
+    toml_reader cfg;
+    cfg.load((proj_dir / CFORGE_FILE).string());
+    std::string base_build = cfg.get_string("build.build_dir", DEFAULT_BUILD_DIR);
+    std::string default_cfg = cfg.get_string("build.default_config", "Release");
+    // Find all build directories (base + config variants)
+    auto build_dirs = find_all_build_dirs((proj_dir / base_build).string());
+    for (auto &bd : build_dirs) {
+      clean_build_directory(bd, verbose);
     }
-  }
-
-  // If no specific configuration and not cleaning all, use default config
-  if (!clean_all && config_name.empty()) {
-    config_name = config.get_string("build.default_config", "Release");
-  }
-
-  // Determine which build directories to clean
-  std::vector<std::filesystem::path> build_dirs;
-
-  if (clean_all) {
-    logger::print_status("Cleaning all build configurations");
-    build_dirs = find_all_build_dirs(base_build_dir);
-  } else {
-    logger::print_status("Cleaning build configuration: " +
-                         (config_name.empty() ? "Default" : config_name));
-    build_dirs.push_back(get_build_dir_for_config(base_build_dir, config_name));
-  }
-
-  // Clean CMake files if requested (which is now the default)
-  if (clean_cmake) {
     clean_cmake_files(verbose);
-  }
-
-  // Clean each build directory
-  bool all_cleaned = true;
-  for (const auto &build_dir : build_dirs) {
-    if (!clean_build_directory(build_dir, verbose)) {
-      all_cleaned = false;
+    if (regenerate && !build_dirs.empty()) {
+      regenerate_cmake_files(proj_dir, build_dirs.front(), default_cfg, verbose);
     }
-  }
-
-  // Remove dependencies directory if deep clean specified
-  if (deep) {
-    std::string deps_dir = config.get_string("dependencies.directory", "deps");
-    std::filesystem::path deps_path = project_dir / deps_dir;
-    if (std::filesystem::exists(deps_path)) {
-      logger::print_status("Removing dependencies directory: " + deps_path.string());
-      try {
-        std::filesystem::remove_all(deps_path);
-        logger::print_success("Removed dependencies directory: " + deps_path.string());
-      } catch (const std::exception &e) {
-        logger::print_error("Failed to remove dependencies directory: " + std::string(e.what()));
-        all_cleaned = false;
+    if (deep && cfg.has_key("dependencies.directory")) {
+      Path deps = proj_dir / cfg.get_string("dependencies.directory", "deps");
+      if (std::filesystem::exists(deps)) {
+        std::filesystem::remove_all(deps);
+        logger::print_status("Removed dependencies: " + deps.string());
       }
-    } else {
-      logger::print_status("Dependencies directory does not exist, nothing to clean: " + deps_path.string());
     }
-  }
+  };
 
-  // Regenerate CMake files if requested
-  if (regenerate) {
-    std::filesystem::path build_dir =
-        get_build_dir_for_config(base_build_dir, config_name);
-    if (!regenerate_cmake_files(project_dir, build_dir, config_name, verbose)) {
-      logger::print_error("Failed to regenerate CMake files");
-      return 1;
+  if (is_workspace) {
+    // List and sort workspace projects
+    auto proj_names = cforge::get_workspace_projects(cwd);
+    auto sorted = cforge::topo_sort_projects(cwd, proj_names);
+    for (const auto &name : sorted) {
+      clean_project(cwd / name);
     }
-  }
-
-  if (all_cleaned) {
-    logger::print_success("Clean completed successfully");
-    return 0;
   } else {
-    logger::print_error("Some directories could not be cleaned");
-    return 1;
+    // Single project
+    clean_project(cwd);
   }
+
+  return 0;
 }
