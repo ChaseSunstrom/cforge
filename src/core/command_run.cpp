@@ -381,7 +381,7 @@ static bool build_project_for_run(const std::filesystem::path &project_dir,
 cforge_int_t cforge_cmd_run(const cforge_context_t *ctx) {
   try {
     // Determine project directory
-    std::filesystem::path project_dir = ctx->working_dir;
+    std::filesystem::path project_dir = std::filesystem::absolute(ctx->working_dir);
 
     // Parse common parameters first
     // Get the build configuration
