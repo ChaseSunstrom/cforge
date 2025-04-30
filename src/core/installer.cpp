@@ -229,208 +229,105 @@ bool installer::install_project(const std::string &project_path,
     }
   }
 
-  // Build the project first (verbose)
+  // Build the project first (verbose) or skip if in a workspace
   print_verbose("Building project before installation...");
-
-  // Change to project directory
+  // Save original working directory
   std::filesystem::path original_path = std::filesystem::current_path();
-  std::filesystem::current_path(project_dir);
-
-  // Check if there's a CMakeLists.txt file
-  bool has_cmake = std::filesystem::exists(project_dir / "CMakeLists.txt");
-  bool build_success = false;
-
-  if (has_cmake) {
-    // Create build directory if it doesn't exist
-    std::filesystem::path build_dir = project_dir / "build";
-    if (!std::filesystem::exists(build_dir)) {
-      try {
-        std::filesystem::create_directories(build_dir);
-        print_verbose("Created build directory: " + build_dir.string());
-      } catch (const std::exception &ex) {
-        logger::print_warning("Failed to create build directory: " +
-                              std::string(ex.what()));
-      }
+  // Detect if this project is inside a workspace
+  std::filesystem::path cwd = project_dir;
+  std::filesystem::path workspace_root;
+  bool in_workspace = false;
+  while (true) {
+    if (std::filesystem::exists(cwd / WORKSPACE_FILE)) {
+      workspace_root = cwd;
+      in_workspace = true;
+      break;
     }
-
-    // Check if CMakeCache.txt exists and remove it to avoid generator platform mismatch issues
-    std::filesystem::path cmake_cache = build_dir / "CMakeCache.txt";
-    if (std::filesystem::exists(cmake_cache)) {
-      try {
-        print_verbose("Removing existing CMake cache to avoid platform mismatch issues");
-        std::filesystem::remove(cmake_cache);
-      } catch (const std::exception &ex) {
-        logger::print_warning("Failed to remove CMake cache: " + std::string(ex.what()));
-      }
-    }
-
-    // Also remove CMakeFiles directory if it exists
-    std::filesystem::path cmake_files = build_dir / "CMakeFiles";
-    if (std::filesystem::exists(cmake_files)) {
-      try {
-        print_verbose("Removing existing CMake files");
-        std::filesystem::remove_all(cmake_files);
-      } catch (const std::exception &ex) {
-        logger::print_warning("Failed to remove CMake files: " + std::string(ex.what()));
-      }
-    }
-
-    // Run CMake configuration step (verbose)
-    print_verbose("Configuring project with CMake...");
-    std::filesystem::current_path(build_dir);
-
-    try {
-#ifdef _WIN32
-      // On Windows, use Ninja generator with MSVC for better compatibility
-      // First check if Ninja is available
-      bool ninja_available = is_command_available("ninja");
-      bool cmake_available = is_command_available("cmake");
-
-      if (!cmake_available) {
-        logger::print_error("CMake is not available. Please install CMake and "
-                            "make sure it's in your PATH.");
-        logger::print_status(
-            "You can download CMake from https://cmake.org/download/");
-        return false;
-      }
-
-      if (ninja_available) {
-        logger::print_status("Using Ninja generator for faster builds");
-        std::vector<std::string> cmake_args = {"..", "-G", "Ninja",
-                                               "-DCMAKE_BUILD_TYPE=Release"};
-        build_success = execute_tool("cmake", cmake_args, build_dir.string(),
-                                     "CMake Configure", 
-                                     logger::get_verbosity() == log_verbosity::VERBOSITY_VERBOSE,
-                                     120);
-
-        if (build_success) {
-          // Build the project with Ninja
-          logger::print_status("Building project in Release mode...");
-          std::vector<std::string> ninja_args = {};
-          build_success = execute_tool("ninja", ninja_args, build_dir.string(),
-                                       "Ninja Build", 
-                                       logger::get_verbosity() == log_verbosity::VERBOSITY_VERBOSE,
-                                       300);
-        }
-      } else {
-        // Fallback to Visual Studio generator
-        logger::print_status("Ninja not found, using Visual Studio generator");
-        std::vector<std::string> cmake_args = {"..", "-A", "x64"};
-        build_success = execute_tool("cmake", cmake_args, build_dir.string(),
-                                     "CMake Configure", 
-                                     logger::get_verbosity() == log_verbosity::VERBOSITY_VERBOSE,
-                                     120);
-
-        if (build_success) {
-          // Build the project with CMake
-          logger::print_status("Building project in Release mode...");
-          std::vector<std::string> build_args = {"--build", ".", "--config",
-                                                 "Release"};
-          build_success = execute_tool("cmake", build_args, build_dir.string(),
-                                       "CMake Build", 
-                                       logger::get_verbosity() == log_verbosity::VERBOSITY_VERBOSE,
-                                       300);
-        }
-      }
-#else
-      // On Unix, use Unix Makefiles generator
-      bool cmake_available = is_command_available("cmake");
-      bool make_available = is_command_available("make");
-
-      if (!cmake_available) {
-        logger::print_error("CMake is not available. Please install CMake and "
-                            "make sure it's in your PATH.");
-        logger::print_status("You can install CMake using your package manager "
-                             "(apt, yum, brew, etc.)");
-        return false;
-      }
-
-      std::vector<std::string> cmake_args = {"..",
+    if (cwd == cwd.parent_path()) break;
+    cwd = cwd.parent_path();
+  }
+  bool build_success = true;
+  if (in_workspace) {
+    print_verbose("Detected workspace at " + workspace_root.string() + "; skipping per-project build and using workspace build artifacts");
+  } else {
+    // Change to project directory for build
+    std::filesystem::current_path(project_dir);
+    // Check if there's a CMakeLists.txt file
+    bool has_cmake = std::filesystem::exists(project_dir / "CMakeLists.txt");
+    build_success = false;
+    if (has_cmake) {
+      // Build the project with CMake
+      logger::print_status("Building project in Release mode...");
+      std::vector<std::string> cmake_args = {"..", "-G", "Ninja",
                                              "-DCMAKE_BUILD_TYPE=Release"};
-      build_success = execute_tool("cmake", cmake_args, build_dir.string(),
+      build_success = execute_tool("cmake", cmake_args, project_dir.string(),
                                    "CMake Configure", 
                                    logger::get_verbosity() == log_verbosity::VERBOSITY_VERBOSE,
                                    120);
 
       if (build_success) {
-        if (!make_available) {
-          logger::print_error("Make is not available. Please install Make and "
-                              "make sure it's in your PATH.");
-          return false;
-        }
-
-        // Build the project with make
+        // Build the project with Ninja
         logger::print_status("Building project in Release mode...");
-        std::vector<std::string> make_args = {"-j4"};
-        build_success = execute_tool("make", make_args, build_dir.string(),
-                                     "Make Build", 
+        std::vector<std::string> ninja_args = {};
+        build_success = execute_tool("ninja", ninja_args, project_dir.string(),
+                                     "Ninja Build", 
                                      logger::get_verbosity() == log_verbosity::VERBOSITY_VERBOSE,
                                      300);
       }
-#endif
-
-      if (!build_success) {
-        logger::print_warning("Build process failed; attempting installation anyway.");
-      }
-    } catch (const std::exception &ex) {
-      logger::print_warning("Error during build: " + std::string(ex.what()));
-      build_success = false;
-    }
-  } else {
-    // No CMake, try looking for a Makefile
-    if (std::filesystem::exists(project_dir / "Makefile")) {
-      print_verbose("Building project with Makefile...");
-      try {
+    } else {
+      // No CMake, try looking for a Makefile
+      if (std::filesystem::exists(project_dir / "Makefile")) {
+        print_verbose("Building project with Makefile...");
+        try {
 #ifdef _WIN32
-        bool make_available = is_command_available("make") ||
-                              is_command_available("mingw32-make") ||
-                              is_command_available("nmake");
-        if (!make_available) {
-          logger::print_warning("No make tool found (make, mingw32-make, "
-                                "nmake). Skipping build.");
-          build_success = false;
-        } else {
-          // Try different make tools
-          if (is_command_available("make")) {
+          bool make_available = is_command_available("make") ||
+                                is_command_available("mingw32-make") ||
+                                is_command_available("nmake");
+          if (!make_available) {
+            logger::print_warning("No make tool found (make, mingw32-make, "
+                                  "nmake). Skipping build.");
+            build_success = false;
+          } else {
+            // Try different make tools
+            if (is_command_available("make")) {
+              int make_result = system("make");
+              build_success = (make_result == 0);
+            } else if (is_command_available("mingw32-make")) {
+              int make_result = system("mingw32-make");
+              build_success = (make_result == 0);
+            } else if (is_command_available("nmake")) {
+              int make_result = system("nmake");
+              build_success = (make_result == 0);
+            }
+          }
+#else
+          bool make_available = is_command_available("make");
+          if (!make_available) {
+            logger::print_warning("Make is not available. Skipping build.");
+            build_success = false;
+          } else {
             int make_result = system("make");
             build_success = (make_result == 0);
-          } else if (is_command_available("mingw32-make")) {
-            int make_result = system("mingw32-make");
-            build_success = (make_result == 0);
-          } else if (is_command_available("nmake")) {
-            int make_result = system("nmake");
-            build_success = (make_result == 0);
           }
-        }
-#else
-        bool make_available = is_command_available("make");
-        if (!make_available) {
-          logger::print_warning("Make is not available. Skipping build.");
-          build_success = false;
-        } else {
-          int make_result = system("make");
-          build_success = (make_result == 0);
-        }
 #endif
-      } catch (const std::exception &ex) {
-        logger::print_warning("Error during build: " + std::string(ex.what()));
-        build_success = false;
+        } catch (const std::exception &ex) {
+          logger::print_warning("Error during build: " + std::string(ex.what()));
+          build_success = false;
+        }
+      } else {
+        // Assume the project is pre-built
+        print_verbose("No build system detected. Assuming pre-built project.");
+        build_success = true;
       }
-    } else {
-      // Assume the project is pre-built
-      print_verbose("No build system detected. Assuming pre-built project.");
-      build_success = true;
     }
+    if (!build_success) {
+      logger::print_warning("Build failed or skipped; searching for pre-built executables.");
+    } else {
+      print_verbose("Build completed successfully.");
+    }
+    // Restore working directory after build
+    std::filesystem::current_path(original_path);
   }
-
-  if (!build_success) {
-    logger::print_warning("Build failed or skipped; searching for pre-built executables.");
-  } else {
-    print_verbose("Build completed successfully.");
-  }
-
-  // Restore original path
-  std::filesystem::current_path(original_path);
 
   // Copy files to target path
   std::vector<std::string> exclude_patterns = {
@@ -482,13 +379,15 @@ bool installer::install_project(const std::string &project_path,
       bin_dir = build_base / "bin";
       print_verbose("Fallback to build/bin: " + bin_dir.string());
     }
-    // Fallback: check project/bin/<config>
-    if (!std::filesystem::exists(bin_dir)) {
+
+    // Fallback: check project/bin/<config> only when not in a workspace
+    if (!in_workspace && !std::filesystem::exists(bin_dir)) {
       bin_dir = project_dir / "bin" / cfg;
       print_verbose("Fallback to project/bin/config: " + bin_dir.string());
     }
-    // Fallback: check project/bin
-    if (!std::filesystem::exists(bin_dir)) {
+
+    // Fallback: check project/bin only when not in a workspace
+    if (!in_workspace && !std::filesystem::exists(bin_dir)) {
       bin_dir = project_dir / "bin";
       print_verbose("Fallback to project/bin: " + bin_dir.string());
     }
@@ -588,8 +487,8 @@ bool installer::install_project(const std::string &project_path,
       }
     }
 
-    // If no executable found yet, look in the build directory
-    if (!found_executable) {
+    // If no executable found yet and not in a workspace, look in the build directory
+    if (!found_executable && !in_workspace) {
       print_verbose(
           "No executable found in bin directory, searching build directory...");
       std::filesystem::path build_dir = project_dir / "build";

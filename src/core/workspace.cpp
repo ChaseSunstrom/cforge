@@ -642,8 +642,12 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
   bool file_exists = std::filesystem::exists(cmakelists_path);
   
   if (file_exists) {
-    logger::print_verbose("CMakeLists.txt already exists in project directory, using existing file");
-    return true;
+    // Regenerate if dependencies are defined
+    if (!project_config.has_key("dependencies.git") && !project_config.has_key("dependencies.vcpkg")) {
+      logger::print_verbose("CMakeLists.txt already exists in project directory, using existing file");
+      return true;
+    }
+    logger::print_status("Dependencies detected, regenerating CMakeLists.txt from cforge.toml");
   }
   
   logger::print_status("Generating CMakeLists.txt from cforge.toml...");

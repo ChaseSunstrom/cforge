@@ -99,7 +99,11 @@ cforge_int_t cforge_cmd_install(const cforge_context_t *ctx) {
   }
 
   std::filesystem::path source_path(project_source);
-  bool is_workspace = std::filesystem::exists(source_path / WORKSPACE_FILE);
+  // Detect if we are inside a workspace, and adjust to workspace root
+  auto [is_workspace, workspace_root] = cforge::is_in_workspace(source_path);
+  if (is_workspace) {
+    source_path = workspace_root;
+  }
 
   // Helper to install a single project path
   auto install_proj = [&](const std::string &proj_dir) {
@@ -113,6 +117,30 @@ cforge_int_t cforge_cmd_install(const cforge_context_t *ctx) {
   };
 
   if (is_workspace) {
+    logger::print_status("Building workspace before installation...");
+    // Build the workspace
+    cforge_context_t build_ctx;
+    memset(&build_ctx, 0, sizeof(build_ctx));
+    // Use same working dir and config
+    strncpy(build_ctx.working_dir, ctx->working_dir, sizeof(build_ctx.working_dir) - 1);
+    build_ctx.working_dir[sizeof(build_ctx.working_dir) - 1] = '\0';
+    build_ctx.args.command = strdup("build");
+    if (!build_config.empty()) {
+      build_ctx.args.config = strdup(build_config.c_str());
+    }
+    if (logger::get_verbosity() == log_verbosity::VERBOSITY_VERBOSE) {
+      build_ctx.args.verbosity = strdup("verbose");
+    }
+    int build_res = cforge_cmd_build(&build_ctx);
+    free((void*)build_ctx.args.command);
+    if (build_ctx.args.config) free((void*)build_ctx.args.config);
+    if (build_ctx.args.verbosity) free((void*)build_ctx.args.verbosity);
+    if (build_res != 0) {
+      logger::print_error("Workspace build failed");
+      return build_res;
+    }
+    logger::print_success("Workspace built successfully");
+    // Now install projects from build artifacts
     logger::print_status("Installing workspace projects from: " + project_source);
     // Load workspace.toml and determine main startup project
     toml_reader ws_cfg(toml::parse_file((source_path / WORKSPACE_FILE).string()));
