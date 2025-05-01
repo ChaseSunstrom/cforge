@@ -20,6 +20,8 @@
 #include <string>
 #include <vector>
 #include <set>
+#include <cstdlib>
+#include <sstream>
 
 using namespace cforge;
 
@@ -378,6 +380,23 @@ static bool build_project_for_run(const std::filesystem::path &project_dir,
   return true;
 }
 
+// Spawn a command in a new terminal window across platforms
+static bool spawn_in_terminal(const std::string &cmd) {
+#if defined(_WIN32)
+  // Use start to open a new Command Prompt
+  std::string winCmd = "start \"CForge Run\" cmd /k \"" + cmd + "\"";
+  return std::system(winCmd.c_str()) == 0;
+#elif defined(__APPLE__)
+  // Use AppleScript to open a new Terminal window
+  std::string osa = "osascript -e 'tell application \"Terminal\" to do script \"" + cmd + "\"'";
+  return std::system(osa.c_str()) == 0;
+#else
+  // Use x-terminal-emulator for Linux (fallback to GNOME Terminal)
+  std::string linuxCmd = "x-terminal-emulator -e '" + cmd + "' &";
+  return std::system(linuxCmd.c_str()) == 0;
+#endif
+}
+
 cforge_int_t cforge_cmd_run(const cforge_context_t *ctx) {
   try {
     // Determine project directory
@@ -505,58 +524,62 @@ cforge_int_t cforge_cmd_run(const cforge_context_t *ctx) {
       if (config.empty()) {
         config = workspace_config.get_string("workspace.build_type", "Debug");
       }
-      // Collect startup projects
-      std::vector<std::string> entries = workspace_config.get_string_array("workspace.projects");
+      // Determine startup projects using workspace API
+      workspace ws;
+      ws.load(workspace_root);
+      // Collect all projects flagged as startup
+      std::vector<workspace_project> projects = ws.get_projects();
       std::vector<std::string> to_run;
-      for (const auto &e : entries) {
-        size_t p1 = e.find(':'); size_t p2 = e.find(':', p1+1);
-        if (p1 == std::string::npos || p2 == std::string::npos) continue;
-        std::string name = e.substr(0, p1);
-        std::string flag = e.substr(p2+1);
-        std::transform(flag.begin(), flag.end(), flag.begin(), ::tolower);
-        if (flag == "true") to_run.push_back(name);
+      for (const auto &proj : projects) {
+        if (proj.is_startup) {
+          to_run.push_back(proj.name);
+        }
+      }
+      // Fallback to main_project if none marked
+      if (to_run.empty()) {
+        workspace_project main_proj = ws.get_startup_project();
+        if (!main_proj.name.empty()) {
+          to_run.push_back(main_proj.name);
+        }
       }
       if (to_run.empty()) {
-        std::string main = workspace_config.get_string("workspace.main_project", "");
-        if (!main.empty()) to_run.push_back(main);
-      }
-      if (to_run.empty()) {
-        logger::print_error("No startup projects defined in workspace.toml");
+        logger::print_error("No startup project set in workspace");
         return 1;
       }
-      // Run each
-      std::set<std::string> built;
-      auto stdout_cb = [](const std::string &c){ std::cout << c << std::flush; };
-      auto stderr_cb = [](const std::string &c){ std::cerr << c << std::flush; };
+      // Run each startup project
+      bool overall_success = true;
       for (const auto &proj_name : to_run) {
-        auto proj_path = project_dir / proj_name;
+        // Determine project directory
+        std::filesystem::path proj_path = project_dir / proj_name;
         if (!std::filesystem::exists(proj_path / CFORGE_FILE)) {
           logger::print_warning("Skipping missing project: " + proj_name);
+          overall_success = false;
           continue;
         }
-        logger::print_status("Running project: " + proj_name);
+        // Load project config to get real name
         toml_reader pconf(toml::parse_file((proj_path / CFORGE_FILE).string()));
-        if (pconf.get_string("project.binary_type", "executable") != "executable") {
-          continue;
-        }
-        std::string real = pconf.get_string("project.name", proj_name);
-        // Look for executable in shared workspace build directory
-        auto exe = find_project_executable(proj_path, ws_build_dir.string(), config, real);
+        std::string real_name = pconf.get_string("project.name", proj_name);
+        // Find executable
+        auto exe = find_project_executable(proj_path, ws_build_dir.string(), config, real_name);
         if (exe.empty()) {
           logger::print_error("Executable not found: " + proj_name);
+          overall_success = false;
           continue;
         }
-        logger::print_status("Running executable: " + exe.string());
-        // Display program output header
-        logger::print_status("Program Output\n────────────");
-        auto res = execute_process(exe.string(), extra_args, proj_path.string(), stdout_cb, stderr_cb, 0);
-        std::cout << std::endl;
-        if (!res.success)
-          logger::print_error("Exited " + std::to_string(res.exit_code) + ": " + proj_name);
-        else
-          logger::print_success("Exited successfully: " + proj_name);
+        // Build command line
+        std::ostringstream oss;
+        // Quote the executable path to handle spaces
+        oss << "\"" << exe.string() << "\"";
+        for (const auto &arg : extra_args) {
+          oss << " " << arg;
+        }
+        // Spawn in new terminal
+        if (!spawn_in_terminal(oss.str())) {
+          logger::print_error("Failed to spawn terminal for: " + proj_name);
+          overall_success = false;
+        }
       }
-      return 0;
+      return overall_success ? 0 : 1;
     } else {
       // Handle single project run
       logger::print_status("Running in single project context");

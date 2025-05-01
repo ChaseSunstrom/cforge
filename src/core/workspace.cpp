@@ -1430,16 +1430,29 @@ bool workspace::build_project(const std::string &project_name,
 bool workspace::run_startup_project(const std::vector<std::string> &args,
                                     const std::string &config,
                                     bool verbose) const {
-  // Get the startup project
-  workspace_project startup = get_startup_project();
-
-  if (startup.name.empty()) {
-    logger::print_error("No startup project set in workspace");
-    return false;
+  // Collect all startup projects
+  std::vector<std::string> to_run;
+  for (const auto &project : projects_) {
+    if (project.is_startup) {
+      to_run.push_back(project.name);
+    }
   }
-
-  // Run the startup project
-  return run_project(startup.name, args, config, verbose);
+  // Fallback to default startup project if none marked
+  if (to_run.empty()) {
+    workspace_project default_proj = get_startup_project();
+    if (default_proj.name.empty()) {
+      logger::print_error("No startup project set in workspace");
+      return false;
+    }
+    to_run.push_back(default_proj.name);
+  }
+  bool all_success = true;
+  for (const auto &proj_name : to_run) {
+    if (!run_project(proj_name, args, config, verbose)) {
+      all_success = false;
+    }
+  }
+  return all_success;
 }
 
 bool workspace::run_project(const std::string &project_name,
@@ -1603,8 +1616,8 @@ void workspace::load_projects() {
       continue;
     }
 
-    // Update startup flag if this is the startup project
-    project.is_startup = (project.name == startup_project_);
+    // Update startup flag based on table-of-tables or legacy main_project
+    project.is_startup = project.is_startup_project || (project.name == startup_project_);
 
     // Try to read the project name from cforge.toml to validate
     toml_reader project_config;
@@ -2027,6 +2040,7 @@ bool workspace_config::load(const std::string &workspace_file) {
 
   // Load projects using array-of-tables [[workspace.project]] with fallback
   projects_.clear();
+  bool had_table_startup = false;
   try {
     auto raw = toml::parse_file(workspace_file);
     auto node = raw["workspace"]["project"];
@@ -2038,7 +2052,20 @@ bool workspace_config::load(const std::string &workspace_file) {
         workspace_project project;
         project.name = tbl["name"].value_or("");
         project.path = tbl["path"].value_or(project.name);
-        project.is_startup_project = tbl["startup"].value_or(false);
+        // Read startup flag as boolean or string (accept "true" as true)
+        auto flag_node = tbl["startup"];
+        if (flag_node && flag_node.is_boolean()) {
+          project.is_startup_project = flag_node.value_or(false);
+        } else if (flag_node && flag_node.is_string()) {
+          std::string s = flag_node.value_or(std::string());
+          std::transform(s.begin(), s.end(), s.begin(), ::tolower);
+          project.is_startup_project = (s == "true");
+        } else {
+          project.is_startup_project = false;
+        }
+        if (project.is_startup_project) {
+          had_table_startup = true;
+        }
         projects_.push_back(project);
       }
     } else {
@@ -2072,6 +2099,9 @@ bool workspace_config::load(const std::string &workspace_file) {
             project.path = project.name;
           if (parts.size() >= 3)
             project.is_startup_project = (parts[2] == "true");
+          if (project.is_startup_project) {
+            had_table_startup = true;
+          }
           projects_.push_back(project);
         }
       }
@@ -2080,9 +2110,9 @@ bool workspace_config::load(const std::string &workspace_file) {
     logger::print_error("Error parsing workspace projects: " + std::string(e.what()));
   }
 
-  // Check for default startup project
+  // Check for default startup project only if none in table-of-tables
   std::string main_project = reader.get_string("workspace.main_project", "");
-  if (!main_project.empty()) {
+  if (!had_table_startup && !main_project.empty()) {
     set_startup_project(main_project);
   }
 

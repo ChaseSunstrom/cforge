@@ -949,7 +949,6 @@ cforge_int_t cforge_cmd_build(const cforge_context_t *ctx) {
 
   if (is_workspace) {
     // Generate workspace and project CMakeLists.txt before build
-    logger::print_status("Generating workspace CMakeLists.txt");
     toml_reader ws_cfg;
     ws_cfg.load((workspace_dir / WORKSPACE_FILE).string());
     if (!generate_workspace_cmakelists(workspace_dir, ws_cfg, verbose)) {
