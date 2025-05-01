@@ -970,9 +970,11 @@ cforge_int_t cforge_cmd_build(const cforge_context_t *ctx) {
       }
     }
     logger::print_status("Building in workspace context: " + workspace_dir.string());
+    // Save current directory and switch to workspace root
+    auto original_cwd = std::filesystem::current_path();
+    std::filesystem::current_path(workspace_dir);
     // Determine workspace build directory
-    std::filesystem::path base_build = workspace_dir / DEFAULT_BUILD_DIR;
-    std::filesystem::path build_dir = get_build_dir_for_config(base_build.string(), config_name);
+    std::filesystem::path build_dir = workspace_dir / DEFAULT_BUILD_DIR;
     // Ensure build directory exists
     if (!std::filesystem::exists(build_dir)) {
       try { std::filesystem::create_directories(build_dir); } catch(...) {}
@@ -982,6 +984,8 @@ cforge_int_t cforge_cmd_build(const cforge_context_t *ctx) {
     if (verbose) cmake_args.push_back("--debug-output");
     if (!run_cmake_configure(cmake_args, build_dir.string(), workspace_dir.string(), verbose)) {
       logger::print_error("Workspace CMake configuration failed");
+      // Restore original directory before exiting
+      std::filesystem::current_path(original_cwd);
       return 1;
     }
     // Build single target or entire workspace
@@ -1000,6 +1004,8 @@ cforge_int_t cforge_cmd_build(const cforge_context_t *ctx) {
       logger::print_status("Building entire workspace");
     }
     bool result = execute_tool("cmake", build_args, "", "CMake Build", verbose);
+    // Restore original directory
+    std::filesystem::current_path(original_cwd);
     if (!result) {
       logger::print_error("Build failed");
       return 1;

@@ -523,6 +523,14 @@ configure_git_dependencies_in_cmake(const toml_reader &project_config,
 
     // FetchContent declaration
     cmakelists << "FetchContent_Declare(" << dep << "\n";
+    cmakelists << "    GIT_REPOSITORY " << url << "\n";
+    if (!tag.empty()) {
+        cmakelists << "    GIT_TAG " << tag << "\n";
+    } else if (!branch.empty()) {
+        cmakelists << "    GIT_TAG " << branch << "\n";
+    } else if (!commit.empty()) {
+        cmakelists << "    GIT_TAG " << commit << "\n";
+    }
     cmakelists << "    SOURCE_DIR ${DEPS_DIR}/" << dep << "\n";
     cmakelists << ")\n";
 
@@ -635,8 +643,6 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
     std::ofstream hash_out(hash_file, std::ios::trunc);
     hash_out << current_hash;
   }
-  // Regenerate CMakeLists.txt
-  logger::print_status("Generating CMakeLists.txt from cforge.toml...");
   
   // Skip generation if CMakeLists.txt already exists in project folder
   bool file_exists = std::filesystem::exists(cmakelists_path);
@@ -1674,9 +1680,6 @@ bool generate_workspace_cmakelists(const std::filesystem::path &workspace_dir,
   // Generating workspace CMakeLists.txt
   logger::print_status("Generating workspace CMakeLists.txt from " + std::string(WORKSPACE_FILE));
 
-  logger::print_status(
-      "Generating workspace CMakeLists.txt from workspace.toml...");
-
   // Create CMakeLists.txt if needed
   std::ofstream cmakelists(cmakelists_path);
   if (!cmakelists.is_open()) {
@@ -1795,18 +1798,25 @@ bool generate_workspace_cmakelists(const std::filesystem::path &workspace_dir,
   std::vector<std::string> projects;
   for (const auto &entry : std::filesystem::directory_iterator(workspace_dir)) {
     if (entry.is_directory() &&
-        std::filesystem::exists(entry.path() / "cforge.toml") &&
-        entry.path().filename() != "build") {
+        std::filesystem::exists(entry.path() / CFORGE_FILE) &&
+        entry.path().filename() != DEFAULT_BUILD_DIR) {
       projects.push_back(entry.path().filename().string());
     }
   }
 
   if (workspace_config.has_key("workspace.projects")) {
-    // Use projects defined in the workspace configuration
-    auto config_projects =
-        workspace_config.get_string_array("workspace.projects");
+    // Use projects defined in the workspace configuration (format: name:path:is_startup)
+    auto config_projects = workspace_config.get_string_array("workspace.projects");
     if (!config_projects.empty()) {
-      projects = config_projects;
+      projects.clear();
+      for (const auto &proj_entry : config_projects) {
+        // Extract the project name before the first colon
+        size_t pos = proj_entry.find(':');
+        std::string proj_name = (pos != std::string::npos)
+                                   ? proj_entry.substr(0, pos)
+                                   : proj_entry;
+        projects.push_back(proj_name);
+      }
     }
   }
 
@@ -2015,58 +2025,59 @@ bool workspace_config::load(const std::string &workspace_file) {
   name_ = reader.get_string("workspace.name", "cpp-workspace");
   description_ = reader.get_string("workspace.description", "A C++ workspace");
 
-  // Load projects
-  std::vector<std::string> project_paths =
-      reader.get_string_array("workspace.projects");
-  if (!project_paths.empty()) {
-    for (const auto &project_path : project_paths) {
-      workspace_project project;
-
-      // Parse project data from the path string - format:
-      // "name:path:is_startup_project"
-      std::vector<std::string> parts;
-      std::string::size_type start = 0;
-      std::string::size_type end = 0;
-
-      // Split by colons, but handle Windows drive letters (e.g., C:\)
-      while (start < project_path.length()) {
-        end = project_path.find(':', start);
-        if (end == std::string::npos) {
-          // Last part
-          parts.push_back(project_path.substr(start));
-          break;
+  // Load projects using array-of-tables [[workspace.project]] with fallback
+  projects_.clear();
+  try {
+    auto raw = toml::parse_file(workspace_file);
+    auto node = raw["workspace"]["project"];
+    if (node && node.is_array_of_tables()) {
+      // New format as array of tables
+      for (auto &elem : *node.as_array()) {
+        if (!elem.is_table()) continue;
+        toml::table &tbl = *elem.as_table();
+        workspace_project project;
+        project.name = tbl["name"].value_or("");
+        project.path = tbl["path"].value_or(project.name);
+        project.is_startup_project = tbl["startup"].value_or(false);
+        projects_.push_back(project);
+      }
+    } else {
+      // Legacy parsing: string array format "name:path:is_startup_project"
+      std::vector<std::string> project_paths =
+          reader.get_string_array("workspace.projects");
+      if (!project_paths.empty()) {
+        for (const auto &project_path : project_paths) {
+          workspace_project project;
+          std::vector<std::string> parts;
+          std::string::size_type start = 0, end = 0;
+          while (start < project_path.length()) {
+            end = project_path.find(':', start);
+            if (end == std::string::npos) {
+              parts.push_back(project_path.substr(start));
+              break;
+            }
+            if (end == 1 && project_path.length() > 2 &&
+                (project_path[end + 1] == '\\' || project_path[end + 1] == '/')) {
+              // Skip colon in Windows drive letter
+              start = end + 1;
+              continue;
+            }
+            parts.push_back(project_path.substr(start, end - start));
+            start = end + 1;
+          }
+          if (parts.size() >= 1) project.name = parts[0];
+          if (parts.size() >= 2)
+            project.path = std::filesystem::path(parts[1]);
+          else if (!project.name.empty())
+            project.path = project.name;
+          if (parts.size() >= 3)
+            project.is_startup_project = (parts[2] == "true");
+          projects_.push_back(project);
         }
-
-        // Check if this colon is part of a Windows drive letter
-        if (end == 1 && project_path.length() > 2 &&
-            project_path[end + 1] == '\\') {
-          // This is a Windows drive letter, find the next colon
-          start = end + 1;
-          continue;
-        }
-
-        parts.push_back(project_path.substr(start, end - start));
-        start = end + 1;
       }
-
-      if (parts.size() >= 1) {
-        project.name = parts[0];
-      }
-
-      if (parts.size() >= 2) {
-        project.path = std::filesystem::path(parts[1]);
-      } else if (!project.name.empty()) {
-        // If path is not specified, use the name as the path
-        project.path = project.name;
-      }
-
-      if (parts.size() >= 3) {
-        project.is_startup_project = (parts[2] == "true");
-      }
-
-      // Add the project to the list
-      projects_.push_back(project);
     }
+  } catch (const std::exception &e) {
+    logger::print_error("Error parsing workspace projects: " + std::string(e.what()));
   }
 
   // Check for default startup project
@@ -2108,41 +2119,24 @@ bool workspace_config::save(const std::string &workspace_file) const {
     file << "main_project = \"" << startup_project << "\"\n\n";
   }
 
-  // Write projects as a string array
-  file << "# Projects in format: name:path:is_startup_project\n";
-  file << "projects = [\n";
-
-  for (size_t i = 0; i < projects_.size(); ++i) {
-    const auto &project = projects_[i];
-
-    // Create a relative path if possible
+  // Write projects as array of tables [[workspace.project]]
+  for (const auto &project : projects_) {
+    file << "[[workspace.project]]\n";
+    file << "name = \"" << project.name << "\"\n";
+    // Compute relative or absolute path
     std::filesystem::path path_to_save;
     if (project.path.is_absolute()) {
       try {
-        // Try to make the path relative to workspace directory
         path_to_save = std::filesystem::relative(project.path, workspace_dir);
-        logger::print_verbose("Converted absolute path to relative: " +
-                              path_to_save.string());
       } catch (...) {
-        // If we can't create a relative path, use the absolute one
         path_to_save = project.path;
-        logger::print_verbose("Using absolute path: " + path_to_save.string());
       }
     } else {
-      // Already a relative path
       path_to_save = project.path;
     }
-
-    file << "  \"" << project.name << ":" << path_to_save.string() << ":"
-         << (project.is_startup_project ? "true" : "false") << "\"";
-
-    if (i < projects_.size() - 1) {
-      file << ",";
-    }
-    file << "\n";
+    file << "path = \"" << path_to_save.string() << "\"\n";
+    file << "startup = " << (project.is_startup_project ? "true" : "false") << "\n\n";
   }
-
-  file << "]\n\n";
 
   // Write additional information as comments
   file << "# Dependencies between projects are determined automatically\n";

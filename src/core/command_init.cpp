@@ -1031,7 +1031,6 @@ static bool create_project(const std::filesystem::path &project_path,
     // Create project skeleton
     std::filesystem::create_directories(project_path / "src");
     std::filesystem::create_directories(project_path / "include");
-    std::filesystem::create_directories(project_path / "build");
 
     // Create README file
     if (!create_readme(project_path, project_name)) {

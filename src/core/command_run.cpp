@@ -448,12 +448,11 @@ cforge_int_t cforge_cmd_run(const cforge_context_t *ctx) {
       }
     }
 
-    // Check if this is a workspace or standalone project
-    std::filesystem::path workspace_file = project_dir / WORKSPACE_FILE;
-    bool is_workspace = std::filesystem::exists(workspace_file);
+    // Check if we're in a workspace (may be in a subdirectory)
+    auto [is_workspace, workspace_root] = is_in_workspace(project_dir);
 
-    // Handle workspace: run only the startup projects marked in workspace.toml
-    if (is_workspace) {
+    // Handle workspace-run only when at the workspace root; subprojects fall through to single-run
+    if (is_workspace && project_dir == workspace_root) {
       logger::print_status("Running in workspace context: " + project_dir.string());
       
       // Ensure workspace CMakeLists.txt exists (generate if needed)
@@ -501,7 +500,7 @@ cforge_int_t cforge_cmd_run(const cforge_context_t *ctx) {
       } else {
         logger::print_status("Skipping workspace build as requested");
       }
-      
+      std::filesystem::path workspace_file = project_dir / WORKSPACE_FILE;
       toml_reader workspace_config(toml::parse_file(workspace_file.string()));
       if (config.empty()) {
         config = workspace_config.get_string("workspace.build_type", "Debug");
