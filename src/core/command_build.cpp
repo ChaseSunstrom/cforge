@@ -419,7 +419,7 @@ static bool run_cmake_configure(const std::vector<std::string> &cmake_args,
 
   logger::print_status("Running CMake Configure...");
 
-  // Unconditionally print the exact CMake configure command for debugging
+  if (verbose)
   {
     std::string cmd = "cmake";
     for (const auto &arg : cmake_args) {
@@ -430,9 +430,8 @@ static bool run_cmake_configure(const std::vector<std::string> &cmake_args,
         cmd += " " + arg;
       }
     }
-    logger::print_status("Command: " + cmd);
+    logger::print_verbose("Command: " + cmd);
   }
-
   // Check if the -DCMAKE_BUILD_TYPE argument is present
   bool has_build_type = false;
   for (const auto &arg : cmake_args) {
@@ -857,6 +856,16 @@ static bool build_project(const std::filesystem::path &project_dir,
   bool build_result =
       execute_tool("cmake", build_args, "", "CMake Build", verbose);
 
+  // Clean up empty config directories under the build root
+  for (const auto &cfg : {"Debug", "Release", "RelWithDebInfo"}) {
+    std::filesystem::path cfg_dir = build_dir / cfg;
+    if (std::filesystem::exists(cfg_dir) && std::filesystem::is_directory(cfg_dir) &&
+        std::filesystem::is_empty(cfg_dir)) {
+      std::filesystem::remove(cfg_dir);
+      logger::print_verbose("Removed empty config directory: " + cfg_dir.string());
+    }
+  }
+
   // Restore original directory
   try {
     std::filesystem::current_path(original_dir);
@@ -1127,6 +1136,18 @@ cforge_int_t cforge_cmd_build(const cforge_context_t *ctx) {
       return 1;
     }
     logger::print_success((project_name.empty() ? "Workspace" : "Project '" + project_name + "'") + " built successfully");
+    // Clean up empty config directories under workspace build root
+    {
+      std::filesystem::path build_root = workspace_dir / DEFAULT_BUILD_DIR;
+      for (const auto &cfg : {"Debug", "Release", "RelWithDebInfo"}) {
+        std::filesystem::path cfg_dir = build_root / cfg;
+        if (std::filesystem::exists(cfg_dir) && std::filesystem::is_directory(cfg_dir) &&
+            std::filesystem::is_empty(cfg_dir)) {
+          std::filesystem::remove(cfg_dir);
+          logger::print_verbose("Removed empty workspace config directory: " + cfg_dir.string());
+        }
+      }
+    }
     return 0;
   } else {
     // Single project build outside workspace

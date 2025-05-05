@@ -33,21 +33,23 @@ cforge_int_t cforge_cmd_help(const cforge_context_t *ctx) {
     logger::print_status("cforge - C++ project management tool");
     logger::print_status("");
     logger::print_status("Available commands:");
-    logger::print_status("  init     Initialize a new project or workspace");
-    logger::print_status("  build    Build the project");
-    logger::print_status("  clean    Clean the build directory");
-    logger::print_status("  run      Run the project");
-    logger::print_status("  test     Run tests");
-    logger::print_status("  package  Create a package for distribution");
-    logger::print_status("  add      Add a dependency to the project");
-    logger::print_status("  remove   Remove a dependency from the project");
-    logger::print_status("  update   Update cforge");
-    logger::print_status("  vcpkg    Manage vcpkg dependencies");
-    logger::print_status("  version  Show version information");
-    logger::print_status("  help     Show help for a specific command");
-    logger::print_status("  install  Install a cforge project to the system");
-    logger::print_status(
-        "  config   Show information about configuration file format");
+    logger::print_status("  init      Initialize a new project or workspace");
+    logger::print_status("  build     Build the project");
+    logger::print_status("  clean     Clean build artifacts");
+    logger::print_status("  run       Build and run the project");
+    logger::print_status("  test      Run tests");
+    logger::print_status("  package   Create a package for distribution");
+    logger::print_status("  pack      Alias for package");
+    logger::print_status("  deps      Manage Git dependencies");
+    logger::print_status("  vcpkg     Manage vcpkg dependencies");
+    logger::print_status("  install   Install a cforge project to the system");
+    logger::print_status("  add       Add a dependency to the project");
+    logger::print_status("  remove    Remove a dependency from the project");
+    logger::print_status("  update    Update cforge");
+    logger::print_status("  ide       Generate IDE project files");
+    logger::print_status("  list      List dependencies or projects");
+    logger::print_status("  version   Show version information");
+    logger::print_status("  help      Show help for a specific command");
     logger::print_status("");
     logger::print_status("Usage: cforge <command> [options]");
     logger::print_status("");
@@ -297,81 +299,61 @@ cforge_int_t cforge_cmd_help(const cforge_context_t *ctx) {
     logger::print_status("Arguments:");
     logger::print_status("  command          Command to show help for");
   } else if (specific_command == "install") {
-    logger::print_status("cforge install - Install a project");
+    logger::print_status("cforge install - Install a cforge project to the system");
     logger::print_status("");
     logger::print_status("Usage: cforge install [options]");
     logger::print_status("");
     logger::print_status("Options:");
-    logger::print_status("  --to <path>    Install to a specific path");
-    logger::print_status("  --from <path>  Install from a specific path");
-    logger::print_status("  -v, --verbose    Show verbose output");
-  } else if (specific_command == "config") {
-    logger::print_lines(
-        {"cforge.toml Configuration Guide:",
-         "",
-         "The cforge.toml file is the main configuration file for your "
-         "project. It defines",
-         "project metadata, build settings, dependencies, and more.",
-         "",
-         "[project]",
-         "name = \"my-project\"        # Project name",
-         "version = \"0.1.0\"          # Project version",
-         "description = \"...\"        # Project description",
-         "authors = [\"Your Name\"]    # List of authors",
-         "cpp_standard = \"17\"        # C++ standard (11, 14, 17, 20, 23)",
-         "binary_type = \"executable\" # Type: executable, shared_lib, "
-         "static_lib, header_only",
-         "",
-         "[build]",
-         "build_dir = \"build\"        # Build directory",
-         "build_type = \"Debug\"       # Default build type (Debug, Release, "
-         "etc.)",
-         "include_dirs = [\"include\"] # Include directories",
-         "source_dirs = [\"src\"]      # Source directories",
-         "libraries = []               # Additional libraries to link against",
-         "",
-         "[package]",
-         "enabled = true               # Enable packaging",
-         "generators = [\"ZIP\"]       # Package generators (ZIP, TGZ, DEB, "
-         "RPM, NSIS, etc.)",
-         "",
-         "[dependencies]",
-         "directory = \"deps\"         # Dependencies directory",
-         "",
-         "[dependencies.git.fmt]       # Git dependency example",
-         "url = \"https://github.com/fmtlib/fmt.git\"",
-         "tag = \"9.1.0\"              # A tag, branch, or commit hash to "
-         "checkout",
-         "include = true               # Include in project (default: true)",
-         "link = true                  # Link with project (default: true)",
-         "",
-         "[dependencies.project.utils] # Project dependency within workspace",
-         "include_dirs = [\"include\"] # Include directories (relative to "
-         "project)",
-         "include = true               # Include in project (default: true)",
-         "link = true                  # Link with project (default: true)",
-         "target_name = \"utils\"      # Target name (default: project name)",
-         "",
-         "[dependencies.vcpkg.sdl2]    # vcpkg dependency example",
-         "version = \"2.0.14\"         # Optional version",
-         "components = [\"main\"]      # Optional components",
-         "",
-         "[test]",
-         "enabled = true               # Enable testing",
-         "framework = \"Catch2\"       # Test framework",
-         "",
-         "workspace.toml Configuration (for multi-project workspaces):",
-         "",
-         "[workspace]",
-         "name = \"my-workspace\"      # Workspace name",
-         "description = \"...\"        # Workspace description",
-         "projects = [\"proj1\", \"proj2\"] # Projects in workspace",
-         "main_project = \"proj1\"     # Main project (used as default for "
-         "commands)",
-         "cpp_standard = \"17\"        # Default C++ standard for workspace "
-         "projects",
-         "build_type = \"Debug\"       # Default build type for workspace "
-         "projects"});
+    logger::print_status("  -c, --config <config>       Build configuration to install (Debug, Release)");
+    logger::print_status("  --from <path|URL>           Source directory or Git URL to install from");
+    logger::print_status("  --to <path>                 Target install directory");
+    logger::print_status("  --add-to-path               Add the install/bin directory to PATH");
+    logger::print_status("  -n, --name <name>           Override project name for installation");
+    logger::print_status("  --env <VAR>                 Environment variable to set to install path");
+    logger::print_status("  -v, --verbose               Show verbose output");
+    logger::print_status("");
+    logger::print_status("Examples:");
+    logger::print_status("  cforge install                   Install current project to default location");
+    logger::print_status("  cforge install --to C:/Apps/Proj   Install to a custom path");
+    logger::print_status("  cforge install --from https://github.com/org/repo.git");
+    logger::print_status("  cforge install --add-to-path      Add install to PATH");
+  } else if (specific_command == "ide") {
+    logger::print_status("cforge ide - Generate IDE project files");
+    logger::print_status("");
+    logger::print_status("Usage: cforge ide [options]");
+    logger::print_status("");
+    logger::print_status("Options:");
+    logger::print_status("  -p, --project <name>        Generate files for specified project in workspace");
+    logger::print_status("  -v, --verbose               Show verbose output");
+    logger::print_status("");
+  } else if (specific_command == "list") {
+    logger::print_status("cforge list - List projects or dependencies");
+    logger::print_status("");
+    logger::print_status("Usage: cforge list [options]");
+    logger::print_status("");
+    logger::print_status("Options:");
+    logger::print_status("  -p, --project <name>        List dependencies for a specific project");
+    logger::print_status("  -v, --verbose               Show verbose output");
+    logger::print_status("");
+  } else if (specific_command == "deps") {
+    logger::print_status("cforge deps - Manage Git dependencies");
+    logger::print_status("");
+    logger::print_status("Usage: cforge deps <command> [options]");
+    logger::print_status("");
+    logger::print_status("Commands:");
+    logger::print_status("  fetch     Fetch updates for all Git dependencies");
+    logger::print_status("  checkout  Checkout each dependency to its configured ref");
+    logger::print_status("  list      Show configured Git dependencies");
+    logger::print_status("");
+    logger::print_status("Options:");
+    logger::print_status("  -v, --verbose               Show verbose output");
+    logger::print_status("");
+  } else if (specific_command == "pack") {
+    logger::print_status("cforge pack - Alias for 'package'");
+    logger::print_status("");
+    logger::print_status("Usage: cforge pack [options]");
+    logger::print_status("");
+    logger::print_status("See 'cforge help package' for details");
   } else {
     logger::print_error("Unknown command: " + specific_command);
     logger::print_status("Run 'cforge help' for a list of available commands");

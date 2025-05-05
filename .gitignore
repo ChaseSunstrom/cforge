@@ -3,9 +3,6 @@ build/
 out/
 build-debug/
 build-release/
-hi2/
-hi3/
-hi4/
 
 # CMake build files
 CMakeFiles/
