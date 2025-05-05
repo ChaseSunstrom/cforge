@@ -650,7 +650,7 @@ cforge_int_t cforge_cmd_run(const cforge_context_t *ctx) {
       logger::print_status("Running executable: " + executable.string());
 
       // Display program output header
-      logger::print_status("Program Output\n────────────");
+      logger::print_status("Program Output\n");
 
       // Create callbacks to display raw program output
       std::function<void(const std::string &)> stdout_callback =

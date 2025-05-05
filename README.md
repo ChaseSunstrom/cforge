@@ -111,7 +111,7 @@ cforge init --template header-only  # Create a header-only library
 # Build the project
 cforge build
 
-# Run the executable (for application projects)
+# Run the executable (for executable projects)
 cforge run
 ```
 
@@ -145,49 +145,38 @@ int main(int argc, char* argv[]) {
 
 ```bash
 $ cforge build
-┌──────────────────────────────────────────────────┐
-│           cforge - C/C++ Build System            │
-│                    v1.2.0                        │
-└──────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────┐
+│ cforge - C/C++ Build System beta-v2.0.0           │
+└───────────────────────────────────────────────────┘
 
-Building: myproject
-[1/4] Checking build tools
-Checking for required build tools...
-CMake: ✓
-Compiler 'clang': ✓
-Build generator 'Ninja': ✓
-vcpkg: ✓ (will be configured during build)
-All required build tools are available.
-
-[2/4] Configuring project
-Project configured with generator: Ninja (Debug)
-
-[3/4] Running pre-build hooks
-Running pre-build hooks
-Running hook: echo Starting build process...
-Starting build process...
-
-[4/4] Building project
-Building myproject in Debug configuration
-✓ Compiling 1 source files (completed in 1.2s)
-
-✓ Build completed successfully
+→ Using build configuration: Debug
+→ Building project: hi2 [Debug]
+→ Configuring with CMake...
+→ Running CMake Configure...
+→ Command: cmake -S C:\cpp-forge\hi2 -B C:\cpp-forge\hi2\build -DCMAKE_BUILD_TYPE=Debug -DDEBUG=1 -DENABLE_LOGGING=1 -DENABLE_TESTS=ON -G "Ninja Multi-Config"
+✓ CMake Configure completed successfully
+→ Building with CMake...
+✓ Built project: hi2 [Debug]
+✓ Command completed successfully
 
 $ cforge run
-┌──────────────────────────────────────────────────┐
-│           cforge - C/C++ Build System            │
-│                    v1.2.0                        │
-└──────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────┐
+│ cforge - C/C++ Build System beta-v2.0.0           │
+└───────────────────────────────────────────────────┘
 
-Running: myproject
-Found executable: build/bin/myproject
-Running: build/bin/myproject
+→ Running in single project context
+→ Project: hi2
+→ Configuration: Debug
+→ Configuring project...
+→ Building project...
+✓ Project built successfully
+→ Running executable: C:\cpp-forge\hi2\build\bin\Debug\hi2.exe
+→ Program Output
 
-Program Output
-────────────
-Hello, cforge!
+Hello from hi2!
 
-✓ Program executed successfully
+✓ Program exited with code 0
+✓ Command completed successfully
 ```
 
 ---
@@ -196,7 +185,7 @@ Hello, cforge!
 
 | Command      | Description                         | Example                            |
 |--------------|-------------------------------------|------------------------------------|
-| `init`       | Create new project/workspace        | `cforge init --template lib`       |
+| `init`       | Create a new project or workspace (supports `--template`, `--workspace`, `--projects`) | `cforge init --template lib`       |
 | `build`      | Build the project                   | `cforge build --config Release`    |
 | `clean`      | Clean build artifacts               | `cforge clean`                     |
 | `run`        | Run built executable                | `cforge run -- arg1 arg2`          |
