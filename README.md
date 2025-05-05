@@ -105,7 +105,7 @@ scripts\bootstrap.bat
 cforge init
 
 # Create a specific project type
-cforge init --template lib     # Create a library project
+cforge init --template static-lib     # Create a static library project
 cforge init --template header-only  # Create a header-only library
 
 # Build the project
@@ -153,7 +153,7 @@ $ cforge build
 → Building project: hi2 [Debug]
 → Configuring with CMake...
 → Running CMake Configure...
-→ Command: cmake -S C:\cpp-forge\hi2 -B C:\cpp-forge\hi2\build -DCMAKE_BUILD_TYPE=Debug -DDEBUG=1 -DENABLE_LOGGING=1 -DENABLE_TESTS=ON -G "Ninja Multi-Config"
+→ Command: cmake -S C:\hi2 -B C:\hi2\build -DCMAKE_BUILD_TYPE=Debug -DDEBUG=1 -DENABLE_LOGGING=1 -DENABLE_TESTS=ON -G "Ninja Multi-Config"
 ✓ CMake Configure completed successfully
 → Building with CMake...
 ✓ Built project: hi2 [Debug]
@@ -170,7 +170,7 @@ $ cforge run
 → Configuring project...
 → Building project...
 ✓ Project built successfully
-→ Running executable: C:\cpp-forge\hi2\build\bin\Debug\hi2.exe
+→ Running executable: C:\hi2\build\bin\Debug\hi2.exe
 → Program Output
 
 Hello from hi2!
