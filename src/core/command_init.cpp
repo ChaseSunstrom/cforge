@@ -21,6 +21,9 @@
 
 using namespace cforge;
 
+// Global init template name (executable, static-lib, shared-library, header-only)
+static std::string g_template_name = "executable";
+
 /**
  * @brief Split a comma-separated list of project names
  *
@@ -304,18 +307,25 @@ static bool create_cmakelists(const std::filesystem::path &project_path,
   cmakelists << "# Define target name\n";
   cmakelists << "set(TARGET_NAME ${PROJECT_NAME})\n\n";
 
-  // Project type determination based on sources
-  cmakelists << "# Determine project type (executable vs. library)\n";
-  cmakelists << "if(EXISTS \"${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp\" OR\n";
-  cmakelists << "   EXISTS \"${CMAKE_CURRENT_SOURCE_DIR}/src/main.c\")\n";
-  cmakelists << "    # This is an executable project\n";
-  cmakelists << "    add_executable(${TARGET_NAME} ${SOURCES})\n";
-  cmakelists << "    set(PROJECT_TYPE \"executable\")\n";
-  cmakelists << "else()\n";
-  cmakelists << "    # This is a library project\n";
-  cmakelists << "    add_library(${TARGET_NAME} STATIC ${SOURCES})\n";
-  cmakelists << "    set(PROJECT_TYPE \"library\")\n";
-  cmakelists << "endif()\n\n";
+  // Project type based on init template
+  if (g_template_name == "executable" || g_template_name == "app" || g_template_name == "application") {
+    cmakelists << "# This is an executable project\n";
+    cmakelists << "add_executable(${TARGET_NAME} ${SOURCES})\n";
+    cmakelists << "set(PROJECT_TYPE \"executable\")\n\n";
+  } else if (g_template_name == "shared-library" || g_template_name == "shared_library") {
+    cmakelists << "# This is a shared library project\n";
+    cmakelists << "add_library(${TARGET_NAME} SHARED ${SOURCES})\n";
+    cmakelists << "set(PROJECT_TYPE \"shared_library\")\n\n";
+  } else if (g_template_name == "header-only" || g_template_name == "header_only") {
+    cmakelists << "# This is a header-only interface library project\n";
+    cmakelists << "add_library(${TARGET_NAME} INTERFACE)\n";
+    cmakelists << "set(PROJECT_TYPE \"interface\")\n\n";
+  } else {
+    // static library template
+    cmakelists << "# This is a static library project\n";
+    cmakelists << "add_library(${TARGET_NAME} STATIC ${SOURCES})\n";
+    cmakelists << "set(PROJECT_TYPE \"static_library\")\n\n";
+  }
 
   // Include directories
   cmakelists << "# Include directories\n";
@@ -426,8 +436,21 @@ static bool create_cforge_toml(const std::filesystem::path &project_path,
   config << "version = \"0.1.0\"\n";
   config << "description = \"A C++ project created with cforge\"\n";
   config << "cpp_standard = \"" << cpp_version << "\"\n";
-  config << "binary_type = \"executable\"  # executable, shared_lib, "
-            "static_lib, or header_only\n";
+
+  if (g_template_name == "executable" || g_template_name == "app" || g_template_name == "application") {
+    config << "binary_type = \"executable\"  # executable, shared_lib, "
+              "static_lib, or header_only\n";
+  } else if (g_template_name == "shared-library" || g_template_name == "shared_library") {
+    config << "binary_type = \"shared_lib\"  # executable, shared_lib, "
+              "static_lib, or header_only\n";
+  } else if (g_template_name == "header-only" || g_template_name == "header_only") {
+    config << "binary_type = \"header_only\"  # executable, shared_lib, "
+              "static_lib, or header_only\n";
+  } else {
+    config << "binary_type = \"static_lib\"  # executable, shared_lib, "
+              "static_lib, or header_only\n";
+  }
+
   config << "authors = [\"Your Name <your.email@example.com>\"]\n";
   config << "homepage = \"https://github.com/yourusername/" << project_name
          << "\"\n";
@@ -528,38 +551,42 @@ static bool create_main_cpp(const std::filesystem::path &project_path,
     return false;
   }
 
-  // Create main.cpp
-  std::filesystem::path main_cpp_path = src_dir / "main.cpp";
-  std::ofstream main_cpp(main_cpp_path);
+  // Create main.cpp only for executable (app) projects
+  if (g_template_name == "executable") {
+    std::filesystem::path main_cpp_path = src_dir / "main.cpp";
+    std::ofstream main_cpp(main_cpp_path);
 
-  if (!main_cpp.is_open()) {
-    logger::print_error("Failed to create main.cpp file");
-    return false;
+    if (!main_cpp.is_open()) {
+      logger::print_error("Failed to create main.cpp file");
+      return false;
+    }
+
+    main_cpp << "/**\n";
+    main_cpp << " * @file main.cpp\n";
+    main_cpp << " * @brief Main entry point for " << project_name << "\n";
+    main_cpp << " */\n\n";
+
+    main_cpp << "#include <iostream>\n\n";
+
+    main_cpp << "/**\n";
+    main_cpp << " * @brief Main function\n";
+    main_cpp << " * \n";
+    main_cpp << " * @param argc Argument count\n";
+    main_cpp << " * @param argv Argument values\n";
+    main_cpp << " * @return int Exit code\n";
+    main_cpp << " */\n";
+    main_cpp << "int main(int argc, char* argv[]) {\n";
+    main_cpp << "    std::cout << \"Hello from " << project_name
+             << "!\" << std::endl;\n";
+    main_cpp << "    return 0;\n";
+    main_cpp << "}\n";
+
+    main_cpp.close();
+
+    logger::print_success("Created main.cpp file");
+    return true;
   }
 
-  main_cpp << "/**\n";
-  main_cpp << " * @file main.cpp\n";
-  main_cpp << " * @brief Main entry point for " << project_name << "\n";
-  main_cpp << " */\n\n";
-
-  main_cpp << "#include <iostream>\n\n";
-
-  main_cpp << "/**\n";
-  main_cpp << " * @brief Main function\n";
-  main_cpp << " * \n";
-  main_cpp << " * @param argc Argument count\n";
-  main_cpp << " * @param argv Argument values\n";
-  main_cpp << " * @return int Exit code\n";
-  main_cpp << " */\n";
-  main_cpp << "int main(int argc, char* argv[]) {\n";
-  main_cpp << "    std::cout << \"Hello from " << project_name
-           << "!\" << std::endl;\n";
-  main_cpp << "    return 0;\n";
-  main_cpp << "}\n";
-
-  main_cpp.close();
-
-  logger::print_success("Created main.cpp file");
   return true;
 }
 
@@ -1121,7 +1148,7 @@ cforge_int_t cforge_cmd_init(const cforge_context_t *ctx) {
     std::string cpp_standard = "17";
     bool with_tests = false;
     bool with_git = false;
-    std::string template_name = "app";
+    std::string template_name = "executable";
     bool has_projects_flag = false;
 
     // Process command line arguments - improved parsing
@@ -1259,6 +1286,10 @@ cforge_int_t cforge_cmd_init(const cforge_context_t *ctx) {
         }
       }
     }
+
+    // Apply selected template
+    g_template_name = template_name;
+    logger::print_status("Using init template: " + g_template_name);
 
     // If user didn't set workspace flag but specified projects, don't force
     // workspace mode
