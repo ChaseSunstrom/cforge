@@ -36,17 +36,16 @@ CForge is a modern build system designed to simplify C/C++ project management. I
 5. [Project Configuration](#-project-configuration)
 6. [Working with Dependencies](#-working-with-dependencies)
 7. [Workspaces](#-workspaces)
-8. [Build Variants](#-build-variants)
-9. [Cross-Compilation](#-cross-compilation)
-10. [IDE Integration](#-ide-integration)
-11. [Scripts & Hooks](#-scripts--hooks)
-12. [Testing](#-testing)
-13. [Advanced Topics](#-advanced-topics)
-14. [Examples](#-examples)
-15. [Troubleshooting](#-troubleshooting)
-16. [Goals & Roadmap](#-goals--roadmap)
-17. [Contributing](#-contributing)
-18. [License](#-license)
+8. [Cross-Compilation](#-cross-compilation)
+9. [IDE Integration](#-ide-integration)
+10. [Scripts & Hooks](#-scripts--hooks)
+11. [Testing](#-testing)
+12. [Advanced Topics](#-advanced-topics)
+13. [Examples](#-examples)
+14. [Troubleshooting](#-troubleshooting)
+15. [Goals & Roadmap](#-goals--roadmap)
+16. [Contributing](#-contributing)
+17. [License](#-license)
 
 ---
 
@@ -213,12 +212,10 @@ Hello, cforge!
 ### Command Options
 
 All commands accept the following global options:
-- `--verbosity`: Set verbosity level (`quiet`, `normal`, `verbose`)
+- `-v/--verbose`: Set verbosity level
 
 Many commands support these options:
 - `--config`: Build/run with specific configuration (e.g., `Debug`, `Release`)
-- `--variant`: Use a specific build variant
-- `--target`: Specify a cross-compilation target
 
 ---
 
@@ -230,46 +227,39 @@ The `cforge.toml` file is the heart of your project configuration:
 
 ```toml
 [project]
-name = "my_project"
-version = "0.1.0"
-description = "My C/C++ project"
-type = "executable"  # executable, library, static-library, header-only
-language = "c++"
-standard = "c++17"   # c++11, c++14, c++17, c++20, c++23
+name = "cforge"
+version = "2.0.0"
+description = "A C/C++ build tool with dependency management"
+cpp_standard = "17"
+binary_type = "executable" # executable, shared_library, static_library, header_only
+authors = ["Chase Sunstrom <casunstrom@gmail.com>"]
+homepage = "https://github.com/ChaseSunstrom/cforge"
+repository = "https://github.com/ChaseSunstrom/cforge.git"
+license = "MIT"
 
 [build]
-build_dir = "build"
-default_config = "Debug"
-generator = "Ninja"  # Ninja, "Visual Studio 17 2022", NMake Makefiles, etc.
-
-[build.configs.Debug]
-defines = ["DEBUG", "_DEBUG"]
-flags = ["NO_OPT", "DEBUG_INFO"]
-
-[build.configs.Release]
-defines = ["NDEBUG"]
-flags = ["OPTIMIZE", "OB2", "DNDEBUG"]
-
-[targets.default]
-sources = ["src/**/*.cpp", "src/**/*.c"]
+build_type = "Debug"
+directory = "build"
+source_dirs = ["src"]
 include_dirs = ["include"]
-links = []
-```
 
-### Target Configuration
+[build.config.debug]
+defines = ["DEBUG=1", "FMT_HEADER_ONLY=ON"]
+flags      = ["DEBUG_INFO", "NO_OPT"]
 
-A project can have multiple targets (executables or libraries):
+[build.config.release]
+defines    = ["NDEBUG=1"]
+flags      = ["OPTIMIZE"]
 
-```toml
-[targets.main_app]
-sources = ["src/app/**/*.cpp"]
-include_dirs = ["include"]
-links = ["fmt", "boost_system"]
+[test]
+enabled = false
+framework = "Catch2"
 
-[targets.utils_lib]
-sources = ["src/utils/**/*.cpp"]
-include_dirs = ["include/utils"]
-links = []
+[package]
+enabled = true
+generators = []
+vendor = "Chase Sunstrom"
+contact = "Chase Sunstrom <casunstrom@gmail.com>"
 ```
 
 ### Platform-specific Configuration
@@ -322,16 +312,6 @@ int main() {
     fmt::print("JSON: {}\n", j.dump(2));
     return 0;
 }
-```
-
-### Conan Integration
-
-```toml
-[dependencies.conan]
-enabled = true
-packages = ["fmt/9.1.0", "spdlog/1.10.0"]
-options = { "fmt:shared": "False", "spdlog:shared": "False" }
-generators = ["cmake", "cmake_find_package"]
 ```
 
 ### Git Dependencies
@@ -408,74 +388,33 @@ system = ["X11", "pthread", "dl"]
 
 ## 🗂️ Workspaces
 
-Workspaces allow you to manage multiple related projects together:
+Workspaces allow you to manage multiple related CForge projects together. You can initialize a new workspace and specify which project directories it should include.
 
 ```bash
-# Initialize a workspace
-cforge init --workspace
-
-# Initialize a project within the workspace
-cd projects
-cforge init --template lib
-
-# Build all projects
-cd ..
-cforge build
-
-# Build a specific project
-cforge build my_lib
-
-# Run a specific project
-cforge run my_app
+# Initialize a workspace named "my_workspace" managing two project folders
+cforge init --workspace my_workspace --projects projects/core projects/gui
 ```
 
-### Workspace Configuration
+This generates a `cforge-workspace.toml` file at the workspace root with contents like:
 
 ```toml
-# cforge-workspace.toml
 [workspace]
 name = "my_workspace"
-projects = ["projects/app", "projects/lib"]
-default_startup_project = "projects/app"
+projects = ["projects/core", "projects/gui"]
+default_startup_project = "projects/core"
 ```
 
-### Project Dependencies within Workspace
-
-```toml
-# projects/app/cforge.toml
-[dependencies.workspace]
-name = "lib"
-link_type = "static"  # static, shared, interface
-```
-
----
-
-## 🚩 Build Variants
-
-Build variants allow for different build configurations beyond just Debug/Release:
-
-```toml
-[variants]
-default = "standard"
-
-[variants.variants.standard]
-description = "Standard build"
-
-[variants.variants.performance]
-description = "Optimized build"
-defines = ["HIGH_PERF=1"]
-flags = ["OPTIMIZE_MAX", "LTO"]
-
-[variants.variants.memory_safety]
-description = "Build with memory safety checks"
-defines = ["ENABLE_MEMORY_SAFETY=1"]
-flags = ["MEMSAFE"]
-```
-
-Building with variants:
+To build all projects in the workspace:
 
 ```bash
-cforge build --variant performance
+cforge build
+```
+
+To build or run a specific project, pass its directory name:
+
+```bash
+cforge build projects/gui
+cforge run projects/gui
 ```
 
 ---
