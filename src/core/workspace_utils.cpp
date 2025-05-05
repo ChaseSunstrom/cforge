@@ -3,6 +3,8 @@
 #include "core/toml_reader.hpp"
 #include <toml++/toml.hpp>
 #include <filesystem>
+#include <iostream>
+#include <cstdlib>
 #include <map>
 #include <set>
 #include <stack>

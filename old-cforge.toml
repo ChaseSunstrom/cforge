@@ -1,0 +1,56 @@
+[project]
+name = "cpp-forge"
+version = "0.1.0"
+description = "A C/C++ project built with cforge"
+type = "executable"
+language = "c++"
+standard = "c++17"
+
+[cmake]
+generator = "Ninja Multi-Config"
+toolset = "ClangCL"
+
+[build]
+build_dir = "build"
+generator = "Ninja Multi-Config"
+toolset = "ClangCL"
+default_config = "Debug"
+debug = true
+compiler = "clang-cl"
+defines = "FMT_HEADER_ONLY"
+build_type = "Debug"
+directory = "build"
+source_dirs = ["src"]
+include_dirs = ["include"]
+
+[[dependencies.git]]
+name = "tomlplusplus"
+url = "https://github.com/marzer/tomlplusplus.git"
+tag = "v3.4.0"
+
+[[dependencies.git]]
+name = "fmt"
+url = "https://github.com/fmtlib/fmt.git"
+tag = "11.1.4"
+
+[build.configs.Debug]
+defines = ["DEBUG"]
+flags = [
+    "DEBUG_INFO",
+    "NO_OPT",
+]
+cmake_args = []
+
+[build.configs.Release]
+defines = ["NDEBUG"]
+flags = ["OPTIMIZE"]
+cmake_args = []
+
+[targets.default]
+sources = [
+    "src/**.cpp",
+    "src/**.c",
+    "src/**/**.cpp",
+    "src/**/**.c"
+]
+include_dirs = ["include", "deps", "deps/fmt/include", "deps/tomlplusplus/include"]

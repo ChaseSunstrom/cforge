@@ -6,9 +6,12 @@
 #include "core/process_utils.hpp"
 #include "core/error_format.hpp"
 #include <algorithm>
+#include <cstdlib>
 #include <array>
 #include <chrono>
 #include <filesystem>
+
+#define FMT_HEADER_ONLY
 #include <fmt/color.h>
 #include <fmt/core.h>
 

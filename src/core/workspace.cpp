@@ -760,14 +760,20 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
   cmakelists << "message(STATUS \"Building with ${CMAKE_BUILD_TYPE} "
                 "configuration\")\n\n";
 
-  // Set up output directories
-  cmakelists << "# Set output directories\n";
-  cmakelists << "set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "
-                "\"${CMAKE_BINARY_DIR}/lib/${CMAKE_BUILD_TYPE}\")\n";
-  cmakelists << "set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "
-                "\"${CMAKE_BINARY_DIR}/lib/${CMAKE_BUILD_TYPE}\")\n";
-  cmakelists << "set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "
-                "\"${CMAKE_BINARY_DIR}/bin/${CMAKE_BUILD_TYPE}\")\n\n";
+  // Configure output directories for all configurations using generator expressions
+  cmakelists << "# Configure output directories\n";
+  cmakelists << "if(DEFINED CMAKE_CONFIGURATION_TYPES)\n";
+  cmakelists << "  foreach(cfg IN LISTS CMAKE_CONFIGURATION_TYPES)\n";
+  cmakelists << "    string(TOUPPER ${cfg} CFG_UPPER)\n";
+  cmakelists << "    set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY_${CFG_UPPER} \"${CMAKE_BINARY_DIR}/lib/${cfg}\")\n";
+  cmakelists << "    set(CMAKE_LIBRARY_OUTPUT_DIRECTORY_${CFG_UPPER} \"${CMAKE_BINARY_DIR}/lib/${cfg}\")\n";
+  cmakelists << "    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_${CFG_UPPER} \"${CMAKE_BINARY_DIR}/bin/${cfg}\")\n";
+  cmakelists << "  endforeach()\n";
+  cmakelists << "else()\n";
+  cmakelists << "  set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY \"${CMAKE_BINARY_DIR}/lib/${CMAKE_BUILD_TYPE}\")\n";
+  cmakelists << "  set(CMAKE_LIBRARY_OUTPUT_DIRECTORY \"${CMAKE_BINARY_DIR}/lib/${CMAKE_BUILD_TYPE}\")\n";
+  cmakelists << "  set(CMAKE_RUNTIME_OUTPUT_DIRECTORY \"${CMAKE_BINARY_DIR}/bin/${CMAKE_BUILD_TYPE}\")\n";
+  cmakelists << "endif()\n\n";
 
   // Get dependencies directory (default: deps)
   std::string deps_dir =
@@ -911,21 +917,34 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
     }
   }
 
-  // Add compiler definitions
-  if (project_config.has_key("project.definitions")) {
-    auto definitions = project_config.get_string_array("project.definitions");
-    if (!definitions.empty()) {
-      cmakelists << "# Add compiler definitions\n";
-      for (const auto &def : definitions) {
+  // Add global build.defines
+  if (project_config.has_key("build.defines")) {
+    auto build_defs = project_config.get_string_array("build.defines");
+    if (!build_defs.empty()) {
+      cmakelists << "# Global compiler definitions\n";
+      for (const auto &d : build_defs) {
         if (binary_type == "header_only") {
-          cmakelists << "target_compile_definitions(${PROJECT_NAME} INTERFACE "
-                     << def << ")\n";
+          cmakelists << "target_compile_definitions(${PROJECT_NAME} INTERFACE " << d << ")\n";
         } else {
-          cmakelists << "target_compile_definitions(${PROJECT_NAME} PUBLIC "
-                     << def << ")\n";
+          cmakelists << "target_compile_definitions(${PROJECT_NAME} PUBLIC " << d << ")\n";
         }
       }
       cmakelists << "\n";
+    }
+  }
+  // Add config-specific build.config.<config>.defines
+  {
+    std::string defs_key = "build.config." + string_to_lower(build_type) + ".defines";
+    if (project_config.has_key(defs_key)) {
+      auto cfg_defs = project_config.get_string_array(defs_key);
+      if (!cfg_defs.empty()) {
+        cmakelists << "# Definitions for config '" << build_type << "'\n";
+        cmakelists << "if(CMAKE_BUILD_TYPE STREQUAL \"" << build_type << "\")\n";
+        for (const auto &d : cfg_defs) {
+          cmakelists << "  target_compile_definitions(${PROJECT_NAME} PUBLIC " << d << ")\n";
+        }
+        cmakelists << "endif()\n\n";
+      }
     }
   }
 
@@ -1738,14 +1757,11 @@ bool generate_workspace_cmakelists(const std::filesystem::path &workspace_dir,
   cmakelists << "message(STATUS \"Building workspace with ${CMAKE_BUILD_TYPE} "
                 "configuration\")\n\n";
 
-  // Set up output directories
-  cmakelists << "# Set output directories\n";
-  cmakelists << "set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "
-                "\"${CMAKE_BINARY_DIR}/lib/${CMAKE_BUILD_TYPE}\")\n";
-  cmakelists << "set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "
-                "\"${CMAKE_BINARY_DIR}/lib/${CMAKE_BUILD_TYPE}\")\n";
-  cmakelists << "set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "
-                "\"${CMAKE_BINARY_DIR}/bin/${CMAKE_BUILD_TYPE}\")\n\n";
+  // Configure output directories for all generators
+  cmakelists << "# Configure output directories\n";
+  cmakelists << "set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY \"${CMAKE_BINARY_DIR}/lib/$<CONFIG>\")\n";
+  cmakelists << "set(CMAKE_LIBRARY_OUTPUT_DIRECTORY \"${CMAKE_BINARY_DIR}/lib/$<CONFIG>\")\n";
+  cmakelists << "set(CMAKE_RUNTIME_OUTPUT_DIRECTORY \"${CMAKE_BINARY_DIR}/bin/$<CONFIG>\")\n\n";
 
   // Check for workspace-wide dependencies
   if (workspace_config.has_key("dependencies.git")) {

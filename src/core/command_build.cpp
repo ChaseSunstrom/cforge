@@ -36,22 +36,43 @@ using namespace cforge;
 #define DEFAULT_BUILD_CONFIG "Release"
 
 /**
+ * @brief Helper to check if CMake supports a given generator
+ *
+ * @param gen Generator name
+ * @return bool True if generator is supported
+ */
+static bool is_generator_valid(const std::string &gen) {
+  process_result pr = execute_process("cmake", {"--help"}, "", nullptr, nullptr, 10);
+  if (!pr.success) return true; // assume valid
+  return pr.stdout_output.find(gen) != std::string::npos;
+}
+
+/**
  * @brief Get the generator string for CMake based on platform
  *
  * @return std::string CMake generator string
  */
 static std::string get_cmake_generator() {
 #ifdef _WIN32
-  // Check if Ninja is available - prefer it if it is
-  if (is_command_available("ninja", 15)) {
-    logger::print_verbose(
-        "Ninja is available, using Ninja Multi-Config generator");
+  // Prefer Ninja Multi-Config if available and supported
+  if (is_command_available("ninja", 15) && is_generator_valid("Ninja Multi-Config")) {
+    logger::print_verbose("Using Ninja Multi-Config generator");
     return "Ninja Multi-Config";
   }
 
-  logger::print_verbose(
-      "Ninja not found, falling back to Visual Studio generator");
-  return "Visual Studio 17 2022";
+  // Try Visual Studio 17 2022
+  if (is_generator_valid("Visual Studio 17 2022")) {
+    logger::print_verbose("Using Visual Studio 17 2022 generator");
+    return "Visual Studio 17 2022";
+  }
+  // Fallback to Visual Studio 16 2019 if available
+  if (is_generator_valid("Visual Studio 16 2019")) {
+    logger::print_verbose("Using Visual Studio 16 2019 generator");
+    return "Visual Studio 16 2019";
+  }
+  // Last resort: Multi-config Ninja
+  logger::print_verbose("Falling back to Ninja Multi-Config generator");
+  return "Ninja Multi-Config";
 #else
   return "Unix Makefiles";
 #endif
@@ -398,6 +419,20 @@ static bool run_cmake_configure(const std::vector<std::string> &cmake_args,
 
   logger::print_status("Running CMake Configure...");
 
+  // Unconditionally print the exact CMake configure command for debugging
+  {
+    std::string cmd = "cmake";
+    for (const auto &arg : cmake_args) {
+      // Quote arguments that contain spaces
+      if (arg.find(' ') != std::string::npos) {
+        cmd += " \"" + arg + "\"";
+      } else {
+        cmd += " " + arg;
+      }
+    }
+    logger::print_status("Command: " + cmd);
+  }
+
   // Check if the -DCMAKE_BUILD_TYPE argument is present
   bool has_build_type = false;
   for (const auto &arg : cmake_args) {
@@ -605,10 +640,32 @@ static bool build_project(const std::filesystem::path &project_dir,
       "-DCMAKE_BUILD_TYPE=" + build_config
   };
 
-  // For multi-config generators, we need special handling
-  std::string generator = get_cmake_generator();
-  if (is_multi_config_generator(generator)) {
-    logger::print_verbose("Using multi-config generator: " + generator);
+  // Inject top-level build.defines into CMake args
+  if (has_project_config && project_config.has_key("build.defines")) {
+    auto global_defs = project_config.get_string_array("build.defines");
+    for (const auto &d : global_defs) {
+      std::string def = d;
+      // Append '=ON' if no value provided
+      if (def.find('=') == std::string::npos) {
+        def += "=ON";
+      }
+      cmake_args.push_back(std::string("-D") + def);
+    }
+  }
+  // Inject config-specific defines: build.config.<config>.defines
+  {
+    std::string defs_key = "build.config." + string_to_lower(build_config) + ".defines";
+    if (has_project_config && project_config.has_key(defs_key)) {
+      auto cfg_defs = project_config.get_string_array(defs_key);
+      for (const auto &d : cfg_defs) {
+        std::string def = d;
+        // Append '=ON' if no value provided
+        if (def.find('=') == std::string::npos) {
+          def += "=ON";
+        }
+        cmake_args.push_back(std::string("-D") + def);
+      }
+    }
   }
 
   // Add any custom CMake arguments
@@ -621,6 +678,21 @@ static bool build_project(const std::filesystem::path &project_dir,
         cmake_args.push_back(arg);
       }
     }
+  }
+
+  // Determine CMake generator: use override in cforge.toml if present, otherwise pick default
+  std::string generator;
+  if (has_project_config && project_config.has_key("cmake.generator")) {
+    generator = project_config.get_string("cmake.generator", "");
+    if (!generator.empty()) {
+      logger::print_status("Using CMake generator from config: " + generator);
+    } else {
+      generator = get_cmake_generator();
+      logger::print_verbose("No CMake generator in config, using default: " + generator);
+    }
+  } else {
+    generator = get_cmake_generator();
+    logger::print_verbose("Using default CMake generator: " + generator);
   }
 
   // Check for vcpkg integration
@@ -657,13 +729,46 @@ static bool build_project(const std::filesystem::path &project_dir,
     }
   }
 
-  // Choose generator
-  // Check if config specifies a generator
-  if (has_project_config && project_config.has_key("cmake.generator")) {
-    generator = project_config.get_string("cmake.generator", "");
-    cmake_args.push_back("-G");
-    cmake_args.push_back(generator);
-    logger::print_status("Using CMake generator from config: " + generator);
+  // If using Ninja and a toolset is specified, force C/C++ compilers
+  if (generator.find("Ninja") != std::string::npos &&
+      has_project_config && project_config.has_key("cmake.toolset")) {
+    std::string toolset = project_config.get_string("cmake.toolset", "");
+    if (!toolset.empty()) {
+      cmake_args.push_back("-DCMAKE_C_COMPILER=" + toolset);
+      cmake_args.push_back("-DCMAKE_CXX_COMPILER=" + toolset);
+      logger::print_status("Using C/C++ compiler for Ninja: " + toolset);
+    }
+  }
+
+  // Validate generator: if invalid, fallback and warn
+  if (!is_generator_valid(generator)) {
+    logger::print_warning("CMake does not support generator: " + generator + ". Falling back to default generator.");
+    generator = get_cmake_generator();
+    logger::print_status("Using fallback CMake generator: " + generator);
+  }
+  // Inject generator flag
+  cmake_args.push_back("-G");
+  cmake_args.push_back(generator);
+
+  // If Visual Studio generator, specify platform and optional toolset
+  if (generator.rfind("Visual Studio", 0) == 0) {
+    // Read platform from config or default to x64
+    std::string platform = "x64";
+    if (has_project_config && project_config.has_key("cmake.platform")) {
+      platform = project_config.get_string("cmake.platform", platform);
+    }
+    cmake_args.push_back("-A");
+    cmake_args.push_back(platform);
+    logger::print_status("Using CMake platform: " + platform);
+    // Optional toolset
+    if (has_project_config && project_config.has_key("cmake.toolset")) {
+      std::string toolset = project_config.get_string("cmake.toolset", "");
+      if (!toolset.empty()) {
+        cmake_args.push_back("-T");
+        cmake_args.push_back(toolset);
+        logger::print_status("Using CMake toolset: " + toolset);
+      }
+    }
   }
 
   // Add extra verbose flag
@@ -734,6 +839,18 @@ static bool build_project(const std::filesystem::path &project_dir,
   // Add verbose flag
   if (verbose) {
     build_args.push_back("--verbose");
+  }
+
+  // If Visual Studio generator, override MSBuild OutDir to bin/<config>
+  if (generator.rfind("Visual Studio", 0) == 0) {
+    // Separator for generator args
+    build_args.push_back("--");
+    // Compute absolute outdir path
+    std::filesystem::path outdir = build_dir / "bin" / build_config;
+    // Normalize separator for MSBuild
+    std::string outdir_str = outdir.string();
+    build_args.push_back(std::string("/p:OutDir=") + outdir_str + "\\");
+    logger::print_status(std::string("Overriding MSBuild OutDir to: ") + outdir_str);
   }
 
   // Run the build
