@@ -469,17 +469,14 @@ bool installer::install_project(const std::string &project_path,
           }
 #endif
           print_verbose("Using project executable: " + entry.path().string());
-          try {
-            std::filesystem::copy_file(
-                entry.path(), install_bin / entry.path().filename(),
-                std::filesystem::copy_options::overwrite_existing);
-            print_verbose("Copied " + entry.path().string() + " to " +
-                          (install_bin / entry.path().filename()).string());
-            found_executable = true;
-          } catch (const std::exception &ex) {
-            logger::print_error("Failed to copy binary: " +
-                                  std::string(ex.what()));
+          {
+            auto target = install_bin / entry.path().filename();
+            if (std::filesystem::exists(target)) {
+              std::filesystem::remove(target);
+            }
+            std::filesystem::copy_file(entry.path(), target, std::filesystem::copy_options::overwrite_existing);
           }
+          found_executable = true;
         }
       }
     }
@@ -520,16 +517,12 @@ bool installer::install_project(const std::string &project_path,
              
                print_verbose("Using project executable: " + entry.path().string());
 #endif
-              try {
-                std::filesystem::copy_file(
-                    entry.path(), install_bin / entry.path().filename(),
-                    std::filesystem::copy_options::overwrite_existing);
-                print_verbose("Copied " + entry.path().string() + " to " +
-                              (install_bin / entry.path().filename()).string());
-                found_executable = true;
-              } catch (const std::exception &ex) {
-                logger::print_error("Failed to copy binary: " +
-                                    std::string(ex.what()));
+              {
+                auto target = install_bin / entry.path().filename();
+                if (std::filesystem::exists(target)) {
+                  std::filesystem::remove(target);
+                }
+                std::filesystem::copy_file(entry.path(), target, std::filesystem::copy_options::overwrite_existing);
               }
             }
           }
@@ -555,17 +548,14 @@ bool installer::install_project(const std::string &project_path,
             }
 
             print_verbose("Found executable: " + entry.path().string());
-            try {
-              std::filesystem::copy_file(
-                  entry.path(), install_bin / entry.path().filename(),
-                  std::filesystem::copy_options::overwrite_existing);
-              print_verbose("Copied " + entry.path().string() + " to " +
-                            (install_bin / entry.path().filename()).string());
-              found_executable = true;
-            } catch (const std::exception &ex) {
-              logger::print_error("Failed to copy binary: " +
-                                  std::string(ex.what()));
+            {
+              auto target = install_bin / entry.path().filename();
+              if (std::filesystem::exists(target)) {
+                std::filesystem::remove(target);
+              }
+              std::filesystem::copy_file(entry.path(), target, std::filesystem::copy_options::overwrite_existing);
             }
+            found_executable = true;
           }
         }
       } catch (const std::exception &ex) {
@@ -623,9 +613,13 @@ bool installer::install_project(const std::string &project_path,
         std::filesystem::create_directories(target_lib);
         for (const auto &entry : std::filesystem::directory_iterator(lib_dir)) {
           if (entry.is_regular_file()) {
-            std::filesystem::copy_file(
-                entry.path(), target_lib / entry.path().filename(),
-                std::filesystem::copy_options::overwrite_existing);
+            {
+              auto target = target_lib / entry.path().filename();
+              if (std::filesystem::exists(target)) {
+                std::filesystem::remove(target);
+              }
+              std::filesystem::copy_file(entry.path(), target, std::filesystem::copy_options::overwrite_existing);
+            }
             print_verbose("Copied " + entry.path().string() + " to " +
                           target_lib.string());
           }
@@ -814,9 +808,13 @@ bool installer::copy_files(const std::filesystem::path &source,
       if (entry.is_directory()) {
         copy_files(entry.path(), target, exclude_patterns);
       } else if (entry.is_regular_file()) {
-        std::filesystem::copy_file(
-            entry.path(), target,
-            std::filesystem::copy_options::overwrite_existing);
+        {
+          auto target = dest / entry.path().filename();
+          if (std::filesystem::exists(target)) {
+            std::filesystem::remove(target);
+          }
+          std::filesystem::copy_file(entry.path(), target, std::filesystem::copy_options::overwrite_existing);
+        }
         print_verbose("Copied " + entry.path().string() + " to " +
                       target.string());
       }
@@ -970,9 +968,13 @@ bool installer::create_executable_links(
             }
 
             std::filesystem::path target = bin_path / target_filename;
-            std::filesystem::copy_file(
-                exe_path, target,
-                std::filesystem::copy_options::overwrite_existing);
+            {
+              auto target = bin_path / target_filename;
+              if (std::filesystem::exists(target)) {
+                std::filesystem::remove(target);
+              }
+              std::filesystem::copy_file(exe_path, target, std::filesystem::copy_options::overwrite_existing);
+            }
             exe_path = target;
             logger::print_status("Copied executable to bin directory: " +
                                  exe_path.string());

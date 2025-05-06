@@ -393,7 +393,7 @@ static bool create_cmakelists(const std::filesystem::path &project_path,
   cmakelists << "if(WIN32)\n";
   cmakelists << "    set(CPACK_GENERATOR \"ZIP;NSIS\")\n";
   cmakelists << "elseif(APPLE)\n";
-  cmakelists << "    set(CPACK_GENERATOR \"TGZ;DragNDrop\")\n";
+  cmakelists << "    set(CPACK_GENERATOR \"TGZ;\")\n";
   cmakelists << "else()\n";
   cmakelists << "    set(CPACK_GENERATOR \"TGZ;DEB\")\n";
   cmakelists << "endif()\n";
@@ -503,7 +503,7 @@ static bool create_cforge_toml(const std::filesystem::path &project_path,
   config << "generators = []  # Package generators\n";
   config << "# Windows generators: ZIP, NSIS\n";
   config << "# Linux generators: TGZ, DEB, RPM\n";
-  config << "# macOS generators: TGZ, DragNDrop\n";
+  config << "# macOS generators: TGZ\n";
   config << "vendor = \"Your Organization\"\n";
   config << "contact = \"Your Name <your.email@example.com>\"\n\n";
 

@@ -105,7 +105,7 @@ uppercase_generators(const std::vector<std::string> &generators);
  * @param delimiter Delimiter to use between strings
  * @return std::string Joined string
  */
-static std::string join_strings(const std::vector<std::string> &strings,
+std::string join_strings(const std::vector<std::string> &strings,
                                 const std::string &delimiter);
 
 } // namespace cforge

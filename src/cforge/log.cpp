@@ -21,10 +21,12 @@ void logger::print_header(const std::string &message) {
   if (s_verbosity == log_verbosity::VERBOSITY_QUIET)
     return;
 
-  fmt::print("┌───────────────────────────────────────────────────┐\n"
-             "│ {:<53} │\n"
-             "└───────────────────────────────────────────────────┘\n\n",
-             message);
+  // Use UTF-8 raw string literal for box drawing
+  fmt::print(u8R"(┌───────────────────────────────────────────────────┐
+│ {:<49} │
+└───────────────────────────────────────────────────┘
+
+)" , message);
 }
 
 void logger::print_status(const std::string &message) {

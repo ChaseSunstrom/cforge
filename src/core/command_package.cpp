@@ -10,6 +10,7 @@
 #include "core/error_format.hpp"
 #include "core/file_system.h"
 #include "core/process_utils.hpp"
+#include "core/workspace_utils.hpp"
 #include "core/toml_reader.hpp"
 #include "core/workspace.hpp"
 
@@ -730,19 +731,6 @@ static std::vector<std::string> get_default_generators() {
 #endif
 
   return generators;
-}
-
-
-std::vector<std::string>
-uppercase_generators(const std::vector<std::string> &generators) {
-  std::vector<std::string> result;
-  for (const auto &gen : generators) {
-    std::string upper_gen = gen;
-    std::transform(upper_gen.begin(), upper_gen.end(), upper_gen.begin(),
-                   ::toupper);
-    result.push_back(upper_gen);
-  }
-  return result;
 }
 
 /**
@@ -2468,22 +2456,6 @@ list_packages(const std::filesystem::path &dir,
             });
 
   return packages;
-}
-
-static std::string join_strings(const std::vector<std::string> &strings,
-                                const std::string &delimiter) {
-  std::string result;
-  bool first = true;
-
-  for (const auto &str : strings) {
-    if (!first) {
-      result += delimiter;
-    }
-    result += str;
-    first = false;
-  }
-
-  return result;
 }
 
 /**

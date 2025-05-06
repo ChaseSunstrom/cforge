@@ -2,6 +2,8 @@
 #include "core/constants.h"
 #include "core/toml_reader.hpp"
 #include <toml++/toml.hpp>
+
+#include <algorithm>
 #include <filesystem>
 #include <iostream>
 #include <cstdlib>
@@ -10,6 +12,35 @@
 #include <stack>
 
 namespace cforge {
+
+std::vector<std::string>
+uppercase_generators(const std::vector<std::string> &generators) {
+  std::vector<std::string> result;
+  for (const auto &gen : generators) {
+    std::string upper_gen = gen;
+    std::transform(upper_gen.begin(), upper_gen.end(), upper_gen.begin(),
+                   ::toupper);
+    result.push_back(upper_gen);
+  }
+  return result;
+}
+
+std::string join_strings(const std::vector<std::string> &strings,
+                                const std::string &delimiter) {
+  std::string result;
+  bool first = true;
+
+  for (const auto &str : strings) {
+    if (!first) {
+      result += delimiter;
+    }
+    result += str;
+    first = false;
+  }
+
+  return result;
+}
+
 
 std::vector<std::string> get_workspace_projects(
     const std::filesystem::path &workspace_dir) {
