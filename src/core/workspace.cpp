@@ -1071,16 +1071,26 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
   cmakelists
       << "set(CPACK_RESOURCE_FILE_README \"${SOURCE_DIR}/README.md\")\n\n";
 
-  // OS-specific settings
-  cmakelists << "# OS-specific settings\n";
-  cmakelists << "if(WIN32)\n";
-  cmakelists << "    set(CPACK_GENERATOR \"ZIP;NSIS\")\n";
-  cmakelists << "    set(CPACK_NSIS_MODIFY_PATH ON)\n";
-  cmakelists << "elseif(APPLE)\n";
-  cmakelists << "    set(CPACK_GENERATOR \"ZIP;TGZ\")\n";
-  cmakelists << "else()\n";
-  cmakelists << "    set(CPACK_GENERATOR \"ZIP;TGZ;DEB\")\n";
-  cmakelists << "endif()\n\n";
+  // Generate CPack generator configuration from toml, or use OS defaults
+  cmakelists << "# CPack generator configuration\n";
+  {
+    auto gens = project_config.get_string_array("package.generators");
+    if (!gens.empty()) {
+      auto up_gens = uppercase_generators(gens);
+      cmakelists << "set(CPACK_GENERATOR \"" << join_strings(up_gens, ";") << "\")\n";
+    } else {
+      cmakelists << "# OS-specific default generators\n";
+      cmakelists << "if(WIN32)\n";
+      cmakelists << "    set(CPACK_GENERATOR \"ZIP;NSIS\")\n";
+      cmakelists << "    set(CPACK_NSIS_MODIFY_PATH ON)\n";
+      cmakelists << "elseif(APPLE)\n";
+      cmakelists << "    set(CPACK_GENERATOR \"ZIP;TGZ\")\n";
+      cmakelists << "else()\n";
+      cmakelists << "    set(CPACK_GENERATOR \"TGZ;DEB\")\n";
+      cmakelists << "endif()\n";
+    }
+  }
+  cmakelists << "\n";
 
   // Binary packages with config
   cmakelists << "# Binary packages with config\n";

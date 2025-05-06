@@ -59,7 +59,8 @@ jobs:
       run: |
         exe="$(pwd)/build/bin/Release/cforge"
         chmod +x "$exe"
-        "$exe" pack -c Release -t TGZ,DEB
+        "$exe" pack -c Release -t TGZ
+        "$exe" pack -c Release -t DEB
 
     # Package on macOS only (TGZ)
     - name: Package CForge (macOS)
