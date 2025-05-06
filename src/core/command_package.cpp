@@ -718,15 +718,16 @@ static std::vector<std::string> get_default_generators() {
       is_command_available("dnf")) {
     generators.push_back("RPM");
   }
-  logger::print_verbose("Using default Linux generators: TGZ" +
-                        (std::find(generators.begin(), generators.end(),
-                                   "DEB") != generators.end()
-                             ? ", DEB"
-                             : "") +
-                        (std::find(generators.begin(), generators.end(),
-                                   "RPM") != generators.end()
-                             ? ", RPM"
-                             : ""));
+  logger::print_verbose(
+      std::string("Using default Linux generators: TGZ") +
+          (std::find(generators.begin(), generators.end(),
+                     "DEB") != generators.end()
+                   ? ", DEB"
+                   : "") +
+          (std::find(generators.begin(), generators.end(),
+                     "RPM") != generators.end()
+                   ? ", RPM"
+                   : ""));
 #endif
 
   return generators;
