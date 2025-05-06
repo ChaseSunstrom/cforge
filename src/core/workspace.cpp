@@ -1060,34 +1060,27 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
     cmakelists << ")\n\n";
   }
 
-  // CPack configuration
-  cmakelists << "# CPack configuration\n";
-  cmakelists << "set(CPACK_PACKAGE_NAME ${PROJECT_NAME})\n";
-  cmakelists << "set(CPACK_PACKAGE_VERSION ${PROJECT_VERSION})\n";
-  cmakelists << "set(CPACK_PACKAGE_VENDOR \"${PROJECT_AUTHOR}\")\n";
-  cmakelists
-      << "set(CPACK_PACKAGE_DESCRIPTION_SUMMARY \"${PROJECT_DESCRIPTION}\")\n";
-  cmakelists << "set(CPACK_RESOURCE_FILE_LICENSE \"${SOURCE_DIR}/LICENSE\")\n";
-  cmakelists
-      << "set(CPACK_RESOURCE_FILE_README \"${SOURCE_DIR}/README.md\")\n\n";
-
-  // Generate CPack generator configuration from toml, or use OS defaults
-  cmakelists << "# CPack generator configuration\n";
+  // Filter CPack generators by platform or default to ZIP
+  cmakelists << "# CPack generator configuration (filtered by platform)\n";
   {
-    auto gens = project_config.get_string_array("package.generators");
-    if (!gens.empty()) {
-      auto up_gens = uppercase_generators(gens);
-      cmakelists << "set(CPACK_GENERATOR \"" << join_strings(up_gens, ";") << "\")\n";
-    } else {
-      cmakelists << "# OS-specific default generators\n";
-      cmakelists << "if(WIN32)\n";
-      cmakelists << "    set(CPACK_GENERATOR \"ZIP;NSIS\")\n";
-      cmakelists << "    set(CPACK_NSIS_MODIFY_PATH ON)\n";
-      cmakelists << "elseif(APPLE)\n";
-      cmakelists << "    set(CPACK_GENERATOR \"ZIP;TGZ\")\n";
-      cmakelists << "else()\n";
-      cmakelists << "    set(CPACK_GENERATOR \"TGZ;DEB\")\n";
-      cmakelists << "endif()\n";
+    auto toml_gens = project_config.get_string_array("package.generators");
+    std::vector<std::string> final_gens;
+    if (!toml_gens.empty()) {
+      auto up_gens = uppercase_generators(toml_gens);
+#ifdef _WIN32
+      for (const auto &g : up_gens) if (g == "ZIP" || g == "NSIS") final_gens.push_back(g);
+#elif defined(__APPLE__)
+      for (const auto &g : up_gens) if (g == "ZIP" || g == "TGZ") final_gens.push_back(g);
+#else
+      for (const auto &g : up_gens) if (g == "ZIP" || g == "TGZ" || g == "DEB" || g == "RPM") final_gens.push_back(g);
+#endif
+    }
+    if (final_gens.empty()) {
+      final_gens.push_back("ZIP");
+    }
+    cmakelists << "set(CPACK_GENERATOR \"" << join_strings(final_gens, ";") << "\")\n";
+    if (std::find(final_gens.begin(), final_gens.end(), "NSIS") != final_gens.end()) {
+      cmakelists << "set(CPACK_NSIS_MODIFY_PATH ON)\n";
     }
   }
   cmakelists << "\n";
