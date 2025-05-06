@@ -126,8 +126,23 @@ if(MSVC AND CMAKE_BUILD_TYPE STREQUAL "Debug")
             CONFIGURATIONS Debug)
 endif()
 
-# CPack generator configuration (filtered by platform)
-set(CPACK_GENERATOR "ZIP")
+# CPack configuration
+set(CPACK_PACKAGE_NAME ${PROJECT_NAME})
+set(CPACK_PACKAGE_VERSION ${PROJECT_VERSION})
+set(CPACK_PACKAGE_VENDOR "${PROJECT_AUTHOR}")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "${PROJECT_DESCRIPTION}")
+set(CPACK_RESOURCE_FILE_LICENSE "${SOURCE_DIR}/LICENSE")
+set(CPACK_RESOURCE_FILE_README "${SOURCE_DIR}/README.md")
+
+# OS-specific settings
+if(WIN32)
+    set(CPACK_GENERATOR "ZIP;NSIS")
+    set(CPACK_NSIS_MODIFY_PATH ON)
+elseif(APPLE)
+    set(CPACK_GENERATOR "ZIP;TGZ")
+else()
+    set(CPACK_GENERATOR "ZIP;TGZ;DEB")
+endif()
 
 # Binary packages with config
 set(CPACK_PACKAGE_FILE_NAME "${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}-${CMAKE_SYSTEM_NAME}-${CMAKE_BUILD_TYPE}")
@@ -138,6 +153,10 @@ set(CPACK_COMPONENT_RUNTIME_DISPLAY_NAME "Runtime Files")
 set(CPACK_COMPONENT_DEVELOPMENT_DISPLAY_NAME "Development Files")
 set(CPACK_COMPONENT_RUNTIME_DESCRIPTION "Runtime libraries and executables")
 set(CPACK_COMPONENT_DEVELOPMENT_DESCRIPTION "Development headers and libraries")
+
+# Set Debian package maintainer and package contact
+set(CPACK_PACKAGE_CONTACT "${PROJECT_AUTHOR}")
+set(CPACK_DEBIAN_PACKAGE_MAINTAINER "${PROJECT_AUTHOR}")
 
 # Include CPack
 include(CPack)

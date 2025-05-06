@@ -84,6 +84,11 @@ void cforge_parse_args(cforge_int_t argc, cforge_string_t argv[],
       args->verbosity = argv[i] + 12;
     }
   }
+
+  // Null-terminate the args array to avoid crashes when no arguments are present
+  if (args->args) {
+    args->args[args->arg_count] = NULL;
+  }
 }
 
 // Function to free allocated resources

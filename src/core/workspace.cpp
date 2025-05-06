@@ -1082,6 +1082,9 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
     if (std::find(final_gens.begin(), final_gens.end(), "NSIS") != final_gens.end()) {
       cmakelists << "set(CPACK_NSIS_MODIFY_PATH ON)\n";
     }
+    if (std::find(final_gens.begin(), final_gens.end(), "DEB") != final_gens.end()) {
+      cmakelists << "set(CPACK_DEBIAN_PACKAGE_MAINTAINER \"${PROJECT_AUTHOR}\")";
+    }
   }
   cmakelists << "\n";
 
@@ -1101,6 +1104,8 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
                 "and executables\")\n";
   cmakelists << "set(CPACK_COMPONENT_DEVELOPMENT_DESCRIPTION \"Development "
                 "headers and libraries\")\n\n";
+  cmakelists << "set(CPACK_PACKAGE_CONTACT \"${PROJECT_AUTHOR}\")";
+  
 
   // Include CPack
   cmakelists << "# Include CPack\n";
