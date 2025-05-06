@@ -1077,7 +1077,7 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
   cmakelists << "    set(CPACK_GENERATOR \"ZIP;NSIS\")\n";
   cmakelists << "    set(CPACK_NSIS_MODIFY_PATH ON)\n";
   cmakelists << "elseif(APPLE)\n";
-  cmakelists << "    set(CPACK_GENERATOR \"ZIP;TGZ;DragNDrop\")\n";
+  cmakelists << "    set(CPACK_GENERATOR \"ZIP;TGZ\")\n";
   cmakelists << "else()\n";
   cmakelists << "    set(CPACK_GENERATOR \"ZIP;TGZ;DEB\")\n";
   cmakelists << "endif()\n\n";
