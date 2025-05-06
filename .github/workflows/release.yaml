@@ -72,11 +72,11 @@ jobs:
       with:
         name: cforge-${{ matrix.config.os }}
         path: |
-          build/*.zip
-          build/*.tar.gz
-          build/*.deb
-          build/*.rpm
-          build/*.exe
+          packages/*.zip
+          packages/*.tar.gz
+          packages/*.deb
+          packages/*.rpm
+          packages/*.exe
         retention-days: 7
         if-no-files-found: ignore
 

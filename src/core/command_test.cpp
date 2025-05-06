@@ -128,8 +128,7 @@ find_test_executable(const std::filesystem::path &build_dir,
 #ifdef _WIN32
         if (entry.path().extension() == ".exe") {
 #else
-        if ((entry.permissions(std::filesystem::status(entry.path())) &
-             std::filesystem::perms::owner_exec)) {
+        if ((entry.status().permissions() & std::filesystem::perms::owner_exec) != std::filesystem::perms::none) {
 #endif
           logger::print_status("Found test executable via search: " +
                                entry.path().string());
