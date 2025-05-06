@@ -89,4 +89,23 @@ bool execute_tool(const std::string &command,
  */
 bool is_command_available(const std::string &command, int timeout_seconds = 5);
 
+/**
+ * @brief Ensure all generator names are uppercased
+ *
+ * @param generators Vector of generator names to process
+ * @return std::vector<std::string> Vector with uppercased generator names
+ */
+std::vector<std::string>
+uppercase_generators(const std::vector<std::string> &generators);
+
+/**
+ * @brief Join a vector of strings into a single string with a delimiter
+ *
+ * @param strings Vector of strings to join
+ * @param delimiter Delimiter to use between strings
+ * @return std::string Joined string
+ */
+static std::string join_strings(const std::vector<std::string> &strings,
+                                const std::string &delimiter);
+
 } // namespace cforge
