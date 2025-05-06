@@ -448,40 +448,37 @@ bool installer::install_project(const std::string &project_path,
       print_verbose("Searching for executables in: " + bin_dir.string());
       for (const auto &entry : std::filesystem::directory_iterator(bin_dir)) {
         if (entry.is_regular_file()) {
-          // In Windows, check for .exe extension
+          // Windows: check for .exe extension
 #ifdef _WIN32
           if (entry.path().extension() == ".exe") {
-            print_verbose("Found potential executable: " +
-                          entry.path().string());
+            print_verbose("Found potential executable: " + entry.path().string());
 
             // Make sure it's not a CMake test file
             if (!is_valid_executable(entry.path())) {
-              print_verbose("Skipping CMake test executable: " +
-                            entry.path().string());
+              print_verbose("Skipping CMake test executable: " + entry.path().string());
               continue;
             }
+          }
 #else
-          // In Unix-like systems, check for executable permission
-          if (entry.permissions(std::filesystem::status(entry.path())) &
-              std::filesystem::perms::owner_exec) {
-            if (!is_valid_executable(entry.path())) {
-              print_verbose("Skipping test executable: " +
-                            entry.path().string());
-              continue;
-            }
+          // Unix-like: check for owner execute permission
+          if ((entry.status().permissions() & std::filesystem::perms::owner_exec) != std::filesystem::perms::none) {
+             if (!is_valid_executable(entry.path())) {
+                print_verbose("Skipping test executable: " + entry.path().string());
+                continue;
+             }
+          }
 #endif
-            print_verbose("Using project executable: " + entry.path().string());
-            try {
-              std::filesystem::copy_file(
-                  entry.path(), install_bin / entry.path().filename(),
-                  std::filesystem::copy_options::overwrite_existing);
-              print_verbose("Copied " + entry.path().string() + " to " +
-                            (install_bin / entry.path().filename()).string());
-              found_executable = true;
-            } catch (const std::exception &ex) {
-              logger::print_error("Failed to copy binary: " +
+          print_verbose("Using project executable: " + entry.path().string());
+          try {
+            std::filesystem::copy_file(
+                entry.path(), install_bin / entry.path().filename(),
+                std::filesystem::copy_options::overwrite_existing);
+            print_verbose("Copied " + entry.path().string() + " to " +
+                          (install_bin / entry.path().filename()).string());
+            found_executable = true;
+          } catch (const std::exception &ex) {
+            logger::print_error("Failed to copy binary: " +
                                   std::string(ex.what()));
-            }
           }
         }
       }
@@ -515,13 +512,13 @@ bool installer::install_project(const std::string &project_path,
               print_verbose("Using project executable: " +
                             entry.path().string());
 #else
-            if (entry.permissions(std::filesystem::status(entry.path())) &
-                std::filesystem::perms::owner_exec) {
-              if (!is_valid_executable(entry.path())) {
-                print_verbose("Skipping test executable: " +
-                              entry.path().string());
-                continue;
-              }
+            if ((entry.status().permissions() & std::filesystem::perms::owner_exec) != std::filesystem::perms::none) {
+               if (!is_valid_executable(entry.path())) {
+                  print_verbose("Skipping test executable: " + entry.path().string());
+                  continue;
+               }
+             
+               print_verbose("Using project executable: " + entry.path().string());
 #endif
               try {
                 std::filesystem::copy_file(

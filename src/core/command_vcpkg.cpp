@@ -100,9 +100,11 @@ static bool is_vcpkg_installed(const std::filesystem::path &project_dir) {
   if (std::filesystem::exists(vcpkg_exe)) {
 // Check if the executable has the execute permission
 #ifndef _WIN32
-    if (!(std::filesystem::status(vcpkg_exe).permissions() &
-          std::filesystem::perms::owner_exec)) {
-      return false;
+    {
+      auto file_perms = std::filesystem::status(vcpkg_exe).permissions();
+      if ((file_perms & std::filesystem::perms::owner_exec) == std::filesystem::perms::none) {
+        return false;
+      }
     }
 #endif
 
