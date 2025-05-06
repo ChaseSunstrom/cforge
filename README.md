@@ -356,16 +356,6 @@ int main() {
 }
 ```
 
-### Custom Dependencies
-
-```toml
-[[dependencies.custom]]
-name = "my_library"
-url = "https://example.com/my_library-1.0.0.zip"
-include_path = "include"
-library_path = "lib"
-```
-
 ### System Dependencies
 
 ```toml
