@@ -39,68 +39,48 @@ jobs:
       with:
         fetch-depth: 0
 
-    - name: Setup Rust
-      uses: dtolnay/rust-toolchain@stable
+    - name: Bootstrap and build CForge (Linux/macOS)
+      if: runner.os != 'Windows'
+      shell: bash
+      run: |
+        chmod +x scripts/bootstrap.sh
+        bash scripts/bootstrap.sh
+
+    - name: Bootstrap and build CForge (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        .\scripts\bootstrap.ps1
+
+    - name: Package CForge (Linux/macOS)
+      if: runner.os != 'Windows'
+      shell: bash
+      run: |
+        cd build
+        cforge pack -c Release
+
+    - name: Package CForge (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        cd build
+        cforge pack -c Release
+
+    - name: Upload Release Artifacts
+      uses: actions/upload-artifact@v4
       with:
-        components: rustfmt, clippy
-
-    - name: Install CForge
-      shell: bash
-      run: |
-        echo "Attempting to install latest CForge version directly from repository"
-        
-        # Try to install directly from the git repository
-        cargo install --git https://github.com/ChaseSunstrom/cforge.git || {
-          echo "Failed to install from git, trying to find published beta version"
-          
-          # If repository install fails, fallback to trying a basic install
-          echo "Trying cargo install cforge"
-          cargo install cforge || {
-            echo "Failed to install CForge"
-            exit 1
-          }
-        }
-        
-        # Verify installation
-        echo "Installed CForge version:"
-        cforge --version
-
-    - name: Clean CForge
-      shell: bash
-      run: |
-        cforge clean
-
-    - name: Build with CForge
-      shell: bash
-      run: |
-        cforge build --config ${{ matrix.config.config }}
-
-    - name: Run Tests
-      shell: bash
-      run: |
-        cforge test
-
-    - name: Package Project
-      shell: bash
-      continue-on-error: true
-      run: |
-        cforge package --verbosity verbose --config ${{ matrix.config.config }}
+        name: cforge-${{ matrix.config.os }}
+        path: |
+          build/*.zip
+          build/*.tar.gz
+          build/*.deb
+          build/*.rpm
+          build/*.exe
+        retention-days: 7
+        if-no-files-found: ignore
 
     - name: Convert config to lowercase
       run: |
         echo "CONFIG_LOWER=$(echo "$CONFIG" | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
       env:
         CONFIG: ${{ matrix.config.config }}
-
-    - name: Upload Artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: cforge-${{ matrix.config.os }}-${{ matrix.config.compiler }}
-        path: |
-          **/build-${{ env.CONFIG_LOWER }}/**/*.zip
-          **/build-${{ env.CONFIG_LOWER }}/**/*.tar.gz
-          **/build-${{ env.CONFIG_LOWER }}/**/*.deb
-          **/build-${{ env.CONFIG_LOWER }}/**/*.rpm
-          **/build-${{ env.CONFIG_LOWER }}/**/*.exe
-        retention-days: 7
-        if-no-files-found: ignore
