@@ -705,8 +705,7 @@ static std::vector<std::string> get_default_generators() {
                         (generators.size() > 1 ? "ZIP, NSIS" : "ZIP"));
 #elif defined(__APPLE__)
   generators.push_back("TGZ");
-  generators.push_back("DRAGNDROP");
-  logger::print_verbose("Using default macOS generators: TGZ, DRAGNDROP");
+  logger::print_verbose("Using default macOS generators: TGZ");
 #else
   generators.push_back("TGZ");
   // Only add DEB if likely to be available
