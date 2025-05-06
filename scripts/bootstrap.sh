@@ -41,22 +41,16 @@ if ! command -v g++ >/dev/null 2>&1 && ! command -v clang++ >/dev/null 2>&1 && !
   exit 1
 fi
 
-# Create and enter build directory
+# Build directory name
 BUILD_DIR="${BUILD_DIR:-build}"
 
-# Clear existing build directory to avoid stale files
-if [ -d "$BUILD_DIR" ]; then
-  echo "Removing existing build directory: $BUILD_DIR"
-  rm -rf "$BUILD_DIR"
-fi
-
-# Create and enter build directory
-mkdir -p "$BUILD_DIR"
-cd "$BUILD_DIR"
+# Prepare absolute build directory path
+BUILD_PATH="${dir}/${BUILD_DIR:-build}"
+mkdir -p "$BUILD_PATH"
 
 # Configure the project (clear vcpkg, header-only fmt, static libs)
 cmake -U CMAKE_TOOLCHAIN_FILE -U VCPKG_CHAINLOAD_TOOLCHAIN_FILE \
-  -S "$dir" -B "$BUILD_DIR" \
+  -S "$dir" -B "$BUILD_PATH" \
   -DCMAKE_TOOLCHAIN_FILE="" \
   -DVCPKG_CHAINLOAD_TOOLCHAIN_FILE="" \
   -DCMAKE_BUILD_TYPE=Release \
@@ -65,15 +59,15 @@ cmake -U CMAKE_TOOLCHAIN_FILE -U VCPKG_CHAINLOAD_TOOLCHAIN_FILE \
 if [ $? -ne 0 ]; then echo "CMake configuration failed"; exit 1; fi
 
 # Build the project
-cmake --build "$BUILD_DIR" --config Release -- -j"$(nproc)"
+cmake --build "$BUILD_PATH" --config Release -- -j"$(nproc)"
 if [ $? -ne 0 ]; then echo "CMake build failed"; exit 1; fi
 
 # Install the project via build-target
-cmake --build "$BUILD_DIR" --config Release --target install
+cmake --build "$BUILD_PATH" --config Release --target install
 if [ $? -ne 0 ]; then echo "Project install failed"; exit 1; fi
 
 echo "CForge built and installed"
 
 # Run cforge install with built executable
 cd "$dir"
-"$BUILD_DIR/bin/Release/cforge" install 
+"$BUILD_PATH/bin/Release/cforge" install 
