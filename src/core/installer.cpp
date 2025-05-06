@@ -461,7 +461,7 @@ bool installer::install_project(const std::string &project_path,
           }
 #else
           // Unix-like: check for owner execute permission
-          if ((entry.status().permissions() & std::filesystem::perms::owner_exec) != std::filesystem::perms::none) {
+          if (((entry.status().permissions() & std::filesystem::perms::owner_exec) != std::filesystem::perms::none)) {
              if (!is_valid_executable(entry.path())) {
                 print_verbose("Skipping test executable: " + entry.path().string());
                 continue;
@@ -512,7 +512,7 @@ bool installer::install_project(const std::string &project_path,
               print_verbose("Using project executable: " +
                             entry.path().string());
 #else
-            if ((entry.status().permissions() & std::filesystem::perms::owner_exec) != std::filesystem::perms::none) {
+            if (((entry.status().permissions() & std::filesystem::perms::owner_exec) != std::filesystem::perms::none)) {
                if (!is_valid_executable(entry.path())) {
                   print_verbose("Skipping test executable: " + entry.path().string());
                   continue;
@@ -1080,8 +1080,7 @@ bool installer::create_executable_links(
   // Find the executable
   for (const auto &entry : std::filesystem::directory_iterator(bin_path)) {
     if (entry.is_regular_file() &&
-        entry.permissions(std::filesystem::status(entry.path())) &
-            std::filesystem::perms::owner_exec) {
+        ((entry.status().permissions() & std::filesystem::perms::owner_exec) != std::filesystem::perms::none)) {
       exe_path = entry.path();
       print_verbose("Found executable: " + exe_path.string());
       break;
@@ -1090,14 +1089,11 @@ bool installer::create_executable_links(
 
   if (exe_path.empty()) {
     // Try to find in parent directory
-    for (const auto &entry :
-         std::filesystem::directory_iterator(bin_path.parent_path())) {
+    for (const auto &entry : std::filesystem::directory_iterator(bin_path.parent_path())) {
       if (entry.is_regular_file() &&
-          entry.permissions(std::filesystem::status(entry.path())) &
-              std::filesystem::perms::owner_exec) {
+          ((entry.status().permissions() & std::filesystem::perms::owner_exec) != std::filesystem::perms::none)) {
         exe_path = entry.path();
-        print_verbose("Found executable in parent directory: " +
-                      exe_path.string());
+        print_verbose("Found executable in parent directory: " + exe_path.string());
         break;
       }
     }
