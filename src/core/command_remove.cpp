@@ -10,10 +10,13 @@
 #include "core/file_system.h"
 #include "core/process_utils.hpp"
 #include "core/toml_reader.hpp"
+#include "core/workspace_utils.hpp"
 #include <filesystem>
 #include <fstream>
 #include <regex>
 #include <sstream>
+#include <vector>
+#include <string>
 
 using namespace cforge;
 
@@ -170,6 +173,91 @@ static bool remove_package_with_vcpkg(const std::filesystem::path &project_dir,
   return true;
 }
 
+// Helpers to remove a dependency entry from a specific TOML section
+static bool remove_dependency_from_section(
+    const std::filesystem::path &config_file,
+    const std::string &section,
+    const std::string &package_name,
+    bool verbose) {
+  // Read all lines
+  std::vector<std::string> lines;
+  {
+    std::ifstream infile(config_file);
+    if (!infile) {
+      logger::print_error("Failed to read configuration file: " + config_file.string());
+      return false;
+    }
+    std::string line;
+    while (std::getline(infile, line)) {
+      lines.push_back(line);
+    }
+  }
+  bool in_section = false;
+  bool removed = false;
+  std::vector<std::string> out;
+  std::regex sec_header("^\\s*\[" + section + "\]\\s*$");
+  std::regex any_header("^\\s*\[.+\]\\s*$");
+  std::regex entry_pattern;
+  if (section == "dependencies.vcpkg") {
+    entry_pattern = std::regex("^\\s*" + package_name + "\\s*=\\s*\"[^\"]*\"\\s*$");
+  } else if (section == "dependencies.git") {
+    entry_pattern = std::regex("^\\s*" + package_name + "\\s*=\\s*\\{.*\\}\\s*$");
+  } else {
+    entry_pattern = std::regex("^\\s*" + package_name + "\\s*=.*$");
+  }
+  for (auto &ln : lines) {
+    if (std::regex_match(ln, sec_header)) {
+      in_section = true;
+      out.push_back(ln);
+      continue;
+    }
+    if (in_section && std::regex_match(ln, any_header) && !std::regex_match(ln, sec_header)) {
+      in_section = false;
+      out.push_back(ln);
+      continue;
+    }
+    if (in_section && std::regex_match(ln, entry_pattern)) {
+      removed = true;
+      continue;
+    }
+    out.push_back(ln);
+  }
+  if (!removed) {
+    logger::print_warning("Dependency '" + package_name + "' not found in section [" + section + "]");
+    return false;
+  }
+  std::ofstream outfile(config_file);
+  if (!outfile) {
+    logger::print_error("Failed to open configuration file for writing: " + config_file.string());
+    return false;
+  }
+  for (auto &ln : out) {
+    outfile << ln << "\n";
+  }
+  if (verbose) {
+    logger::print_status("Removed dependency: " + package_name + " from [" + section + "]");
+  }
+  return true;
+}
+
+static bool remove_vcpkg_dependency_from_config(
+    const std::filesystem::path &config_file,
+    const std::string &package_name,
+    bool verbose) {
+  return remove_dependency_from_section(config_file,
+                                        "dependencies.vcpkg",
+                                        package_name, verbose);
+}
+
+static bool remove_git_dependency_from_config(
+    const std::filesystem::path &config_file,
+    const std::string &package_name,
+    bool verbose) {
+  return remove_dependency_from_section(config_file,
+                                        "dependencies.git",
+                                        package_name, verbose);
+}
+
 /**
  * @brief Handle the 'remove' command
  *
@@ -177,13 +265,14 @@ static bool remove_package_with_vcpkg(const std::filesystem::path &project_dir,
  * @return cforge_int_t Exit code (0 for success)
  */
 cforge_int_t cforge_cmd_remove(const cforge_context_t *ctx) {
-  // Verify we're in a project directory
+  // Determine working context (project or workspace)
   std::filesystem::path project_dir = ctx->working_dir;
-  std::filesystem::path config_file = project_dir / "cforge.toml";
-
-  if (!std::filesystem::exists(config_file)) {
+  auto [is_workspace, workspace_root] = cforge::is_in_workspace(project_dir);
+  bool in_workspace_root = is_workspace && project_dir == workspace_root;
+  std::filesystem::path config_file = project_dir / CFORGE_FILE;
+  if (!in_workspace_root && !std::filesystem::exists(config_file)) {
     logger::print_error(
-        "Not a cforge project directory (cforge.toml not found)");
+        "Not a cforge project directory (" + std::string(CFORGE_FILE) + " not found)");
     logger::print_status("Run 'cforge init' to create a new project");
     return 1;
   }
@@ -195,31 +284,59 @@ cforge_int_t cforge_cmd_remove(const cforge_context_t *ctx) {
     return 1;
   }
 
+  // Build argument list
+  std::vector<std::string> args;
+  for (int i = 0; i < ctx->args.arg_count; ++i) args.push_back(ctx->args.args[i]);
+  // Parse flags
+  bool mode_git = false;
+  std::vector<std::string> filtered;
+  for (auto &arg : args) {
+    if (arg == "--git") mode_git = true;
+    else filtered.push_back(arg);
+  }
+  args.swap(filtered);
   // Extract package name
-  std::string package_name = ctx->args.args[0];
-
+  std::string package_name = args[0];
   // Check for verbosity
   bool verbose = logger::get_verbosity() == log_verbosity::VERBOSITY_VERBOSE;
 
-  // Remove from config file
-  bool config_success =
-      remove_dependency_from_config(config_file, package_name, verbose);
-  if (!config_success) {
-    logger::print_warning("Failed to remove dependency from configuration");
-    // Continue anyway as we might need to clean up vcpkg
+  // Workspace removal
+  if (in_workspace_root) {
+    bool all_success = true;
+    auto projects = cforge::get_workspace_projects(workspace_root);
+    for (const auto &proj : projects) {
+      auto proj_dir = workspace_root / proj;
+      auto proj_cfg = proj_dir / CFORGE_FILE;
+      if (!std::filesystem::exists(proj_cfg)) continue;
+      bool cfg_ok = false;
+      bool rem_ok = true;
+      if (mode_git) {
+        cfg_ok = remove_git_dependency_from_config(proj_cfg, package_name, verbose);
+      } else {
+        cfg_ok = remove_vcpkg_dependency_from_config(proj_cfg, package_name, verbose);
+        rem_ok = remove_package_with_vcpkg(proj_dir, package_name, verbose);
+      }
+      if (!cfg_ok || !rem_ok) all_success = false;
+    }
+    if (all_success) {
+      logger::print_success("Removed dependency '" + package_name + "' from all workspace projects");
+      return 0;
+    } else {
+      logger::print_error("Failed to remove dependency '" + package_name + "' from some workspace projects");
+      return 1;
+    }
   }
 
-  // Remove package with vcpkg
-  bool remove_success =
-      remove_package_with_vcpkg(project_dir, package_name, verbose);
-  if (!remove_success) {
-    logger::print_warning("Failed to remove package with vcpkg");
-    logger::print_status(
-        "You can try removing manually with 'cforge vcpkg remove " +
-        package_name + "'");
+  // Single project removal
+  bool cfg_ok = false;
+  bool rem_ok = true;
+  if (mode_git) {
+    cfg_ok = remove_git_dependency_from_config(config_file, package_name, verbose);
+  } else {
+    cfg_ok = remove_vcpkg_dependency_from_config(config_file, package_name, verbose);
+    rem_ok = remove_package_with_vcpkg(project_dir, package_name, verbose);
   }
-
-  if (config_success || remove_success) {
+  if (cfg_ok || rem_ok) {
     logger::print_success("Successfully removed dependency: " + package_name);
     return 0;
   } else {

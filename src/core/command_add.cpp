@@ -9,6 +9,7 @@
 #include "core/file_system.h"
 #include "core/process_utils.hpp"
 #include "core/toml_reader.hpp"
+#include "core/workspace_utils.hpp"
 #include <filesystem>
 #include <fstream>
 #include <regex>
@@ -138,6 +139,54 @@ static bool install_package_with_vcpkg(const std::filesystem::path &project_dir,
   return true;
 }
 
+// Helpers to add dependencies to a specific TOML section
+static bool add_dependency_to_section(const std::filesystem::path &config_file,
+                                      const std::string &section,
+                                      const std::string &entry,
+                                      bool verbose) {
+  std::ifstream file(config_file);
+  if (!file) {
+    logger::print_error("Failed to read configuration file: " + config_file.string());
+    return false;
+  }
+  std::string content((std::istreambuf_iterator<char>(file)),
+                      std::istreambuf_iterator<char>());
+  file.close();
+  bool has_section = content.find("[" + section + "]") != std::string::npos;
+  std::ofstream outfile(config_file, std::ios::app);
+  if (!outfile) {
+    logger::print_error("Failed to open configuration file for writing: " + config_file.string());
+    return false;
+  }
+  if (!has_section) {
+    outfile << "\n[" << section << "]\n";
+  }
+  outfile << entry << "\n";
+  outfile.close();
+  if (verbose) {
+    logger::print_status("Added dependency: " + entry + " to [" + section + "]");
+  }
+  return true;
+}
+
+static bool add_vcpkg_dependency_to_config(const std::filesystem::path &project_dir,
+                                           const std::filesystem::path &config_file,
+                                           const std::string &package_name,
+                                           const std::string &package_version,
+                                           bool verbose) {
+  std::string entry = package_name + " = \"" + (package_version.empty() ? "*" : package_version) + "\"";
+  return add_dependency_to_section(config_file, "dependencies.vcpkg", entry, verbose);
+}
+
+static bool add_git_dependency_to_config(const std::filesystem::path &project_dir,
+                                        const std::filesystem::path &config_file,
+                                        const std::string &package_name,
+                                        const std::string &package_url,
+                                        bool verbose) {
+  std::string entry = package_name + " = { url = \"" + package_url + "\" }";
+  return add_dependency_to_section(config_file, "dependencies.git", entry, verbose);
+}
+
 /**
  * @brief Handle the 'add' command
  *
@@ -145,59 +194,103 @@ static bool install_package_with_vcpkg(const std::filesystem::path &project_dir,
  * @return cforge_int_t Exit code (0 for success)
  */
 cforge_int_t cforge_cmd_add(const cforge_context_t *ctx) {
-  // Verify we're in a project directory
+  // Determine working context (project or workspace)
   std::filesystem::path project_dir = ctx->working_dir;
-  std::filesystem::path config_file = project_dir / "cforge.toml";
-
-  if (!std::filesystem::exists(config_file)) {
+  auto [is_workspace, workspace_root] = cforge::is_in_workspace(project_dir);
+  bool in_workspace_root = is_workspace && project_dir == workspace_root;
+  std::filesystem::path config_file = project_dir / CFORGE_FILE;
+  // If not in workspace root, ensure this is a project directory
+  if (!in_workspace_root && !std::filesystem::exists(config_file)) {
     logger::print_error(
         "Not a cforge project directory (cforge.toml not found)");
     logger::print_status("Run 'cforge init' to create a new project");
     return 1;
   }
 
+  // Parse flags
+  bool mode_git = false, mode_vcpkg = false;
+  std::vector<std::string> args;
+  for (int i = 0; i < ctx->args.arg_count; ++i) args.push_back(ctx->args.args[i]);
+  std::vector<std::string> filtered;
+  for (auto &arg : args) {
+    if (arg == "--git") mode_git = true;
+    else if (arg == "--vcpkg") mode_vcpkg = true;
+    else filtered.push_back(arg);
+  }
+  args.swap(filtered);
+  if (mode_git && mode_vcpkg) {
+    logger::print_error("Cannot use both --git and --vcpkg"); return 1;
+  }
+
   // Check if package name was provided
-  if (!ctx->args.args || !ctx->args.args[0] || ctx->args.args[0][0] == '-') {
+  if (args.empty() || args[0].empty() || args[0][0] == '-') {
     logger::print_error("Package name not specified");
-    logger::print_status("Usage: cforge add <package>");
+    logger::print_status("Usage: cforge add <package> [--git|--vcpkg]");
     return 1;
   }
 
-  // Extract package name and version
-  std::string package_arg = ctx->args.args[0];
-  std::string package_name;
-  std::string package_version;
-
-  // Check if package has a version specifier (name:version)
-  size_t colon_pos = package_arg.find(':');
-  if (colon_pos != std::string::npos) {
-    package_name = package_arg.substr(0, colon_pos);
-    package_version = package_arg.substr(colon_pos + 1);
+  // Extract package name and version or URL
+  std::string package_name = args[0];
+  std::string package_version_or_url;
+  if (mode_git) {
+    if (args.size() < 2) {
+      logger::print_error("URL for git dependency not specified");
+      logger::print_status("Usage: cforge add --git <name> <url>"); return 1;
+    }
+    package_version_or_url = args[1];
   } else {
-    package_name = package_arg;
+    // vcpkg mode or default: parse version
+    size_t colon_pos = package_name.find(':');
+    std::string package_version;
+    if (colon_pos != std::string::npos) {
+      package_version = package_name.substr(colon_pos + 1);
+      package_name = package_name.substr(0, colon_pos);
+    }
+    package_version_or_url = package_version;
   }
 
   // Check for verbosity
   bool verbose = logger::get_verbosity() == log_verbosity::VERBOSITY_VERBOSE;
 
-  // Add to config file
-  bool config_success = add_dependency_to_config(
-      project_dir, config_file, package_name, package_version, verbose);
-  if (!config_success) {
-    logger::print_error("Failed to add dependency to configuration");
+  // Apply to each project in workspace or single project
+  if (in_workspace_root) {
+    bool all_success = true;
+    auto projects = cforge::get_workspace_projects(workspace_root);
+    for (const auto &proj : projects) {
+      auto proj_dir = workspace_root / proj;
+      auto proj_config = proj_dir / CFORGE_FILE;
+      if (!std::filesystem::exists(proj_config)) continue;
+      bool cfg_ok = false, inst_ok = true;
+      if (mode_git) {
+        cfg_ok = add_git_dependency_to_config(proj_dir, proj_config, package_name, package_version_or_url, verbose);
+      } else {
+        cfg_ok = add_vcpkg_dependency_to_config(proj_dir, proj_config, package_name, package_version_or_url, verbose);
+        inst_ok = install_package_with_vcpkg(proj_dir, package_name, package_version_or_url, verbose);
+      }
+      if (!cfg_ok || !inst_ok) all_success = false;
+    }
+    if (all_success) {
+      logger::print_success("Successfully added dependency: " + package_name + " to workspace projects");
+      return 0;
+    } else {
+      logger::print_error("Failed to add dependency: " + package_name + " to some workspace projects");
+      return 1;
+    }
+  }
+
+  // Single project addition
+  bool cfg_ok = false, inst_ok = true;
+  if (mode_git) {
+    cfg_ok = add_git_dependency_to_config(project_dir, config_file, package_name, package_version_or_url, verbose);
+  } else {
+    cfg_ok = add_vcpkg_dependency_to_config(project_dir, config_file, package_name, package_version_or_url, verbose);
+    inst_ok = install_package_with_vcpkg(project_dir, package_name, package_version_or_url, verbose);
+  }
+  if (cfg_ok && inst_ok) {
+    logger::print_success("Successfully added dependency: " + package_name);
+    return 0;
+  } else {
+    logger::print_error("Failed to add dependency: " + package_name);
     return 1;
   }
-
-  // Install package with vcpkg
-  bool install_success = install_package_with_vcpkg(project_dir, package_name,
-                                                    package_version, verbose);
-  if (!install_success) {
-    logger::print_warning("Failed to install package with vcpkg");
-    logger::print_status(
-        "You can try installing manually with 'cforge vcpkg install " +
-        package_name + "'");
-  }
-
-  logger::print_success("Successfully added dependency: " + package_name);
-  return 0;
 }

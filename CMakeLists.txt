@@ -7,7 +7,7 @@ cmake_minimum_required(VERSION 3.14)
 project(cforge VERSION 2.0.0 LANGUAGES CXX)
 
 # Set source directory
-set(SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
+set(SOURCE_DIR "C:/cpp-forge")
 
 # Project description
 set(PROJECT_DESCRIPTION "A C/C++ build tool with dependency management")
@@ -139,7 +139,7 @@ if(WIN32)
     set(CPACK_GENERATOR "ZIP;NSIS")
     set(CPACK_NSIS_MODIFY_PATH ON)
 elseif(APPLE)
-    set(CPACK_GENERATOR "ZIP;TGZ")
+    set(CPACK_GENERATOR "ZIP;TGZ;DragNDrop")
 else()
     set(CPACK_GENERATOR "ZIP;TGZ;DEB")
 endif()
@@ -153,10 +153,6 @@ set(CPACK_COMPONENT_RUNTIME_DISPLAY_NAME "Runtime Files")
 set(CPACK_COMPONENT_DEVELOPMENT_DISPLAY_NAME "Development Files")
 set(CPACK_COMPONENT_RUNTIME_DESCRIPTION "Runtime libraries and executables")
 set(CPACK_COMPONENT_DEVELOPMENT_DESCRIPTION "Development headers and libraries")
-
-# Set Debian package maintainer and package contact
-set(CPACK_PACKAGE_CONTACT "${PROJECT_AUTHOR}")
-set(CPACK_DEBIAN_PACKAGE_MAINTAINER "${PROJECT_AUTHOR}")
 
 # Include CPack
 include(CPack)
