@@ -29,7 +29,6 @@ framework = "Catch2"
 
 [package]
 enabled = true
-generators = ["ZIP", "TGZ", "DEB"]
 vendor = "Chase Sunstrom"
 contact = "Chase Sunstrom <casunstrom@gmail.com>"
 
