@@ -705,14 +705,9 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
   cmakelists << "project(" << project_name << " VERSION " << project_version
              << " LANGUAGES CXX)\n\n";
 
-  // Include the original project source directory
+  // Use CMAKE_CURRENT_SOURCE_DIR for project source directory
   cmakelists << "# Set source directory\n";
-  {
-    // Normalize path to use forward slashes for CMake
-    std::string src_dir = project_dir.string();
-    std::replace(src_dir.begin(), src_dir.end(), '\\', '/');
-    cmakelists << "set(SOURCE_DIR \"" << src_dir << "\")\n\n";
-  }
+  cmakelists << "set(SOURCE_DIR \"${CMAKE_CURRENT_SOURCE_DIR}\")\n\n";
 
   // Get author information
   std::vector<std::string> authors =

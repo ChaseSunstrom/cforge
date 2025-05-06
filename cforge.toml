@@ -20,7 +20,7 @@ defines = ["DEBUG=1", "FMT_HEADER_ONLY=ON"]
 flags      = ["DEBUG_INFO", "NO_OPT"]
 
 [build.config.release]
-defines    = ["NDEBUG=1"]
+defines    = ["NDEBUG=1", "FMT_HEADER_ONLY=ON"]
 flags      = ["OPTIMIZE"]
 
 [test]

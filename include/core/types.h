@@ -5,6 +5,7 @@
 
 #ifndef CFORGE_TYPES_H
 #define CFORGE_TYPES_H
+#include <cstddef>
 
 typedef unsigned char cforge_byte_t;       /**< Byte type */
 typedef unsigned short cforge_ushort_t;    /**< Word type */

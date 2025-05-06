@@ -7,7 +7,7 @@ cmake_minimum_required(VERSION 3.14)
 project(cforge VERSION 2.0.0 LANGUAGES CXX)
 
 # Set source directory
-set(SOURCE_DIR "C:/cpp-forge")
+set(SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
 
 # Project description
 set(PROJECT_DESCRIPTION "A C/C++ build tool with dependency management")

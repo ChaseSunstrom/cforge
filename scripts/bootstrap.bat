@@ -16,29 +16,46 @@ where cmake >nul 2>&1 || (
 
 REM Create and enter build directory
 set "BUILD_DIR=%PROJECT_ROOT%\build"
-if not exist "%BUILD_DIR%" mkdir "%BUILD_DIR%"
+# Clear existing build directory to avoid stale files
+if exist "%BUILD_DIR%" (
+  echo Removing existing build directory: "%BUILD_DIR%"
+  rmdir /s /q "%BUILD_DIR%"
+)
+# Recreate build directory
+mkdir "%BUILD_DIR%"
 cd /d "%BUILD_DIR%"
 
-REM Configure the project
-cmake .. -DCMAKE_BUILD_TYPE Release
+REM Clone Git dependencies if not already cloned
+cd /d "%PROJECT_ROOT%\deps"
+if not exist "fmt" (
+  echo Cloning fmt...
+  git clone https://github.com/fmtlib/fmt.git fmt
+  cd fmt && git checkout 11.1.4 && cd ..
+)
+if not exist "tomlplusplus" (
+  echo Cloning tomlplusplus...
+  git clone https://github.com/marzer/tomlplusplus.git tomlplusplus
+  cd tomlplusplus && git checkout v3.4.0 && cd ..
+)
+cd /d "%BUILD_DIR%"
+
+REM Configure the project (clear vcpkg, header-only fmt, static libs)
+cmake -G "Ninja Multi-Config" -U CMAKE_TOOLCHAIN_FILE -U VCPKG_CHAINLOAD_TOOLCHAIN_FILE -S "%PROJECT_ROOT%" -B "%BUILD_DIR%" -DCMAKE_TOOLCHAIN_FILE="" -DVCPKG_CHAINLOAD_TOOLCHAIN_FILE="" -DCMAKE_BUILD_TYPE=Release -DFMT_HEADER_ONLY=ON -DBUILD_SHARED_LIBS=OFF
 if errorlevel 1 exit /b 1
 
 REM Build the project
-cmake --build . --config Release -- /m
+cmake --build "%BUILD_DIR%" --config Release
 if errorlevel 1 exit /b 1
 
-REM Determine install prefix
-if defined PREFIX (
-  set "INSTALL_DIR=%PREFIX%"
-) else (
-  set "INSTALL_DIR=%BUILD_DIR%\install"
-)
-
-REM Install the project
-cmake --install . --prefix "%INSTALL_DIR%"
+REM Install via build system target
+cmake --build "%BUILD_DIR%" --config Release --target install
 if errorlevel 1 exit /b 1
 
-echo CForge built and installed to "%INSTALL_DIR%"
-echo Add "%INSTALL_DIR%\bin" to your PATH
+REM Run cforge install with built executable
+cd /d "%PROJECT_ROOT%"
+"%BUILD_DIR%\bin\Release\cforge.exe" install
+
+echo CForge built and installed to "%BUILD_DIR%"
+echo Add "%BUILD_DIR%\bin" to your PATH
 
 endlocal 

@@ -5,6 +5,26 @@ set -euo pipefail
 dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/.."
 cd "$dir"
 
+# Clone git dependencies if not already cloned
+DEPS_DIR="${dir}/deps"
+mkdir -p "$DEPS_DIR"
+cd "$DEPS_DIR"
+if [ ! -d "fmt" ]; then
+  echo "Cloning fmt..."
+  git clone https://github.com/fmtlib/fmt.git fmt
+  cd fmt
+  git checkout 11.1.4
+  cd ..
+fi
+if [ ! -d "tomlplusplus" ]; then
+  echo "Cloning tomlplusplus..."
+  git clone https://github.com/marzer/tomlplusplus.git tomlplusplus
+  cd tomlplusplus
+  git checkout v3.4.0
+  cd ..
+fi
+cd "$dir"
+
 # Check for cmake
 command -v cmake >/dev/null 2>&1 || { echo "Error: cmake not found in PATH" >&2; exit 1; }
 # Check CMake version >= 3.15
@@ -23,18 +43,37 @@ fi
 
 # Create and enter build directory
 BUILD_DIR="${BUILD_DIR:-build}"
+
+# Clear existing build directory to avoid stale files
+if [ -d "$BUILD_DIR" ]; then
+  echo "Removing existing build directory: $BUILD_DIR"
+  rm -rf "$BUILD_DIR"
+fi
+
+# Create and enter build directory
 mkdir -p "$BUILD_DIR"
 cd "$BUILD_DIR"
 
-# Configure the project
-cmake .. -DCMAKE_BUILD_TYPE Release
+# Configure the project (clear vcpkg, header-only fmt, static libs)
+cmake -U CMAKE_TOOLCHAIN_FILE -U VCPKG_CHAINLOAD_TOOLCHAIN_FILE \
+  -S "$dir" -B "$BUILD_DIR" \
+  -DCMAKE_TOOLCHAIN_FILE="" \
+  -DVCPKG_CHAINLOAD_TOOLCHAIN_FILE="" \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DFMT_HEADER_ONLY=ON \
+  -DBUILD_SHARED_LIBS=OFF
+if [ $? -ne 0 ]; then echo "CMake configuration failed"; exit 1; fi
 
 # Build the project
-cmake --build . --config Release -- -j"$(nproc)"
+cmake --build "$BUILD_DIR" --config Release -- -j"$(nproc)"
+if [ $? -ne 0 ]; then echo "CMake build failed"; exit 1; fi
 
-# Install to a local prefix (default: ./install)
-PREFIX="${PREFIX:-"$(pwd)/install"}"
-cmake --install . --prefix "$PREFIX"
+# Install the project via build-target
+cmake --build "$BUILD_DIR" --config Release --target install
+if [ $? -ne 0 ]; then echo "Project install failed"; exit 1; fi
 
-echo "CForge built and installed to $PREFIX"
-echo "Add $PREFIX/bin to your PATH" 
+echo "CForge built and installed"
+
+# Run cforge install with built executable
+cd "$dir"
+"$BUILD_DIR/bin/Release/cforge" install 
