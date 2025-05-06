@@ -277,13 +277,6 @@ cforge_int_t cforge_cmd_remove(const cforge_context_t *ctx) {
     return 1;
   }
 
-  // Check if package name was provided
-  if (!ctx->args.args || !ctx->args.args[0] || ctx->args.args[0][0] == '-') {
-    logger::print_error("Package name not specified");
-    logger::print_status("Usage: cforge remove <package>");
-    return 1;
-  }
-
   // Build argument list
   std::vector<std::string> args;
   for (int i = 0; i < ctx->args.arg_count; ++i) args.push_back(ctx->args.args[i]);
@@ -295,6 +288,12 @@ cforge_int_t cforge_cmd_remove(const cforge_context_t *ctx) {
     else filtered.push_back(arg);
   }
   args.swap(filtered);
+  // Check if package name was provided
+  if (args.empty() || args[0].empty() || args[0][0] == '-') {
+    logger::print_error("Package name not specified");
+    logger::print_status("Usage: cforge remove <package> [--git]");
+    return 1;
+  }
   // Extract package name
   std::string package_name = args[0];
   // Check for verbosity
