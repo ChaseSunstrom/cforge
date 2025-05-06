@@ -63,8 +63,9 @@ jobs:
       if: runner.os == 'Windows'
       shell: pwsh
       run: |
-        cd build
-        cforge pack -c Release
+        # Invoke the built CForge executable directly
+        $exe = Join-Path $PWD 'build\bin\Release\cforge.exe'
+        & $exe pack -c Release
 
     - name: Upload Release Artifacts
       uses: actions/upload-artifact@v4
