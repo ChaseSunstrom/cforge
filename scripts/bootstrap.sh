@@ -55,19 +55,25 @@ cmake -U CMAKE_TOOLCHAIN_FILE -U VCPKG_CHAINLOAD_TOOLCHAIN_FILE \
   -DVCPKG_CHAINLOAD_TOOLCHAIN_FILE="" \
   -DCMAKE_BUILD_TYPE=Release \
   -DFMT_HEADER_ONLY=ON \
-  -DBUILD_SHARED_LIBS=OFF
+  -DBUILD_SHARED_LIBS=OFF \
+  -DCMAKE_INSTALL_PREFIX="$BUILD_PATH/install"
 if [ $? -ne 0 ]; then echo "CMake configuration failed"; exit 1; fi
 
 # Build the project
-cmake --build "$BUILD_PATH" --config Release -- -j"$(nproc)"
+if command -v nproc >/dev/null 2>&1; then
+  PROCS=$(nproc)
+else
+  PROCS=$(sysctl -n hw.ncpu)
+fi
+cmake --build "$BUILD_PATH" --config Release -- -j"$PROCS"
 if [ $? -ne 0 ]; then echo "CMake build failed"; exit 1; fi
 
 # Install the project via build-target
-cmake --build "$BUILD_PATH" --config Release --target install
+cmake --install "$BUILD_PATH" --config Release --prefix "$BUILD_PATH/install"
 if [ $? -ne 0 ]; then echo "Project install failed"; exit 1; fi
 
 echo "CForge built and installed"
 
 # Run cforge install with built executable
 cd "$dir"
-"$BUILD_PATH/bin/Release/cforge" install 
+"$BUILD_PATH/bin/Release/cforge" install --to "$BUILD_PATH/install" 
