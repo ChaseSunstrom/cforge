@@ -1359,12 +1359,7 @@ static bool run_cpack(const std::filesystem::path &build_dir,
 
   // Avoid creating an extra subdirectory
   cpack_args.push_back("-D");
-  cpack_args.push_back("CPACK_PACKAGE_INSTALL_DIRECTORY=.");
-
-  // Also set additional variables to avoid placeholder issues
-  cpack_args.push_back("-D");
-  cpack_args.push_back("CPACK_TEMPORARY_DIRECTORY=" + package_dir.string() +
-                       "/temp");
+  cpack_args.push_back("CPACK_PACKAGE_INSTALL_DIRECTORY=" + package_dir.string());
 
   // Clear the CPack temporary directory - this is important to prevent "exists"
   // errors
@@ -2363,6 +2358,24 @@ static bool package_single_project(
     logger::print_status(gen_str);
   }
 
+  // Filter out unsupported generators based on available CPack tools
+  {
+    std::vector<std::string> valid_gens;
+    for (const auto &gen : available_generators) {
+      if (check_generator_tools_installed(gen)) {
+        valid_gens.push_back(gen);
+      } else {
+        logger::print_warning("Skipping generator '" + gen + "' due to missing tools");
+      }
+    }
+    if (valid_gens.empty()) {
+      logger::print_error("No valid package generators available. Aborting packaging.");
+      return 1;
+    }
+    available_generators = valid_gens;
+    logger::print_status("Using valid package generators: " + join_strings(available_generators, ", "));
+  }
+
   // Package the project using the project_name and project_version already
   // defined above
   bool cpack_success = run_cpack(build_dir, available_generators, build_config,
@@ -2703,6 +2716,26 @@ cforge_int_t cforge_cmd_package(const cforge_context_t *ctx) {
 
       logger::print_status("Using package generators: " +
                            join_strings(generators, ", "));
+
+      // Filter out unsupported package generators for this platform
+      {
+        std::vector<std::string> filtered;
+        for (const auto &gen : generators) {
+          if (check_generator_tools_installed(gen)) {
+            filtered.push_back(gen);
+          } else {
+            logger::print_warning("Skipping generator '" + gen + "' as unsupported on this platform");
+          }
+        }
+        if (filtered.empty()) {
+          logger::print_error("No valid package generators available for this platform. Aborting packaging.");
+          return 1;
+        }
+        if (filtered.size() != generators.size()) {
+          generators = filtered;
+          logger::print_status("Proceeding with filtered generators: " + join_strings(generators, ", "));
+        }
+      }
 
       // Determine build directory
       std::string build_dir_name =
