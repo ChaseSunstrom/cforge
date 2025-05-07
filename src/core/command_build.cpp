@@ -290,8 +290,19 @@ bool clone_git_dependencies(const std::filesystem::path &project_dir,
   dependency_hash dep_hashes;
   dep_hashes.load(project_dir);
 
-  // Calculate current cforge.toml hash
-  std::string toml_hash = dependency_hash::calculate_directory_hash(project_dir / "cforge.toml");
+  // Calculate current cforge.toml hash from file content
+  std::filesystem::path toml_file = project_dir / "cforge.toml";
+  std::string toml_hash;
+  {
+      std::ifstream toml_stream(toml_file);
+      if (toml_stream) {
+          std::ostringstream ss;
+          ss << toml_stream.rdbuf();
+          toml_hash = dep_hashes.calculate_file_content_hash(ss.str());
+      } else {
+          toml_hash.clear();
+      }
+  }
   std::string stored_toml_hash = dep_hashes.get_hash("cforge.toml");
 
   // Get all Git dependencies
@@ -353,7 +364,8 @@ bool clone_git_dependencies(const std::filesystem::path &project_dir,
         bool needs_update = current_hash != stored_hash || stored_toml_hash != toml_hash;
         
         if (!needs_update) {
-          logger::print_verbose("Dependency '" + dep + "' is up to date, skipping update");
+          // Inform that dependency is up to date and no update is needed
+          logger::print_status("Dependency '" + dep + "' is up to date, skipping update");
           continue;
         }
 
