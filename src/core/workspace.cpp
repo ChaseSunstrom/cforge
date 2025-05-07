@@ -658,29 +658,28 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
     }
 
     std::string toml_hash = dep_hashes.calculate_file_content_hash(toml_content);
+    // Path to CMakeLists.txt in project directory
+    std::filesystem::path cmakelists_path = project_dir / "CMakeLists.txt";
+    bool file_exists = std::filesystem::exists(cmakelists_path);
     std::string stored_toml_hash = dep_hashes.get_hash("cforge.toml");
 
-    // Check if we need to regenerate
-    if (!stored_toml_hash.empty() && toml_hash == stored_toml_hash) {
+    // If CMakeLists.txt exists and TOML hash is unchanged, skip generation
+    if (file_exists && !stored_toml_hash.empty() && toml_hash == stored_toml_hash) {
         if (verbose) {
-            logger::print_verbose("CMakeLists.txt is up to date, skipping generation");
+            logger::print_verbose("CMakeLists.txt already exists and up to date, skipping generation");
         }
         return true;
     }
 
-    // Path to CMakeLists.txt in project directory
-    std::filesystem::path cmakelists_path = project_dir / "CMakeLists.txt";
-    
-    // Skip generation if CMakeLists.txt already exists in project folder
-    bool file_exists = std::filesystem::exists(cmakelists_path);
-    
+    // If CMakeLists.txt exists but external deps present, regenerate
     if (file_exists) {
-      // Regenerate if dependencies are defined
-      if (!project_config.has_key("dependencies.git") && !project_config.has_key("dependencies.vcpkg")) {
-        logger::print_verbose("CMakeLists.txt already exists in project directory, using existing file");
-        return true;
-      }
-      logger::print_status("Dependencies detected, regenerating CMakeLists.txt from cforge.toml");
+        if (!project_config.has_key("dependencies.git") && !project_config.has_key("dependencies.vcpkg")) {
+            if (verbose) {
+                logger::print_verbose("CMakeLists.txt exists and no external deps, using existing file");
+            }
+            return true;
+        }
+        logger::print_status("Dependencies detected, regenerating CMakeLists.txt from cforge.toml");
     }
     
     logger::print_status("Generating CMakeLists.txt from cforge.toml...");
@@ -804,69 +803,6 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
     // Handle Git dependencies
     configure_git_dependencies_in_cmake(project_config, deps_dir, cmakelists);
 
-    // Check for vcpkg dependencies and add toolchain file if needed
-    if (project_config.has_key("dependencies.vcpkg")) {
-      cmakelists << "# vcpkg integration\n";
-      cmakelists << "if(DEFINED ENV{VCPKG_ROOT})\n";
-      cmakelists << "    set(CMAKE_TOOLCHAIN_FILE "
-                    "\"$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake\"\n";
-      cmakelists << "        CACHE STRING \"Vcpkg toolchain file\")\n";
-      cmakelists << "elseif(EXISTS "
-                    "\"${CMAKE_CURRENT_SOURCE_DIR}/vcpkg/scripts/buildsystems/"
-                    "vcpkg.cmake\")\n";
-      cmakelists << "    set(CMAKE_TOOLCHAIN_FILE "
-                    "\"${CMAKE_CURRENT_SOURCE_DIR}/vcpkg/scripts/buildsystems/"
-                    "vcpkg.cmake\"\n";
-      cmakelists << "        CACHE STRING \"Vcpkg toolchain file\")\n";
-      cmakelists << "endif()\n\n";
-    }
-
-    // Add vcpkg dependencies
-    if (project_config.has_key("dependencies.vcpkg")) {
-      cmakelists << "# Dependencies\n";
-
-      // Iterate through all vcpkg dependencies
-      auto vcpkg_deps = project_config.get_table_keys("dependencies.vcpkg");
-      for (const auto &dep : vcpkg_deps) {
-        std::string version;
-        std::vector<std::string> components;
-
-        // Check if dependency is specified with version and components
-        if (project_config.has_key("dependencies.vcpkg." + dep + ".version")) {
-          version = project_config.get_string(
-              "dependencies.vcpkg." + dep + ".version", "");
-
-          // Check for components
-          if (project_config.has_key("dependencies.vcpkg." + dep +
-                                     ".components")) {
-            components = project_config.get_string_array("dependencies.vcpkg." +
-                                                         dep + ".components");
-          }
-        } else {
-          // Simple dependency specification
-          version = project_config.get_string("dependencies.vcpkg." + dep, "");
-        }
-
-        cmakelists << "# Find " << dep << "\n";
-        if (!version.empty()) {
-          cmakelists << "find_package(" << dep << " " << version;
-        } else {
-          cmakelists << "find_package(" << dep;
-        }
-
-        // Add components if any
-        if (!components.empty()) {
-          cmakelists << " COMPONENTS";
-          for (const auto &comp : components) {
-            cmakelists << " " << comp;
-          }
-        }
-
-        cmakelists << " REQUIRED)\n";
-      }
-      cmakelists << "\n";
-    }
-
     // Source files - use the original project source directory
     cmakelists << "# Add source files\n";
     cmakelists << "file(GLOB_RECURSE SOURCES\n";
@@ -916,6 +852,29 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
       cmakelists << "target_include_directories(${PROJECT_NAME} PUBLIC\n";
       cmakelists << "    \"${SOURCE_DIR}/include\"\n";
       cmakelists << ")\n\n";
+    }
+
+    // Handle workspace project dependencies includes
+    if (project_config.has_key("dependencies.project")) {
+      cmakelists << "# Workspace project include dependencies\n";
+      auto deps = project_config.get_table_keys("dependencies.project");
+      for (const auto &dep : deps) {
+        // Check for custom include dirs override
+        std::string dirs_key = "dependencies.project." + dep + ".include_dirs";
+        if (project_config.has_key(dirs_key)) {
+          auto inc_dirs = project_config.get_string_array(dirs_key);
+          for (const auto &inc_dir : inc_dirs) {
+            cmakelists << "target_include_directories(${PROJECT_NAME} PUBLIC \"${CMAKE_CURRENT_SOURCE_DIR}/../" << dep << "/" << inc_dir << "\")\n";
+          }
+        } else {
+          // Fallback to include flag and default include path
+          bool inc = project_config.get_bool("dependencies.project." + dep + ".include", true);
+          if (inc) {
+            cmakelists << "target_include_directories(${PROJECT_NAME} PUBLIC \"${CMAKE_CURRENT_SOURCE_DIR}/../" << dep << "/include\")\n";
+          }
+        }
+      }
+      cmakelists << "\n";
     }
 
     // Add additional include directories
@@ -1008,6 +967,18 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
       auto libraries = project_config.get_string_array("build.libraries");
       for (const auto &lib : libraries) {
         cmakelists << "    " << lib << "\n";
+      }
+    }
+
+    // Handle workspace project dependencies linking
+    if (project_config.has_key("dependencies.project")) {
+      auto deps = project_config.get_table_keys("dependencies.project");
+      for (const auto &dep : deps) {
+        bool link = project_config.get_bool("dependencies.project." + dep + ".link", true);
+        if (link) {
+          std::string target_name = project_config.get_string("dependencies.project." + dep + ".target_name", dep);
+          cmakelists << "    " << target_name << "\n";
+        }
       }
     }
 
@@ -1175,6 +1146,20 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
     // Store the new toml hash
     dep_hashes.set_hash("cforge.toml", toml_hash);
     dep_hashes.save(project_dir);
+
+    // Workspace integration support: include/link paths passed via -DCMAKE_INCLUDE_PATH/-DCMAKE_LIBRARY_PATH
+    {
+        auto [is_workspace, ws_dir] = is_in_workspace(project_dir);
+        if (is_workspace) {
+            cmakelists << "# Workspace integration support\n";
+            cmakelists << "if(CMAKE_INCLUDE_PATH)\n";
+            cmakelists << "    include_directories(${CMAKE_INCLUDE_PATH})\n";
+            cmakelists << "endif()\n";
+            cmakelists << "if(CMAKE_LIBRARY_PATH)\n";
+            cmakelists << "    link_directories(${CMAKE_LIBRARY_PATH})\n";
+            cmakelists << "endif()\n\n";
+        }
+    }
 
     return true;
 }
@@ -1775,18 +1760,17 @@ bool generate_workspace_cmakelists(const std::filesystem::path &workspace_dir,
 
     std::string toml_hash = dep_hashes.calculate_file_content_hash(toml_content);
     std::string stored_toml_hash = dep_hashes.get_hash("cforge.workspace.toml");
-
-    // Check if we need to regenerate
-    if (!stored_toml_hash.empty() && toml_hash == stored_toml_hash) {
+    
+    // Only skip regeneration if CMakeLists.txt already exists and the TOML hash is unchanged
+    std::filesystem::path cmakelists_path = workspace_dir / "CMakeLists.txt";
+    bool file_exists = std::filesystem::exists(cmakelists_path);
+    if (file_exists && !stored_toml_hash.empty() && toml_hash == stored_toml_hash) {
         if (verbose) {
-            logger::print_verbose("Workspace CMakeLists.txt is up to date, skipping generation");
+            logger::print_verbose("Workspace CMakeLists.txt is up to date and already exists, skipping generation");
         }
         return true;
     }
 
-    // Path to CMakeLists.txt in project directory
-    std::filesystem::path cmakelists_path = workspace_dir / "CMakeLists.txt";
-    
     logger::print_status("Generating workspace CMakeLists.txt from " + std::string(WORKSPACE_FILE));
 
     // Create CMakeLists.txt if needed

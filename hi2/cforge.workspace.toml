@@ -1,0 +1,15 @@
+[workspace]
+name = "hi2"
+description = "A C++ workspace created with cforge"
+
+[[workspace.project]]
+name    = "proj1"
+path    = "proj1"
+startup = true
+
+[[workspace.project]]
+name    = "proj2"
+path    = "proj2"
+startup = false
+
+# main_project = "proj1"
