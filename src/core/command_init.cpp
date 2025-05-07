@@ -1377,8 +1377,7 @@ cforge_int_t cforge_cmd_init(const cforge_context_t *ctx) {
         // Create the project files
         if (!create_project(project_dir, project.name, cpp_standard, with_git,
                             with_tests)) {
-          logger::print_error("Failed to create project '" + project.name +
-                              "'");
+          logger::print_error("Failed to create project '" + project.name + "'");
           continue;
         }
 
@@ -1475,32 +1474,20 @@ cforge_int_t cforge_cmd_init(const cforge_context_t *ctx) {
       // Write a basic TOML configuration
       config_file << "[workspace]\n";
       config_file << "name = \"" << workspace_name << "\"\n";
-      config_file
-          << "description = \"A C++ workspace created with cforge\"\n\n";
+      config_file << "description = \"A C++ workspace created with cforge\"\n\n";
 
-      // Write projects list
-      config_file << "# Projects in format: name:path:is_startup_project\n";
-      config_file << "projects = [\n";
-
+      // Write projects as array-of-tables
       for (size_t i = 0; i < project_names.size(); ++i) {
         const auto &proj_name = project_names[i];
-        bool is_startup = (i == 0); // First project is startup by default
-
-        config_file << "  \"" << proj_name << ":" << proj_name
-                    << ":" // Path is the same as name by default
-                    << (is_startup ? "true" : "false") << "\"";
-
-        if (i < project_names.size() - 1) {
-          config_file << ",";
-        }
-        config_file << "\n";
+        bool is_startup = (i == 0);  // first project marked startup
+        config_file << "[[workspace.project]]\n";
+        config_file << "name    = \"" << proj_name << "\"\n";
+        config_file << "path    = \"" << proj_name << "\"\n";
+        config_file << "startup = " << (is_startup ? "true" : "false") << "\n\n";
       }
-
-      config_file << "]\n\n";
-      config_file << "# Main project is the first project\n";
+      // Optionally record main_project fallback
       if (!project_names.empty()) {
-        config_file << "main_project = \"" << project_names[0]
-                    << "\"\n";
+        config_file << "# main_project = \"" << project_names[0] << "\"\n";
       }
 
       config_file.close();
