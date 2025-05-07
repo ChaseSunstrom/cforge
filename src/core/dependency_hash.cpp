@@ -22,13 +22,20 @@ bool dependency_hash::load(const std::filesystem::path& project_dir) {
     }
 
     hashes.clear();
+    versions.clear();
     std::string line;
     while (std::getline(file, line)) {
         auto sep = line.find('=');
         if (sep != std::string::npos) {
             std::string name = line.substr(0, sep);
-            std::string hash = line.substr(sep + 1);
-            hashes[name] = hash;
+            std::string value = line.substr(sep + 1);
+            
+            // Version entries are prefixed with "version:"
+            if (name.substr(0, 8) == "version:") {
+                versions[name.substr(8)] = value;
+            } else {
+                hashes[name] = value;
+            }
         }
     }
 
@@ -42,8 +49,14 @@ bool dependency_hash::save(const std::filesystem::path& project_dir) const {
         return false;
     }
 
+    // Save hashes
     for (const auto& [name, hash] : hashes) {
         file << name << "=" << hash << "\n";
+    }
+
+    // Save versions with "version:" prefix
+    for (const auto& [name, version] : versions) {
+        file << "version:" << name << "=" << version << "\n";
     }
 
     return true;
@@ -56,6 +69,15 @@ std::string dependency_hash::get_hash(const std::string& name) const {
 
 void dependency_hash::set_hash(const std::string& name, const std::string& hash) {
     hashes[name] = hash;
+}
+
+std::string dependency_hash::get_version(const std::string& name) const {
+    auto it = versions.find(name);
+    return it != versions.end() ? it->second : "";
+}
+
+void dependency_hash::set_version(const std::string& name, const std::string& version) {
+    versions[name] = version;
 }
 
 uint64_t dependency_hash::fnv1a_hash(const std::string& str) {

@@ -78,7 +78,7 @@ bool parse_command_line(int argc, char *argv[], cforge_context_t *ctx) {
  * @param ctx Context containing parsed arguments
  * @return cforge_int_t Exit code (0 for success)
  */
-cforge_int_t cforge_dispatch_command(const cforge_context_t *ctx) {
+extern "C" cforge_int_t cforge_dispatch_command(const cforge_context_t *ctx) {
   // Check if command is null
   if (!ctx->args.command) {
     // No command specified, show help

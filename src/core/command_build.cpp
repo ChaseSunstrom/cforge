@@ -330,125 +330,148 @@ bool clone_git_dependencies(const std::filesystem::path &project_dir,
                                     deps_path / dep : 
                                     project_dir / custom_dir / dep;
 
+    // Check if version has changed
+    std::string stored_version = dep_hashes.get_version(dep);
+    bool version_changed = !ref.empty() && ref != stored_version;
+
     if (std::filesystem::exists(dep_path)) {
-      // Check if update is needed
-      std::string current_hash = dependency_hash::calculate_directory_hash(dep_path);
-      std::string stored_hash = dep_hashes.get_hash(dep);
-
-      bool needs_update = current_hash != stored_hash || stored_toml_hash != toml_hash;
-      
-      if (!needs_update) {
-        logger::print_verbose("Dependency '" + dep + "' is up to date, skipping update");
-        continue;
-      }
-
-      logger::print_status(
-          "Dependency '" + dep +
-          "' directory exists but needs update at: " + dep_path.string());
-
-      // Update the repository
-      logger::print_status("Updating dependency '" + dep + "' from remote...");
-
-      // Run git fetch to update
-      std::vector<std::string> fetch_args = {"fetch", "--quiet", "--depth=1"};
-      if (verbose) {
-        fetch_args.pop_back(); // Remove --quiet for verbose output
-      }
-
-      // Set a shorter timeout for fetch operations
-      bool fetch_result = execute_tool("git", fetch_args, dep_path.string(),
-                                       "Git Fetch for " + dep, verbose, 30);
-
-      if (!fetch_result) {
-        logger::print_warning("Failed to fetch updates for '" + dep +
-                              "', continuing with existing version");
-        all_success = false;
-        continue;
-      }
-
-      // Checkout specific ref if provided
-      if (!ref.empty()) {
-        logger::print_status("Checking out " + ref + " for dependency '" + dep +
-                             "'");
-
-        std::vector<std::string> checkout_args = {"checkout", ref, "--quiet"};
-        if (verbose) {
-          checkout_args.pop_back(); // Remove --quiet for verbose output
-        }
-
-        bool checkout_result =
-            execute_tool("git", checkout_args, dep_path.string(),
-                         "Git Checkout for " + dep, verbose, 30);
-
-        if (!checkout_result) {
-          logger::print_warning("Failed to checkout " + ref + " for '" + dep +
-                                "', continuing with current version");
+      // If version changed, remove the directory and reclone
+      if (version_changed) {
+        logger::print_status("Version changed for '" + dep + "', removing existing directory");
+        try {
+          std::filesystem::remove_all(dep_path);
+        } catch (const std::exception& e) {
+          logger::print_error("Failed to remove directory for '" + dep + "': " + e.what());
           all_success = false;
           continue;
         }
-      }
+      } else {
+        // Check if update is needed based on directory hash
+        std::string current_hash = dependency_hash::calculate_directory_hash(dep_path);
+        std::string stored_hash = dep_hashes.get_hash(dep);
 
-      // Update hash after successful update
-      current_hash = dependency_hash::calculate_directory_hash(dep_path);
-      dep_hashes.set_hash(dep, current_hash);
-    } else {
-      // Create parent directory if it doesn't exist
-      std::filesystem::create_directories(dep_path.parent_path());
-
-      // Clone the repository
-      logger::print_status("Cloning dependency '" + dep + "' from " + url +
-                           "...");
-
-      std::vector<std::string> clone_args = {"clone", "--depth=1", url, dep_path.string()};
-      
-      // Add specific ref if provided
-      if (!ref.empty()) {
-        clone_args.push_back("--branch");
-        clone_args.push_back(ref);
-      }
-
-      if (!verbose) {
-        clone_args.push_back("--quiet");
-      }
-
-      bool clone_result =
-          execute_tool("git", clone_args, "", "Git Clone for " + dep, verbose, 600);
-
-      if (!clone_result) {
-        logger::print_error("Failed to clone dependency '" + dep + "' from " +
-                            url);
-        all_success = false;
-        continue;
-      }
-
-      // Checkout specific commit if provided (since --branch doesn't work with commit hashes)
-      if (!commit.empty()) {
-        logger::print_status("Checking out commit " + commit + " for dependency '" + dep +
-                             "'");
-
-        std::vector<std::string> checkout_args = {"checkout", commit, "--quiet"};
-        if (verbose) {
-          checkout_args.pop_back(); // Remove --quiet for verbose output
+        bool needs_update = current_hash != stored_hash || stored_toml_hash != toml_hash;
+        
+        if (!needs_update) {
+          logger::print_verbose("Dependency '" + dep + "' is up to date, skipping update");
+          continue;
         }
 
-        bool checkout_result =
-            execute_tool("git", checkout_args, dep_path.string(),
-                         "Git Checkout for " + dep, verbose, 30);
+        logger::print_status(
+            "Dependency '" + dep +
+            "' directory exists but needs update at: " + dep_path.string());
 
-        if (!checkout_result) {
-          logger::print_error("Failed to checkout commit " + commit +
-                              " for dependency '" + dep + "'");
+        // Update the repository
+        logger::print_status("Updating dependency '" + dep + "' from remote...");
+
+        // Run git fetch to update
+        std::vector<std::string> fetch_args = {"fetch", "--quiet", "--depth=1"};
+        if (verbose) {
+          fetch_args.pop_back(); // Remove --quiet for verbose output
+        }
+
+        // Set a shorter timeout for fetch operations
+        bool fetch_result = execute_tool("git", fetch_args, dep_path.string(),
+                                         "Git Fetch for " + dep, verbose, 30);
+
+        if (!fetch_result) {
+          logger::print_warning("Failed to fetch updates for '" + dep +
+                                "', continuing with existing version");
           all_success = false;
           continue;
         }
+
+        // Checkout specific ref if provided
+        if (!ref.empty()) {
+          logger::print_status("Checking out " + ref + " for dependency '" + dep +
+                               "'");
+
+          std::vector<std::string> checkout_args = {"checkout", ref, "--quiet"};
+          if (verbose) {
+            checkout_args.pop_back(); // Remove --quiet for verbose output
+          }
+
+          bool checkout_result =
+              execute_tool("git", checkout_args, dep_path.string(),
+                           "Git Checkout for " + dep, verbose, 30);
+
+          if (!checkout_result) {
+            logger::print_warning("Failed to checkout " + ref + " for '" + dep +
+                                  "', continuing with current version");
+            all_success = false;
+            continue;
+          }
+        }
+
+        // Update hash after successful update
+        current_hash = dependency_hash::calculate_directory_hash(dep_path);
+        dep_hashes.set_hash(dep, current_hash);
+        if (!ref.empty()) {
+          dep_hashes.set_version(dep, ref);
+        }
+        continue;
       }
-
-      // Store hash for newly cloned dependency
-      std::string current_hash = dependency_hash::calculate_directory_hash(dep_path);
-      dep_hashes.set_hash(dep, current_hash);
-
-      logger::print_success("Successfully cloned dependency '" + dep + "'");
     }
+
+    // Create parent directory if it doesn't exist
+    std::filesystem::create_directories(dep_path.parent_path());
+
+    // Clone the repository
+    logger::print_status("Cloning dependency '" + dep + "' from " + url +
+                         "...");
+
+    std::vector<std::string> clone_args = {"clone", "--depth=1", url, dep_path.string()};
+    
+    // Add specific ref if provided
+    if (!ref.empty()) {
+      clone_args.push_back("--branch");
+      clone_args.push_back(ref);
+    }
+
+    if (!verbose) {
+      clone_args.push_back("--quiet");
+    }
+
+    bool clone_result =
+        execute_tool("git", clone_args, "", "Git Clone for " + dep, verbose, 600);
+
+    if (!clone_result) {
+      logger::print_error("Failed to clone dependency '" + dep + "' from " +
+                          url);
+      all_success = false;
+      continue;
+    }
+
+    // Checkout specific commit if provided (since --branch doesn't work with commit hashes)
+    if (!commit.empty()) {
+      logger::print_status("Checking out commit " + commit + " for dependency '" + dep +
+                           "'");
+
+      std::vector<std::string> checkout_args = {"checkout", commit, "--quiet"};
+      if (verbose) {
+        checkout_args.pop_back(); // Remove --quiet for verbose output
+      }
+
+      bool checkout_result =
+          execute_tool("git", checkout_args, dep_path.string(),
+                       "Git Checkout for " + dep, verbose, 30);
+
+      if (!checkout_result) {
+        logger::print_error("Failed to checkout commit " + commit +
+                            " for dependency '" + dep + "'");
+        all_success = false;
+        continue;
+      }
+    }
+
+    // Store hash and version for newly cloned dependency
+    std::string current_hash = dependency_hash::calculate_directory_hash(dep_path);
+    dep_hashes.set_hash(dep, current_hash);
+    if (!ref.empty()) {
+      dep_hashes.set_version(dep, ref);
+    }
+
+    logger::print_success("Successfully cloned dependency '" + dep + "'");
   }
 
   // Store cforge.toml hash
@@ -589,12 +612,14 @@ static bool run_cmake_configure(const std::vector<std::string> &cmake_args,
  * @param verbose Verbose output
  * @param target Optional target to build
  * @param built_projects Set of already built projects to avoid rebuilding
+ * @param skip_deps Skip dependencies flag
  * @return bool Success flag
  */
 static bool build_project(const std::filesystem::path &project_dir,
                           const std::string &build_config, int num_jobs,
                           bool verbose, const std::string &target = "",
-                          std::set<std::string> *built_projects = nullptr) {
+                          std::set<std::string> *built_projects = nullptr,
+                          bool skip_deps = false) {
   // Get project name from directory
   std::string project_name = project_dir.filename().string();
 
@@ -667,7 +692,7 @@ static bool build_project(const std::filesystem::path &project_dir,
         // Make sure we're in the project directory for relative paths to work
         std::filesystem::current_path(project_dir);
 
-        if (!clone_git_dependencies(project_dir, project_config, verbose, false)) {
+        if (!clone_git_dependencies(project_dir, project_config, verbose, skip_deps)) {
           logger::print_error("Failed to clone Git dependencies");
           return false;
         }
@@ -1002,13 +1027,15 @@ static bool build_project(const std::filesystem::path &project_dir,
  * @param num_jobs Number of parallel jobs
  * @param verbose Verbose output
  * @param target Optional target to build
+ * @param skip_deps Skip dependencies flag
  * @return bool Success flag
  */
 static bool build_workspace_project(const std::filesystem::path &workspace_dir,
                                     const workspace_project &project,
                                     const std::string &build_config,
                                     int num_jobs, bool verbose,
-                                    const std::string &target) {
+                                    const std::string &target,
+                                    bool skip_deps = false) {
   // Change to project directory
   std::filesystem::current_path(project.path);
 
@@ -1037,7 +1064,7 @@ static bool build_workspace_project(const std::filesystem::path &workspace_dir,
 
   // Build the project
   bool success =
-      build_project(project.path, build_config, num_jobs, verbose, target);
+      build_project(project.path, build_config, num_jobs, verbose, target, nullptr, skip_deps);
 
   if (!success) {
     logger::print_error("Failed to build project '" + project.name + "'");
@@ -1198,7 +1225,7 @@ cforge_int_t cforge_cmd_build(const cforge_context_t *ctx) {
     if (verbose) cmake_args.push_back("--debug-output");
     if (!run_cmake_configure(cmake_args, build_dir.string(), workspace_dir.string(), verbose)) {
       logger::print_error("Workspace CMake configuration failed");
-      // Restore original directory before exiting
+      // Restore original directory before exit
       std::filesystem::current_path(original_cwd);
       return 1;
     }
@@ -1217,6 +1244,34 @@ cforge_int_t cforge_cmd_build(const cforge_context_t *ctx) {
     } else {
       logger::print_status("Building entire workspace");
     }
+
+    // Handle Git dependencies for workspace projects if not skipped
+    if (!skip_deps) {
+      for (const auto &proj : ws.get_projects()) {
+        auto proj_toml = proj.path / CFORGE_FILE;
+        if (std::filesystem::exists(proj_toml)) {
+          toml_reader pcfg(toml::parse_file(proj_toml.string()));
+          if (pcfg.has_key("dependencies.git")) {
+            logger::print_status("Setting up Git dependencies for project: " + proj.name);
+            try {
+              std::filesystem::current_path(proj.path);
+              if (!clone_git_dependencies(proj.path, pcfg, verbose, skip_deps)) {
+                logger::print_error("Failed to clone Git dependencies for project: " + proj.name);
+                std::filesystem::current_path(original_cwd);
+                return 1;
+              }
+            } catch (const std::exception &ex) {
+              logger::print_error("Exception while setting up Git dependencies for project " + 
+                                proj.name + ": " + std::string(ex.what()));
+              std::filesystem::current_path(original_cwd);
+              return 1;
+            }
+          }
+        }
+      }
+      std::filesystem::current_path(workspace_dir);
+    }
+
     bool result = execute_tool("cmake", build_args, "", "CMake Build", verbose);
     // Restore original directory
     std::filesystem::current_path(original_cwd);
@@ -1252,7 +1307,8 @@ cforge_int_t cforge_cmd_build(const cforge_context_t *ctx) {
       }
     }
     // Build the standalone project
-    if (!build_project(current_dir, config_name, num_jobs, verbose, target)) {
+    if (!build_project(current_dir, config_name, num_jobs, verbose, target,
+                       nullptr, skip_deps)) {
       return 1;
     }
   }

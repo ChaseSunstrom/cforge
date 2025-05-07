@@ -44,6 +44,20 @@ public:
     void set_hash(const std::string& name, const std::string& hash);
 
     /**
+     * @brief Get version for a dependency
+     * @param name Dependency name
+     * @return Version string if found, empty string if not found
+     */
+    std::string get_version(const std::string& name) const;
+
+    /**
+     * @brief Set version for a dependency
+     * @param name Dependency name
+     * @param version Version value (tag, branch, or commit)
+     */
+    void set_version(const std::string& name, const std::string& version);
+
+    /**
      * @brief Calculate hash for a file's content
      * @param content File content
      * @return Hash string based on file content
@@ -61,6 +75,7 @@ public:
 
 private:
     std::unordered_map<std::string, std::string> hashes;
+    std::unordered_map<std::string, std::string> versions;
     static constexpr const char* HASH_FILE = ".cforge_dependency_hashes";
 
     // FNV-1a hash constants

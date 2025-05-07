@@ -133,6 +133,7 @@ cforge_int_t cforge_cmd_help(const cforge_context_t *ctx) {
         "  --gen-workspace-cmake    Generate a workspace-level CMakeLists.txt");
     logger::print_status("  --force-regenerate       Force regeneration of "
                          "CMakeLists.txt and clean build");
+    logger::print_status("  --skip-deps, --no-deps   Skip updating Git dependencies");
     logger::print_status("");
     logger::print_status("Examples:");
     logger::print_status(
@@ -147,6 +148,7 @@ cforge_int_t cforge_cmd_help(const cforge_context_t *ctx) {
                          "workspace CMakeLists.txt without building");
     logger::print_status("  cforge build --force-regenerate     Rebuild with "
                          "fresh configuration");
+    logger::print_status("  cforge build --skip-deps           Build without updating Git dependencies");
   } else if (specific_command == "clean") {
     logger::print_status("cforge clean - Clean build artifacts");
     logger::print_status("");

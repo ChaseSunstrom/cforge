@@ -14,8 +14,6 @@
 #include <windows.h>
 #endif
 
-using namespace cforge;
-
 /**
  * @brief Initialize the CForge context with command line arguments and
  * environment settings
