@@ -32,7 +32,9 @@ struct diagnostic {
   int line_number;
   int column_number;
   std::string line_content;
-  std::string help_text;
+  std::string help_text;  // Legacy help text field
+  std::vector<std::string> notes;  // Additional notes/context
+  std::string help;  // New help message field
 };
 
 /**
@@ -113,5 +115,13 @@ std::vector<diagnostic> parse_linker_errors(const std::string &error_output);
  * @return Vector of extracted diagnostics
  */
 std::vector<diagnostic> parse_cpack_errors(const std::string &error_output);
+
+/**
+ * @brief Parse compiler errors and warnings
+ *
+ * @param error_output Raw error output
+ * @return Vector of extracted diagnostics
+ */
+std::vector<diagnostic> parse_compiler_errors(const std::string &error_output);
 
 } // namespace cforge

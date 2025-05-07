@@ -33,8 +33,9 @@ generators = ["ZIP", "TGZ", "DEB"]
 vendor = "Chase Sunstrom"
 contact = "Chase Sunstrom <casunstrom@gmail.com>"
 
+[dependencies]
+directory = "vendor"
+
 [dependencies.git]
 tomlplusplus = { url = "https://github.com/marzer/tomlplusplus.git", tag = "v3.4.0" }
 fmt = { url = "https://github.com/fmtlib/fmt.git", tag = "11.1.4" }
-[dependencies.vcpkg]
-fmt = "*"

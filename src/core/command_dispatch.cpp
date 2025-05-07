@@ -3,8 +3,74 @@
 #include "core/commands.hpp"
 #include <iostream>
 #include <string>
+#include <filesystem>
+#include <vector>
 
 using namespace cforge;
+
+/**
+ * @brief Parse command line arguments into context structure
+ *
+ * @param argc Argument count
+ * @param argv Argument array
+ * @param ctx Context to populate
+ * @return bool Success flag
+ */
+bool parse_command_line(int argc, char *argv[], cforge_context_t *ctx) {
+  // Zero-initialize the context
+  memset(ctx, 0, sizeof(cforge_context_t));
+
+  // Get current working directory
+  std::filesystem::path cwd = std::filesystem::current_path();
+  strncpy(ctx->working_dir, cwd.string().c_str(),
+          sizeof(ctx->working_dir) - 1);
+
+  // Temporary vector to store args while we process them
+  std::vector<std::string> remaining_args;
+
+  // Process arguments
+  for (int i = 1; i < argc; i++) {
+    std::string arg = argv[i];
+    remaining_args.push_back(arg);
+  }
+
+  // Process remaining arguments as before
+  if (remaining_args.empty()) {
+    logger::print_error("No command specified");
+    return false;
+  }
+
+  // First argument is the command
+  ctx->args.command = strdup(remaining_args[0].c_str());
+
+  // Process flags
+  for (size_t i = 1; i < remaining_args.size(); i++) {
+    std::string arg = remaining_args[i];
+
+    if (arg == "-c" || arg == "--config") {
+      if (i + 1 < remaining_args.size()) {
+        ctx->args.config = strdup(remaining_args[i + 1].c_str());
+        i++; // Skip the next argument
+      }
+    } else if (arg == "-v" || arg == "--verbose") {
+      ctx->args.verbosity = strdup("verbose");
+    } else if (arg == "-q" || arg == "--quiet") {
+      ctx->args.verbosity = strdup("quiet");
+    }
+  }
+
+  // Store remaining arguments
+  ctx->args.arg_count = static_cast<int>(remaining_args.size());
+  if (ctx->args.arg_count > 0) {
+    ctx->args.args = (cforge_string_t *)malloc(ctx->args.arg_count *
+                                               sizeof(cforge_string_t));
+    for (int i = 0; i < ctx->args.arg_count; i++) {
+      ctx->args.args[i] = strdup(remaining_args[i].c_str());
+    }
+  }
+
+  return true;
+}
 
 /**
  * @brief Dispatch command based on command line arguments
@@ -12,7 +78,7 @@ using namespace cforge;
  * @param ctx Context containing parsed arguments
  * @return cforge_int_t Exit code (0 for success)
  */
-extern "C" cforge_int_t cforge_dispatch_command(const cforge_context_t *ctx) {
+cforge_int_t cforge_dispatch_command(const cforge_context_t *ctx) {
   // Check if command is null
   if (!ctx->args.command) {
     // No command specified, show help

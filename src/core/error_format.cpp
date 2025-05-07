@@ -108,24 +108,23 @@ std::string format_diagnostic_to_string(const diagnostic &diag) {
   case diagnostic_level::NOTE:
     level_str = "note";
     level_label = "NOTE";
-    level_color = fmt::color::cyan;
+    level_color = fmt::color::steel_blue;
     break;
   case diagnostic_level::HELP:
     level_str = "help";
     level_label = "HELP";
-    level_color = fmt::color::lime_green;
+    level_color = fmt::color::medium_sea_green;
     break;
   }
 
-  // Format the error header - first line with error code and message
-  // Use color formatting
+  // Format the error header with improved layout
   ss << fmt::format(fg(level_color), "{}", level_label)
      << fmt::format(fg(fmt::color::white), "[")
      << fmt::format(fg(fmt::color::light_blue), "{}", diag.code)
      << fmt::format(fg(fmt::color::white), "]: ")
      << fmt::format(fg(fmt::color::white), "{}", diag.message) << "\n";
 
-  // Format file location information if available - second line with path
+  // Format file location with improved arrow and spacing
   if (!diag.file_path.empty()) {
     ss << fmt::format(fg(fmt::color::light_blue), " --> ")
        << fmt::format(fg(fmt::color::white), "{}", diag.file_path);
@@ -139,37 +138,35 @@ std::string format_diagnostic_to_string(const diagnostic &diag) {
       }
     }
     ss << "\n";
-  }
 
-  // Add visual spacing
-  if (diag.line_number > 0) {
+    // Add visual spacing and line marker
     ss << fmt::format(fg(fmt::color::light_blue), "  |\n");
   }
 
-  // Format the code snippet if available with line number and content
+  // Format the code snippet with improved highlighting
   if (!diag.line_content.empty()) {
-    // Print line number and code
-    ss << fmt::format(fg(fmt::color::yellow), "{:3}", diag.line_number)
+    // Print line number and code with consistent spacing
+    ss << fmt::format(fg(fmt::color::yellow), "{:4}", diag.line_number)
        << fmt::format(fg(fmt::color::light_blue), " | ")
        << fmt::format(fg(fmt::color::white), "{}", diag.line_content) << "\n";
 
-    // Print error pointer with carets pointing to the relevant part
+    // Print error pointer with improved visual indicators
     ss << fmt::format(fg(fmt::color::light_blue), "    | ");
 
-    // If we have a column number, show carets at that point
     if (diag.column_number > 0) {
       size_t token_start = std::max(0, diag.column_number - 1);
-      size_t token_length =
-          1; // Default to 1 character if we can't determine the length
+      size_t token_length = 1;
 
-      // Try to determine the token length if we have an identifier
+      // Determine token length with improved identifier detection
       if (token_start < diag.line_content.length()) {
         if (std::isalnum(diag.line_content[token_start]) ||
-            diag.line_content[token_start] == '_') {
-          // Find beginning of the identifier
+            diag.line_content[token_start] == '_' ||
+            diag.line_content[token_start] == ':') {
+          // Find beginning of the identifier or scope operator
           while (token_start > 0 &&
                  (std::isalnum(diag.line_content[token_start - 1]) ||
-                  diag.line_content[token_start - 1] == '_')) {
+                  diag.line_content[token_start - 1] == '_' ||
+                  diag.line_content[token_start - 1] == ':')) {
             token_start--;
           }
 
@@ -177,7 +174,8 @@ std::string format_diagnostic_to_string(const diagnostic &diag) {
           size_t token_end = token_start;
           while (token_end < diag.line_content.length() &&
                  (std::isalnum(diag.line_content[token_end]) ||
-                  diag.line_content[token_end] == '_')) {
+                  diag.line_content[token_end] == '_' ||
+                  diag.line_content[token_end] == ':')) {
             token_end++;
           }
 
@@ -190,67 +188,35 @@ std::string format_diagnostic_to_string(const diagnostic &diag) {
         ss << " ";
       }
 
-      // Print carets under the entire token in the error color
+      // Print carets with improved visibility
       std::string carets(token_length, '^');
       ss << fmt::format(fg(level_color), "{}", carets) << "\n";
+
+      // Add additional context line for better readability
+      ss << fmt::format(fg(fmt::color::light_blue), "    |\n");
     } else {
-      // If no column, just show a caret at the beginning of the line
-      ss << fmt::format(fg(level_color), "^") << "\n";
+      // If no column, show a more visible indicator
+      ss << fmt::format(fg(level_color), "^~~~") << "\n";
+      ss << fmt::format(fg(fmt::color::light_blue), "    |\n");
     }
   }
 
-  // Add another visual spacing
-  ss << fmt::format(fg(fmt::color::light_blue), "  |\n");
+  // Add any additional notes
+  if (!diag.notes.empty()) {
+    for (const auto &note : diag.notes) {
+      ss << fmt::format(fg(fmt::color::steel_blue), "note: ") 
+         << fmt::format(fg(fmt::color::white), "{}", note) << "\n";
+    }
+  }
 
-  // Format help text if available to provide context and suggestions
-  if (!diag.help_text.empty()) {
-    ss << fmt::format(fg(fmt::color::lime_green), "help: ")
+  // Add help text - prefer new help field over legacy help_text
+  if (!diag.help.empty()) {
+    ss << fmt::format(fg(fmt::color::medium_sea_green), "help: ") 
+       << fmt::format(fg(fmt::color::white), "{}", diag.help) << "\n";
+  } else if (!diag.help_text.empty()) {
+    ss << fmt::format(fg(fmt::color::medium_sea_green), "help: ") 
        << fmt::format(fg(fmt::color::white), "{}", diag.help_text) << "\n";
-  } else {
-    // Generate helpful suggestions based on error type if no explicit help text
-    if (diag.level == diagnostic_level::ERROR) {
-      // Common error types and helpful suggestions
-      std::string help_text;
-      if (diag.message.find("missing type specifier") != std::string::npos) {
-        help_text = "every declaration needs a type - add an appropriate type "
-                    "before the variable or function";
-      } else if (diag.message.find("missing ';'") != std::string::npos) {
-        help_text = "statement requires a semicolon at the end";
-      } else if (diag.message.find("undeclared") != std::string::npos ||
-                 diag.message.find("not declared") != std::string::npos) {
-        help_text = "make sure this identifier is declared before use or check "
-                    "for typos";
-      } else if (diag.message.find("no matching") != std::string::npos) {
-        help_text = "no function matches these argument types - check "
-                    "parameters or add appropriate overload";
-      } else if (diag.message.find("cannot convert") != std::string::npos) {
-        help_text = "types are incompatible - add an explicit cast or use "
-                    "compatible types";
-      }
-
-      if (!help_text.empty()) {
-        ss << fmt::format(fg(fmt::color::lime_green), "help: ")
-           << fmt::format(fg(fmt::color::white), "{}", help_text) << "\n";
-      }
-    } else if (diag.level == diagnostic_level::WARNING) {
-      std::string help_text;
-      if (diag.message.find("unused") != std::string::npos) {
-        help_text =
-            "consider using this variable or remove it to avoid warnings";
-      } else if (diag.message.find("deprecated") != std::string::npos) {
-        help_text = "this feature is deprecated - consider using a more modern "
-                    "alternative";
-      }
-
-      if (!help_text.empty()) {
-        ss << fmt::format(fg(fmt::color::lime_green), "help: ")
-           << fmt::format(fg(fmt::color::white), "{}", help_text) << "\n";
-      }
-    }
   }
-
-  // Add a newline for spacing between diagnostics
-  ss << "\n";
 
   return ss.str();
 }
@@ -381,33 +347,131 @@ void print_diagnostic(const diagnostic &diagnostic) {
 std::vector<diagnostic> extract_diagnostics(const std::string &error_output) {
   std::vector<diagnostic> all_diagnostics;
 
-  // Try parsing errors for different compilers/tools
-  auto gcc_clang_diags = parse_gcc_clang_errors(error_output);
-  auto msvc_diags = parse_msvc_errors(error_output);
-  auto cmake_diags = parse_cmake_errors(error_output);
-  auto ninja_diags = parse_ninja_errors(error_output);
-  auto linker_diags = parse_linker_errors(error_output);
-  auto cpack_diags = parse_cpack_errors(error_output); // Add CPack errors
+  // Try parsing with each error parser
+  auto compiler_diags = parse_compiler_errors(error_output);
+  all_diagnostics.insert(all_diagnostics.end(), compiler_diags.begin(), compiler_diags.end());
 
-  // Combine all diagnostics
-  all_diagnostics.insert(all_diagnostics.end(), gcc_clang_diags.begin(),
-                         gcc_clang_diags.end());
-  all_diagnostics.insert(all_diagnostics.end(), msvc_diags.begin(),
-                         msvc_diags.end());
-  all_diagnostics.insert(all_diagnostics.end(), cmake_diags.begin(),
-                         cmake_diags.end());
-  all_diagnostics.insert(all_diagnostics.end(), ninja_diags.begin(),
-                         ninja_diags.end());
-  all_diagnostics.insert(all_diagnostics.end(), linker_diags.begin(),
-                         linker_diags.end());
-  all_diagnostics.insert(all_diagnostics.end(), cpack_diags.begin(),
-                         cpack_diags.end()); // Add CPack diagnostics
+  auto gcc_clang_diags = parse_gcc_clang_errors(error_output);
+  all_diagnostics.insert(all_diagnostics.end(), gcc_clang_diags.begin(), gcc_clang_diags.end());
+
+  auto msvc_diags = parse_msvc_errors(error_output);
+  all_diagnostics.insert(all_diagnostics.end(), msvc_diags.begin(), msvc_diags.end());
+
+  auto cmake_diags = parse_cmake_errors(error_output);
+  all_diagnostics.insert(all_diagnostics.end(), cmake_diags.begin(), cmake_diags.end());
+
+  auto ninja_diags = parse_ninja_errors(error_output);
+  all_diagnostics.insert(all_diagnostics.end(), ninja_diags.begin(), ninja_diags.end());
+
+  auto linker_diags = parse_linker_errors(error_output);
+  all_diagnostics.insert(all_diagnostics.end(), linker_diags.begin(), linker_diags.end());
+
+  auto cpack_diags = parse_cpack_errors(error_output);
+  all_diagnostics.insert(all_diagnostics.end(), cpack_diags.begin(), cpack_diags.end());
 
   return all_diagnostics;
 }
 
-std::vector<diagnostic>
-parse_gcc_clang_errors(const std::string &error_output) {
+std::vector<diagnostic> parse_compiler_errors(const std::string &error_output) {
+  std::vector<diagnostic> diagnostics;
+
+  // Regular expressions for common compiler error patterns
+  std::regex missing_header_regex(R"(fatal error: ([^:]+): No such file or directory)");
+  std::regex include_error_regex(R"(fatal error: ([^:]+): Cannot open include file)");
+  std::regex syntax_error_regex(R"(error: expected ([^:]+) before ([^:]+))");
+  std::regex undefined_reference_regex(R"(undefined reference to `([^']+)')");
+  std::regex redefinition_regex(R"(redefinition of '([^']+)')");
+  std::regex type_mismatch_regex(R"(error: cannot convert '([^']+)' to '([^']+)')");
+  std::regex undeclared_identifier_regex(R"(error: '([^']+)' was not declared in this scope)");
+
+  std::string line;
+  std::istringstream stream(error_output);
+
+  while (std::getline(stream, line)) {
+    std::smatch matches;
+    diagnostic diag;
+
+    // Check for missing header files
+    if (std::regex_search(line, matches, missing_header_regex)) {
+      diag.level = diagnostic_level::ERROR;
+      diag.code = "COMPILER-MISSING-HEADER";
+      diag.message = "Missing header file: " + matches[1].str();
+      diag.help_text = "Make sure the header file exists and is in the include path. "
+                      "You may need to add the directory to your include paths in cforge.toml.";
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // Check for include errors
+    if (std::regex_search(line, matches, include_error_regex)) {
+      diag.level = diagnostic_level::ERROR;
+      diag.code = "COMPILER-INCLUDE-ERROR";
+      diag.message = "Cannot open include file: " + matches[1].str();
+      diag.help_text = "Check that the include file exists and is accessible. "
+                      "Verify include paths in your cforge.toml configuration.";
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // Check for syntax errors
+    if (std::regex_search(line, matches, syntax_error_regex)) {
+      diag.level = diagnostic_level::ERROR;
+      diag.code = "COMPILER-SYNTAX-ERROR";
+      diag.message = "Expected " + matches[1].str() + " before " + matches[2].str();
+      diag.help_text = "Check your syntax and make sure all brackets, parentheses, and semicolons are properly matched.";
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // Check for undefined references
+    if (std::regex_search(line, matches, undefined_reference_regex)) {
+      diag.level = diagnostic_level::ERROR;
+      diag.code = "COMPILER-UNDEFINED-REFERENCE";
+      diag.message = "Undefined reference to: " + matches[1].str();
+      diag.help_text = "Make sure the function or variable is defined and linked properly. "
+                      "Check that all required libraries are linked in your cforge.toml.";
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // Check for redefinitions
+    if (std::regex_search(line, matches, redefinition_regex)) {
+      diag.level = diagnostic_level::ERROR;
+      diag.code = "COMPILER-REDEFINITION";
+      diag.message = "Redefinition of: " + matches[1].str();
+      diag.help_text = "The symbol is defined more than once. Check for duplicate definitions "
+                      "or missing include guards in header files.";
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // Check for type mismatches
+    if (std::regex_search(line, matches, type_mismatch_regex)) {
+      diag.level = diagnostic_level::ERROR;
+      diag.code = "COMPILER-TYPE-MISMATCH";
+      diag.message = "Cannot convert from " + matches[1].str() + " to " + matches[2].str();
+      diag.help_text = "Check that the types match in your assignment or function call. "
+                      "You may need to add an explicit cast or use the correct type.";
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // Check for undeclared identifiers
+    if (std::regex_search(line, matches, undeclared_identifier_regex)) {
+      diag.level = diagnostic_level::ERROR;
+      diag.code = "COMPILER-UNDECLARED";
+      diag.message = "Undeclared identifier: " + matches[1].str();
+      diag.help_text = "Make sure the identifier is declared before use. "
+                      "Check for missing includes, typos, or scope issues.";
+      diagnostics.push_back(diag);
+      continue;
+    }
+  }
+
+  return diagnostics;
+}
+
+std::vector<diagnostic> parse_gcc_clang_errors(const std::string &error_output) {
   std::vector<diagnostic> diagnostics;
 
   // Regular expression to match GCC/Clang error format

@@ -34,49 +34,34 @@ const char *DEFAULT_VCPKG_DIR = "~/vcpkg";
 static std::filesystem::path get_vcpkg_path(const toml_reader *project_config) {
   std::filesystem::path vcpkg_path;
 
-  // First check if vcpkg path is specified in project config
-  if (project_config && project_config->has_key("dependencies.vcpkg_path")) {
-    vcpkg_path = project_config->get_string("dependencies.vcpkg_path");
-
-// Expand environment variables if needed
-#ifdef _WIN32
-    if (vcpkg_path.string().find('%') != std::string::npos) {
-      char expanded_path[MAX_PATH];
-      ExpandEnvironmentStringsA(vcpkg_path.string().c_str(), expanded_path,
-                                MAX_PATH);
-      vcpkg_path = expanded_path;
+  // First check project config
+  if (project_config) {
+    std::string config_path = project_config->get_string("dependencies.vcpkg.path", "");
+    if (!config_path.empty()) {
+      vcpkg_path = config_path;
+      return vcpkg_path;
     }
-#else
-    // Handle tilde expansion for Unix paths
-    if (vcpkg_path.string().find('~') == 0) {
-      const char *home = getenv("HOME");
-      if (home) {
-        vcpkg_path =
-            std::filesystem::path(home) / vcpkg_path.string().substr(1);
-      }
-    }
-#endif
-  } else {
-// Use default path
-#ifdef _WIN32
-    char expanded_path[MAX_PATH];
-    ExpandEnvironmentStringsA(DEFAULT_VCPKG_DIR, expanded_path, MAX_PATH);
-    vcpkg_path = expanded_path;
-#else
-    // Handle tilde expansion for Unix paths
-    if (std::string(DEFAULT_VCPKG_DIR).find('~') == 0) {
-      const char *home = getenv("HOME");
-      if (home) {
-        vcpkg_path = std::filesystem::path(home) /
-                     std::string(DEFAULT_VCPKG_DIR).substr(1);
-      } else {
-        vcpkg_path = DEFAULT_VCPKG_DIR;
-      }
-    } else {
-      vcpkg_path = DEFAULT_VCPKG_DIR;
-    }
-#endif
   }
+
+  // Then check environment variable
+  const char *env_path = std::getenv("VCPKG_ROOT");
+  if (env_path && *env_path) {
+    vcpkg_path = env_path;
+    return vcpkg_path;
+  }
+
+  // Finally try default locations
+#ifdef _WIN32
+  const char *userprofile = std::getenv("USERPROFILE");
+  if (userprofile) {
+    vcpkg_path = std::filesystem::path(userprofile) / "vcpkg";
+  }
+#else
+  const char *home = std::getenv("HOME");
+  if (home) {
+    vcpkg_path = std::filesystem::path(home) / "vcpkg";
+  }
+#endif
 
   return vcpkg_path;
 }
@@ -334,95 +319,167 @@ static bool forward_to_vcpkg(const std::filesystem::path &project_dir,
  * @return cforge_int_t Exit code (0 for success)
  */
 cforge_int_t cforge_cmd_vcpkg(const cforge_context_t *ctx) {
-  // Get project directory
-  std::filesystem::path project_dir = ctx->working_dir;
-
-  // Check for verbosity
-  bool verbose = logger::get_verbosity() == log_verbosity::VERBOSITY_VERBOSE;
-
-  // Check the first argument
-  if (ctx->args.args && ctx->args.args[0]) {
-    if (strcmp(ctx->args.args[0], "setup") == 0) {
-      // Check if vcpkg is already installed
-      if (is_vcpkg_installed(project_dir)) {
-        logger::print_status(
-            "vcpkg is already installed in the project directory");
-
-        // Set up vcpkg integration
-        if (setup_vcpkg_integration(project_dir, verbose)) {
-          logger::print_success(
-              "vcpkg integration has been set up successfully");
-          return 0;
-        } else {
-          logger::print_error("Failed to set up vcpkg integration");
-          return 1;
-        }
-      }
-
-      // Clone vcpkg repository
-      if (clone_vcpkg(project_dir, verbose)) {
-        logger::print_status("vcpkg has been successfully installed");
-
-        // Set up vcpkg integration
-        if (setup_vcpkg_integration(project_dir, verbose)) {
-          logger::print_success("vcpkg has been set up successfully");
-          return 0;
-        } else {
-          logger::print_error("Failed to set up vcpkg integration");
-          return 1;
-        }
-      } else {
-        logger::print_error("Failed to install vcpkg");
-        return 1;
-      }
-    } else {
-      // Check if vcpkg is installed
-      if (!is_vcpkg_installed(project_dir)) {
-        logger::print_error("vcpkg is not installed in the project directory");
-        logger::print_status("Run 'cforge vcpkg setup' to install vcpkg");
-        return 1;
-      }
-
-      // Forward arguments to vcpkg
-      if (forward_to_vcpkg(project_dir, ctx->args, verbose)) {
-        return 0;
-      } else {
-        return 1;
-      }
-    }
-  } else {
-    // No arguments provided, set up vcpkg
-    if (is_vcpkg_installed(project_dir)) {
-      logger::print_status(
-          "vcpkg is already installed in the project directory");
-
-      // Set up vcpkg integration
-      if (setup_vcpkg_integration(project_dir, verbose)) {
-        logger::print_success("vcpkg integration has been set up successfully");
-        return 0;
-      } else {
-        logger::print_error("Failed to set up vcpkg integration");
-        return 1;
-      }
-    }
-
-    // Clone vcpkg repository
-    if (clone_vcpkg(project_dir, verbose)) {
-      logger::print_status("vcpkg has been successfully installed");
-
-      // Set up vcpkg integration
-      if (setup_vcpkg_integration(project_dir, verbose)) {
-        logger::print_success("vcpkg has been set up successfully");
-        return 0;
-      } else {
-        logger::print_error("Failed to set up vcpkg integration");
-        return 1;
-      }
-    } else {
-      logger::print_error("Failed to install vcpkg");
-      return 1;
-    }
+  // Parse arguments
+  std::vector<std::string> args;
+  for (int i = 0; i < ctx->args.arg_count; ++i) {
+    args.push_back(ctx->args.args[i]);
   }
 
-  return 0;
+  if (args.empty()) {
+    logger::print_error("No command specified");
+    logger::print_status("Usage: cforge vcpkg <command>");
+    logger::print_status("Commands:");
+    logger::print_status("  setup    - Set up vcpkg integration");
+    logger::print_status("  update   - Update vcpkg and installed packages");
+    logger::print_status("  list     - List installed packages");
+    return 1;
+  }
+
+  std::string command = args[0];
+  if (command == "setup") {
+    // Get vcpkg path
+    std::filesystem::path vcpkg_path = get_vcpkg_path(nullptr);
+    if (vcpkg_path.empty()) {
+      logger::print_error("Could not determine vcpkg path");
+      return 1;
+    }
+
+    // Check if vcpkg is already installed
+    std::filesystem::path vcpkg_exe;
+#ifdef _WIN32
+    vcpkg_exe = vcpkg_path / "vcpkg.exe";
+#else
+    vcpkg_exe = vcpkg_path / "vcpkg";
+#endif
+
+    if (std::filesystem::exists(vcpkg_exe)) {
+      logger::print_status("vcpkg is already installed");
+    } else {
+      // Clone vcpkg
+      logger::print_status("Cloning vcpkg...");
+      std::string git_cmd = "git";
+      std::vector<std::string> git_args = {"clone", "https://github.com/Microsoft/vcpkg.git", vcpkg_path.string()};
+
+      auto result = execute_process(
+          git_cmd, git_args,
+          "", // working directory
+          [](const std::string &line) { logger::print_verbose(line); },
+          [](const std::string &line) { logger::print_error(line); });
+
+      if (!result.success) {
+        logger::print_error("Failed to clone vcpkg");
+        return 1;
+      }
+
+      // Bootstrap vcpkg
+      logger::print_status("Bootstrapping vcpkg...");
+#ifdef _WIN32
+      std::string bootstrap_cmd = (vcpkg_path / "bootstrap-vcpkg.bat").string();
+#else
+      std::string bootstrap_cmd = (vcpkg_path / "bootstrap-vcpkg.sh").string();
+#endif
+
+      auto bootstrap_result = execute_process(
+          bootstrap_cmd, {},
+          vcpkg_path.string(),
+          [](const std::string &line) { logger::print_verbose(line); },
+          [](const std::string &line) { logger::print_error(line); });
+
+      if (!bootstrap_result.success) {
+        logger::print_error("Failed to bootstrap vcpkg");
+        return 1;
+      }
+    }
+
+    // Set up environment variable
+    std::string vcpkg_root = vcpkg_path.string();
+#ifdef _WIN32
+    std::string cmd = "setx VCPKG_ROOT \"" + vcpkg_root + "\"";
+#else
+    std::string cmd = "echo 'export VCPKG_ROOT=\"" + vcpkg_root + "\"' >> ~/.bashrc";
+#endif
+
+    auto env_result = execute_process(
+        cmd, {},
+        "", // working directory
+        [](const std::string &line) { logger::print_verbose(line); },
+        [](const std::string &line) { logger::print_error(line); });
+
+    if (!env_result.success) {
+      logger::print_warning("Failed to set VCPKG_ROOT environment variable");
+      logger::print_status("Please set VCPKG_ROOT to: " + vcpkg_root);
+    }
+
+    logger::print_success("vcpkg has been successfully installed");
+    return 0;
+  } else if (command == "update") {
+    // Get vcpkg path
+    std::filesystem::path vcpkg_path = get_vcpkg_path(nullptr);
+    if (vcpkg_path.empty()) {
+      logger::print_error("Could not determine vcpkg path");
+      return 1;
+    }
+
+    // Update vcpkg
+    logger::print_status("Updating vcpkg...");
+    std::string git_cmd = "git";
+    std::vector<std::string> git_args = {"pull"};
+
+    auto result = execute_process(
+        git_cmd, git_args,
+        vcpkg_path.string(),
+        [](const std::string &line) { logger::print_verbose(line); },
+        [](const std::string &line) { logger::print_error(line); });
+
+    if (!result.success) {
+      logger::print_error("Failed to update vcpkg");
+      return 1;
+    }
+
+    // Update packages
+    logger::print_status("Updating packages...");
+    std::string vcpkg_cmd = (vcpkg_path / "vcpkg").string();
+    std::vector<std::string> vcpkg_args = {"upgrade", "--no-dry-run"};
+
+    auto update_result = execute_process(
+        vcpkg_cmd, vcpkg_args,
+        "", // working directory
+        [](const std::string &line) { logger::print_verbose(line); },
+        [](const std::string &line) { logger::print_error(line); });
+
+    if (!update_result.success) {
+      logger::print_error("Failed to update packages");
+      return 1;
+    }
+
+    logger::print_success("vcpkg and packages have been updated");
+    return 0;
+  } else if (command == "list") {
+    // Get vcpkg path
+    std::filesystem::path vcpkg_path = get_vcpkg_path(nullptr);
+    if (vcpkg_path.empty()) {
+      logger::print_error("Could not determine vcpkg path");
+      return 1;
+    }
+
+    // List packages
+    std::string vcpkg_cmd = (vcpkg_path / "vcpkg").string();
+    std::vector<std::string> vcpkg_args = {"list"};
+
+    auto result = execute_process(
+        vcpkg_cmd, vcpkg_args,
+        "", // working directory
+        [](const std::string &line) { logger::print_status(line); },
+        [](const std::string &line) { logger::print_error(line); });
+
+    if (!result.success) {
+      logger::print_error("Failed to list packages");
+      return 1;
+    }
+
+    return 0;
+  } else {
+    logger::print_error("Unknown command: " + command);
+    return 1;
+  }
 }

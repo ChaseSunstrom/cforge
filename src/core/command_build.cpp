@@ -11,6 +11,7 @@
 #include "core/process_utils.hpp"
 #include "core/toml_reader.hpp"
 #include "core/workspace.hpp"
+#include "core/dependency_hash.hpp"
 
 #include <toml++/toml.hpp>
 
@@ -249,10 +250,17 @@ static bool is_cmake_available() {
  * @param project_dir Project directory
  * @param project_config Project configuration from cforge.toml
  * @param verbose Verbose output flag
+ * @param skip_deps Skip dependencies flag
  * @return bool Success flag
  */
 bool clone_git_dependencies(const std::filesystem::path &project_dir,
-                            const toml_reader &project_config, bool verbose) {
+                            const toml_reader &project_config, bool verbose, bool skip_deps) {
+  // Check if we should skip dependency updates
+  if (skip_deps) {
+    logger::print_verbose("Skipping Git dependency updates (--skip-deps flag)");
+    return true;
+  }
+
   // Check if we have Git dependencies
   if (!project_config.has_key("dependencies.git")) {
     logger::print_verbose("No Git dependencies to setup");
@@ -278,10 +286,20 @@ bool clone_git_dependencies(const std::filesystem::path &project_dir,
     return false;
   }
 
+  // Load dependency hashes
+  dependency_hash dep_hashes;
+  dep_hashes.load(project_dir);
+
+  // Calculate current cforge.toml hash
+  std::string toml_hash = dependency_hash::calculate_directory_hash(project_dir / "cforge.toml");
+  std::string stored_toml_hash = dep_hashes.get_hash("cforge.toml");
+
   // Get all Git dependencies
   auto git_deps = project_config.get_table_keys("dependencies.git");
   logger::print_status("Setting up " + std::to_string(git_deps.size()) +
                        " Git dependencies...");
+
+  bool all_success = true;
 
   for (const auto &dep : git_deps) {
     // Get dependency configuration
@@ -306,29 +324,46 @@ bool clone_git_dependencies(const std::filesystem::path &project_dir,
     if (ref.empty())
       ref = commit;
 
-    // Path to dependency directory
-    std::filesystem::path dep_path = deps_path / dep;
+    // Get custom directory if specified
+    std::string custom_dir = project_config.get_string("dependencies.git." + dep + ".directory", "");
+    std::filesystem::path dep_path = custom_dir.empty() ? 
+                                    deps_path / dep : 
+                                    project_dir / custom_dir / dep;
 
     if (std::filesystem::exists(dep_path)) {
+      // Check if update is needed
+      std::string current_hash = dependency_hash::calculate_directory_hash(dep_path);
+      std::string stored_hash = dep_hashes.get_hash(dep);
+
+      bool needs_update = current_hash != stored_hash || stored_toml_hash != toml_hash;
+      
+      if (!needs_update) {
+        logger::print_verbose("Dependency '" + dep + "' is up to date, skipping update");
+        continue;
+      }
+
       logger::print_status(
           "Dependency '" + dep +
-          "' directory already exists at: " + dep_path.string());
+          "' directory exists but needs update at: " + dep_path.string());
 
-      // Update the repository if it exists
+      // Update the repository
       logger::print_status("Updating dependency '" + dep + "' from remote...");
 
       // Run git fetch to update
-      std::vector<std::string> fetch_args = {"fetch", "--quiet"};
+      std::vector<std::string> fetch_args = {"fetch", "--quiet", "--depth=1"};
       if (verbose) {
         fetch_args.pop_back(); // Remove --quiet for verbose output
       }
 
+      // Set a shorter timeout for fetch operations
       bool fetch_result = execute_tool("git", fetch_args, dep_path.string(),
-                                       "Git Fetch for " + dep, verbose, 600);
+                                       "Git Fetch for " + dep, verbose, 30);
 
       if (!fetch_result) {
         logger::print_warning("Failed to fetch updates for '" + dep +
                               "', continuing with existing version");
+        all_success = false;
+        continue;
       }
 
       // Checkout specific ref if provided
@@ -336,26 +371,42 @@ bool clone_git_dependencies(const std::filesystem::path &project_dir,
         logger::print_status("Checking out " + ref + " for dependency '" + dep +
                              "'");
 
-        std::vector<std::string> checkout_args = {"checkout", ref};
-        if (!verbose) {
-          checkout_args.push_back("--quiet");
+        std::vector<std::string> checkout_args = {"checkout", ref, "--quiet"};
+        if (verbose) {
+          checkout_args.pop_back(); // Remove --quiet for verbose output
         }
 
         bool checkout_result =
             execute_tool("git", checkout_args, dep_path.string(),
-                         "Git Checkout for " + dep, verbose, 600);
+                         "Git Checkout for " + dep, verbose, 30);
 
         if (!checkout_result) {
           logger::print_warning("Failed to checkout " + ref + " for '" + dep +
                                 "', continuing with current version");
+          all_success = false;
+          continue;
         }
       }
+
+      // Update hash after successful update
+      current_hash = dependency_hash::calculate_directory_hash(dep_path);
+      dep_hashes.set_hash(dep, current_hash);
     } else {
+      // Create parent directory if it doesn't exist
+      std::filesystem::create_directories(dep_path.parent_path());
+
       // Clone the repository
       logger::print_status("Cloning dependency '" + dep + "' from " + url +
                            "...");
 
-      std::vector<std::string> clone_args = {"clone", url, dep_path.string()};
+      std::vector<std::string> clone_args = {"clone", "--depth=1", url, dep_path.string()};
+      
+      // Add specific ref if provided
+      if (!ref.empty()) {
+        clone_args.push_back("--branch");
+        clone_args.push_back(ref);
+      }
+
       if (!verbose) {
         clone_args.push_back("--quiet");
       }
@@ -366,36 +417,52 @@ bool clone_git_dependencies(const std::filesystem::path &project_dir,
       if (!clone_result) {
         logger::print_error("Failed to clone dependency '" + dep + "' from " +
                             url);
-        return false;
+        all_success = false;
+        continue;
       }
 
-      // Checkout specific ref if provided
-      if (!ref.empty()) {
-        logger::print_status("Checking out " + ref + " for dependency '" + dep +
+      // Checkout specific commit if provided (since --branch doesn't work with commit hashes)
+      if (!commit.empty()) {
+        logger::print_status("Checking out commit " + commit + " for dependency '" + dep +
                              "'");
 
-        std::vector<std::string> checkout_args = {"checkout", ref};
-        if (!verbose) {
-          checkout_args.push_back("--quiet");
+        std::vector<std::string> checkout_args = {"checkout", commit, "--quiet"};
+        if (verbose) {
+          checkout_args.pop_back(); // Remove --quiet for verbose output
         }
 
         bool checkout_result =
             execute_tool("git", checkout_args, dep_path.string(),
-                         "Git Checkout for " + dep, verbose, 600);
+                         "Git Checkout for " + dep, verbose, 30);
 
         if (!checkout_result) {
-          logger::print_error("Failed to checkout " + ref +
+          logger::print_error("Failed to checkout commit " + commit +
                               " for dependency '" + dep + "'");
-          return false;
+          all_success = false;
+          continue;
         }
       }
+
+      // Store hash for newly cloned dependency
+      std::string current_hash = dependency_hash::calculate_directory_hash(dep_path);
+      dep_hashes.set_hash(dep, current_hash);
 
       logger::print_success("Successfully cloned dependency '" + dep + "'");
     }
   }
 
-  logger::print_success("All Git dependencies are set up");
-  return true;
+  // Store cforge.toml hash
+  dep_hashes.set_hash("cforge.toml", toml_hash);
+  
+  // Save updated hashes
+  dep_hashes.save(project_dir);
+
+  if (all_success) {
+    logger::print_success("All Git dependencies are set up");
+  } else {
+    logger::print_warning("Some Git dependencies had issues during setup");
+  }
+  return all_success;
 }
 
 
@@ -600,7 +667,7 @@ static bool build_project(const std::filesystem::path &project_dir,
         // Make sure we're in the project directory for relative paths to work
         std::filesystem::current_path(project_dir);
 
-        if (!clone_git_dependencies(project_dir, project_config, verbose)) {
+        if (!clone_git_dependencies(project_dir, project_config, verbose, false)) {
           logger::print_error("Failed to clone Git dependencies");
           return false;
         }
@@ -1000,12 +1067,15 @@ cforge_int_t cforge_cmd_build(const cforge_context_t *ctx) {
   std::string project_name;
   bool generate_workspace_cmake = false;
   bool force_regenerate = false;
+  bool skip_deps = false;
 
   // Extract command line arguments
   for (int i = 0; i < ctx->args.arg_count; i++) {
     std::string arg = ctx->args.args[i];
 
-    if (arg == "-c" || arg == "--config") {
+    if (arg == "--skip-deps" || arg == "--no-deps") {
+      skip_deps = true;
+    } else if (arg == "-c" || arg == "--config") {
       if (i + 1 < ctx->args.arg_count) {
         config_name = ctx->args.args[i + 1];
         logger::print_verbose("Using build configuration from command line: " +
@@ -1041,6 +1111,25 @@ cforge_int_t cforge_cmd_build(const cforge_context_t *ctx) {
       generate_workspace_cmake = true;
     } else if (arg == "--force-regenerate") {
       force_regenerate = true;
+    }
+  }
+
+  // If skip_deps is set, add it to the project config
+  if (skip_deps) {
+    logger::print_status("Skipping Git dependency updates (--skip-deps flag)");
+    toml::table config_table;
+    std::filesystem::path config_path = current_dir / CFORGE_FILE;
+    if (std::filesystem::exists(config_path)) {
+      try {
+        config_table = toml::parse_file(config_path.string());
+        if (!config_table.contains("build")) {
+          config_table.insert("build", toml::table{});
+        }
+        auto& build_table = *config_table.get_as<toml::table>("build");
+        build_table.insert_or_assign("skip_deps", true);
+      } catch (...) {
+        // Ignore errors modifying the config
+      }
     }
   }
 

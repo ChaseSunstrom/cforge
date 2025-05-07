@@ -8,6 +8,10 @@
 #include "core/command.h" // Include for cforge_context_t
 #include "core/types.h"
 #include <string>
+#include <cstdint>
+
+namespace cforge {
+
 
 /**
  * @brief Initialize command handlers
@@ -20,7 +24,7 @@ void cforge_init_commands();
  * @param ctx Context containing parsed arguments
  * @return cforge_int_t Exit code (0 for success)
  */
-extern "C" cforge_int_t cforge_dispatch_command(const cforge_context_t *ctx);
+cforge_int_t cforge_dispatch_command(const cforge_context_t *ctx);
 
 /**
  * @brief Handle the 'install' command
@@ -149,3 +153,4 @@ cforge_int_t cforge_cmd_list(const cforge_context_t *ctx);
  * @return cforge_int_t Exit code (0 for success)
  */
 cforge_int_t cforge_cmd_package(const cforge_context_t *ctx);
+}

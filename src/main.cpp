@@ -14,6 +14,8 @@
 #include <windows.h>
 #endif
 
+using namespace cforge;
+
 /**
  * @brief Initialize the CForge context with command line arguments and
  * environment settings
@@ -52,7 +54,7 @@ cforge_int_t cforge_init_context(cforge_int_t argc, cforge_string_t argv[],
   return 0;
 }
 
-cforge_int_t cforge_main(cforge_int_t argc, cforge_string_t argv[]) {
+cforge_int_t cforge_main_impl(cforge_int_t argc, cforge_string_t argv[]) {
   cforge_context_t ctx;
   if (cforge_init_context(argc, argv, &ctx) != 0) {
     return 1;
@@ -81,6 +83,10 @@ cforge_int_t cforge_main(cforge_int_t argc, cforge_string_t argv[]) {
   }
 
   return result;
+}
+
+extern "C" cforge_int_t cforge_main(cforge_int_t argc, cforge_string_t argv[]) {
+  return cforge_main_impl(argc, argv);
 }
 
 // Win32 entry point
