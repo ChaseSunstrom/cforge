@@ -7,6 +7,7 @@
 #define CORE_CONSTANTS_H
 
 #define CFORGE_VERSION "beta-v2.0.0"
+#define CFORGE_REPO_URL "https://github.com/ChaseSunstrom/cforge.git"
 #define CFORGE_FILE "cforge.toml"
 #define DEFAULT_BUILD_DIR "build"
 #define DEFAULT_BIN_DIR "bin"

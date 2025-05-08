@@ -1059,6 +1059,22 @@ static bool run_cpack(const std::filesystem::path &build_dir,
     return false;
   }
 
+  // Re-run CMake configure to reset install prefix for packaging
+  {
+    std::filesystem::path project_dir = build_dir.parent_path();
+    logger::print_status("Reconfiguring CMake for packaging (empty install prefix)...");
+    auto reconfig = execute_process(
+        "cmake",
+        std::vector<std::string>{"-S", project_dir.string(), "-B", build_dir.string(), "-DCMAKE_INSTALL_PREFIX="},
+        "",
+        verbose ? [](const std::string &line) { logger::print_verbose(line); } : nullptr,
+        [](const std::string &line) { logger::print_error(line); });
+    if (!reconfig.success) {
+      logger::print_error("CMake reconfigure failed (exit code " + std::to_string(reconfig.exit_code) + ")");
+      return false;
+    }
+  }
+
   // Before running CPack, clean up any executables in the bin directory
   // to avoid "file exists" errors when packaging
   std::filesystem::path bin_dir = build_dir / "bin";

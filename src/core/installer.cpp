@@ -114,20 +114,57 @@ bool installer::install(const std::string &install_path, bool add_to_path) {
 }
 
 bool installer::update() {
-  logger::print_status("Updating cforge...");
+  logger::print_status("Starting cforge self-update...");
 
-  // Check if cforge is installed
+  // Verify installation
   if (!is_installed()) {
-    logger::print_error(
-        "cforge is not installed. Please run 'cforge install' first.");
+    logger::print_error("cforge is not installed. Please run 'cforge install' first.");
     return false;
   }
 
   std::string install_location = get_install_location();
-  logger::print_status("Current installation: " + install_location);
+  logger::print_status("Installation location: " + install_location);
+  std::filesystem::path install_path(install_location);
+  std::filesystem::path git_dir = install_path / ".git";
 
-  // Handle the update by reinstalling to the same location
-  return install(install_location);
+  // If this installation was a Git checkout, pull latest
+  if (std::filesystem::exists(git_dir) && std::filesystem::is_directory(git_dir)) {
+    logger::print_status("Detected Git repository. Pulling latest changes...");
+    auto result = execute_process(
+        "git",
+        std::vector<std::string>{"-C", install_path.string(), "pull", "--rebase"},
+        "",
+        [](const std::string &line) { logger::print_status(line); },
+        [](const std::string &line) { logger::print_error(line); });
+    if (!result.success) {
+      logger::print_error("Git pull failed (exit code " + std::to_string(result.exit_code) + ")");
+      return false;
+    }
+    logger::print_status("Reinstalling updated cforge...");
+    return install(install_location);
+  }
+
+  // Otherwise, clone a fresh copy and install
+  std::filesystem::path parent = install_path.parent_path();
+  std::filesystem::path tmp = parent / "cforge_update_tmp";
+  if (std::filesystem::exists(tmp)) {
+    std::filesystem::remove_all(tmp);
+  }
+  logger::print_status("Cloning cforge repository...");
+  auto clone_result = execute_process(
+      "git",
+      std::vector<std::string>{"clone", CFORGE_REPO_URL, tmp.string()},
+      "",
+      [](const std::string &line) { logger::print_status(line); },
+      [](const std::string &line) { logger::print_error(line); });
+  if (!clone_result.success) {
+    logger::print_error("Git clone failed (exit code " + std::to_string(clone_result.exit_code) + ")");
+    return false;
+  }
+  logger::print_status("Installing new version...");
+  bool ok = install(tmp.string());
+  std::filesystem::remove_all(tmp);
+  return ok;
 }
 
 bool installer::install_project(const std::string &project_path,

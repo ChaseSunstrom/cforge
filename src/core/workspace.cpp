@@ -1176,6 +1176,8 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
     cmakelists << "set(CPACK_PACKAGING_INSTALL_PREFIX \"${CMAKE_INSTALL_PREFIX}\")\n\n";
 
     // Include CPack
+    cmakelists << "# Override install prefix for packaging\n";
+    cmakelists << "set(CPACK_INSTALL_PREFIX "")\n";
     cmakelists << "include(CPack)\n";
 
     cmakelists.close();
