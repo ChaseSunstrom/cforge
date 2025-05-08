@@ -1135,13 +1135,7 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
 
     // Configure components
     cmakelists << "# Package components\n";
-    cmakelists << "set(CPACK_COMPONENTS_ALL Runtime)\n";
-    if (binary_type == "shared_lib" || binary_type == "static_lib") {
-        cmakelists << "list(APPEND CPACK_COMPONENTS_ALL Development)\n";
-    }
-    if (binary_type == "executable" && project_config.get_bool("package.include_debug", false)) {
-        cmakelists << "list(APPEND CPACK_COMPONENTS_ALL Debug)\n";
-    }
+    cmakelists << "set(CPACK_COMPONENTS_ALL ALL_COMPONENTS_IN_ONE)\n";
     cmakelists << "\n";
 
     // Component descriptions
