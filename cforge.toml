@@ -25,7 +25,6 @@ flags      = ["OPTIMIZE"]
 
 [test]
 enabled = false
-framework = "Catch2"
 
 [package]
 enabled = true

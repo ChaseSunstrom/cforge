@@ -113,7 +113,10 @@ else()
 endif()
 
 # Tests
-# No tests directory found
+if(BUILD_TESTING)
+    enable_testing()
+    add_subdirectory("${SOURCE_DIR}/tests" ${CMAKE_BINARY_DIR}/tests)
+endif()
 
 # Installation configuration
 include(GNUInstallDirs)

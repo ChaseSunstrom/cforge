@@ -14,6 +14,7 @@
 #include <filesystem>
 #include <string>
 #include <vector>
+#include <fstream>
 
 using namespace cforge;
 
@@ -189,147 +190,299 @@ static bool run_test_executable(const std::filesystem::path &test_executable,
  * @brief Handle the 'test' command
  */
 cforge_int_t cforge_cmd_test(const cforge_context_t *ctx) {
-  // Check if the project file exists
-  if (!std::filesystem::exists(CFORGE_FILE)) {
-    logger::print_error("No " + std::string(CFORGE_FILE) +
-                        " file found in the current directory");
-    return 1;
-  }
-
+  namespace fs = std::filesystem;
   // Load project configuration
-  toml_reader config;
-  if (!config.load(CFORGE_FILE)) {
-    logger::print_error("Failed to load " + std::string(CFORGE_FILE) + " file");
+  fs::path project_dir = fs::absolute(ctx->working_dir);
+  toml_reader cfg;
+  if (!cfg.load((project_dir / CFORGE_FILE).string())) {
+    logger::print_error("Failed to load " CFORGE_FILE);
     return 1;
   }
-
   // Get project name
-  std::string project_name;
-  if (!config.has_key("project.name") || project_name.empty()) {
-    project_name = config.get_string("project.name", "");
+  std::string project_name = cfg.get_string("project.name", "");
     if (project_name.empty()) {
-      logger::print_error("Project name not found in " +
-                          std::string(CFORGE_FILE));
-      return 1;
-    }
-  }
-
-  // Check if testing is enabled
-  bool testing_enabled = config.get_bool("test.enabled", true);
-
-  if (!testing_enabled) {
-    logger::print_status("Testing is disabled in the project configuration");
-    return 0;
-  }
-
-  // Get base build directory
-  std::string base_build_dir = config.get_string("build.build_dir", "build");
-
-  // Get build configuration
-  std::string build_config = config.get_string("build.build_type", "Release");
-
-  // Check for config in command line args
-  if (ctx->args.args) {
-    for (int i = 0; ctx->args.args[i]; ++i) {
-      if (strcmp(ctx->args.args[i], "--config") == 0 ||
-          strcmp(ctx->args.args[i], "-c") == 0) {
-        if (ctx->args.args[i + 1]) {
-          build_config = ctx->args.args[i + 1];
-          break;
-        }
-      }
-    }
-  }
-
-  // Get the config-specific build directory
-  std::filesystem::path build_dir =
-      get_build_dir_for_config(base_build_dir, build_config);
-
-  // If build directory doesn't exist, build the project first
-  if (!std::filesystem::exists(build_dir)) {
-    logger::print_status(
-        "Build directory not found, building project first...");
-    if (cforge_cmd_build(ctx) != 0) {
-      logger::print_error("Failed to build the project");
-      return 1;
-    }
-  }
-
-  // Get number of parallel jobs
-  int jobs = static_cast<int>(config.get_int("test.jobs", 0));
-
-  // Check for jobs in command line args
-  if (ctx->args.args) {
-    for (int i = 0; ctx->args.args[i]; ++i) {
-      if (strcmp(ctx->args.args[i], "--jobs") == 0 ||
-          strcmp(ctx->args.args[i], "-j") == 0) {
-        if (ctx->args.args[i + 1]) {
-          jobs = std::atoi(ctx->args.args[i + 1]);
-          break;
-        }
-      }
-    }
-  }
-
-  // Get verbose flag
-  bool verbose = logger::get_verbosity() == log_verbosity::VERBOSITY_VERBOSE;
-
-  // Try running CTest first
-  if (run_ctest(build_dir, verbose, jobs)) {
-    logger::print_success("All tests passed");
-    return 0;
-  }
-
-  // If CTest fails, try running the test executable directly
-  std::string test_executable_name =
-      config.get_string("test.test_executable", "");
-
-  auto test_executable = find_test_executable(
-      build_dir, project_name, build_config, test_executable_name);
-
-  if (test_executable.empty()) {
-    logger::print_error("Test executable not found");
-    logger::print_status("Expected test executable format: " + project_name +
-                         "_" + build_config + "_tests");
+    logger::print_error("project.name must be set in " CFORGE_FILE);
     return 1;
   }
-
-  // Get test arguments and run tests with the executable
-  std::vector<std::string> test_args = config.get_string_array("test.args");
-
-  // Check for additional test args in command line
-  if (ctx->args.args) {
-    bool skip_next = false;
-    for (int i = 0; ctx->args.args[i]; ++i) {
-      if (skip_next) {
-        skip_next = false;
-        continue;
-      }
-
-      std::string arg = ctx->args.args[i];
-
-      // Skip known flags and their values
-      if (arg == "--config" || arg == "-c" || arg == "--jobs" || arg == "-j") {
-        skip_next = true;
-        continue;
-      }
-
-      // Skip cforge command name
-      if (i == 0 && arg == "test") {
-        continue;
-      }
-
-      // Add to test arguments if it's not a cforge flag
-      if (arg.substr(0, 2) != "--" && arg.substr(0, 1) != "-") {
-        test_args.push_back(arg);
-      }
+  // Determine test directory
+  std::string test_dir = cfg.get_string("test.directory", "tests");
+  fs::path tests_src = project_dir / test_dir;
+  logger::print_status("Using test directory: " + tests_src.string());
+  // Create test directory if missing
+  if (!fs::exists(tests_src)) {
+    logger::print_status("Creating test directory: " + tests_src.string());
+    try {
+      fs::create_directories(tests_src);
+    } catch (const std::exception &e) {
+      logger::print_error("Failed to create test directory: " + std::string(e.what()));
+      return 1;
     }
   }
 
-  if (run_test_executable(test_executable, test_args, verbose)) {
-    logger::print_success("All tests passed");
-    return 0;
+  // Generate unified C/C++ test framework header
+  fs::path header_src = tests_src / "test_framework.h";
+  if (!fs::exists(header_src)) {
+    logger::print_status("Generating test framework header: " + header_src.string());
+    std::ofstream header_file(header_src);
+    header_file << R"TFH(
+#ifndef TEST_FRAMEWORK_H
+#define TEST_FRAMEWORK_H
+
+#include <stdio.h>
+#include <stddef.h>
+
+#define MAX_TESTS 256
+
+/// Common typedef for both C and C++
+typedef int (*test_fn_t)(void);
+typedef struct {
+    const char *name;
+    test_fn_t    func;
+} test_case_t;
+
+/// Simple assertion macros
+#define test_assert(expr)                                      \
+    do { if (!(expr)) {                                        \
+            fprintf(stderr,                                   \
+                    "Assertion failed: %s at %s:%d\n",        \
+                    #expr, __FILE__, __LINE__);               \
+            return 1;                                         \
+        }                                                     \
+        return 0;                                             \
+    } while (0)
+
+#define cf_assert(expr) test_assert(expr)
+
+#ifdef __cplusplus
+
+  #include <vector>
+  #include <string>
+
+  namespace tst {
+    /// Registry of all tests
+    inline std::vector<std::pair<std::string,test_fn_t>>& all_tests() {
+      static std::vector<std::pair<std::string,test_fn_t>> v;
+      return v;
+    }
+    /// RAII‐registrar: runs before main()
+    struct registrar {
+      registrar(const std::string &name, test_fn_t fn) {
+        all_tests().emplace_back(name, fn);
+      }
+    };
   }
 
+  // Helpers to generate unique names
+  #define CONCAT_INTERNAL(a,b) a##b
+  #define CONCAT(a,b) CONCAT_INTERNAL(a,b)
+
+  /// C++ TEST macro: emits a static registrar whose ctor auto‐registers
+  #define TEST(cat,name)                                         \
+    static int cat##_##name(void);                               \
+    static ::tst::registrar                                      \
+      CONCAT(_registrar_,__LINE__)(                              \
+        std::string(#cat) + "." + #name,                         \
+        &cat##_##name                                           \
+      );                                                         \
+    static int cat##_##name(void)
+
+  /// Main runner for C++
+  static int test_main(void) {
+    auto &v = ::tst::all_tests();
+    int failures = 0;
+    for (auto &tc : v) {
+      printf("[ RUN ] %s\n", tc.first.c_str());
+      bool failed = (tc.second() != 0);
+      printf(failed ? "[FAIL] %s\n" : "[PASS] %s\n", tc.first.c_str());
+      failures += failed;
+    }
+    printf("Ran %zu tests: %d failures\n", v.size(), failures);
+    return failures;
+  }
+
+#else  /* plain C */
+
+  /// Put every test_case_t into a custom ELF section "test_cases"
+
+
+  #if defined(__GNUC__) || defined(__clang__)
+    #define TEST_EXPORT __attribute__((used, section("test_cases")))
+  #else
+    #error "Compiler must support section attribute for C auto‐registration"
+  #endif
+
+  /// C TEST macro: emits a test_case_t into .test_cases
+  #define TEST(cat,name)                                        \
+    static int cat##_##name(void);                              \
+    TEST_EXPORT                                                \
+    static test_case_t _tc_##cat##_##name = {                    \
+      #cat "." #name,                                           \
+      cat##_##name                                             \
+    };                                                          \
+    static int cat##_##name(void)
+
+  /// Linker‐provided symbols bounding the array
+  extern test_case_t __start_test_cases[];
+  extern test_case_t __stop_test_cases[];
+
+  /// Main runner for C
+  static int test_main(void) {
+    test_case_t *tc = __start_test_cases;
+    int failures = 0;
+    for (; tc < __stop_test_cases; ++tc) {
+      printf("[ RUN ] %s\n", tc->name);
+      int r = tc->func();
+      if (r) {
+        printf("[FAIL] %s\n", tc->name);
+        ++failures;
+      } else {
+        printf("[PASS] %s\n", tc->name);
+      }
+    }
+    size_t total = __stop_test_cases - __start_test_cases;
+    printf("Ran %zu tests: %d failures\n", total, failures);
+    return failures;
+  }
+
+#endif /* __cplusplus */
+
+#endif /* TEST_FRAMEWORK_H */
+)TFH";
+    header_file.close();
+  }
+
+  // Generate test_main.cpp
+  fs::path main_src = tests_src / "test_main.cpp";
+  if (!fs::exists(main_src)) {
+    logger::print_status("Generating test_main.cpp: " + main_src.string());
+    std::ofstream main_file(main_src);
+    main_file << R"TMCPP(
+#include "test_framework.h"
+#include <stdio.h>
+
+test_case_t __c_tests[MAX_TESTS];
+size_t __c_test_count = 0;
+
+int main(int argc, char** argv) {
+    (void)argc; (void)argv;
+    return test_main();
+}
+)TMCPP";
+    main_file.close();
+  }
+
+  // Prepare test build output directory under build_dir/test/executable
+  std::string base_build = cfg.get_string("build.build_dir", "build");
+  fs::path output_tests = project_dir / base_build / "test";
+  fs::create_directories(output_tests);
+
+  // Write CMakeLists.txt for tests
+  fs::path cmake_tests = tests_src / "CMakeLists.txt";
+  if (!fs::exists(cmake_tests)) {
+  logger::print_status("Generating CMakeLists.txt for tests: " + cmake_tests.string());
+  std::ofstream cmake_file(cmake_tests);
+  cmake_file << "cmake_minimum_required(VERSION 3.15)\n";
+  cmake_file << "project(" << project_name << "_tests C CXX)\n";
+  cmake_file << "set(CMAKE_CXX_STANDARD 17)\n";
+  cmake_file << "set(CMAKE_CXX_STANDARD_REQUIRED ON)\n";
+  cmake_file << "set(CMAKE_RUNTIME_OUTPUT_DIRECTORY \"${CMAKE_BINARY_DIR}\")\n";
+  cmake_file << "file(GLOB_RECURSE TEST_SRCS\n";
+  cmake_file << "    \"${CMAKE_CURRENT_SOURCE_DIR}/*.c\"\n";
+  cmake_file << "    \"${CMAKE_CURRENT_SOURCE_DIR}/*.cpp\"\n";
+  cmake_file << ")\n";
+  cmake_file << "add_executable(${PROJECT_NAME} ${TEST_SRCS})\n";
+  cmake_file << "target_include_directories(${PROJECT_NAME} PUBLIC \"${CMAKE_CURRENT_SOURCE_DIR}\")\n";
+  
+  // Propagate workspace project include and link dependencies
+  {
+    auto proj_deps = cfg.get_table_keys("dependencies.project");
+    for (const auto &dep : proj_deps) {
+      cmake_file << "target_include_directories(${PROJECT_NAME} PUBLIC \"${CMAKE_CURRENT_SOURCE_DIR}/../" << dep << "/include\")\n";
+      cmake_file << "target_link_libraries(${PROJECT_NAME} PUBLIC " << dep << ")\n";
+    }
+  }
+  // Propagate vcpkg dependencies
+  {
+    auto vcpkg_deps = cfg.get_table_keys("dependencies.vcpkg");
+    for (const auto &dep : vcpkg_deps) {
+      cmake_file << "find_package(" << dep << " CONFIG REQUIRED)\n";
+      cmake_file << "target_link_libraries(${PROJECT_NAME} PUBLIC " << dep << "::" << dep << ")\n";
+    }
+  }
+  // Propagate Git dependencies via FetchContent
+  {
+    auto git_deps = cfg.get_table_keys("dependencies.git");
+    std::string deps_dir = cfg.get_string("dependencies.directory", "deps");
+    if (!git_deps.empty()) {
+      cmake_file << "include(FetchContent)\n";
+      cmake_file << "set(FETCHCONTENT_GIT_PROTOCOL \"https\")\n";
+      for (const auto &dep : git_deps) {
+        std::string url = cfg.get_string("dependencies.git." + dep + ".url", "");
+        if (!url.empty()) {
+          cmake_file << "FetchContent_Declare(" << dep << "\n";
+          cmake_file << "    GIT_REPOSITORY " << url << "\n";
+          cmake_file << "    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../" << deps_dir << "/" << dep << "\n";
+          cmake_file << ")\n";
+          cmake_file << "FetchContent_MakeAvailable(" << dep << ")\n";
+        }
+      }
+    }
+  }
+  cmake_file.close();
+  }
+
+  // Configure tests via CMake to place binaries in output_tests
+  bool verbose = logger::get_verbosity() == log_verbosity::VERBOSITY_VERBOSE;
+  logger::print_status("Configuring tests with CMake in " + output_tests.string());
+  std::vector<std::string> cmake_args = {"-S", tests_src.string(), "-B", output_tests.string()};
+  std::string build_config = cfg.get_string("build.build_type", "Debug");
+  cmake_args.push_back(std::string("-DCMAKE_BUILD_TYPE=") + build_config);
+  if (!execute_tool("cmake", cmake_args, "", "CTest Configure", verbose)) {
+    logger::print_error("Failed to configure tests");
+    return 1;
+  }
+  logger::print_status("Building tests via CMake...");
+  if (!execute_tool("cmake", {"--build", output_tests.string()}, "", "CTest Build", verbose)) {
+    logger::print_error("Failed to build tests");
+    return 1;
+  }
+  logger::print_success("Tests built successfully in " + output_tests.string());
+
+  // Determine test executable path
+  fs::path test_exec = output_tests / (project_name + "_tests");
+#ifdef _WIN32
+  test_exec += ".exe";
+#endif
+  logger::print_status("Looking for test executable: " + test_exec.string());
+  if (!fs::exists(test_exec)) {
+    // Try recursive search under output_tests to handle config subdirectories
+    for (auto &entry : fs::recursive_directory_iterator(output_tests)) {
+      if (!entry.is_regular_file()) continue;
+      std::string filename = entry.path().filename().string();
+      if (filename == project_name + "_tests" +
+#ifdef _WIN32
+                     ".exe"
+#else
+                     std::string()
+#endif
+                     ) {
+        test_exec = entry.path();
+        break;
+      }
+    }
+  }
+  if (!fs::exists(test_exec)) {
+    logger::print_error("Test executable not found: " + test_exec.string());
+    return 1;
+  }
+  logger::print_status("Running test executable: " + test_exec.string());
+  std::vector<std::string> test_args;
+  for (int i = 1; i < ctx->args.arg_count; ++i) {
+    test_args.emplace_back(ctx->args.args[i]);
+  }
+  if (!run_test_executable(test_exec, test_args, verbose)) {
   return 1;
+  }
+  logger::print_success("All tests passed.");
+  return 0;
 }
