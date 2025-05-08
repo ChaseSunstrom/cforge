@@ -152,7 +152,7 @@ set(CPACK_DEB_COMPONENT_INSTALL ON)
 set(CPACK_RPM_COMPONENT_INSTALL ON)
 
 # Package components
-set(CPACK_COMPONENTS_ALL Runtime)
+set(CPACK_COMPONENTS_ALL runtime)
 
 set(CPACK_COMPONENT_RUNTIME_DISPLAY_NAME "Runtime Files")
 set(CPACK_COMPONENT_RUNTIME_DESCRIPTION "Runtime libraries and executables")
@@ -176,4 +176,6 @@ endif()
 set(CPACK_OUTPUT_FILE_PREFIX "${CMAKE_BINARY_DIR}/packages")
 set(CPACK_PACKAGING_INSTALL_PREFIX "${CMAKE_INSTALL_PREFIX}")
 
+# Override install prefix for packaging
+set(CPACK_INSTALL_PREFIX )
 include(CPack)
