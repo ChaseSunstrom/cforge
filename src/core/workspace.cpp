@@ -687,6 +687,16 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
     // Check if we're in a workspace
     auto [is_workspace, workspace_dir] = is_in_workspace(project_dir);
     
+    // Platform override: read [platform.<plat>] in cforge.toml
+    std::string cforge_platform;
+#ifdef _WIN32
+    cforge_platform = "windows";
+#elif __APPLE__
+    cforge_platform = "macos";
+#else
+    cforge_platform = "linux";
+#endif
+
     // Create CMakeLists.txt in the project directory
     std::ofstream cmakelists(cmakelists_path);
     if (!cmakelists.is_open()) {
@@ -929,6 +939,25 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
       }
     }
 
+    // Platform-specific defines
+    {
+      std::string plat_defs_key = std::string("platform.") + cforge_platform + ".defines";
+      if (project_config.has_key(plat_defs_key)) {
+        auto plat_defs = project_config.get_string_array(plat_defs_key);
+        if (!plat_defs.empty()) {
+          cmakelists << "# Platform-specific defines for " << cforge_platform << "\n";
+          for (const auto &d : plat_defs) {
+            if (binary_type == "header_only") {
+              cmakelists << "target_compile_definitions(${PROJECT_NAME} INTERFACE " << d << ")\n";
+            } else {
+              cmakelists << "target_compile_definitions(${PROJECT_NAME} PUBLIC " << d << ")\n";
+            }
+          }
+          cmakelists << "\n";
+        }
+      }
+    }
+
     // Link libraries
     cmakelists << "# Link libraries\n";
     if (binary_type == "header_only") {
@@ -978,6 +1007,17 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
         if (link) {
           std::string target_name = project_config.get_string("dependencies.project." + dep + ".target_name", dep);
           cmakelists << "    " << target_name << "\n";
+        }
+      }
+    }
+
+    // Platform-specific links
+    {
+      std::string plat_links_key = std::string("platform.") + cforge_platform + ".links";
+      if (project_config.has_key(plat_links_key)) {
+        auto plat_links = project_config.get_string_array(plat_links_key);
+        for (const auto &lib : plat_links) {
+          cmakelists << "    " << lib << "\n";
         }
       }
     }
