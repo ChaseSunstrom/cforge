@@ -1067,7 +1067,7 @@ static bool run_cpack(const std::filesystem::path &build_dir,
         "cmake",
         std::vector<std::string>{"-S", project_dir.string(), "-B", build_dir.string(), "-DCMAKE_INSTALL_PREFIX="},
         "",
-        verbose ? [](const std::string &line) { logger::print_verbose(line); } : nullptr,
+        [&](const std::string &line) { if (verbose) logger::print_verbose(line); },
         [](const std::string &line) { logger::print_error(line); });
     if (!reconfig.success) {
       logger::print_error("CMake reconfigure failed (exit code " + std::to_string(reconfig.exit_code) + ")");
@@ -1312,9 +1312,17 @@ static bool run_cpack(const std::filesystem::path &build_dir,
       pkg_version = "1.0.0";
     }
 
-    // Direct file name pattern instead of using placeholders
+    // Direct file name pattern instead of using placeholders (use dynamic system name)
+    std::string system_name;
+    #ifdef _WIN32
+        system_name = "win64";
+    #elif defined(__APPLE__)
+        system_name = "macos";
+    #else
+        system_name = "linux";
+    #endif
     std::string package_file_name =
-        pkg_name + "-" + pkg_version + "-win64-" + config_lower;
+        pkg_name + "-" + pkg_version + "-" + system_name + "-" + config_lower;
     logger::print_verbose("Package file name: " + package_file_name);
 
     // Clean up existing packages with the same name to prevent "exists" errors
