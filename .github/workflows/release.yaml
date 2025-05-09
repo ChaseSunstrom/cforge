@@ -78,6 +78,21 @@ jobs:
         # Invoke the built CForge executable directly
         $exe = Join-Path $PWD 'build\bin\Release\cforge.exe'
         & $exe pack -c Release -t ZIP
+    
+    - name: Run tests (Linux/macOS)
+      if: runner.os != 'Windows'
+      shell: bash
+      run: |
+        exe="$(pwd)/build/bin/Release/cforge"
+        chmod +x "$exe"
+        "$exe" test
+    
+    - name: Run tests (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        $exe = Join-Path $PWD 'build\bin\Release\cforge.exe'
+        & $exe test
 
     - name: Upload Release Artifacts
       uses: actions/upload-artifact@v4
