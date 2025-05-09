@@ -8,12 +8,18 @@ int subtract(int a, int b) {
     return a - b;
 }
 
-TEST(Math, Add) {
+int divide(int a, int b) {
+    return a / b;
+}
+
+TEST(Add) {
     cf_assert(add(2, 2) == 4);
 }
 
-TEST(Math, Subtract) {
+TEST(Subtract) {
     cf_assert(subtract(2, 2) == 0);
 }
 
-
+TEST(Divide) {
+    cf_assert(divide(2, 2) == 2);
+}

@@ -15,6 +15,7 @@
 #include <string>
 #include <vector>
 #include <fstream>
+#include <regex>
 
 using namespace cforge;
 
@@ -229,147 +230,104 @@ cforge_int_t cforge_cmd_test(const cforge_context_t *ctx) {
 #define TEST_FRAMEWORK_H
 
 #include <stdio.h>
-#include <stddef.h>
 
-#define MAX_TESTS 256
+// ANSI colors
+#define COLOR_RED   "\x1b[31m"
+#define COLOR_GREEN "\x1b[32m"
+#define COLOR_CYAN  "\x1b[36m"
+#define COLOR_RESET "\x1b[0m"
 
-/// Common typedef for both C and C++
-typedef int (*test_fn_t)(void);
-typedef struct {
-    const char *name;
-    test_fn_t    func;
-} test_case_t;
-
-/// Simple assertion macros
-#define test_assert(expr)                                      \
-    do { if (!(expr)) {                                        \
-            fprintf(stderr,                                   \
-                    "Assertion failed: %s at %s:%d\n",        \
-                    #expr, __FILE__, __LINE__);               \
-            return 1;                                         \
-        }                                                     \
-        return 0;                                             \
+/// Assertion macro: returns 1 on failure, 0 on success
+#define test_assert(expr)                           \
+    do {                                           \
+        if (!(expr)) {                             \
+            fprintf(stderr, COLOR_RED              \
+                "Assertion failed: %s at %s:%d\n" \
+                COLOR_RESET,                      \
+                #expr, __FILE__, __LINE__);       \
+            return 1;                             \
+        }                                          \
+        return 0;                                  \
     } while (0)
-
 #define cf_assert(expr) test_assert(expr)
 
-#ifdef __cplusplus
+// TEST macro: supports TEST(name) or TEST(Category, name)
+#define TEST1(name) int name()
+#define TEST2(cat,name) int cat##_##name()
+#define GET_TEST(_1,_2,NAME,...) NAME
+#define TEST(...) GET_TEST(__VA_ARGS__,TEST2,TEST1)(__VA_ARGS__)
 
-  #include <vector>
-  #include <string>
-
-  namespace tst {
-    /// Registry of all tests
-    inline std::vector<std::pair<std::string,test_fn_t>>& all_tests() {
-      static std::vector<std::pair<std::string,test_fn_t>> v;
-      return v;
-    }
-    /// RAII‐registrar: runs before main()
-    struct registrar {
-      registrar(const std::string &name, test_fn_t fn) {
-        all_tests().emplace_back(name, fn);
-      }
-    };
-  }
-
-  // Helpers to generate unique names
-  #define CONCAT_INTERNAL(a,b) a##b
-  #define CONCAT(a,b) CONCAT_INTERNAL(a,b)
-
-  /// C++ TEST macro: emits a static registrar whose ctor auto‐registers
-  #define TEST(cat,name)                                         \
-    static int cat##_##name(void);                               \
-    static ::tst::registrar                                      \
-      CONCAT(_registrar_,__LINE__)(                              \
-        std::string(#cat) + "." + #name,                         \
-        &cat##_##name                                           \
-      );                                                         \
-    static int cat##_##name(void)
-
-  /// Main runner for C++
-  static int test_main(void) {
-    auto &v = ::tst::all_tests();
-    int failures = 0;
-    for (auto &tc : v) {
-      printf("[ RUN ] %s\n", tc.first.c_str());
-      bool failed = (tc.second() != 0);
-      printf(failed ? "[FAIL] %s\n" : "[PASS] %s\n", tc.first.c_str());
-      failures += failed;
-    }
-    printf("Ran %zu tests: %d failures\n", v.size(), failures);
-    return failures;
-  }
-
-#else  /* plain C */
-
-  /// Put every test_case_t into a custom ELF section "test_cases"
-
-
-  #if defined(__GNUC__) || defined(__clang__)
-    #define TEST_EXPORT __attribute__((used, section("test_cases")))
-  #else
-    #error "Compiler must support section attribute for C auto‐registration"
-  #endif
-
-  /// C TEST macro: emits a test_case_t into .test_cases
-  #define TEST(cat,name)                                        \
-    static int cat##_##name(void);                              \
-    TEST_EXPORT                                                \
-    static test_case_t _tc_##cat##_##name = {                    \
-      #cat "." #name,                                           \
-      cat##_##name                                             \
-    };                                                          \
-    static int cat##_##name(void)
-
-  /// Linker‐provided symbols bounding the array
-  extern test_case_t __start_test_cases[];
-  extern test_case_t __stop_test_cases[];
-
-  /// Main runner for C
-  static int test_main(void) {
-    test_case_t *tc = __start_test_cases;
-    int failures = 0;
-    for (; tc < __stop_test_cases; ++tc) {
-      printf("[ RUN ] %s\n", tc->name);
-      int r = tc->func();
-      if (r) {
-        printf("[FAIL] %s\n", tc->name);
-        ++failures;
-      } else {
-        printf("[PASS] %s\n", tc->name);
-      }
-    }
-    size_t total = __stop_test_cases - __start_test_cases;
-    printf("Ran %zu tests: %d failures\n", total, failures);
-    return failures;
-  }
-
-#endif /* __cplusplus */
-
-#endif /* TEST_FRAMEWORK_H */
+#endif // TEST_FRAMEWORK_H
 )TFH";
     header_file.close();
   }
 
-  // Generate test_main.cpp
+  // Generate test_main.cpp by scanning TEST(Category,Name)
   fs::path main_src = tests_src / "test_main.cpp";
-  if (!fs::exists(main_src)) {
-    logger::print_status("Generating test_main.cpp: " + main_src.string());
-    std::ofstream main_file(main_src);
-    main_file << R"TMCPP(
-#include "test_framework.h"
-#include <stdio.h>
-
-test_case_t __c_tests[MAX_TESTS];
-size_t __c_test_count = 0;
-
-int main(int argc, char** argv) {
-    (void)argc; (void)argv;
-    return test_main();
-}
-)TMCPP";
-    main_file.close();
+  // Always regenerate test_main.cpp
+  logger::print_status("Generating test_main.cpp via scan: " + main_src.string());
+  std::ofstream main_file(main_src);
+  main_file << "#include \"test_framework.h\"\n";
+  main_file << "#include <stdio.h>\n\n";
+  // ANSI color codes for test output
+  // Collect tests
+  std::vector<std::pair<std::string,std::string>> tests_list;
+  // Match TEST(name) or TEST(Category, name)
+  std::regex re(R"REG(^\s*TEST\(\s*([A-Za-z_]\w*)(?:\s*,\s*([A-Za-z_]\w*))?\s*\))REG");
+  for (auto& p : std::filesystem::recursive_directory_iterator(tests_src)) {
+    if (!p.is_regular_file()) continue;
+    auto ext = p.path().extension().string();
+    if (ext != ".cpp" && ext != ".c") continue;
+    std::ifstream f(p.path());
+    std::string line;
+    while (std::getline(f, line)) {
+      std::smatch m;
+      if (std::regex_search(line, m, re)) {
+        std::string cat = m[1].str();
+        std::string name;
+        if (m.size() >= 3 && m[2].matched) {
+          name = m[2].str();
+        } else {
+          name = m[1].str();
+          cat.clear();
+        }
+        tests_list.emplace_back(cat, name);
+      }
+    }
   }
+  // Extern declarations
+  for (auto& t : tests_list) {
+    std::string fn = t.first.empty() ? t.second : t.first + "_" + t.second;
+    main_file << "extern int " << fn << "();\n";
+  }
+  main_file << "\nstruct test_entry { const char* full; int (*fn)(); };\n";
+  main_file << "static test_entry tests[] = {\n";
+  for (auto& t : tests_list) {
+    std::string full = t.first.empty() ? t.second : t.first + "." + t.second;
+    std::string fn = t.first.empty() ? t.second : t.first + "_" + t.second;
+    main_file << "  {\"" << full << "\", " << fn << "},\n";
+  }
+  main_file << "};\n\n";
+  main_file << "int main(int argc, char** argv) {\n";
+  main_file << "  (void)argc; (void)argv;\n";
+  main_file << "  int failures = 0;\n";
+  main_file << "  for (auto& tc : tests) {\n";
+  main_file << "    printf(COLOR_CYAN \"[RUNNING] %s\" COLOR_RESET \"\\n\", tc.full);\n";
+  main_file << "  }\n";
+  
+  main_file << "  for (auto& tc : tests) {\n";
+  main_file << "    int res = tc.fn();\n";
+  main_file << "    if (res) {\n";
+  main_file << "      printf(COLOR_RED \"[FAIL] %s\" COLOR_RESET \"\\n\", tc.full);\n";
+  main_file << "      ++failures;\n";
+  main_file << "    } else {\n";
+  main_file << "      printf(COLOR_GREEN \"[PASS] %s\" COLOR_RESET \"\\n\", tc.full);\n";
+  main_file << "    }\n";
+  main_file << "  }\n";
+  main_file << "  printf(\"Ran %zu tests: %d failures\\n\", sizeof(tests)/sizeof(tests[0]), failures);\n";
+  main_file << "  return failures;\n";
+  main_file << "}\n";
+  main_file.close();
 
   // Prepare test build output directory under build_dir/test/executable
   std::string base_build = cfg.get_string("build.build_dir", "build");
@@ -433,7 +391,7 @@ int main(int argc, char** argv) {
 
   // Configure tests via CMake to place binaries in output_tests
   bool verbose = logger::get_verbosity() == log_verbosity::VERBOSITY_VERBOSE;
-  logger::print_status("Configuring tests with CMake in " + output_tests.string());
+  logger::print_status("Configuring tests with CMake...");
   std::vector<std::string> cmake_args = {"-S", tests_src.string(), "-B", output_tests.string()};
   std::string build_config = cfg.get_string("build.build_type", "Debug");
   cmake_args.push_back(std::string("-DCMAKE_BUILD_TYPE=") + build_config);
@@ -480,8 +438,9 @@ int main(int argc, char** argv) {
   for (int i = 1; i < ctx->args.arg_count; ++i) {
     test_args.emplace_back(ctx->args.args[i]);
   }
-  if (!run_test_executable(test_exec, test_args, verbose)) {
-  return 1;
+  // Always show test program output
+  if (!run_test_executable(test_exec, test_args, true)) {
+    return 1;
   }
   logger::print_success("All tests passed.");
   return 0;
