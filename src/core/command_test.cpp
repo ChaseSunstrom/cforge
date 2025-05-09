@@ -16,6 +16,7 @@
 #include <vector>
 #include <fstream>
 #include <regex>
+#include <sstream>
 
 using namespace cforge;
 
@@ -251,11 +252,21 @@ cforge_int_t cforge_cmd_test(const cforge_context_t *ctx) {
     } while (0)
 #define cf_assert(expr) test_assert(expr)
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 // TEST macro: supports TEST(name) or TEST(Category, name)
-#define TEST1(name) int name()
-#define TEST2(cat,name) int cat##_##name()
-#define GET_TEST(_1,_2,NAME,...) NAME
-#define TEST(...) GET_TEST(__VA_ARGS__,TEST2,TEST1)(__VA_ARGS__)
+#define TEST1(name)             int name()
+#define TEST2(cat,name)         int cat##_##name()
+// pick correct TEST variant based on argument count
+#define OVERLOAD_CHOOSER(_1,_2,NAME,...) NAME
+#define EXPAND(x)               x
+#define APPLY(macro, ...)       EXPAND(macro(__VA_ARGS__))
+// public TEST entrypoint: forces MSVC to re-scan and expand TEST1/TEST2
+#define TEST(...)               APPLY(OVERLOAD_CHOOSER(__VA_ARGS__, TEST2, TEST1), __VA_ARGS__)
+#ifdef __cplusplus
+}
+#endif
 
 #endif // TEST_FRAMEWORK_H
 )TFH";
@@ -267,8 +278,12 @@ cforge_int_t cforge_cmd_test(const cforge_context_t *ctx) {
   // Always regenerate test_main.cpp
   logger::print_status("Generating test_main.cpp via scan: " + main_src.string());
   std::ofstream main_file(main_src);
+  // Includes for test runner
   main_file << "#include \"test_framework.h\"\n";
-  main_file << "#include <stdio.h>\n\n";
+  main_file << "#include <stdio.h>\n";
+  main_file << "#include <string>\n";
+  main_file << "#include <vector>\n";
+  main_file << "#include <algorithm>\n\n";
   // ANSI color codes for test output
   // Collect tests
   std::vector<std::pair<std::string,std::string>> tests_list;
@@ -277,7 +292,7 @@ cforge_int_t cforge_cmd_test(const cforge_context_t *ctx) {
   for (auto& p : std::filesystem::recursive_directory_iterator(tests_src)) {
     if (!p.is_regular_file()) continue;
     auto ext = p.path().extension().string();
-    if (ext != ".cpp" && ext != ".c") continue;
+    if (ext != ".cpp" && ext != ".c" && ext != ".h" && ext != ".hpp" && ext != ".hxx" && ext != ".cxx" && ext != ".c++" && ext != ".cc") continue;
     std::ifstream f(p.path());
     std::string line;
     while (std::getline(f, line)) {
@@ -298,7 +313,7 @@ cforge_int_t cforge_cmd_test(const cforge_context_t *ctx) {
   // Extern declarations
   for (auto& t : tests_list) {
     std::string fn = t.first.empty() ? t.second : t.first + "_" + t.second;
-    main_file << "extern int " << fn << "();\n";
+    main_file << "int " << fn << "();\n";
   }
   main_file << "\nstruct test_entry { const char* full; int (*fn)(); };\n";
   main_file << "static test_entry tests[] = {\n";
@@ -308,23 +323,28 @@ cforge_int_t cforge_cmd_test(const cforge_context_t *ctx) {
     main_file << "  {\"" << full << "\", " << fn << "},\n";
   }
   main_file << "};\n\n";
+  // Main function with filtering flags
   main_file << "int main(int argc, char** argv) {\n";
-  main_file << "  (void)argc; (void)argv;\n";
+  main_file << "  std::string category;\n";
+  main_file << "  std::vector<std::string> test_filters;\n";
+  main_file << "  // Positional args: first is category (optional), rest are test names\n";
+  main_file << "  for (int i = 1; i < argc; ++i) {\n";
+  main_file << "    if (i == 1) category = argv[i]; else test_filters.push_back(argv[i]);\n";
+  main_file << "  }\n";
   main_file << "  int failures = 0;\n";
+  main_file << "  size_t run_count = 0;\n";
   main_file << "  for (auto& tc : tests) {\n";
-  main_file << "    printf(COLOR_CYAN \"[RUNNING] %s\" COLOR_RESET \"\\n\", tc.full);\n";
-  main_file << "  }\n";
-  
-  main_file << "  for (auto& tc : tests) {\n";
+  main_file << "    std::string full(tc.full);\n";
+  main_file << "    std::string cat, name; auto pos = full.find('.');\n";
+  main_file << "    if (pos == std::string::npos) { name = full; } else { cat = full.substr(0,pos); name = full.substr(pos+1); }\n";
+  main_file << "    if (!category.empty() && cat != category) continue;\n";
+  main_file << "    if (!test_filters.empty() && std::find(test_filters.begin(), test_filters.end(), name) == test_filters.end()) continue;\n";
+  main_file << "    ++run_count;\n";
+  main_file << "    printf(COLOR_CYAN \"[RUN] %s\" COLOR_RESET \"\\n\", tc.full);\n";
   main_file << "    int res = tc.fn();\n";
-  main_file << "    if (res) {\n";
-  main_file << "      printf(COLOR_RED \"[FAIL] %s\" COLOR_RESET \"\\n\", tc.full);\n";
-  main_file << "      ++failures;\n";
-  main_file << "    } else {\n";
-  main_file << "      printf(COLOR_GREEN \"[PASS] %s\" COLOR_RESET \"\\n\", tc.full);\n";
-  main_file << "    }\n";
+  main_file << "    if (res) { printf(COLOR_RED \"[FAIL] %s\" COLOR_RESET \"\\n\", tc.full); ++failures; } else { printf(COLOR_GREEN \"[PASS] %s\" COLOR_RESET \"\\n\", tc.full); }\n";
   main_file << "  }\n";
-  main_file << "  printf(\"Ran %zu tests: %d failures\\n\", sizeof(tests)/sizeof(tests[0]), failures);\n";
+  main_file << "  printf(\"Ran %zu tests: %d failures\\n\", run_count, failures);\n";
   main_file << "  return failures;\n";
   main_file << "}\n";
   main_file.close();
@@ -393,14 +413,23 @@ cforge_int_t cforge_cmd_test(const cforge_context_t *ctx) {
   bool verbose = logger::get_verbosity() == log_verbosity::VERBOSITY_VERBOSE;
   logger::print_status("Configuring tests with CMake...");
   std::vector<std::string> cmake_args = {"-S", tests_src.string(), "-B", output_tests.string()};
-  std::string build_config = cfg.get_string("build.build_type", "Debug");
+  // Determine build configuration (allow -c/--config)
+  std::string build_config;
+  if (ctx->args.config && std::strlen(ctx->args.config) > 0) {
+    build_config = ctx->args.config;
+    logger::print_status("Using build configuration: " + build_config);
+  } else {
+    build_config = cfg.get_string("build.build_type", "Debug");
+  }
   cmake_args.push_back(std::string("-DCMAKE_BUILD_TYPE=") + build_config);
   if (!execute_tool("cmake", cmake_args, "", "CTest Configure", verbose)) {
     logger::print_error("Failed to configure tests");
     return 1;
   }
   logger::print_status("Building tests via CMake...");
-  if (!execute_tool("cmake", {"--build", output_tests.string()}, "", "CTest Build", verbose)) {
+  // Build tests via CMake with specific configuration
+  std::vector<std::string> build_args = {"--build", output_tests.string(), "--config", build_config};
+  if (!execute_tool("cmake", build_args, "", "CTest Build", verbose)) {
     logger::print_error("Failed to build tests");
     return 1;
   }
@@ -434,9 +463,31 @@ cforge_int_t cforge_cmd_test(const cforge_context_t *ctx) {
     return 1;
   }
   logger::print_status("Running test executable: " + test_exec.string());
+  // Collect test executable arguments (support `--` to end CForge flags)
   std::vector<std::string> test_args;
+  bool found_dd = false;
+  // If `--` present, only pass args after it
   for (int i = 1; i < ctx->args.arg_count; ++i) {
-    test_args.emplace_back(ctx->args.args[i]);
+    std::string arg = ctx->args.args[i];
+    if (arg == "--") { found_dd = true; continue; }
+    if (found_dd) { test_args.push_back(arg); }
+  }
+  if (!found_dd) {
+    // No `--` delimiter: skip CForge flags (-c, -v, etc.) and their values
+    for (int i = 1; i < ctx->args.arg_count; ++i) {
+      std::string arg = ctx->args.args[i];
+      if (arg == "-c" || arg == "--config") { ++i; continue; }
+      if (arg == "-v" || arg == "--verbose" || arg == "-q" || arg == "--quiet") continue;
+      test_args.push_back(arg);
+    }
+  }
+  if (!test_args.empty()) {
+    std::ostringstream oss;
+    for (size_t idx = 0; idx < test_args.size(); ++idx) {
+      if (idx > 0) oss << ' ';
+      oss << test_args[idx];
+    }
+    logger::print_status("Passing arguments to test executable: " + oss.str());
   }
   // Always show test program output
   if (!run_test_executable(test_exec, test_args, true)) {

@@ -12,9 +12,10 @@ int divide(int a, int b) {
     return a / b;
 }
 
-TEST(Add) {
+TEST(Math, Add) {
     cf_assert(add(2, 2) == 4);
 }
+
 
 TEST(Subtract) {
     cf_assert(subtract(2, 2) == 0);
