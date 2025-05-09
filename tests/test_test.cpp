@@ -22,5 +22,5 @@ TEST(Math, Subtract) {
 }
 
 TEST(Divide) {
-    cf_assert(divide(2, 2) == 2);
+    cf_assert(divide(2, 2) == 1);
 }
