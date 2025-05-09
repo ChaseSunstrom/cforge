@@ -1203,6 +1203,19 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
         }
     }
 
+    // Precompiled headers
+    if (project_config.has_key("build.precompiled_headers")) {
+      auto pch_list = project_config.get_string_array("build.precompiled_headers");
+      if (!pch_list.empty()) {
+        cmakelists << "# Precompiled headers\n";
+        cmakelists << "target_precompile_headers(${PROJECT_NAME} PRIVATE";
+        for (const auto &pch : pch_list) {
+          cmakelists << " \"" << pch << "\"";
+        }
+        cmakelists << ")\n\n";
+      }
+    }
+
     return true;
 }
 

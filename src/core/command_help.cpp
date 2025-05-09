@@ -191,19 +191,25 @@ cforge_int_t cforge_cmd_help(const cforge_context_t *ctx) {
     logger::print_status("");
     logger::print_status("Arguments after -- are passed to the application");
   } else if (specific_command == "test") {
-    logger::print_status("cforge test - Run tests");
+    logger::print_status("cforge test - Build and run unit tests");
     logger::print_status("");
-    logger::print_status("Usage: cforge test [options] [-- <test arguments>]");
+    logger::print_status("Usage: cforge test [options] [<category> [<test1> <test2> ...]] [--]");
     logger::print_status("");
     logger::print_status("Options:");
-    logger::print_status(
-        "  -c, --config <config>  Build configuration (Debug, Release, etc.)");
-    logger::print_status(
-        "  --no-build             Skip building before running tests");
-    logger::print_status("  -v, --verbose          Show verbose output");
+    logger::print_status("  -c, --config <config>    Build configuration (Debug, Release, etc.)");
+    logger::print_status("  -v, --verbose            Show verbose build & test output");
     logger::print_status("");
-    logger::print_status(
-        "Arguments after -- are passed to the test executable");
+    logger::print_status("Positional arguments:");
+    logger::print_status("  <category>               Optional test category to run");
+    logger::print_status("  <test_name> ...          Optional test names under the category");
+    logger::print_status("");
+    logger::print_status("Examples:");
+    logger::print_status("  cforge test");
+    logger::print_status("  cforge test Math");
+    logger::print_status("  cforge test -c Release Math Add");
+    logger::print_status("  cforge test -c Release -- Math Add");
+    logger::print_status("");
+    logger::print_status("Use `--` to explicitly separate CForge flags from test filters");
   } else if (specific_command == "package") {
     logger::print_status("cforge package - Create distributable packages");
     logger::print_status("");

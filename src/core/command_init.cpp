@@ -492,11 +492,6 @@ static bool create_cforge_toml(const std::filesystem::path &project_path,
 
   config << "[test]\n";
   config << "enabled = " << (with_tests ? "true" : "false") << "\n";
-  config << "framework = \"Catch2\"  # Test framework: Catch2, GoogleTest\n";
-  config << "# test_executable = \"${project_name}_tests\"  # Custom test "
-            "executable name\n";
-  config << "# args = [\"--verbose\"]  # Arguments to pass to the test "
-            "executable\n\n";
 
   config << "[package]\n";
   config << "enabled = true\n";

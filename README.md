@@ -189,7 +189,7 @@ Hello from hi2!
 | `build`      | Build the project                   | `cforge build --config Release`    |
 | `clean`      | Clean build artifacts               | `cforge clean`                     |
 | `run`        | Run built executable                | `cforge run -- arg1 arg2`          |
-| `test`       | Execute tests (CTest integration)   | `cforge test --filter MyTest`      |
+| `test`       | Build and run unit tests (supports config, category & test filters) | `cforge test -c Release Math Add` |
 | `install`    | Install project binaries            | `cforge install --prefix /usr/local`|
 | `deps`       | Manage dependencies                 | `cforge deps --update`             |
 | `script`     | Execute custom scripts              | `cforge script format`             |
@@ -205,6 +205,32 @@ All commands accept the following global options:
 
 Many commands support these options:
 - `--config`: Build/run with specific configuration (e.g., `Debug`, `Release`)
+
+## 🧪 Testing
+
+CForge includes a built-in test runner (no external CTest calls needed). By default your tests live in the directory specified by `test.directory` in `cforge.toml` (defaults to `tests`). To build and run tests:
+
+```bash
+# Run all tests in Debug (default)
+cforge test
+
+# Run only the 'Math' category in Debug
+cforge test Math
+
+# Run specific tests in Release
+cforge test -c Release Math Add Divide
+
+# Explicitly separate CForge flags from filters
+cforge test -c Release -- Math Add Divide
+```
+
+Options:
+- `-c, --config <config>`: Build configuration (Debug, Release, etc.)
+- `-v, --verbose`: Show verbose build & test output
+
+Positional arguments (after flags, or after `--`):
+- `<category>`: Optional test category to run
+- `<test_name> ...`: Optional list of test names under the category
 
 ---
 
@@ -242,7 +268,6 @@ flags      = ["OPTIMIZE"]
 
 [test]
 enabled = false
-framework = "Catch2"
 
 [package]
 enabled = true
@@ -443,3 +468,124 @@ cforge ide xcode
 cforge ide vs2022
 cforge ide vs:x64  # With architecture specification
 ```
+
+
+## 🔧 Troubleshooting
+
+### Common Issues
+
+- **CMake not found**: Ensure it's installed and in PATH.
+- **Dependency failures**: Run `cforge deps --update`.
+- **Cross-compilation**: Check environment variables (e.g., `$ANDROID_NDK`).
+- **Compiler errors**: Use `cforge build --verbosity verbose`.
+
+CForge provides enhanced error diagnostics:
+
+```
+Build error details:
+ERROR[E0001]: undefined reference to 'math_lib::divide(int, int)'
+ --> src/main.cpp:12:5
+  12| math_lib::divide(10, 0);
+     ^~~~~~~~~~~~~~~~
+
+help: The function 'divide' is used but not defined. Check if the library is properly linked.
+```
+
+### Useful Commands
+
+```bash
+# List available configurations
+cforge list configs
+
+# List available build variants
+cforge list variants
+
+# List cross-compilation targets
+cforge list targets
+
+# List custom scripts
+cforge list scripts
+```
+
+---
+
+## 🚀 Goals & Roadmap
+
+CForge is continuously evolving to simplify C/C++ project management while providing powerful features. Here's what we've accomplished and where we're headed next:
+
+### ✅ Completed Features
+
+- **Simple TOML Configuration**: Easy project setup without complex CMake syntax
+- **Multi-platform Support**: Windows, macOS, Linux compatibility
+- **Core Dependency Management**: Integrated vcpkg and git dependencies
+- **Workspace Support**: Basic multi-project management
+- **IDE Integration**: VS Code, CLion support
+- **Testing**: Test integration
+- **Build Variants**: Multiple configuration support
+- **Package Generation**: Create distributable packages
+
+### 🚧 In Progress
+
+- **Enhanced Workspace Dependencies**: Improving library detection and linking
+- **Precompiled Header Optimization**: Better build performance
+- **Diagnostic Improvements**: Clearer error messages and suggestions
+- **Documentation Expansion**: More examples and quick-start guides
+
+### 📝 Planned Features
+
+- **Enhanced IDE Support**
+  - Better Visual Studio project generation
+  - QtCreator integration
+  - Eclipse CDT support
+  - Xcode project improvements
+
+- **Plugin System**
+  - Custom build steps via plugins
+  - Language server integration
+  - Code generation tools
+
+- **Documentation Features**
+  - Automatic API documentation generation
+  - Doxygen integration
+
+- **Advanced Testing**
+  - Code coverage reports
+  - Benchmark framework integration
+  - Sanitizer integrations
+
+- **CI/CD Pipeline Integration**
+  - GitHub Actions templates
+  - GitLab CI templates
+  - Azure DevOps integration
+
+- **Mobile Development**
+  - Improved Android/iOS workflows
+  - Mobile-specific templates
+
+- **Cloud Development**
+  - Remote build capabilities
+  - Container-based builds
+  - Package registry integration
+
+- **Package Manager Enhancements**
+  - Complete Conan 2.0 support
+  - Lock file management
+  - Recipe generation
+
+We welcome contributions to help achieve these goals! If you're interested in working on a specific feature or have suggestions, please open an issue or submit a pull request.
+
+## 🤝 Contributing
+
+Contributions welcome!
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/new-feature`)
+3. Commit your changes (`git commit -m 'Add new feature'`)
+4. Push to your branch (`git push origin feature/new-feature`)
+5. Open a Pull Request
+
+---
+
+## 📄 License
+
+**MIT License** — see [LICENSE](LICENSE).
