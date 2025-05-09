@@ -470,23 +470,34 @@ extern "C" {
     return 1;
   }
   logger::print_status("Running test executable: " + test_exec.string());
-  // Collect test executable arguments (support `--` to end CForge flags)
+  // Collect test executable arguments: skip CForge flags and split at `--`
   std::vector<std::string> test_args;
   bool found_dd = false;
-  // If `--` present, only pass args after it
-  for (int i = 1; i < ctx->args.arg_count; ++i) {
+  for (int i = 1; i < ctx->args.arg_count; /*incremented in loop*/) {
     std::string arg = ctx->args.args[i];
-    if (arg == "--") { found_dd = true; continue; }
-    if (found_dd) { test_args.push_back(arg); }
-  }
-  if (!found_dd) {
-    // No `--` delimiter: skip CForge flags (-c, -v, etc.) and their values
-    for (int i = 1; i < ctx->args.arg_count; ++i) {
-      std::string arg = ctx->args.args[i];
-      if (arg == "-c" || arg == "--config") { ++i; continue; }
-      if (arg == "-v" || arg == "--verbose" || arg == "-q" || arg == "--quiet") continue;
-      test_args.push_back(arg);
+    if (arg == "--") {
+      found_dd = true;
+      ++i;
+      continue;
     }
+    if (!found_dd) {
+      if (arg == "-c" || arg == "--config") {
+        // skip flag and its value
+        i += 2;
+        continue;
+      }
+      if (arg == "-v" || arg == "--verbose" || arg == "-q" || arg == "--quiet") {
+        ++i;
+        continue;
+      }
+      // any other argument before -- is a category/test
+      test_args.push_back(arg);
+      ++i;
+      continue;
+    }
+    // after --, forward everything
+    test_args.push_back(arg);
+    ++i;
   }
   if (!test_args.empty()) {
     std::ostringstream oss;

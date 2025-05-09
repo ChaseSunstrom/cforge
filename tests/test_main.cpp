@@ -5,13 +5,13 @@
 #include <algorithm>
 
 int Math_Add();
-int Subtract();
+int Math_Subtract();
 int Divide();
 
 struct test_entry { const char* full; int (*fn)(); };
 static test_entry tests[] = {
   {"Math.Add", Math_Add},
-  {"Subtract", Subtract},
+  {"Math.Subtract", Math_Subtract},
   {"Divide", Divide},
 };
 

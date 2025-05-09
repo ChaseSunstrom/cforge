@@ -17,7 +17,7 @@ TEST(Math, Add) {
 }
 
 
-TEST(Subtract) {
+TEST(Math, Subtract) {
     cf_assert(subtract(2, 2) == 0);
 }
 
