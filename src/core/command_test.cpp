@@ -435,31 +435,38 @@ extern "C" {
   }
   logger::print_success("Tests built successfully in " + output_tests.string());
 
-  // Determine test executable path
-  fs::path test_exec = output_tests / (project_name + "_tests");
+  // Determine test executable name and path (respect multi-config)
+  std::string exe_name = project_name + "_tests";
 #ifdef _WIN32
-  test_exec += ".exe";
+  exe_name += ".exe";
 #endif
-  logger::print_status("Looking for test executable: " + test_exec.string());
-  if (!fs::exists(test_exec)) {
-    // Try recursive search under output_tests to handle config subdirectories
-    for (auto &entry : fs::recursive_directory_iterator(output_tests)) {
-      if (!entry.is_regular_file()) continue;
-      std::string filename = entry.path().filename().string();
-      if (filename == project_name + "_tests" +
-#ifdef _WIN32
-                     ".exe"
-#else
-                     std::string()
-#endif
-                     ) {
-        test_exec = entry.path();
-        break;
+  fs::path test_exec;
+  // 1) try config subdirectory
+  fs::path config_exec = output_tests / build_config / exe_name;
+  if (fs::exists(config_exec)) {
+    test_exec = config_exec;
+    logger::print_status("Found test executable for config '" + build_config + "': " + test_exec.string());
+  } else {
+    // 2) try top-level
+    fs::path direct_exec = output_tests / exe_name;
+    if (fs::exists(direct_exec)) {
+      test_exec = direct_exec;
+      logger::print_status("Found test executable at top-level: " + test_exec.string());
+    } else {
+      // 3) recursive fallback
+      logger::print_status("Searching recursively for test executable under " + output_tests.string());
+      for (auto &entry : fs::recursive_directory_iterator(output_tests)) {
+        if (!entry.is_regular_file()) continue;
+        if (entry.path().filename() == exe_name) {
+          test_exec = entry.path();
+          logger::print_status("Found test executable via recursive search: " + test_exec.string());
+          break;
+        }
       }
     }
   }
-  if (!fs::exists(test_exec)) {
-    logger::print_error("Test executable not found: " + test_exec.string());
+  if (test_exec.empty() || !fs::exists(test_exec)) {
+    logger::print_error("Test executable not found for config '" + build_config + "'");
     return 1;
   }
   logger::print_status("Running test executable: " + test_exec.string());
