@@ -8,6 +8,8 @@
 #include "core/constants.h"
 #include "core/process_utils.hpp"
 #include "core/toml_reader.hpp"
+#include <filesystem>
+#include "core/workspace.hpp"
 
 #include <iostream>
 #include <map>
@@ -118,7 +120,6 @@ cforge_int_t cforge_cmd_list(const cforge_context_t *ctx) {
   }
 
   std::cout << "cforge - Available options and configurations\n";
-  std::cout << "==========================================\n\n";
 
   // If category is specified, list only that category
   if (!category.empty()) {
@@ -132,10 +133,82 @@ cforge_int_t cforge_cmd_list(const cforge_context_t *ctx) {
       list_commands();
     } else if (category == "settings") {
       list_project_settings();
+    } else if (category == "projects") {
+      if (!ctx->is_workspace) {
+        logger::print_error("Not in a workspace");
+        return 1;
+      }
+      workspace ws;
+      if (!ws.load(ctx->working_dir)) {
+        logger::print_error("Failed to load workspace configuration");
+        return 1;
+      }
+      std::cout << "Workspace projects:\n";
+      for (const auto &proj : ws.get_projects()) {
+        std::cout << "  - " << proj.name << " (" << proj.path.string() << ")\n";
+      }
+      std::cout << "\n";
+    } else if (category == "dependencies" || category == "deps") {
+      if (ctx->is_workspace) {
+        // Workspace project dependencies
+        workspace ws;
+        if (!ws.load(ctx->working_dir)) {
+          logger::print_error("Failed to load workspace configuration");
+          return 1;
+        }
+        std::cout << "Workspace project dependencies:\n";
+        for (const auto &proj : ws.get_projects()) {
+          if (!proj.dependencies.empty()) {
+            std::cout << "  " << proj.name << ": ";
+            for (const auto &dep : proj.dependencies) {
+              std::cout << dep << " ";
+            }
+            std::cout << "\n";
+          }
+        }
+        std::cout << "\n";
+      } else {
+        // Project-level dependencies from cforge.toml
+        std::filesystem::path toml_path = std::filesystem::path(ctx->working_dir) / CFORGE_FILE;
+        toml_reader cfg;
+        if (!cfg.load(toml_path.string())) {
+          logger::print_error("Failed to load cforge.toml");
+          return 1;
+        }
+        if (cfg.has_key("dependencies.vcpkg")) {
+          auto vdeps = cfg.get_table_keys("dependencies.vcpkg");
+          if (!vdeps.empty()) {
+            std::cout << "vcpkg dependencies:\n";
+            for (const auto &dep : vdeps) {
+              std::cout << "  - " << dep << "\n";
+            }
+            std::cout << "\n";
+          }
+        }
+        if (cfg.has_key("dependencies.git")) {
+          auto gdeps = cfg.get_table_keys("dependencies.git");
+          if (!gdeps.empty()) {
+            std::cout << "Git dependencies:\n";
+            for (const auto &dep : gdeps) {
+              std::cout << "  - " << dep << "\n";
+            }
+            std::cout << "\n";
+          }
+        }
+        if (cfg.has_key("dependencies.system")) {
+          auto sdeps = cfg.get_string_array("dependencies.system");
+          if (!sdeps.empty()) {
+            std::cout << "System dependencies:\n";
+            for (const auto &lib : sdeps) {
+              std::cout << "  - " << lib << "\n";
+            }
+            std::cout << "\n";
+          }
+        }
+      }
     } else {
       logger::print_error("Unknown list category: " + category);
-      std::cout << "Available categories: configs, generators, targets, "
-                   "commands, settings\n";
+      std::cout << "Available categories: configs, generators, targets, commands, settings, projects, dependencies\n";
       return 1;
     }
   } else {
@@ -145,6 +218,27 @@ cforge_int_t cforge_cmd_list(const cforge_context_t *ctx) {
     list_generators();
     list_build_targets();
     list_project_settings();
+    if (ctx->is_workspace) {
+      workspace ws;
+      if (ws.load(ctx->working_dir)) {
+        std::cout << "Workspace projects:\n";
+        for (const auto &proj : ws.get_projects()) {
+          std::cout << "  - " << proj.name << " (" << proj.path.string() << ")\n";
+        }
+        std::cout << "\n";
+        std::cout << "Workspace project dependencies:\n";
+        for (const auto &proj : ws.get_projects()) {
+          if (!proj.dependencies.empty()) {
+            std::cout << "  " << proj.name << ": ";
+            for (const auto &dep : proj.dependencies) {
+              std::cout << dep << " ";
+            }
+            std::cout << "\n";
+          }
+        }
+        std::cout << "\n";
+      }
+    }
   }
 
   return 0;

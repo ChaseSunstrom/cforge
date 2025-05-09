@@ -135,6 +135,12 @@ public:
   static void print_success(const std::string &message);
 
   /**
+   * @brief Prints a plain message
+   * @param message The message to print
+   */
+  static void print_plain(const std::string &message);
+
+  /**
    * @brief Prints a warning message
    * @param message The message to print
    */

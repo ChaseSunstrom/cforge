@@ -41,6 +41,10 @@ void logger::print_success(const std::string &message) {
   fmt::print(fg(fmt::color::green), "✓ {}\n", message);
 }
 
+void logger::print_plain(const std::string &message) {
+  fmt::print("{}\n", message);
+}
+
 void logger::print_warning(const std::string &message) {
   fmt::print(fg(fmt::color::yellow), "⚠ {}\n", message);
 }
