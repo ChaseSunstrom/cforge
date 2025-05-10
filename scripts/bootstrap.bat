@@ -26,7 +26,7 @@ mkdir "%BUILD_DIR%"
 cd /d "%BUILD_DIR%"
 
 REM Clone Git dependencies if not already cloned
-cd /d "%PROJECT_ROOT%\deps"
+cd /d "%PROJECT_ROOT%\vendor"
 if not exist "fmt" (
   echo Cloning fmt...
   git clone https://github.com/fmtlib/fmt.git fmt

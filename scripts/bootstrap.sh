@@ -6,7 +6,7 @@ dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/.."
 cd "$dir"
 
 # Clone git dependencies if not already cloned
-DEPS_DIR="${dir}/deps"
+DEPS_DIR="${dir}/vendor"
 mkdir -p "$DEPS_DIR"
 cd "$DEPS_DIR"
 if [ ! -d "fmt" ]; then

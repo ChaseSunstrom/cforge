@@ -50,7 +50,7 @@ $env:CMAKE_TOOLCHAIN_FILE = ""
 Write-Host "Using CMake without vcpkg toolchain file."
 
 # Clone Git dependencies if not already cloned
-$depsDir = Join-Path $ProjectRoot "deps"
+$depsDir = Join-Path $ProjectRoot "vendor"
 if (-not (Test-Path $depsDir)) { New-Item -ItemType Directory -Path $depsDir | Out-Null }
 Set-Location $depsDir
 if (-not (Test-Path "$depsDir\fmt")) {
