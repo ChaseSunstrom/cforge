@@ -17,14 +17,12 @@
 
 ![Version](https://img.shields.io/badge/beta-2.0.0-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
+[![GitHub stars](https://img.shields.io/github/stars/ChaseSunstrom/cforge?style=social)](https://github.com/ChaseSunstrom/cforge)
+
 
 **A TOML-based build system for C/C++ projects with seamless CMake and vcpkg integration.**
 
 CForge is a modern build system designed to simplify C/C++ project management. It provides a clean TOML-based configuration approach while leveraging the power of CMake and vcpkg under the hood.
-
-## Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=ChaseSunstrom/cforge&type=Date)](https://www.star-history.com/#ChaseSunstrom/cforge&Date)
 
 ---
 
