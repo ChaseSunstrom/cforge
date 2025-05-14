@@ -16,11 +16,11 @@ source_dirs = ["src"]
 include_dirs = ["include"]
 
 [build.config.debug]
-defines = ["DEBUG=1", "FMT_HEADER_ONLY=ON"]
+defines = ["DEBUG=1", "FMT_HEADER_ONLY=ON", "FMT_UNICODE=0"]
 flags      = ["DEBUG_INFO", "NO_OPT"]
 
 [build.config.release]
-defines    = ["NDEBUG=1", "FMT_HEADER_ONLY=ON"]
+defines    = ["NDEBUG=1", "FMT_HEADER_ONLY=ON", "FMT_UNICODE=0"]
 flags      = ["OPTIMIZE"]
 
 [test]

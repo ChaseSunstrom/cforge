@@ -867,7 +867,7 @@ bool cforge_command_exists(cforge_cstring_t command) {
 #ifdef _WIN32
   // On Windows, try 'where' command to find executables
   const cforge_char_t *where_cmd = "where";
-  cforge_string_t where_args[] = {command, NULL};
+  cforge_string_t where_args[] = {(cforge_string_t)command, NULL};
 
   if (cforge_process_init(&process, where_cmd, where_args) !=
       CFORGE_PROC_SUCCESS) {
