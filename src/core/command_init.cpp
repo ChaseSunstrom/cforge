@@ -23,6 +23,8 @@ using namespace cforge;
 
 // Global init template name (executable, static-lib, shared-library, header-only)
 static std::string g_template_name = "executable";
+// Add a flag to force overwrite existing files
+static bool g_force_overwrite = false;
 
 /**
  * @brief Split a comma-separated list of project names
@@ -90,6 +92,14 @@ parse_project_list(const std::string &project_list) {
  */
 static bool create_gitignore(const std::filesystem::path &project_path) {
   std::filesystem::path gitignore_path = project_path / ".gitignore";
+
+  if (std::filesystem::exists(gitignore_path) && !g_force_overwrite) {
+    logger::print_warning(".gitignore already exists. Skipping.");
+    return true;
+  } else if (std::filesystem::exists(gitignore_path) && g_force_overwrite) {
+    logger::print_status("Overwriting .gitignore file");
+  }
+
   std::ofstream gitignore(gitignore_path);
 
   if (!gitignore.is_open()) {
@@ -163,10 +173,15 @@ static bool create_gitignore(const std::filesystem::path &project_path) {
  */
 static bool create_readme(const std::filesystem::path &project_path,
                           const std::string &project_name) {
-  // Get the directory name (which might have hyphens)
-  std::string display_name = project_path.filename().string();
-
   std::filesystem::path readme_path = project_path / "README.md";
+
+  if (std::filesystem::exists(readme_path) && !g_force_overwrite) {
+    logger::print_warning("README.md already exists. Skipping.");
+    return true;
+  } else if (std::filesystem::exists(readme_path) && g_force_overwrite) {
+    logger::print_status("Overwriting README.md file");
+  }
+
   std::ofstream readme(readme_path);
 
   if (!readme.is_open()) {
@@ -174,7 +189,7 @@ static bool create_readme(const std::filesystem::path &project_path,
     return false;
   }
 
-  readme << "# " << display_name << "\n\n";
+  readme << "# " << project_path.filename().string() << "\n\n";
   readme << "A C++ project created with cforge.\n\n";
 
   readme << "## Building\n\n";
@@ -217,10 +232,11 @@ static bool create_cmakelists(const std::filesystem::path &project_path,
                               bool workspace_aware = true) {
   std::filesystem::path cmakelists_path = project_path / "CMakeLists.txt";
 
-  // Check if the file already exists
-  if (std::filesystem::exists(cmakelists_path)) {
+  if (std::filesystem::exists(cmakelists_path) && !g_force_overwrite) {
     logger::print_warning("CMakeLists.txt already exists. Skipping.");
     return true;
+  } else if (std::filesystem::exists(cmakelists_path) && g_force_overwrite) {
+    logger::print_status("Overwriting CMakeLists.txt file");
   }
 
   std::ofstream cmakelists(cmakelists_path);
@@ -345,17 +361,7 @@ static bool create_cmakelists(const std::filesystem::path &project_path,
   cmakelists << "if(MSVC)\n";
   cmakelists << "    target_compile_options(${TARGET_NAME} PRIVATE /W4 /MP)\n";
   cmakelists << "else()\n";
-  cmakelists << "    target_compile_options(${TARGET_NAME} PRIVATE -Wall "
-                "-Wextra -Wpedantic)\n";
-  cmakelists << "endif()\n\n";
-
-  // Tests
-  cmakelists << "# Testing\n";
-  cmakelists << "option(BUILD_TESTING \"Build tests\" ON)\n";
-  cmakelists
-      << "if(BUILD_TESTING AND EXISTS \"${CMAKE_CURRENT_SOURCE_DIR}/tests\")\n";
-  cmakelists << "    enable_testing()\n";
-  cmakelists << "    add_subdirectory(tests)\n";
+  cmakelists << "    target_compile_options(${TARGET_NAME} PRIVATE -Wall -Wextra -Wpedantic)\n";
   cmakelists << "endif()\n\n";
 
   // Installation
@@ -417,10 +423,11 @@ static bool create_cforge_toml(const std::filesystem::path &project_path,
                                bool with_tests) {
   std::filesystem::path config_path = project_path / CFORGE_FILE;
 
-  // Check if the file already exists
-  if (std::filesystem::exists(config_path)) {
+  if (std::filesystem::exists(config_path) && !g_force_overwrite) {
     logger::print_warning("cforge.toml already exists. Skipping.");
     return true;
+  } else if (std::filesystem::exists(config_path) && g_force_overwrite) {
+    logger::print_status("Overwriting cforge.toml file");
   }
 
   std::ofstream config(config_path);
@@ -536,19 +543,23 @@ static bool create_cforge_toml(const std::filesystem::path &project_path,
  */
 static bool create_main_cpp(const std::filesystem::path &project_path,
                             const std::string &project_name) {
-  // Create src directory if it doesn't exist
   std::filesystem::path src_dir = project_path / "src";
-  try {
+
+  if (!std::filesystem::exists(src_dir)) {
     std::filesystem::create_directories(src_dir);
-  } catch (const std::exception &ex) {
-    logger::print_error("Failed to create src directory: " +
-                        std::string(ex.what()));
-    return false;
   }
 
   // Create main.cpp only for executable (app) projects
   if (g_template_name == "executable") {
     std::filesystem::path main_cpp_path = src_dir / "main.cpp";
+
+    if (std::filesystem::exists(main_cpp_path) && !g_force_overwrite) {
+      logger::print_warning("main.cpp already exists. Skipping.");
+      return true;
+    } else if (std::filesystem::exists(main_cpp_path) && g_force_overwrite) {
+      logger::print_status("Overwriting main.cpp file");
+    }
+
     std::ofstream main_cpp(main_cpp_path);
 
     if (!main_cpp.is_open()) {
@@ -610,6 +621,14 @@ static bool create_include_files(const std::filesystem::path &project_path,
   // Create example.hpp
   std::filesystem::path example_header_path =
       project_include_dir / "example.hpp";
+
+  if (std::filesystem::exists(example_header_path) && !g_force_overwrite) {
+    logger::print_warning("example.hpp already exists. Skipping.");
+    return true;
+  } else if (std::filesystem::exists(example_header_path) && g_force_overwrite) {
+    logger::print_status("Overwriting example.hpp file");
+  }
+
   std::ofstream example_header(example_header_path);
 
   if (!example_header.is_open()) {
@@ -651,6 +670,14 @@ create_example_implementation(const std::filesystem::path &project_path,
 
   // Create example.cpp
   std::filesystem::path example_cpp_path = src_dir / "example.cpp";
+
+  if (std::filesystem::exists(example_cpp_path) && !g_force_overwrite) {
+    logger::print_warning("example.cpp already exists. Skipping.");
+    return true;
+  } else if (std::filesystem::exists(example_cpp_path) && g_force_overwrite) {
+    logger::print_status("Overwriting example.cpp file");
+  }
+
   std::ofstream example_cpp(example_cpp_path);
 
   if (!example_cpp.is_open()) {
@@ -690,91 +717,112 @@ static bool create_test_files(const std::filesystem::path &project_path,
 
   // Create CMakeLists.txt for tests
   std::filesystem::path tests_cmake_path = tests_dir / "CMakeLists.txt";
-  std::ofstream tests_cmake(tests_cmake_path);
 
-  if (!tests_cmake.is_open()) {
-    return false;
+  if (std::filesystem::exists(tests_cmake_path) && !g_force_overwrite) {
+    logger::print_warning("tests/CMakeLists.txt already exists. Skipping.");
+  } else {
+    if (std::filesystem::exists(tests_cmake_path) && g_force_overwrite) {
+      logger::print_status("Overwriting tests/CMakeLists.txt file");
+    }
+    std::ofstream tests_cmake(tests_cmake_path);
+    if (!tests_cmake.is_open()) {
+      return false;
+    }
+    tests_cmake << "# Tests CMakeLists.txt for " << project_name << "\n\n";
+    tests_cmake << "# Find GoogleTest\n";
+    tests_cmake << "include(FetchContent)\n";
+    tests_cmake << "FetchContent_Declare(\n";
+    tests_cmake << "  googletest\n";
+    tests_cmake << "  GIT_REPOSITORY https://github.com/google/googletest.git\n";
+    tests_cmake << "  GIT_TAG release-1.12.1\n";
+    tests_cmake << ")\n\n";
+    tests_cmake << "# For Windows: Prevent overriding the parent project's "
+                   "compiler/linker settings\n";
+    tests_cmake << "set(gtest_force_shared_crt ON CACHE BOOL \"\" FORCE)\n";
+    tests_cmake << "FetchContent_MakeAvailable(googletest)\n\n";
+    tests_cmake << "# Enable testing\n";
+    tests_cmake << "enable_testing()\n\n";
+    tests_cmake << "# Include GoogleTest\n";
+    tests_cmake << "include(GoogleTest)\n\n";
+    tests_cmake << "# Create test executable\n";
+    tests_cmake << "# Convert build type to lowercase for naming\n";
+    tests_cmake << "string(TOLOWER \"${CMAKE_BUILD_TYPE}\" build_type_lower)\n\n";
+    tests_cmake << "set(TEST_EXECUTABLE_NAME "
+                   "${PROJECT_NAME}_${build_type_lower}_tests)\n\n";
+    tests_cmake << "add_executable(${TEST_EXECUTABLE_NAME}\n";
+    tests_cmake << "  test_main.cpp\n";
+    tests_cmake << "  test_example.cpp\n";
+    tests_cmake << ")\n\n";
+    tests_cmake << "target_include_directories(${TEST_EXECUTABLE_NAME} PRIVATE\n";
+    tests_cmake << "  ${CMAKE_SOURCE_DIR}/include\n";
+    tests_cmake << ")\n\n";
+    tests_cmake << "target_link_libraries(${TEST_EXECUTABLE_NAME} PRIVATE\n";
+    tests_cmake << "  ${PROJECT_NAME}\n";
+    tests_cmake << "  gtest_main\n";
+    tests_cmake << "  gmock_main\n";
+    tests_cmake << ")\n\n";
+    tests_cmake << "gtest_discover_tests(${TEST_EXECUTABLE_NAME})\n";
+    tests_cmake.close();
   }
-
-  tests_cmake << "# Tests CMakeLists.txt for " << project_name << "\n\n";
-  tests_cmake << "# Find GoogleTest\n";
-  tests_cmake << "include(FetchContent)\n";
-  tests_cmake << "FetchContent_Declare(\n";
-  tests_cmake << "  googletest\n";
-  tests_cmake << "  GIT_REPOSITORY https://github.com/google/googletest.git\n";
-  tests_cmake << "  GIT_TAG release-1.12.1\n";
-  tests_cmake << ")\n\n";
-  tests_cmake << "# For Windows: Prevent overriding the parent project's "
-                 "compiler/linker settings\n";
-  tests_cmake << "set(gtest_force_shared_crt ON CACHE BOOL \"\" FORCE)\n";
-  tests_cmake << "FetchContent_MakeAvailable(googletest)\n\n";
-  tests_cmake << "# Enable testing\n";
-  tests_cmake << "enable_testing()\n\n";
-  tests_cmake << "# Include GoogleTest\n";
-  tests_cmake << "include(GoogleTest)\n\n";
-  tests_cmake << "# Create test executable\n";
-  tests_cmake << "# Convert build type to lowercase for naming\n";
-  tests_cmake << "string(TOLOWER \"${CMAKE_BUILD_TYPE}\" build_type_lower)\n\n";
-  tests_cmake << "set(TEST_EXECUTABLE_NAME "
-                 "${PROJECT_NAME}_${build_type_lower}_tests)\n\n";
-  tests_cmake << "add_executable(${TEST_EXECUTABLE_NAME}\n";
-  tests_cmake << "  test_main.cpp\n";
-  tests_cmake << "  test_example.cpp\n";
-  tests_cmake << ")\n\n";
-  tests_cmake << "target_include_directories(${TEST_EXECUTABLE_NAME} PRIVATE\n";
-  tests_cmake << "  ${CMAKE_SOURCE_DIR}/include\n";
-  tests_cmake << ")\n\n";
-  tests_cmake << "target_link_libraries(${TEST_EXECUTABLE_NAME} PRIVATE\n";
-  tests_cmake << "  ${PROJECT_NAME}\n";
-  tests_cmake << "  gtest_main\n";
-  tests_cmake << "  gmock_main\n";
-  tests_cmake << ")\n\n";
-  tests_cmake << "gtest_discover_tests(${TEST_EXECUTABLE_NAME})\n";
 
   // Create test_main.cpp
   std::filesystem::path test_main_path = tests_dir / "test_main.cpp";
-  std::ofstream test_main(test_main_path);
 
-  if (!test_main.is_open()) {
-    return false;
+  if (std::filesystem::exists(test_main_path) && !g_force_overwrite) {
+    logger::print_warning("test_main.cpp already exists. Skipping.");
+  } else {
+    if (std::filesystem::exists(test_main_path) && g_force_overwrite) {
+      logger::print_status("Overwriting test_main.cpp file");
+    }
+    std::ofstream test_main(test_main_path);
+    if (!test_main.is_open()) {
+      return false;
+    }
+    test_main << "/**\n";
+    test_main << " * @file test_main.cpp\n";
+    test_main << " * @brief Main test runner for " << project_name << "\n";
+    test_main << " */\n\n";
+    test_main << "#include <gtest/gtest.h>\n\n";
+    test_main << "// Let Google Test handle main\n";
+    test_main << "// This is not strictly necessary with gtest_main linkage\n";
+    test_main << "int main(int argc, char **argv) {\n";
+    test_main << "    ::testing::InitGoogleTest(&argc, argv);\n";
+    test_main << "    return RUN_ALL_TESTS();\n";
+    test_main << "}\n";
+    test_main.close();
   }
-
-  test_main << "/**\n";
-  test_main << " * @file test_main.cpp\n";
-  test_main << " * @brief Main test runner for " << project_name << "\n";
-  test_main << " */\n\n";
-  test_main << "#include <gtest/gtest.h>\n\n";
-  test_main << "// Let Google Test handle main\n";
-  test_main << "// This is not strictly necessary with gtest_main linkage\n";
-  test_main << "int main(int argc, char **argv) {\n";
-  test_main << "    ::testing::InitGoogleTest(&argc, argv);\n";
-  test_main << "    return RUN_ALL_TESTS();\n";
-  test_main << "}\n";
 
   // Create test_example.cpp
   std::filesystem::path test_example_path = tests_dir / "test_example.cpp";
-  std::ofstream test_example(test_example_path);
 
-  if (!test_example.is_open()) {
-    return false;
+  if (std::filesystem::exists(test_example_path) && !g_force_overwrite) {
+    logger::print_warning("test_example.cpp already exists. Skipping.");
+  } else {
+    if (std::filesystem::exists(test_example_path) && g_force_overwrite) {
+      logger::print_status("Overwriting test_example.cpp file");
+    }
+    std::ofstream test_example(test_example_path);
+    if (!test_example.is_open()) {
+      return false;
+    }
+    test_example << "/**\n";
+    test_example << " * @file test_example.cpp\n";
+    test_example << " * @brief Example tests for " << project_name << "\n";
+    test_example << " */\n\n";
+    test_example << "#include <gtest/gtest.h>\n";
+    test_example << "#include \"" << project_name << "/example.hpp\"\n\n";
+    test_example << "// Example test case\n";
+    test_example << "TEST(ExampleTest, GetMessage) {\n";
+    test_example << "    // Arrange\n";
+    test_example << "    const char* message = " << project_name
+                 << "::get_example_message();\n";
+    test_example << "    \n";
+    test_example << "    // Act & Assert\n";
+    test_example << "    EXPECT_NE(message, nullptr);\n";
+    test_example << "    EXPECT_STRNE(message, \"\");\n";
+    test_example << "}\n";
+    test_example.close();
   }
-
-  test_example << "/**\n";
-  test_example << " * @file test_example.cpp\n";
-  test_example << " * @brief Example tests for " << project_name << "\n";
-  test_example << " */\n\n";
-  test_example << "#include <gtest/gtest.h>\n";
-  test_example << "#include \"" << project_name << "/example.hpp\"\n\n";
-  test_example << "// Example test case\n";
-  test_example << "TEST(ExampleTest, GetMessage) {\n";
-  test_example << "    // Arrange\n";
-  test_example << "    const char* message = " << project_name
-               << "::get_example_message();\n";
-  test_example << "    \n";
-  test_example << "    // Act & Assert\n";
-  test_example << "    EXPECT_NE(message, nullptr);\n";
-  test_example << "    EXPECT_STRNE(message, \"\");\n";
-  test_example << "}\n";
 
   return true;
 }
@@ -789,6 +837,14 @@ static bool create_test_files(const std::filesystem::path &project_path,
 static bool create_license_file(const std::filesystem::path &project_path,
                                 const std::string &project_name) {
   std::filesystem::path license_path = project_path / "LICENSE";
+
+  if (std::filesystem::exists(license_path) && !g_force_overwrite) {
+    logger::print_warning("LICENSE already exists. Skipping.");
+    return true;
+  } else if (std::filesystem::exists(license_path) && g_force_overwrite) {
+    logger::print_status("Overwriting LICENSE file");
+  }
+
   std::ofstream license(license_path);
 
   if (!license.is_open()) {
@@ -961,11 +1017,11 @@ generate_workspace_cmakelists(const std::filesystem::path &workspace_dir,
                               const std::string &cpp_standard) {
   std::filesystem::path cmakelists_path = workspace_dir / "CMakeLists.txt";
 
-  if (std::filesystem::exists(cmakelists_path)) {
-    logger::print_warning("Workspace CMakeLists.txt already exists at: " +
-                          cmakelists_path.string());
-    logger::print_warning("Will not overwrite existing file.");
-    return true; // Not an error, just don't overwrite
+  if (std::filesystem::exists(cmakelists_path) && !g_force_overwrite) {
+    logger::print_warning("Workspace-level CMakeLists.txt already exists. Skipping.");
+    return true;
+  } else if (std::filesystem::exists(cmakelists_path) && g_force_overwrite) {
+    logger::print_status("Overwriting workspace-level CMakeLists.txt file");
   }
 
   std::ofstream cmakelists(cmakelists_path);
@@ -1158,8 +1214,13 @@ cforge_int_t cforge_cmd_init(const cforge_context_t *ctx) {
       for (int i = 0; i < ctx->args.arg_count; ++i) {
         std::string arg = ctx->args.args[i];
 
+        // Handle overwrite flag
+        if (arg == "--overwrite") {
+          g_force_overwrite = true;
+          logger::print_status("Overwrite enabled: will overwrite existing files");
+        }
         // Handle --from-file flag
-        if (arg == "--from-file" || arg == "-f") {
+        else if (arg == "--from-file" || arg == "-f") {
           from_file = true;
           logger::print_status("Will use existing workspace.cforge.toml file");
         }
@@ -1459,34 +1520,39 @@ cforge_int_t cforge_cmd_init(const cforge_context_t *ctx) {
       logger::print_status("Adding projects: " + projects_str);
 
       // Create workspace configuration file directly
-      std::ofstream config_file(config_path);
-      if (!config_file.is_open()) {
-        logger::print_error("Failed to create workspace configuration file: " +
-                            config_path.string());
-        return 1;
-      }
+      if (std::filesystem::exists(config_path) && !g_force_overwrite) {
+        logger::print_warning("Workspace configuration file '" + config_path.string() + "' already exists. Skipping creation.");
+      } else {
+        if (std::filesystem::exists(config_path) && g_force_overwrite) {
+          logger::print_status("Overwriting workspace configuration file: " + config_path.string());
+        }
+        std::ofstream config_file(config_path);
+        if (!config_file.is_open()) {
+          logger::print_error("Failed to create workspace configuration file: " + config_path.string());
+          return 1;
+        }
+        // Write a basic TOML configuration
+        config_file << "[workspace]\n";
+        config_file << "name = \"" << workspace_name << "\"\n";
+        config_file << "description = \"A C++ workspace created with cforge\"\n\n";
 
-      // Write a basic TOML configuration
-      config_file << "[workspace]\n";
-      config_file << "name = \"" << workspace_name << "\"\n";
-      config_file << "description = \"A C++ workspace created with cforge\"\n\n";
+        // Write projects as array-of-tables
+        for (size_t i = 0; i < project_names.size(); ++i) {
+          const auto &proj_name = project_names[i];
+          bool is_startup = (i == 0);  // first project marked startup
+          config_file << "[[workspace.project]]\n";
+          config_file << "name    = \"" << proj_name << "\"\n";
+          config_file << "path    = \"" << proj_name << "\"\n";
+          config_file << "startup = " << (is_startup ? "true" : "false") << "\n\n";
+        }
+        // Optionally record main_project fallback
+        if (!project_names.empty()) {
+          config_file << "# main_project = \"" << project_names[0] << "\"\n";
+        }
 
-      // Write projects as array-of-tables
-      for (size_t i = 0; i < project_names.size(); ++i) {
-        const auto &proj_name = project_names[i];
-        bool is_startup = (i == 0);  // first project marked startup
-        config_file << "[[workspace.project]]\n";
-        config_file << "name    = \"" << proj_name << "\"\n";
-        config_file << "path    = \"" << proj_name << "\"\n";
-        config_file << "startup = " << (is_startup ? "true" : "false") << "\n\n";
+        config_file.close();
+        logger::print_success("Created workspace configuration file");
       }
-      // Optionally record main_project fallback
-      if (!project_names.empty()) {
-        config_file << "# main_project = \"" << project_names[0] << "\"\n";
-      }
-
-      config_file.close();
-      logger::print_success("Created workspace configuration file");
 
       // Generate workspace-level CMakeLists.txt
       if (!generate_workspace_cmakelists(workspace_dir, workspace_name,
