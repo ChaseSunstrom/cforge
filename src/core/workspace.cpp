@@ -673,11 +673,27 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
 
     // If CMakeLists.txt exists but external deps present, regenerate
     if (file_exists) {
-        if (!project_config.has_key("dependencies.git") && !project_config.has_key("dependencies.vcpkg")) {
-            if (verbose) {
-                logger::print_verbose("CMakeLists.txt exists and no external deps, using existing file");
+        // Check if no dependencies (external or workspace), then skip regeneration
+        {
+            bool has_git = project_config.has_key("dependencies.git");
+            bool has_vcpkg = project_config.has_key("dependencies.vcpkg");
+            // Detect workspace project dependencies
+            auto all_deps = project_config.get_table_keys("dependencies");
+            // Filter out non-project deps
+            all_deps.erase(std::remove_if(all_deps.begin(), all_deps.end(),
+                [&](const std::string &k) {
+                    if (k == project_config.get_string("dependencies.directory", "")) return true;
+                    if (k == "git" || k == "vcpkg") return true;
+                    if (project_config.has_key(std::string("dependencies.") + k + ".url")) return true;
+                    return false;
+                }), all_deps.end());
+            bool has_workspace_deps = !all_deps.empty();
+            if (!has_git && !has_vcpkg && !has_workspace_deps) {
+                if (verbose) {
+                    logger::print_verbose("CMakeLists.txt exists and no dependencies, using existing file");
+                }
+                return true;
             }
-            return true;
         }
         logger::print_status("Dependencies detected, regenerating CMakeLists.txt from cforge.toml");
     }
@@ -865,26 +881,33 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
     }
 
     // Handle workspace project dependencies includes
-    if (project_config.has_key("dependencies.project")) {
-      cmakelists << "# Workspace project include dependencies\n";
-      auto deps = project_config.get_table_keys("dependencies.project");
-      for (const auto &dep : deps) {
-        // Check for custom include dirs override
-        std::string dirs_key = "dependencies.project." + dep + ".include_dirs";
-        if (project_config.has_key(dirs_key)) {
-          auto inc_dirs = project_config.get_string_array(dirs_key);
-          for (const auto &inc_dir : inc_dirs) {
-            cmakelists << "target_include_directories(${PROJECT_NAME} PUBLIC \"${CMAKE_CURRENT_SOURCE_DIR}/../" << dep << "/" << inc_dir << "\")\n";
-          }
-        } else {
-          // Fallback to include flag and default include path
-          bool inc = project_config.get_bool("dependencies.project." + dep + ".include", true);
-          if (inc) {
+    {
+      // Collect all keys under [dependencies]
+      std::vector<std::string> deps = project_config.get_table_keys("dependencies");
+      // Filter out directory setting, git/vcpkg groups, and Git deps (those with a .url)
+      deps.erase(std::remove_if(deps.begin(), deps.end(),
+        [&](const std::string &k) {
+          if (k == project_config.get_string("dependencies.directory", "")) return true;
+          if (k == "git" || k == "vcpkg") return true;
+          if (project_config.has_key("dependencies." + k + ".url")) return true;
+          return false;
+        }), deps.end());
+      if (!deps.empty()) {
+        cmakelists << "# Workspace project include dependencies\n";
+        for (const auto &dep : deps) {
+          std::string dirs_key = "dependencies." + dep + ".include_dirs";
+          if (project_config.has_key(dirs_key)) {
+            auto inc_dirs = project_config.get_string_array(dirs_key);
+            for (const auto &inc_dir : inc_dirs) {
+              cmakelists << "target_include_directories(${PROJECT_NAME} PUBLIC \"${CMAKE_CURRENT_SOURCE_DIR}/../" << dep << "/" << inc_dir << "\")\n";
+            }
+          } else {
+            // Default to include/<dep>/include
             cmakelists << "target_include_directories(${PROJECT_NAME} PUBLIC \"${CMAKE_CURRENT_SOURCE_DIR}/../" << dep << "/include\")\n";
           }
         }
+        cmakelists << "\n";
       }
-      cmakelists << "\n";
     }
 
     // Add additional include directories
@@ -1000,14 +1023,25 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
     }
 
     // Handle workspace project dependencies linking
-    if (project_config.has_key("dependencies.project")) {
-      auto deps = project_config.get_table_keys("dependencies.project");
-      for (const auto &dep : deps) {
-        bool link = project_config.get_bool("dependencies.project." + dep + ".link", true);
-        if (link) {
-          std::string target_name = project_config.get_string("dependencies.project." + dep + ".target_name", dep);
+    {
+      std::vector<std::string> deps = project_config.get_table_keys("dependencies");
+      // Filter out non-project entries
+      deps.erase(std::remove_if(deps.begin(), deps.end(),
+        [&](const std::string &k) {
+          if (k == project_config.get_string("dependencies.directory", "")) return true;
+          if (k == "git" || k == "vcpkg") return true;
+          if (project_config.has_key("dependencies." + k + ".url")) return true;
+          return false;
+        }), deps.end());
+      if (!deps.empty()) {
+        cmakelists << "# Workspace project linking dependencies\n";
+        for (const auto &dep : deps) {
+          bool link_dep = project_config.get_bool(std::string("dependencies.") + dep + ".link", true);
+          if (!link_dep) continue;
+          std::string target_name = project_config.get_string("dependencies." + dep + ".target_name", dep);
           cmakelists << "    " << target_name << "\n";
         }
+        cmakelists << "\n";
       }
     }
 
@@ -1214,6 +1248,24 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
         }
         cmakelists << ")\n\n";
       }
+    }
+
+    // Add build-order dependencies for workspace project dependencies
+    {
+      auto deps = project_config.get_table_keys("dependencies");
+      // Filter out non-project entries
+      deps.erase(std::remove_if(deps.begin(), deps.end(),
+        [&](const std::string &k) {
+          if (k == project_config.get_string("dependencies.directory", "")) return true;
+          if (k == "git" || k == "vcpkg") return true;
+          if (project_config.has_key("dependencies." + k + ".url")) return true;
+          return false;
+        }), deps.end());
+      // Ensure build order even if not linking
+      for (const auto &dep : deps) {
+        cmakelists << "add_dependencies(${PROJECT_NAME} " << dep << ")\n";
+      }
+      if (!deps.empty()) cmakelists << "\n";
     }
 
     return true;

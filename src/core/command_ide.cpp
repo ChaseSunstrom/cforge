@@ -196,11 +196,13 @@ static std::string generate_uuid() {
     std::uniform_int_distribution<uint32_t> dist(0, 0xFFFFFFFF);
     auto r = [&]() { return dist(gen); };
     std::ostringstream oss;
-    oss << std::uppercase << std::hex << std::setw(8) << std::setfill('0') << r() << "-"
+    oss << std::uppercase << std::hex
+        << std::setw(8) << std::setfill('0') << r() << "-"
         << std::setw(4) << ((r() >> 16) & 0xFFFF) << "-"
         << std::setw(4) << (((r() >> 16) & 0x0FFF) | 0x4000) << "-"
         << std::setw(4) << (((r() >> 16) & 0x3FFF) | 0x8000) << "-"
-        << std::setw(12) << (((uint64_t)r() << 32) | r());
+        << std::setw(12)
+           << ((((uint64_t)r() << 32) | r()) & 0x0000FFFFFFFFFFFFULL);
     return oss.str();
 }
 
@@ -293,12 +295,20 @@ static bool write_vcxproj(const std::filesystem::path &proj_dir,
         // Include directories
         auto incs = cfg.get_string_array("build.include_dirs");
         if (incs.empty()) incs = {"include"};
-        // Include directories from Git dependencies
-        if (cfg.has_key("dependencies.git")) {
-            auto git_deps = cfg.get_table_keys("dependencies.git");
-            std::string deps_dir = cfg.get_string("dependencies.directory", "deps");
-            for (auto &dep : git_deps) {
-                incs.push_back(deps_dir + "/" + dep + "/include");
+        // Include directories from workspace project dependencies
+        if (cfg.has_key("dependencies")) {
+            auto deps = cfg.get_table_keys("dependencies");
+            deps.erase(std::remove_if(deps.begin(), deps.end(),
+                [&](const std::string &k) {
+                    if (k == cfg.get_string("dependencies.directory", "")) return true;
+                    if (k == "git" || k == "vcpkg") return true;
+                    if (cfg.has_key("dependencies." + k + ".url")) return true;
+                    return false;
+                }), deps.end());
+            for (const auto &dep : deps) {
+                bool inc = cfg.get_bool("dependencies." + dep + ".include", true);
+                if (!inc) continue;
+                incs.push_back(std::string("../") + dep + "/include");
             }
         }
         std::ostringstream incoss;
@@ -332,12 +342,20 @@ static bool write_vcxproj(const std::filesystem::path &proj_dir,
     {
         auto incs = cfg.get_string_array("build.include_dirs");
         if (incs.empty()) incs = {"include"};
-        // Include directories from Git dependencies
-        if (cfg.has_key("dependencies.git")) {
-            auto git_deps = cfg.get_table_keys("dependencies.git");
-            std::string deps_dir = cfg.get_string("dependencies.directory", "deps");
-            for (auto &dep : git_deps) {
-                incs.push_back(deps_dir + "/" + dep + "/include");
+        // Include directories from workspace project dependencies
+        if (cfg.has_key("dependencies")) {
+            auto deps = cfg.get_table_keys("dependencies");
+            deps.erase(std::remove_if(deps.begin(), deps.end(),
+                [&](const std::string &k) {
+                    if (k == cfg.get_string("dependencies.directory", "")) return true;
+                    if (k == "git" || k == "vcpkg") return true;
+                    if (cfg.has_key("dependencies." + k + ".url")) return true;
+                    return false;
+                }), deps.end());
+            for (const auto &dep : deps) {
+                bool inc = cfg.get_bool("dependencies." + dep + ".include", true);
+                if (!inc) continue;
+                incs.push_back(std::string("../") + dep + "/include");
             }
         }
         std::ostringstream incoss;
@@ -469,11 +487,22 @@ static bool write_sln(const std::filesystem::path &workspace_dir,
     for (auto &proj : ws.get_projects()) {
         const std::string &name = proj.name;
         std::string guid = project_guids.at(name);
-        auto proj_file = out_dir / (name + ".vcxproj");
+        auto proj_file = workspace_dir / proj.path / (name + ".vcxproj");
         auto rel_proj = std::filesystem::relative(proj_file, workspace_dir);
         sln << "Project(\"{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}\") = \"" << name
             << "\", \"" << rel_proj.string() << "\", \"{" << guid << "}\"\n"
             << "EndProject\n";
+    }
+    // Set the solution startup project based on workspace.toml's startup flag
+    {
+        auto sp = ws.get_startup_project();
+        if (!sp.name.empty()) {
+            sln << "Global\n";
+            sln << "    GlobalSection(ExtensibilityGlobals) = postSolution\n";
+            sln << "        StartupProject = " << sp.name << "\n";
+            sln << "    EndGlobalSection\n";
+            sln << "EndGlobal\n";
+        }
     }
     return true;
 }
@@ -492,7 +521,7 @@ static bool generate_vs_workspace_solution(const std::filesystem::path &workspac
         logger::print_error("Failed to parse workspace at " + workspace_dir.string());
         return false;
     }
-    std::filesystem::path out_dir = workspace_dir / "build" / "ide" / "vs";
+    std::filesystem::path out_dir = workspace_dir;
     std::map<std::string,std::string> project_guids;
     for (auto &proj : ws.get_projects()) {
         std::string guid = generate_uuid();
@@ -503,15 +532,62 @@ static bool generate_vs_workspace_solution(const std::filesystem::path &workspac
             logger::print_error("Failed to load " + proj_toml.string());
             return false;
         }
-        if (!write_vcxproj(workspace_dir / proj.path, proj_cfg, out_dir, guid, verbose)) {
+        // Write each project into its own directory
+        std::filesystem::path proj_out_dir = workspace_dir / proj.path;
+        if (!write_vcxproj(workspace_dir / proj.path, proj_cfg, proj_out_dir, guid, verbose)) {
             return false;
         }
     }
     if (!write_sln(workspace_dir, ws, project_guids, out_dir, verbose)) {
         return false;
     }
+    // Add inter-project references for workspace dependencies
+    for (auto &proj : ws.get_projects()) {
+        // Skip if no dependencies
+        if (proj.dependencies.empty()) continue;
+        // Path to this project's vcxproj
+        std::filesystem::path proj_file = workspace_dir / proj.path / (proj.name + ".vcxproj");
+        // Read file into lines
+        std::vector<std::string> lines;
+        std::ifstream in(proj_file);
+        if (!in) continue;
+        std::string line;
+        while (std::getline(in, line)) lines.push_back(line);
+        in.close();
+        // Find insertion point
+        int insert_idx = -1;
+        for (int i = 0; i < (int)lines.size(); ++i) {
+            if (lines[i].find("<Import Project=\"$(VCTargetsPath)\\Microsoft.Cpp.targets\"") != std::string::npos) {
+                insert_idx = i;
+                break;
+            }
+        }
+        if (insert_idx < 0) continue;
+        // Build reference block
+        std::vector<std::string> ref_block;
+        ref_block.push_back("  <ItemGroup>");
+        for (auto &dep : proj.dependencies) {
+            auto it = project_guids.find(dep);
+            if (it == project_guids.end()) continue;
+            // Reference to dependent project in sibling folder
+            std::filesystem::path ref_path = std::filesystem::path("..") / dep / (dep + ".vcxproj");
+            std::string dep_proj = ref_path.generic_string();
+            ref_block.push_back("    <ProjectReference Include=\"" + dep_proj + "\">");
+            ref_block.push_back("      <Project>{" + it->second + "}</Project>");
+            ref_block.push_back("      <ReferenceOutputAssembly>true</ReferenceOutputAssembly>");
+            ref_block.push_back("      <LinkLibraryDependencies>true</LinkLibraryDependencies>");
+            ref_block.push_back("      <UseLibraryDependencyInputs>false</UseLibraryDependencyInputs>");
+            ref_block.push_back("    </ProjectReference>");
+        }
+        ref_block.push_back("  </ItemGroup>");
+        // Insert block before MSBuild targets import
+        lines.insert(lines.begin() + insert_idx, ref_block.begin(), ref_block.end());
+        // Write back
+        std::ofstream out(proj_file);
+        for (auto &l : lines) out << l << '\n';
+    }
     logger::print_success("Visual Studio solution and project files generated successfully");
-    logger::print_status("Open " + (workspace_dir / "build/ide/vs").string() + "/" + ws.get_name() + ".sln to start working");
+    logger::print_status("Open " + (workspace_dir / (ws.get_name() + ".sln")).string() + " to start working");
     return true;
 }
 
@@ -541,7 +617,7 @@ static bool write_sln_single(const std::filesystem::path &out_dir,
 static bool generate_vs_project_direct(const std::filesystem::path &project_dir,
                                        const toml_reader &cfg,
                                        bool verbose) {
-    std::filesystem::path out_dir = project_dir / "build" / "ide" / "vs";
+    std::filesystem::path out_dir = project_dir;
     std::string name = cfg.get_string("project.name", project_dir.filename().string());
     std::string guid = generate_uuid();
     if (!write_vcxproj(project_dir, cfg, out_dir, guid, verbose)) {
@@ -565,6 +641,33 @@ cforge_int_t cforge_cmd_ide(const cforge_context_t *ctx) {
   // Determine project directory
   std::filesystem::path project_dir = ctx->working_dir;
 
+  // Determine verbosity
+  bool verbose = logger::get_verbosity() == log_verbosity::VERBOSITY_VERBOSE;
+  // Get IDE type from arguments
+  std::string ide_type;
+  if (ctx->args.args && ctx->args.args[0]) {
+    ide_type = ctx->args.args[0];
+  }
+  // If IDE type is not specified, detect based on platform
+  if (ide_type.empty()) {
+#ifdef _WIN32
+    ide_type = "vs";
+#elif defined(__APPLE__)
+    ide_type = "xcode";
+#else
+    ide_type = "codeblocks";
+#endif
+  }
+  // Workspace mode: bypass CMake and generate VS solution
+  if (ctx->is_workspace) {
+    if (ide_type != "" && ide_type != "vs" && ide_type != "visual-studio") {
+      logger::print_error("Workspace IDE only supports Visual Studio (vs)");
+      return 1;
+    }
+    return generate_vs_workspace_solution(project_dir, verbose) ? 0 : 1;
+  }
+
+  // Project mode: verify cforge.toml exists
   // Check if cforge.toml exists
   std::filesystem::path config_path = project_dir / CFORGE_FILE;
   if (!std::filesystem::exists(config_path)) {
@@ -584,35 +687,6 @@ cforge_int_t cforge_cmd_ide(const cforge_context_t *ctx) {
   std::string build_dir_name =
       project_config.get_string("build.build_dir", "build");
   std::filesystem::path build_dir = project_dir / build_dir_name / "ide";
-
-  // Determine verbosity
-  bool verbose = logger::get_verbosity() == log_verbosity::VERBOSITY_VERBOSE;
-
-  // Get IDE type from arguments
-  std::string ide_type;
-  if (ctx->args.args && ctx->args.args[0]) {
-    ide_type = ctx->args.args[0];
-  }
-
-  // If IDE type is not specified, detect based on platform
-  if (ide_type.empty()) {
-#ifdef _WIN32
-    ide_type = "vs";
-#elif defined(__APPLE__)
-    ide_type = "xcode";
-#else
-    ide_type = "codeblocks";
-#endif
-  }
-
-  // Workspace mode: bypass CMake and generate VS solution
-  if (ctx->is_workspace) {
-    if (ide_type != "" && ide_type != "vs" && ide_type != "visual-studio") {
-      logger::print_error("Workspace IDE only supports Visual Studio (vs)");
-      return 1;
-    }
-    return generate_vs_workspace_solution(project_dir, verbose) ? 0 : 1;
-  }
 
   // Generate project files based on IDE type
   bool success = false;
