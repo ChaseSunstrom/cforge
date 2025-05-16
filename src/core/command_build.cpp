@@ -1114,6 +1114,9 @@ cforge_int_t cforge_cmd_build(const cforge_context_t *ctx) {
 
     if (arg == "--skip-deps" || arg == "--no-deps") {
       skip_deps = true;
+    } else if (arg == "--no-warnings") {
+      g_suppress_warnings = true;
+      logger::print_status("Suppressing build warnings (--no-warnings flag)");
     } else if (arg == "-c" || arg == "--config") {
       if (i + 1 < ctx->args.arg_count) {
         config_name = ctx->args.args[i + 1];

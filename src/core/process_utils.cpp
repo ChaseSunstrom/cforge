@@ -17,6 +17,9 @@
 
 namespace cforge {
 
+// Global flag to suppress build warnings
+bool g_suppress_warnings = false;
+
 #ifdef _WIN32
 // Windows-specific implementation
 process_result
@@ -515,6 +518,29 @@ bool execute_tool(const std::string &command,
     }
     if (!result.stderr_output.empty()) {
       logger::print_verbose("Tool errors:\n" + result.stderr_output);
+    }
+  }
+
+  // Always show warnings for build tools in non-verbose mode unless suppressed
+  else if (is_build_tool && result.success && !g_suppress_warnings) {
+    // Parse stderr for warnings
+    std::istringstream warn_stream(result.stderr_output);
+    std::string warn_line;
+    while (std::getline(warn_stream, warn_line)) {
+      if (!warn_line.empty() &&
+          (warn_line.find("warning") != std::string::npos ||
+           warn_line.find("Warning") != std::string::npos)) {
+        logger::print_warning(warn_line);
+      }
+    }
+    // Parse stdout for warnings
+    std::istringstream warn_stream_out(result.stdout_output);
+    while (std::getline(warn_stream_out, warn_line)) {
+      if (!warn_line.empty() &&
+          (warn_line.find("warning") != std::string::npos ||
+           warn_line.find("Warning") != std::string::npos)) {
+        logger::print_warning(warn_line);
+      }
     }
   }
 

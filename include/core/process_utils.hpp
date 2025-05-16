@@ -108,4 +108,7 @@ uppercase_generators(const std::vector<std::string> &generators);
 std::string join_strings(const std::vector<std::string> &strings,
                                 const std::string &delimiter);
 
+// Global flag to suppress build warnings
+extern bool g_suppress_warnings;
+
 } // namespace cforge
