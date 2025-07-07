@@ -14,6 +14,57 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+# Auto-install missing tools
+Write-Host "Checking for required tools and installing if missing..."
+# Git
+if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+    Write-Host "git not found. Attempting to install..."
+    if (Get-Command choco -ErrorAction SilentlyContinue) {
+        choco install git --yes
+    } elseif (Get-Command winget -ErrorAction SilentlyContinue) {
+        winget install --id Git.Git -e --source winget --silent
+    } else {
+        Write-Error "git installation not supported automatically. Please install git manually."
+        exit 1
+    }
+}
+# CMake
+if (-not (Get-Command cmake -ErrorAction SilentlyContinue)) {
+    Write-Host "CMake not found. Attempting to install..."
+    if (Get-Command choco -ErrorAction SilentlyContinue) {
+        choco install cmake --yes
+    } elseif (Get-Command winget -ErrorAction SilentlyContinue) {
+        winget install --id Kitware.CMake -e --source winget --silent
+    } else {
+        Write-Error "CMake installation not supported automatically. Please install CMake manually."
+        exit 1
+    }
+}
+# C++ Compiler
+if (-not (Get-Command cl -ErrorAction SilentlyContinue) -and -not (Get-Command g++ -ErrorAction SilentlyContinue)) {
+    Write-Host "C++ compiler not found. Attempting to install Visual Studio Build Tools or GCC..."
+    if (Get-Command choco -ErrorAction SilentlyContinue) {
+        choco install visualstudio2019buildtools --yes --package-parameters '--add Microsoft.VisualStudio.Workload.VCTools'
+    } elseif (Get-Command winget -ErrorAction SilentlyContinue) {
+        winget install --id Microsoft.VisualStudio.2019.BuildTools -e --source winget --silent
+    } else {
+        Write-Error "C++ compiler installation not supported automatically. Please install a compiler manually."
+        exit 1
+    }
+}
+# Ninja
+if (-not (Get-Command ninja -ErrorAction SilentlyContinue)) {
+    Write-Host "Ninja not found. Attempting to install..."
+    if (Get-Command choco -ErrorAction SilentlyContinue) {
+        choco install ninja --yes
+    } elseif (Get-Command winget -ErrorAction SilentlyContinue) {
+        winget install --id ninja-build.ninja -e --source winget --silent
+    } else {
+        Write-Error "Ninja installation not supported automatically. Please install Ninja manually."
+        exit 1
+    }
+}
+
 # Determine script and project root directories
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
 $ProjectRoot = Resolve-Path "$ScriptDir\.."

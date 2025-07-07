@@ -2237,4 +2237,27 @@ std::vector<workspace_project> &workspace_config::get_projects() {
   return projects_;
 }
 
+
+std::vector<std::string> workspace::get_build_order() const {
+  std::vector<std::string> build_order;
+  std::set<std::string> visited;
+  std::function<void(const std::string&)> visit = [&](const std::string &project_name) {
+      if (visited.count(project_name)) return;
+      visited.insert(project_name);
+      for (const auto &project : projects_) {
+          if (project.name == project_name) {
+              for (const auto &dep : project.dependencies) {
+                  visit(dep);
+              }
+              break;
+          }
+      }
+      build_order.push_back(project_name);
+  };
+  for (const auto &project : projects_) {
+      visit(project.name);
+  }
+  return build_order;
+}
+
 } // namespace cforge

@@ -188,6 +188,12 @@ public:
   std::filesystem::path get_path() const;
   std::vector<workspace_project> get_projects() const;
 
+  /**
+   * @brief Get the build order of projects based on their dependencies
+   * @return Vector of project names in topologically sorted order
+   */
+  std::vector<std::string> get_build_order() const;
+
   workspace_project get_startup_project() const;
   bool set_startup_project(const std::string &project_name);
 

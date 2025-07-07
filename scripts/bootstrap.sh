@@ -1,6 +1,65 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Auto-install missing tools
+echo "Checking for required tools and installing if missing..."
+# Git
+if ! command -v git >/dev/null 2>&1; then
+  echo "git not found. Attempting to install..."
+  if command -v apt-get >/dev/null 2>&1; then
+    sudo apt-get update && sudo apt-get install -y git
+  elif command -v yum >/dev/null 2>&1; then
+    sudo yum install -y git
+  elif command -v brew >/dev/null 2>&1; then
+    brew install git
+  else
+    echo "Please install git manually" >&2
+    exit 1
+  fi
+fi
+# CMake
+if ! command -v cmake >/dev/null 2>&1; then
+  echo "cmake not found. Attempting to install..."
+  if command -v apt-get >/dev/null 2>&1; then
+    sudo apt-get update && sudo apt-get install -y cmake
+  elif command -v yum >/dev/null 2>&1; then
+    sudo yum install -y cmake
+  elif command -v brew >/dev/null 2>&1; then
+    brew install cmake
+  else
+    echo "Please install cmake manually" >&2
+    exit 1
+  fi
+fi
+# C++ compiler
+if ! command -v g++ >/dev/null 2>&1 && ! command -v clang++ >/dev/null 2>&1; then
+  echo "C++ compiler not found. Attempting to install build-essential or gcc..."
+  if command -v apt-get >/dev/null 2>&1; then
+    sudo apt-get update && sudo apt-get install -y build-essential
+  elif command -v yum >/dev/null 2>&1; then
+    sudo yum groupinstall -y 'Development Tools'
+  elif command -v brew >/dev/null 2>&1; then
+    brew install gcc
+  else
+    echo "Please install a C++ compiler manually" >&2
+    exit 1
+  fi
+fi
+# Ninja
+if ! command -v ninja >/dev/null 2>&1; then
+  echo "ninja not found. Attempting to install..."
+  if command -v apt-get >/dev/null 2>&1; then
+    sudo apt-get update && sudo apt-get install -y ninja-build
+  elif command -v yum >/dev/null 2>&1; then
+    sudo yum install -y ninja-build
+  elif command -v brew >/dev/null 2>&1; then
+    brew install ninja
+  else
+    echo "Please install ninja manually" >&2
+    exit 1
+  fi
+fi
+
 # Determine script and project root directories
 dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/.."
 cd "$dir"

@@ -443,6 +443,7 @@ static bool create_cforge_toml(const std::filesystem::path &project_path,
   config << "version = \"0.1.0\"\n";
   config << "description = \"A C++ project created with cforge\"\n";
   config << "cpp_standard = \"" << cpp_version << "\"\n";
+  config << "c_standard = \"11\"\n";
 
   if (g_template_name == "executable" || g_template_name == "app" || g_template_name == "application") {
     config << "binary_type = \"executable\"  # executable, shared_lib, "
@@ -509,6 +510,7 @@ static bool create_cforge_toml(const std::filesystem::path &project_path,
   config << "vendor = \"Your Organization\"\n";
   config << "contact = \"Your Name <your.email@example.com>\"\n\n";
 
+  // Dependencies section
   config << "# Dependencies section\n";
   config << "# [dependencies]\n\n";
 

@@ -184,7 +184,7 @@ Hello from hi2!
 | Command      | Description                         | Example                            |
 |--------------|-------------------------------------|------------------------------------|
 | `init`       | Create a new project or workspace (supports `--template`, `--workspace`, `--projects`) | `cforge init --template lib`       |
-| `build`      | Build the project                   | `cforge build --config Release`    |
+| `build`      | Build the project (supports cross-compilation with `--target`) | `cforge build --config Release --target android-arm64` |
 | `clean`      | Clean build artifacts               | `cforge clean`                     |
 | `run`        | Run built executable                | `cforge run -- arg1 arg2`          |
 | `test`       | Build and run unit tests (supports config, category & test filters) | `cforge test -c Release Math Add` |
@@ -194,7 +194,7 @@ Hello from hi2!
 | `startup`    | Manage workspace startup project    | `cforge startup my_app`            |
 | `ide`        | Generate IDE project files          | `cforge ide vscode`                |
 | `package`    | Package project binaries            | `cforge package --type zip`        |
-| `list`       | List variants, configs, or targets  | `cforge list variants`             |
+| `list`       | List configurations, projects, or build-order | `cforge list build-order`             |
 
 ### Command Options
 
@@ -244,6 +244,7 @@ name = "cforge"
 version = "2.0.0"
 description = "A C/C++ build tool with dependency management"
 cpp_standard = "17"
+c_standard = "11"
 binary_type = "executable" # executable, shared_library, static_library, header_only
 authors = ["Chase Sunstrom <casunstrom@gmail.com>"]
 homepage = "https://github.com/ChaseSunstrom/cforge"
@@ -274,6 +275,20 @@ vendor = "Chase Sunstrom"
 contact = "Chase Sunstrom <casunstrom@gmail.com>"
 ```
 
+### CMake Overrides
+
+Specify generator, platform, toolset, and explicit compilers:
+```toml
+[cmake]
+generator    = "Ninja"                  # CMake generator
+platform     = "x64"                    # CMake platform for Visual Studio
+toolset      = "ClangCl"                # CMake toolset (Visual Studio or Ninja)
+c_compiler   = "/usr/bin/gcc-10"        # C compiler
+cxx_compiler = "/usr/bin/g++-10"        # C++ compiler
+c_standard   = "11"                      # C standard for C projects (e.g., 11, 17, 23)
+cxx_standard = "17"                      # C++ standard override (e.g., 11, 14, 17, 20)
+```
+
 ### Platform-specific Configuration
 
 ```toml
@@ -301,29 +316,16 @@ CForge supports multiple dependency management systems:
 ```toml
 [dependencies.vcpkg]
 enabled = true
-path = "~/.vcpkg"  # Optional, defaults to ~/.vcpkg
+path = "~/.vcpkg"          # Optional: directory of vcpkg installation (defaults to VCPKG_ROOT or ./vcpkg)
+triplet = "x64-windows"    # Optional: specify vcpkg target triplet
 packages = ["fmt", "boost", "nlohmann-json"]
 ```
 
-Example C++ code using vcpkg dependencies:
+CMake is automatically configured to use the vcpkg toolchain file from the specified `path` or environment variable `VCPKG_ROOT`, and will pass the `VCPKG_TARGET_TRIPLET` when provided.
 
-```cpp
-#include <fmt/core.h>
-#include <nlohmann/json.hpp>
-
-int main() {
-    // Using fmt library from vcpkg
-    fmt::print("Hello, {}!\n", "world");
-    
-    // Using nlohmann/json library from vcpkg
-    nlohmann::json j = {
-        {"name", "CForge"},
-        {"version", "1.2.0"}
-    };
-    
-    fmt::print("JSON: {}\n", j.dump(2));
-    return 0;
-}
+```bash
+# Build with vcpkg integration
+cforge build --config Release
 ```
 
 ### Git Dependencies
@@ -386,6 +388,23 @@ int main() {
 system = ["X11", "pthread", "dl"]
 ```
 
+### 🗂️ Project-to-Project Dependencies (Workspaces)
+
+In a workspace, you can declare dependencies on other projects in the same workspace:
+
+```toml
+[dependencies.project.MyLib]
+include_dirs = ["include"]   # Relative to MyLib directory
+link = true                    # Link the MyLib target
+link_type = "PRIVATE"        # PUBLIC, PRIVATE, or INTERFACE
+target_name = "MyLib"        # Optional CMake target name (defaults to project name)
+```
+
+cforge will automatically add the appropriate `include_directories` and
+`target_link_libraries` entries when generating each project's CMakeLists.txt.
+
+Run `cforge list graph` to visualize project dependencies in your workspace.
+
 ---
 
 ## 🗂️ Workspaces
@@ -419,32 +438,36 @@ cforge build projects/gui
 cforge run projects/gui
 ```
 
++```bash
++# List workspace projects
++cforge list projects
++
++# Show workspace build order
++cforge list build-order
++```
+
 ---
 
 ## 🌐 Cross-Compilation
 
-CForge supports cross-compilation for various platforms:
+CForge supports cross-compilation by specifying toolchain and system settings in `cforge.toml` under `[build.cross]`:
 
 ```toml
-[cross_compile]
-enabled = true
-target = "android-arm64"
-sysroot = "$ANDROID_NDK/platforms/android-24/arch-arm64"
-cmake_toolchain_file = "$ANDROID_NDK/build/cmake/android.toolchain.cmake"
-flags = ["-DANDROID_ABI=arm64-v8a", "-DANDROID_PLATFORM=android-24"]
+[build.cross]
+toolchain_file = "/path/to/toolchain.cmake"      # CMake toolchain file
+system_name = "Android"                          # CMAKE_SYSTEM_NAME
+system_processor = "arm64"                       # CMAKE_SYSTEM_PROCESSOR
+c_compiler = "aarch64-linux-android21-clang"     # CMAKE_C_COMPILER
+cxx_compiler = "aarch64-linux-android21-clang++" # CMAKE_CXX_COMPILER
 ```
 
-Cross-compilation targets:
-- `android-arm64`: Android ARM64 platform
-- `android-arm`: Android ARM platform
-- `ios`: iOS ARM64 platform
-- `raspberry-pi`: Raspberry Pi ARM platform
-- `wasm`: WebAssembly via Emscripten
+You can invoke cross compilation via the `--target` option to the `build` command:
 
-Example:
 ```bash
 cforge build --target android-arm64
 ```
+
+Currently supported platforms include Android, iOS, Raspberry Pi, and WebAssembly.
 
 ---
 

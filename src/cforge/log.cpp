@@ -32,31 +32,47 @@ void logger::print_header(const std::string &message) {
 void logger::print_status(const std::string &message) {
   if (s_verbosity == log_verbosity::VERBOSITY_QUIET)
     return;
-  fmt::print(fg(fmt::color::blue), "→ {}\n", message);
+  // Prefix with caret and INFO status
+  fmt::print(fg(fmt::color::white), "> ");
+  fmt::print(fg(fmt::color::white), "{} ", message);
+  fmt::print(fg(fmt::color::blue), "[INFO]\n");
 }
 
 void logger::print_success(const std::string &message) {
   if (s_verbosity == log_verbosity::VERBOSITY_QUIET)
     return;
-  fmt::print(fg(fmt::color::green), "✓ {}\n", message);
+  // Prefix with caret and OK status
+  fmt::print(fg(fmt::color::white), "> ");
+  fmt::print(fg(fmt::color::white), "{} ", message);
+  fmt::print(fg(fmt::color::green), "[OK]\n");
 }
 
 void logger::print_plain(const std::string &message) {
-  fmt::print("{}\n", message);
+  // Prefix with caret
+  fmt::print(fg(fmt::color::white), "> {}\n", message);
 }
 
 void logger::print_warning(const std::string &message) {
-  fmt::print(fg(fmt::color::yellow), "⚠ {}\n", message);
+  // Prefix with caret and WARNING status
+  fmt::print(fg(fmt::color::white), "> ");
+  fmt::print(fg(fmt::color::white), "{} ", message);
+  fmt::print(fg(fmt::color::yellow), "[WARNING]\n");
 }
 
 void logger::print_error(const std::string &message) {
-  fmt::print(stderr, fg(fmt::color::red), "✗ {}\n", message);
+  // Prefix with caret and FAILURE status
+  fmt::print(stderr, fg(fmt::color::white), "> ");
+  fmt::print(stderr, fg(fmt::color::white), "{} ", message);
+  fmt::print(stderr, fg(fmt::color::red), "[FAILURE]\n");
 }
 
 void logger::print_step(const std::string &action, const std::string &target) {
   if (s_verbosity == log_verbosity::VERBOSITY_QUIET)
     return;
-  fmt::print("  • {} {}\n", action, target);
+  // Prefix with caret and STEP status
+  fmt::print(fg(fmt::color::white), "> ");
+  fmt::print(fg(fmt::color::white), "{} {} ", action, target);
+  fmt::print(fg(fmt::color::blue), "[STEP]\n");
 }
 
 void logger::print_verbose(const std::string &message) {
@@ -64,14 +80,20 @@ void logger::print_verbose(const std::string &message) {
   if (message.find("error") != std::string::npos ||
       message.find("Error") != std::string::npos ||
       message.find("ERROR") != std::string::npos) {
-    fmt::print(fg(fmt::color::red), "  {} {}\n", "⚠", message);
+    // Prefix with caret and FAILURE status for error in verbose
+    fmt::print(stderr, fg(fmt::color::white), "> ");
+    fmt::print(stderr, fg(fmt::color::white), "{} ", message);
+    fmt::print(stderr, fg(fmt::color::red), "[FAILURE]\n");
     return;
   }
 
   // Only print non-error messages in verbose mode
   if (s_verbosity != log_verbosity::VERBOSITY_VERBOSE)
     return;
-  fmt::print(fg(fmt::color::gray), "  {} {}\n", "▶", message);
+  // Prefix with caret and VERBOSE status
+  fmt::print(fg(fmt::color::white), "> ");
+  fmt::print(fg(fmt::color::white), "{} ", message);
+  fmt::print(fg(fmt::color::gray), "[VERBOSE]\n");
 }
 
 void logger::print_lines(const std::vector<std::string> &messages) {

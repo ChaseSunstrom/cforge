@@ -15,6 +15,7 @@
 #include <map>
 #include <string>
 #include <vector>
+#include <algorithm>
 
 using namespace cforge;
 
@@ -145,7 +146,24 @@ cforge_int_t cforge_cmd_list(const cforge_context_t *ctx) {
       }
       std::cout << "Workspace projects:\n";
       for (const auto &proj : ws.get_projects()) {
-        std::cout << "  - " << proj.name << " (" << proj.path.string() << ")\n";
+        std::cout << "  - " << proj.name;
+        if (proj.is_startup_project) std::cout << " (startup)";
+        std::cout << " (" << proj.path.string() << ")\n";
+      }
+      std::cout << "\n";
+    } else if (category == "order" || category == "build-order") {
+      if (!ctx->is_workspace) {
+        logger::print_error("Not in a workspace");
+        return 1;
+      }
+      workspace ws;
+      if (!ws.load(ctx->working_dir)) {
+        logger::print_error("Failed to load workspace configuration");
+        return 1;
+      }
+      std::cout << "Workspace build order:\n";
+      for (const auto &name : ws.get_build_order()) {
+        std::cout << "  - " << name << "\n";
       }
       std::cout << "\n";
     } else if (category == "dependencies" || category == "deps") {
@@ -206,9 +224,36 @@ cforge_int_t cforge_cmd_list(const cforge_context_t *ctx) {
           }
         }
       }
+    } else if (category == "graph" || category == "dep-graph") {
+      if (!ctx->is_workspace) {
+        logger::print_error("Not in a workspace");
+        return 1;
+      }
+      workspace ws;
+      if (!ws.load(ctx->working_dir)) {
+        logger::print_error("Failed to load workspace configuration");
+        return 1;
+      }
+      // Output Mermaid dependency graph
+      std::cout << "graph TD\n";
+      std::vector<std::string> all_deps;
+      for (const auto &proj : ws.get_projects()) {
+        for (const auto &dep : proj.dependencies) {
+          std::cout << "  " << proj.name << " --> " << dep << "\n";
+          all_deps.push_back(dep);
+        }
+      }
+      // Include isolated projects
+      for (const auto &proj : ws.get_projects()) {
+        if (proj.dependencies.empty() &&
+            std::find(all_deps.begin(), all_deps.end(), proj.name) == all_deps.end()) {
+          std::cout << "  " << proj.name << "\n";
+        }
+      }
+      std::cout << "\n";
     } else {
       logger::print_error("Unknown list category: " + category);
-      std::cout << "Available categories: configs, generators, targets, commands, settings, projects, dependencies\n";
+      std::cout << "Available categories: configs, generators, targets, commands, settings, projects, order, dependencies, graph\n";
       return 1;
     }
   } else {

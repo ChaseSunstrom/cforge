@@ -783,6 +783,73 @@ static bool build_project(const std::filesystem::path &project_dir,
     }
   }
 
+  // Cross-compilation settings: inject toolchain file, system name, and processors
+  if (has_project_config && project_config.has_key("build.cross.toolchain_file")) {
+    std::string tc_file = project_config.get_string("build.cross.toolchain_file", "");
+    if (!tc_file.empty()) {
+      cmake_args.push_back("-DCMAKE_TOOLCHAIN_FILE=" + tc_file);
+      logger::print_status("Using CMake toolchain file: " + tc_file);
+    }
+  }
+  if (has_project_config && project_config.has_key("build.cross.system_name")) {
+    std::string sys_name = project_config.get_string("build.cross.system_name", "");
+    if (!sys_name.empty()) {
+      cmake_args.push_back("-DCMAKE_SYSTEM_NAME=" + sys_name);
+      logger::print_status("Using CMake system name: " + sys_name);
+    }
+  }
+  if (has_project_config && project_config.has_key("build.cross.system_processor")) {
+    std::string sys_proc = project_config.get_string("build.cross.system_processor", "");
+    if (!sys_proc.empty()) {
+      cmake_args.push_back("-DCMAKE_SYSTEM_PROCESSOR=" + sys_proc);
+      logger::print_status("Using CMake system processor: " + sys_proc);
+    }
+  }
+  if (has_project_config && project_config.has_key("build.cross.c_compiler")) {
+    std::string cc = project_config.get_string("build.cross.c_compiler", "");
+    if (!cc.empty()) {
+      cmake_args.push_back("-DCMAKE_C_COMPILER=" + cc);
+      logger::print_status("Using CMake C compiler: " + cc);
+    }
+  }
+  if (has_project_config && project_config.has_key("build.cross.cxx_compiler")) {
+    std::string cxx = project_config.get_string("build.cross.cxx_compiler", "");
+    if (!cxx.empty()) {
+      cmake_args.push_back("-DCMAKE_CXX_COMPILER=" + cxx);
+      logger::print_status("Using CMake CXX compiler: " + cxx);
+    }
+  }
+
+  // Custom compiler specification: separate C and C++ compilers
+  if (has_project_config && project_config.has_key("cmake.c_compiler")) {
+    std::string cc = project_config.get_string("cmake.c_compiler", "");
+    if (!cc.empty()) {
+      cmake_args.push_back("-DCMAKE_C_COMPILER=" + cc);
+      logger::print_status("Using C compiler: " + cc);
+    }
+  }
+  if (has_project_config && project_config.has_key("cmake.cxx_compiler")) {
+    std::string cxx = project_config.get_string("cmake.cxx_compiler", "");
+    if (!cxx.empty()) {
+      cmake_args.push_back("-DCMAKE_CXX_COMPILER=" + cxx);
+      logger::print_status("Using C++ compiler: " + cxx);
+    }
+  }
+
+  // Project-level C and C++ standard overrides
+  if (has_project_config) {
+    std::string cstd = project_config.get_string("project.c_standard", "");
+    if (!cstd.empty()) {
+      cmake_args.push_back("-DCMAKE_C_STANDARD=" + cstd);
+      logger::print_status("Using C standard: " + cstd);
+    }
+    std::string cppstd = project_config.get_string("project.cpp_standard", "");
+    if (!cppstd.empty()) {
+      cmake_args.push_back("-DCMAKE_CXX_STANDARD=" + cppstd);
+      logger::print_status("Using C++ standard: " + cppstd);
+    }
+  }
+
   // Determine CMake generator: use override in cforge.toml if present, otherwise pick default
   std::string generator;
   if (has_project_config && project_config.has_key("cmake.generator")) {
@@ -798,36 +865,32 @@ static bool build_project(const std::filesystem::path &project_dir,
     logger::print_verbose("Using default CMake generator: " + generator);
   }
 
-  // Check for vcpkg integration
+  // vcpkg integration: support path and triplet
   if (has_project_config && project_config.has_key("dependencies.vcpkg")) {
-    // First try environment variable
-    const char *vcpkg_root = std::getenv("VCPKG_ROOT");
-    if (vcpkg_root) {
-      std::string toolchain_path =
-          std::string(vcpkg_root) + "/scripts/buildsystems/vcpkg.cmake";
-
-      // Replace backslashes with forward slashes if on Windows
-      std::replace(toolchain_path.begin(), toolchain_path.end(), '\\', '/');
-
-      cmake_args.push_back("-DCMAKE_TOOLCHAIN_FILE=" + toolchain_path);
-      logger::print_status("Using vcpkg toolchain from VCPKG_ROOT: " +
-                           toolchain_path);
+    // Determine vcpkg root directory
+    std::string vcpkg_root;
+    if (project_config.has_key("dependencies.vcpkg.path")) {
+      vcpkg_root = project_config.get_string("dependencies.vcpkg.path", "");
+    } else if (const char* env = std::getenv("VCPKG_ROOT")) {
+      vcpkg_root = env;
     } else {
-      // Try local vcpkg installation
-      std::string toolchain_path =
-          (source_dir / "vcpkg/scripts/buildsystems/vcpkg.cmake").string();
-
-      // Replace backslashes with forward slashes if on Windows
-      std::replace(toolchain_path.begin(), toolchain_path.end(), '\\', '/');
-
-      if (std::filesystem::exists(toolchain_path)) {
-        cmake_args.push_back("-DCMAKE_TOOLCHAIN_FILE=" + toolchain_path);
-        logger::print_status("Using local vcpkg toolchain: " + toolchain_path);
-      } else {
-        logger::print_warning("vcpkg dependencies specified but couldn't find "
-                              "vcpkg toolchain file");
-        logger::print_warning("Please set VCPKG_ROOT environment variable or "
-                              "install vcpkg in the project directory");
+      vcpkg_root = (source_dir / "vcpkg").string();
+    }
+    // Compute toolchain file path
+    std::string toolchain_path = vcpkg_root + "/scripts/buildsystems/vcpkg.cmake";
+    std::replace(toolchain_path.begin(), toolchain_path.end(), '\\', '/');
+    if (std::filesystem::exists(toolchain_path)) {
+      cmake_args.push_back("-DCMAKE_TOOLCHAIN_FILE=" + toolchain_path);
+      logger::print_status("Using vcpkg toolchain: " + toolchain_path);
+    } else {
+      logger::print_warning("vcpkg toolchain file not found: " + toolchain_path);
+    }
+    // Add triplet if specified
+    if (project_config.has_key("dependencies.vcpkg.triplet")) {
+      std::string triplet = project_config.get_string("dependencies.vcpkg.triplet", "");
+      if (!triplet.empty()) {
+        cmake_args.push_back("-DVCPKG_TARGET_TRIPLET=" + triplet);
+        logger::print_status("Using vcpkg triplet: " + triplet);
       }
     }
   }
