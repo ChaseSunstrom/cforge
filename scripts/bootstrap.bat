@@ -28,7 +28,7 @@ if errorlevel 1 (
         choco install cmake --yes
     ) || (
         where winget >nul 2>&1 && (
-            winget install --id Kitware.CMake -e --source winget --silent
+            winget install --id Kitware.CMake -e --source winget --silent --accept-package-agreements --accept-source-agreements
         ) || (
             echo Please install CMake manually
             exit /b 1
@@ -36,24 +36,62 @@ if errorlevel 1 (
     )
 )
 
+REM After install, recheck CMake or add common install paths
+where cmake >nul 2>&1
+if errorlevel 1 (
+    REM Try adding CMake bin directory from Program Files
+    if exist "%ProgramFiles%\CMake\bin\cmake.exe" (
+        echo Adding CMake installation directory to PATH...
+        set "PATH=%ProgramFiles%\CMake\bin;%PATH%"
+    ) else if exist "%ProgramFiles(x86)%\CMake\bin\cmake.exe" (
+        echo Adding CMake installation directory to PATH...
+        set "PATH=%ProgramFiles(x86)%\CMake\bin;%PATH%"
+    )
+)
+REM Final CMake verification
+where cmake >nul 2>&1
+if errorlevel 1 (
+    echo CMake install failed. Please install CMake manually
+    exit /b 1
+)
+
 REM C++ Compiler
+REM First, try whatever’s already on PATH
 where cl >nul 2>&1
 if errorlevel 1 (
-    where g++ >nul 2>&1
+    REM Try to configure any VS 2022 environment (BuildTools or Community)
+    set "VSPATH=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
+    if exist "%VSPATH%" (
+        for /f "usebackq tokens=*" %%I in (`"%VSPATH%" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSINSTALL=%%I"
+    ) else (
+        REM Fallback to Community if vswhere is missing
+        if exist "%ProgramFiles%\Microsoft Visual Studio\2022\Community" set "VSINSTALL=%ProgramFiles%\Microsoft Visual Studio\2022\Community"
+    )
+    if defined VSINSTALL (
+        echo Configuring Visual Studio environment from !VSINSTALL!...
+        call "!VSINSTALL!\VC\Auxiliary\Build\vcvarsall.bat" x64 >nul 2>&1
+    )
+    REM Recheck for cl after environment setup
+    where cl >nul 2>&1
     if errorlevel 1 (
-        echo C++ compiler not found. Attempting to install...
-        where choco >nul 2>&1 && (
-            choco install visualstudio2019buildtools --yes --package-parameters "--add Microsoft.VisualStudio.Workload.VCTools"
-        ) || (
-            where winget >nul 2>&1 && (
-                winget install --id Microsoft.VisualStudio.2019.BuildTools -e --source winget --silent
+        REM Install if still not found
+        where g++ >nul 2>&1
+        if errorlevel 1 (
+            echo C++ compiler not found. Attempting to install...
+            where choco >nul 2>&1 && (
+                choco install visualstudio2022buildtools --yes --package-parameters "--add Microsoft.VisualStudio.Workload.VCTools"
             ) || (
-                echo Please install a C++ compiler manually
-                exit /b 1
+                where winget >nul 2>&1 && (
+                    winget install --id Microsoft.VisualStudio.2022.BuildTools -e --source winget --silent --accept-package-agreements --accept-source-agreements
+                ) || (
+                    echo Please install a C++ compiler manually
+                    exit /b 1
+                )
             )
         )
     )
 )
+:after_compiler
 
 REM Ninja
 where ninja >nul 2>&1
@@ -75,7 +113,7 @@ REM Bootstraps building and installing CForge on Windows via batch script
 
 REM Determine project root directory
 d:
-cd /d "%~dp0..\"
+cd /d "%~dp0..\"  
 set "PROJECT_ROOT=%cd%"
 
 REM Create and enter build directory
@@ -104,7 +142,7 @@ if defined VSINSTALL (
     echo Configuring Visual Studio environment from %VSINSTALL%...
     call "%VSINSTALL%\VC\Auxiliary\Build\vcvarsall.bat" x64 >nul 2>&1
 ) else (
-    echo Warning: Visual Studio Build Tools not found; C++ compiler may not be on PATH
+    echo Warning: Visual Studio environment not found; C++ compiler may not be on PATH
 )
 
 REM Clone Git dependencies if not already cloned
@@ -138,6 +176,6 @@ cd /d "%PROJECT_ROOT%"
 "%BUILD_DIR%\bin\Release\cforge.exe" install
 
 echo CForge built and installed to "%BUILD_DIR%"
-echo Add "%BUILD_DIR%\bin" to your PATH
+echo Add "%BUILD_DIR%\bin\Release" to your PATH
 
-endlocal 
+endlocal

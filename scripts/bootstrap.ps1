@@ -34,21 +34,57 @@ if (-not (Get-Command cmake -ErrorAction SilentlyContinue)) {
     if (Get-Command choco -ErrorAction SilentlyContinue) {
         choco install cmake --yes
     } elseif (Get-Command winget -ErrorAction SilentlyContinue) {
-        winget install --id Kitware.CMake -e --source winget --silent
+        winget install --id Kitware.CMake -e --source winget --silent --accept-package-agreements --accept-source-agreements
     } else {
         Write-Error "CMake installation not supported automatically. Please install CMake manually."
         exit 1
     }
 }
+# Post-install: add CMake bin to PATH if needed
+if (-not (Get-Command cmake -ErrorAction SilentlyContinue)) {
+    $cmakePaths = @(
+        Join-Path $Env:ProgramFiles 'CMake\\bin',
+        Join-Path $Env['ProgramFiles(x86)'] 'CMake\\bin'
+    )
+    foreach ($p in $cmakePaths) {
+        if (Test-Path (Join-Path $p 'cmake.exe')) {
+            Write-Host "Adding CMake installation directory to PATH..."
+            $Env:Path = "$p;$Env:Path"
+            break
+        }
+    }
+}
+if (-not (Get-Command cmake -ErrorAction SilentlyContinue)) {
+    Write-Error "CMake installation failed. Please install CMake manually."
+    exit 1
+}
 # C++ Compiler
 if (-not (Get-Command cl -ErrorAction SilentlyContinue) -and -not (Get-Command g++ -ErrorAction SilentlyContinue)) {
-    Write-Host "C++ compiler not found. Attempting to install Visual Studio Build Tools or GCC..."
+    Write-Host "C++ compiler not found. Attempting to install Visual Studio Build Tools 2022..."
     if (Get-Command choco -ErrorAction SilentlyContinue) {
-        choco install visualstudio2019buildtools --yes --package-parameters '--add Microsoft.VisualStudio.Workload.VCTools'
+        Write-Host "Installing Visual Studio Build Tools 2022 via Chocolatey..."
+        choco install visualstudio2022buildtools --yes --package-parameters '--add Microsoft.VisualStudio.Workload.VCTools' | Out-Null
     } elseif (Get-Command winget -ErrorAction SilentlyContinue) {
-        winget install --id Microsoft.VisualStudio.2019.BuildTools -e --source winget --silent
+        Write-Host "Installing Visual Studio Build Tools 2022 via winget..."
+        winget install --id Microsoft.VisualStudio.2022.BuildTools -e --source winget --silent --accept-package-agreements --accept-source-agreements | Out-Null
     } else {
         Write-Error "C++ compiler installation not supported automatically. Please install a compiler manually."
+        exit 1
+    }
+
+    # Now configure the VS environment and verify cl locally
+    $vswherePath = Join-Path $Env['ProgramFiles(x86)'] 'Microsoft Visual Studio\\Installer\\vswhere.exe'
+    if (Test-Path $vswherePath) {
+        $vsinstallPath = (& $vswherePath -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath).Trim()
+        if ($vsinstallPath) {
+            Write-Host "Configuring environment via vcvarsall from $vsinstallPath"
+            & "$vsinstallPath\\VC\\Auxiliary\\Build\\vcvarsall.bat" x64 > $null
+        }
+    } else {
+        Write-Warning "vswhere not found; skipping environment setup"
+    }
+    if (-not (Get-Command cl -ErrorAction SilentlyContinue) -and -not (Get-Command g++ -ErrorAction SilentlyContinue)) {
+        Write-Error "C++ compiler install succeeded but compiler still not on PATH; please re-open your shell or install manually."
         exit 1
     }
 }
@@ -143,4 +179,10 @@ Write-Host "Add $Prefix\bin to your PATH"
 Set-Location $ProjectRoot
 $exePath = Join-Path -Path $buildDir -ChildPath "bin\Release\cforge.exe"
 if (-not (Test-Path $exePath)) { throw "cforge executable not found at $exePath" }
-& $exePath install 
+& $exePath install
+
+# Final C++ compiler verification
+if (-not (Get-Command cl -ErrorAction SilentlyContinue) -and -not (Get-Command g++ -ErrorAction SilentlyContinue)) {
+    Write-Error "C++ compiler installation failed. Please install a compiler manually."
+    exit 1
+} 
