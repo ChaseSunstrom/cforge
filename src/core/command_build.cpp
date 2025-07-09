@@ -1265,6 +1265,23 @@ cforge_int_t cforge_cmd_build(const cforge_context_t *ctx) {
 
   logger::print_status("Using build configuration: " + config_name);
 
+  // Pre-build script support
+  {
+      toml_reader script_cfg;
+      std::filesystem::path script_file_path = (is_workspace ? workspace_dir : current_dir) / (is_workspace ? WORKSPACE_FILE : CFORGE_FILE);
+      if (script_cfg.load(script_file_path.string()) && script_cfg.has_key("scripts.pre_build")) {
+          auto scripts = script_cfg.get_string_array("scripts.pre_build");
+          for (const auto &script : scripts) {
+              logger::print_status("Running pre-build script: " + script);
+              std::filesystem::path script_path = (is_workspace ? workspace_dir : current_dir) / script;
+              if (!execute_tool("python", {script_path.string()}, (is_workspace ? workspace_dir.string() : current_dir.string()), "Python Pre-Build Script", verbose)) {
+                  logger::print_error("Pre-build script failed: " + script);
+                  return 1;
+              }
+          }
+      }
+  }
+
   int result = 0;
 
   if (is_workspace) {
@@ -1370,6 +1387,24 @@ cforge_int_t cforge_cmd_build(const cforge_context_t *ctx) {
         }
       }
     }
+
+// Post-build script support (workspace)
+    {
+        toml_reader script_cfg;
+        std::filesystem::path script_file_path = workspace_dir / WORKSPACE_FILE;
+        if (script_cfg.load(script_file_path.string()) && script_cfg.has_key("scripts.post_build")) {
+            auto scripts = script_cfg.get_string_array("scripts.post_build");
+            for (const auto &script : scripts) {
+                logger::print_status("Running post-build script: " + script);
+                std::filesystem::path script_path = workspace_dir / script;
+                if (!execute_tool("python", {script_path.string()}, workspace_dir.string(), "Python Post-Build Script", verbose)) {
+                    logger::print_error("Post-build script failed: " + script);
+                    return 1;
+                }
+            }
+        }
+    }
+
     return 0;
   } else {
     // Single project build outside workspace
@@ -1389,8 +1424,24 @@ cforge_int_t cforge_cmd_build(const cforge_context_t *ctx) {
                        nullptr, skip_deps)) {
       return 1;
     }
-  }
 
+// Post-build script support (single project)
+    {
+        toml_reader script_cfg;
+        std::filesystem::path script_file_path = current_dir / CFORGE_FILE;
+        if (script_cfg.load(script_file_path.string()) && script_cfg.has_key("scripts.post_build")) {
+            auto scripts = script_cfg.get_string_array("scripts.post_build");
+            for (const auto &script : scripts) {
+                logger::print_status("Running post-build script: " + script);
+                std::filesystem::path script_path = current_dir / script;
+                if (!execute_tool("python", {script_path.string()}, current_dir.string(), "Python Post-Build Script", verbose)) {
+                    logger::print_error("Post-build script failed: " + script);
+                    return 1;
+                }
+            }
+        }
+    }
+  }
   return result;
 }
 

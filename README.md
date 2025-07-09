@@ -490,6 +490,37 @@ cforge ide vs2022
 cforge ide vs:x64  # With architecture specification
 ```
 
+## 📜 Scripts & Hooks
+
+You can run custom Python scripts at different stages of the build by adding a `[scripts]` table in your `cforge.toml` (or `cforge.workspace.toml` for workspaces).
+
+Example in `cforge.toml`:
+```toml
+[scripts]
+pre_build  = ["scripts/setup_env.py", "scripts/gen_code.py"]
+post_build = ["scripts/deploy.py"]
+```
+
+CForge will automatically execute any scripts listed under `pre_build` before starting the build and those under `post_build` after the build completes. Scripts are run from the project (or workspace) root directory.
+
+Example project layout:
+```
+myproject/
+├── cforge.toml
+├── scripts/
+│   ├── setup_env.py
+│   └── deploy.py
+└── src/
+```
+
+Run the following to verify and build:
+```bash
+# List configured scripts
+cforge list scripts
+
+# Build (runs pre_build and post_build scripts automatically)
+cforge build
+```
 
 ## 🔧 Troubleshooting
 
