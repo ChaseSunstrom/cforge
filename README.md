@@ -321,11 +321,12 @@ triplet = "x64-windows"    # Optional: specify vcpkg target triplet
 packages = ["fmt", "boost", "nlohmann-json"]
 ```
 
-CMake is automatically configured to use the vcpkg toolchain file from the specified `path` or environment variable `VCPKG_ROOT`, and will pass the `VCPKG_TARGET_TRIPLET` when provided.
+Optional: override the imported CMake target name per package
+e.g. for a package that uses a non-standard target
 
-```bash
-# Build with vcpkg integration
-cforge build --config Release
+```toml
+[dependencies.vcpkg.fmt]
+target_name = "fmt"       # links using 'fmt' instead of 'fmt::fmt'
 ```
 
 ### Git Dependencies
@@ -336,8 +337,8 @@ name = "nlohmann_json"
 url = "https://github.com/nlohmann/json.git"
 tag = "v3.11.3"
 # Optional settings
-shallow = true  # Faster clone with reduced history
-update = false  # Whether to update the repo on builds
+# shallow = true  # Faster clone with reduced history
+# update = false  # Whether to update the repo on builds
 
 [[dependencies.git]]
 name = "fmt"
@@ -350,6 +351,7 @@ name = "imgui"
 url = "https://github.com/ocornut/imgui.git"
 branch = "master"  # Use a specific branch instead of tag
 shallow = true
+target_name = "imgui" # Target name to link against in cmake
 
 [[dependencies.git]]
 name = "custom_repo"

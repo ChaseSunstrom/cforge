@@ -251,9 +251,35 @@ cforge_int_t cforge_cmd_list(const cforge_context_t *ctx) {
         }
       }
       std::cout << "\n";
-    } else {
+    }
+    else if (category == "scripts") {
+      // List configured scripts
+      std::filesystem::path toml_path = std::filesystem::path(ctx->working_dir) / (ctx->is_workspace ? WORKSPACE_FILE : CFORGE_FILE);
+      toml_reader cfg;
+      if (!cfg.load(toml_path.string())) {
+        logger::print_error("Failed to load configuration: " + toml_path.string());
+        return 1;
+      }
+      std::cout << "Configured scripts:\n";
+      if (cfg.has_key("scripts.pre_build")) {
+        auto scripts = cfg.get_string_array("scripts.pre_build");
+        std::cout << "  pre_build:\n";
+        for (const auto &s : scripts) {
+          std::cout << "    - " << s << "\n";
+        }
+      }
+      if (cfg.has_key("scripts.post_build")) {
+        auto scripts = cfg.get_string_array("scripts.post_build");
+        std::cout << "  post_build:\n";
+        for (const auto &s : scripts) {
+          std::cout << "    - " << s << "\n";
+        }
+      }
+      std::cout << "\n";
+    }
+    else {
       logger::print_error("Unknown list category: " + category);
-      std::cout << "Available categories: configs, generators, targets, commands, settings, projects, order, dependencies, graph\n";
+      std::cout << "Available categories: configs, generators, targets, commands, settings, projects, order, dependencies, graph, scripts\n";
       return 1;
     }
   } else {

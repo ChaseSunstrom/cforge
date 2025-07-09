@@ -988,33 +988,46 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
     cmakelists << "# Link libraries\n";
     if (binary_type == "header_only") {
       cmakelists << "target_link_libraries(${PROJECT_NAME} INTERFACE\n";
-    } else {
-      cmakelists << "target_link_libraries(${PROJECT_NAME} PUBLIC\n";
-    }
-
-    // Standard libraries
-    cmakelists << "    ${CMAKE_THREAD_LIBS_INIT}\n";
-
-    // Link vcpkg dependencies
-    if (project_config.has_key("dependencies.vcpkg")) {
-      auto vcpkg_deps = project_config.get_table_keys("dependencies.vcpkg");
-      for (const auto &dep : vcpkg_deps) {
-        cmakelists << "    " << dep << "::" << dep << "\n";
-      }
-    }
-
-    // Link Git dependencies
-    if (project_config.has_key("dependencies.git")) {
-      auto git_deps = project_config.get_table_keys("dependencies.git");
-      for (const auto &dep : git_deps) {
-        // Check if this dependency should be linked
-        bool link =
-            project_config.get_bool("dependencies.git." + dep + ".link", true);
-
-        if (link) {
-          cmakelists << "    " << dep << "::" << dep << "\n";
+      // Link vcpkg dependencies
+      if (project_config.has_key("dependencies.vcpkg")) {
+        auto vcpkg_deps = project_config.get_table_keys("dependencies.vcpkg");
+        for (const auto &dep : vcpkg_deps) {
+          std::string target = project_config.get_string("dependencies.vcpkg." + dep + ".target_name", dep);
+          if (target.find("::") == std::string::npos) target = target + "::" + target;
+          cmakelists << "    " << target << "\n";
         }
       }
+      // Link Git dependencies
+      if (project_config.has_key("dependencies.git")) {
+        auto git_deps = project_config.get_table_keys("dependencies.git");
+        for (const auto &dep : git_deps) {
+          if (!project_config.get_bool("dependencies.git." + dep + ".link", true)) continue;
+          std::string target = project_config.get_string("dependencies.git." + dep + ".target_name", dep);
+          cmakelists << "    " << target << "\n";
+        }
+      }
+      cmakelists << ")\n\n";
+    } else {
+      cmakelists << "target_link_libraries(${PROJECT_NAME} PUBLIC\n";
+      // Link vcpkg dependencies
+      if (project_config.has_key("dependencies.vcpkg")) {
+        auto vcpkg_deps = project_config.get_table_keys("dependencies.vcpkg");
+        for (const auto &dep : vcpkg_deps) {
+          std::string target = project_config.get_string("dependencies.vcpkg." + dep + ".target_name", dep);
+          if (target.find("::") == std::string::npos) target = target + "::" + target;
+          cmakelists << "    " << target << "\n";
+        }
+      }
+      // Link Git dependencies
+      if (project_config.has_key("dependencies.git")) {
+        auto git_deps = project_config.get_table_keys("dependencies.git");
+        for (const auto &dep : git_deps) {
+          if (!project_config.get_bool("dependencies.git." + dep + ".link", true)) continue;
+          std::string target = project_config.get_string("dependencies.git." + dep + ".target_name", dep);
+          cmakelists << "    " << target << "\n";
+        }
+      }
+      cmakelists << ")\n\n";
     }
 
     // Add additional libraries
@@ -1041,13 +1054,14 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
         }), deps.end());
       if (!deps.empty()) {
         cmakelists << "# Workspace project linking dependencies\n";
+        cmakelists << "target_link_libraries(${PROJECT_NAME} PUBLIC\n";
         for (const auto &dep : deps) {
           bool link_dep = project_config.get_bool(std::string("dependencies.") + dep + ".link", true);
           if (!link_dep) continue;
           std::string target_name = project_config.get_string("dependencies." + dep + ".target_name", dep);
           cmakelists << "    " << target_name << "\n";
         }
-        cmakelists << "\n";
+        cmakelists << ")\n\n";
       }
     }
 
@@ -1062,7 +1076,6 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
       }
     }
 
-    cmakelists << ")\n\n";
 
     // Add compiler options
     cmakelists << "# Compiler options\n";

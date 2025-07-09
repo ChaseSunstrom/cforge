@@ -99,7 +99,6 @@ endif()
 
 # Link libraries
 target_link_libraries(${PROJECT_NAME} PUBLIC
-    ${CMAKE_THREAD_LIBS_INIT}
     fmt::fmt
     tomlplusplus::tomlplusplus
 )
