@@ -52,7 +52,6 @@ set(FETCHCONTENT_GIT_PROTOCOL "https")
 message(STATUS "Setting up fmt dependency from https://github.com/fmtlib/fmt.git")
 FetchContent_Declare(fmt
     GIT_REPOSITORY https://github.com/fmtlib/fmt.git
-    GIT_TAG 11.1.4
     SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/vendor/fmt
 )
 # Include directories for fmt
@@ -69,7 +68,6 @@ FetchContent_MakeAvailable(fmt)
 message(STATUS "Setting up tomlplusplus dependency from https://github.com/marzer/tomlplusplus.git")
 FetchContent_Declare(tomlplusplus
     GIT_REPOSITORY https://github.com/marzer/tomlplusplus.git
-    GIT_TAG v3.4.0
     SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/vendor/tomlplusplus
 )
 # Include directories for tomlplusplus
@@ -96,6 +94,7 @@ target_include_directories(${PROJECT_NAME} PUBLIC
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
   target_compile_definitions(${PROJECT_NAME} PUBLIC DEBUG=1)
   target_compile_definitions(${PROJECT_NAME} PUBLIC FMT_HEADER_ONLY=ON)
+  target_compile_definitions(${PROJECT_NAME} PUBLIC FMT_UNICODE=0)
 endif()
 
 # Link libraries

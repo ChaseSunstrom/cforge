@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{E318904B-1827-46D1-97BC-82EA0CF9F78F}</ProjectGuid>
+    <RootNamespace>cforge</RootNamespace>
+    <Keyword>Win32Proj</Keyword>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <LanguageStandard>stdcpp17</LanguageStandard>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <LanguageStandard>stdcpp17</LanguageStandard>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <CompileAs>CompileAsCpp</CompileAs>
+      <PreprocessorDefinitions>_DEBUG;DEBUG=1;FMT_HEADER_ONLY=ON;FMT_UNICODE=0;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <WarningLevel>Level3</WarningLevel>
+      <Optimization>Disabled</Optimization>
+      <AdditionalIncludeDirectories>C:\cforge\include;C:\cforge\vendor/fmt/include;C:\cforge\vendor/fmt/.;C:\cforge\vendor/tomlplusplus/include;C:\cforge\vendor/tomlplusplus/.;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <PreprocessorDefinitions>NDEBUG;NDEBUG=1;FMT_HEADER_ONLY=ON;FMT_UNICODE=0;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <WarningLevel>Level3</WarningLevel>
+      <Optimization>MaxSpeed</Optimization>
+      <AdditionalIncludeDirectories>C:\cforge\include;C:\cforge\vendor/fmt/include;C:\cforge\vendor/fmt/.;C:\cforge\vendor/tomlplusplus/include;C:\cforge\vendor/tomlplusplus/.;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>false</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="src\cforge\log.cpp" />
+    <ClCompile Include="src\core\command.cpp" />
+    <ClCompile Include="src\core\command_add.cpp" />
+    <ClCompile Include="src\core\command_build.cpp" />
+    <ClCompile Include="src\core\command_clean.cpp" />
+    <ClCompile Include="src\core\command_deps.cpp" />
+    <ClCompile Include="src\core\command_dispatch.cpp" />
+    <ClCompile Include="src\core\command_help.cpp" />
+    <ClCompile Include="src\core\command_ide.cpp" />
+    <ClCompile Include="src\core\command_init.cpp" />
+    <ClCompile Include="src\core\command_install.cpp" />
+    <ClCompile Include="src\core\command_list.cpp" />
+    <ClCompile Include="src\core\command_package.cpp" />
+    <ClCompile Include="src\core\command_remove.cpp" />
+    <ClCompile Include="src\core\command_run.cpp" />
+    <ClCompile Include="src\core\command_test.cpp" />
+    <ClCompile Include="src\core\command_update.cpp" />
+    <ClCompile Include="src\core\command_vcpkg.cpp" />
+    <ClCompile Include="src\core\command_version.cpp" />
+    <ClCompile Include="src\core\dependency_hash.cpp" />
+    <ClCompile Include="src\core\error_format.cpp" />
+    <ClCompile Include="src\core\file_system.c" />
+    <ClCompile Include="src\core\installer.cpp" />
+    <ClCompile Include="src\core\process.c" />
+    <ClCompile Include="src\core\process_utils.cpp" />
+    <ClCompile Include="src\core\toml_reader.cpp" />
+    <ClCompile Include="src\core\workspace.cpp" />
+    <ClCompile Include="src\core\workspace_utils.cpp" />
+    <ClCompile Include="src\main.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="include\cforge\log.hpp" />
+    <ClInclude Include="include\core\command.h" />
+    <ClInclude Include="include\core\commands.hpp" />
+    <ClInclude Include="include\core\constants.h" />
+    <ClInclude Include="include\core\dependency_hash.hpp" />
+    <ClInclude Include="include\core\error_format.hpp" />
+    <ClInclude Include="include\core\file_system.h" />
+    <ClInclude Include="include\core\installer.hpp" />
+    <ClInclude Include="include\core\process.h" />
+    <ClInclude Include="include\core\process_utils.hpp" />
+    <ClInclude Include="include\core\toml_reader.hpp" />
+    <ClInclude Include="include\core\types.h" />
+    <ClInclude Include="include\core\workspace.hpp" />
+    <ClInclude Include="include\core\workspace_utils.hpp" />
+  </ItemGroup>
+  <ImportGroup Label="ExtensionTargets" />
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>

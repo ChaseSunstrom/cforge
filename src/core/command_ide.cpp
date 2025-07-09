@@ -295,7 +295,27 @@ static bool write_vcxproj(const std::filesystem::path &proj_dir,
         // Include directories
         auto incs = cfg.get_string_array("build.include_dirs");
         if (incs.empty()) incs = {"include"};
+        // Include directories from Git dependencies
+        if (cfg.has_key("dependencies.git")) {
+            auto git_deps = cfg.get_table_keys("dependencies.git");
+            std::string deps_dir = cfg.get_string("dependencies.directory", "deps");
+            for (const auto &dep : git_deps) {
+                bool inc_dep = cfg.get_bool("dependencies.git." + dep + ".include", true);
+                if (!inc_dep) continue;
+                std::string include_dirs_key = "dependencies.git." + dep + ".include_dirs";
+                std::vector<std::string> git_inc_dirs;
+                if (cfg.has_key(include_dirs_key)) {
+                    git_inc_dirs = cfg.get_string_array(include_dirs_key);
+                } else {
+                    git_inc_dirs = {"include", "."};
+                }
+                for (const auto &inc_dir : git_inc_dirs) {
+                    incs.push_back(deps_dir + "/" + dep + "/" + inc_dir);
+                }
+            }
+        }
         // Include directories from workspace project dependencies
+        // Only include workspace project dependencies that exist as directories with cforge.toml
         if (cfg.has_key("dependencies")) {
             auto deps = cfg.get_table_keys("dependencies");
             deps.erase(std::remove_if(deps.begin(), deps.end(),
@@ -303,6 +323,9 @@ static bool write_vcxproj(const std::filesystem::path &proj_dir,
                     if (k == cfg.get_string("dependencies.directory", "")) return true;
                     if (k == "git" || k == "vcpkg") return true;
                     if (cfg.has_key("dependencies." + k + ".url")) return true;
+                    // Only keep if directory exists and has cforge.toml
+                    std::filesystem::path dep_path = proj_dir.parent_path() / k;
+                    if (!std::filesystem::exists(dep_path) || !std::filesystem::exists(dep_path / "cforge.toml")) return true;
                     return false;
                 }), deps.end());
             for (const auto &dep : deps) {
@@ -342,7 +365,27 @@ static bool write_vcxproj(const std::filesystem::path &proj_dir,
     {
         auto incs = cfg.get_string_array("build.include_dirs");
         if (incs.empty()) incs = {"include"};
+        // Include directories from Git dependencies
+        if (cfg.has_key("dependencies.git")) {
+            auto git_deps = cfg.get_table_keys("dependencies.git");
+            std::string deps_dir = cfg.get_string("dependencies.directory", "deps");
+            for (const auto &dep : git_deps) {
+                bool inc_dep = cfg.get_bool("dependencies.git." + dep + ".include", true);
+                if (!inc_dep) continue;
+                std::string include_dirs_key = "dependencies.git." + dep + ".include_dirs";
+                std::vector<std::string> git_inc_dirs;
+                if (cfg.has_key(include_dirs_key)) {
+                    git_inc_dirs = cfg.get_string_array(include_dirs_key);
+                } else {
+                    git_inc_dirs = {"include", "."};
+                }
+                for (const auto &inc_dir : git_inc_dirs) {
+                    incs.push_back(deps_dir + "/" + dep + "/" + inc_dir);
+                }
+            }
+        }
         // Include directories from workspace project dependencies
+        // Only include workspace project dependencies that exist as directories with cforge.toml
         if (cfg.has_key("dependencies")) {
             auto deps = cfg.get_table_keys("dependencies");
             deps.erase(std::remove_if(deps.begin(), deps.end(),
@@ -350,6 +393,9 @@ static bool write_vcxproj(const std::filesystem::path &proj_dir,
                     if (k == cfg.get_string("dependencies.directory", "")) return true;
                     if (k == "git" || k == "vcpkg") return true;
                     if (cfg.has_key("dependencies." + k + ".url")) return true;
+                    // Only keep if directory exists and has cforge.toml
+                    std::filesystem::path dep_path = proj_dir.parent_path() / k;
+                    if (!std::filesystem::exists(dep_path) || !std::filesystem::exists(dep_path / "cforge.toml")) return true;
                     return false;
                 }), deps.end());
             for (const auto &dep : deps) {

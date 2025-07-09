@@ -682,7 +682,7 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
             // Filter out non-project deps
             all_deps.erase(std::remove_if(all_deps.begin(), all_deps.end(),
                 [&](const std::string &k) {
-                    if (k == project_config.get_string("dependencies.directory", "")) return true;
+                    if (k == "directory") return true;
                     if (k == "git" || k == "vcpkg") return true;
                     if (project_config.has_key(std::string("dependencies.") + k + ".url")) return true;
                     return false;
@@ -887,9 +887,12 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
       // Filter out directory setting, git/vcpkg groups, and Git deps (those with a .url)
       deps.erase(std::remove_if(deps.begin(), deps.end(),
         [&](const std::string &k) {
-          if (k == project_config.get_string("dependencies.directory", "")) return true;
+          if (k == "directory") return true;
           if (k == "git" || k == "vcpkg") return true;
           if (project_config.has_key("dependencies." + k + ".url")) return true;
+          // Only keep if directory exists and has cforge.toml
+          std::filesystem::path dep_path = project_dir.parent_path() / k;
+          if (!std::filesystem::exists(dep_path) || !std::filesystem::exists(dep_path / "cforge.toml")) return true;
           return false;
         }), deps.end());
       if (!deps.empty()) {
@@ -1028,9 +1031,12 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
       // Filter out non-project entries
       deps.erase(std::remove_if(deps.begin(), deps.end(),
         [&](const std::string &k) {
-          if (k == project_config.get_string("dependencies.directory", "")) return true;
+          if (k == "directory") return true;
           if (k == "git" || k == "vcpkg") return true;
           if (project_config.has_key("dependencies." + k + ".url")) return true;
+          // Only keep if directory exists and has cforge.toml
+          std::filesystem::path dep_path = project_dir.parent_path() / k;
+          if (!std::filesystem::exists(dep_path) || !std::filesystem::exists(dep_path / "cforge.toml")) return true;
           return false;
         }), deps.end());
       if (!deps.empty()) {
@@ -1256,9 +1262,12 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
       // Filter out non-project entries
       deps.erase(std::remove_if(deps.begin(), deps.end(),
         [&](const std::string &k) {
-          if (k == project_config.get_string("dependencies.directory", "")) return true;
+          if (k == "directory") return true;
           if (k == "git" || k == "vcpkg") return true;
           if (project_config.has_key("dependencies." + k + ".url")) return true;
+          // Only keep if directory exists and has cforge.toml
+          std::filesystem::path dep_path = project_dir.parent_path() / k;
+          if (!std::filesystem::exists(dep_path) || !std::filesystem::exists(dep_path / "cforge.toml")) return true;
           return false;
         }), deps.end());
       // Ensure build order even if not linking

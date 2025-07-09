@@ -56,7 +56,7 @@ if errorlevel 1 (
 )
 
 REM C++ Compiler
-REM First, try whatever’s already on PATH
+REM First, try whatever's already on PATH
 where cl >nul 2>&1
 if errorlevel 1 (
     REM Try to configure any VS 2022 environment (BuildTools or Community)
@@ -112,8 +112,8 @@ if errorlevel 1 (
 REM Bootstraps building and installing CForge on Windows via batch script
 
 REM Determine project root directory
-d:
-cd /d "%~dp0..\"  
+REM Removed explicit drive switch; let cd /d handle drive and directory
+cd /d "%~dp0.."
 set "PROJECT_ROOT=%cd%"
 
 REM Create and enter build directory
@@ -177,5 +177,3 @@ cd /d "%PROJECT_ROOT%"
 
 echo CForge built and installed to "%BUILD_DIR%"
 echo Add "%BUILD_DIR%\bin\Release" to your PATH
-
-endlocal

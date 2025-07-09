@@ -3,6 +3,7 @@ build/
 out/
 build-debug/
 build-release/
+cforge/
 
 # CMake build files
 CMakeFiles/
