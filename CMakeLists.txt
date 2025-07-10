@@ -99,8 +99,8 @@ endif()
 
 # Link libraries
 target_link_libraries(${PROJECT_NAME} PUBLIC
-    fmt::fmt
-    tomlplusplus::tomlplusplus
+    
+    
 )
 
 # Compiler options

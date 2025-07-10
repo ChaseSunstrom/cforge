@@ -36,5 +36,5 @@ contact = "Chase Sunstrom <casunstrom@gmail.com>"
 directory = "vendor"
 
 [dependencies.git]
-tomlplusplus = { url = "https://github.com/marzer/tomlplusplus.git", tag = "" }
-fmt = { url = "https://github.com/fmtlib/fmt.git", tag = "" }
+tomlplusplus = { url = "https://github.com/marzer/tomlplusplus.git", tag = "", target_name = "" }
+fmt = { url = "https://github.com/fmtlib/fmt.git", tag = "", target_name = ""}
