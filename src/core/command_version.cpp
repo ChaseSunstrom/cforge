@@ -19,9 +19,9 @@ using namespace cforge;
  * @return cforge_int_t Exit code (0 for success)
  */
 cforge_int_t cforge_cmd_version(const cforge_context_t *ctx) {
-  logger::print_status("cforge version " + std::string(CFORGE_VERSION));
-  logger::print_status("C++ Project Management Tool");
-  logger::print_status("Copyright (c) 2023-2024");
+  logger::print_action("Version", "cforge version " + std::string(CFORGE_VERSION));
+  logger::print_action("Info", "C++ Project Management Tool");
+  logger::print_action("Info", "Copyright (c) 2023-2024");
 
   return 0;
 }

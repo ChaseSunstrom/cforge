@@ -364,8 +364,7 @@ find_project_executable(const std::filesystem::path &project_path,
   }
 
   // Final attempt: recursive search in build directory
-  logger::print_status("Performing recursive search for executable in: " +
-                       (project_path / build_dir).string());
+  logger::print_action("Searching", (project_path / build_dir).string());
   try {
     for (auto &entry : std::filesystem::recursive_directory_iterator(
              project_path / build_dir)) {
@@ -695,10 +694,10 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
                 return true;
             }
         }
-        logger::print_status("Dependencies detected, regenerating CMakeLists.txt from cforge.toml");
+        logger::print_action("Regenerating", "CMakeLists.txt from cforge.toml (dependencies detected)");
     }
-    
-    logger::print_status("Generating CMakeLists.txt from cforge.toml...");
+
+    logger::print_action("Generating", "CMakeLists.txt from cforge.toml");
     
     // Check if we're in a workspace
     auto [is_workspace, workspace_dir] = is_in_workspace(project_dir);
@@ -1236,7 +1235,7 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
     cmakelists.close();
     logger::print_verbose("Generated CMakeLists.txt in project directory: " +
                           cmakelists_path.string());
-    logger::print_success("Generated CMakeLists.txt file in project directory");
+    logger::finished("CMakeLists.txt");
 
     // Store the new toml hash
     dep_hashes.set_hash("cforge.toml", toml_hash);
@@ -1331,13 +1330,13 @@ bool workspace::build_all(const std::string &config, int num_jobs,
     visit(project.name);
   }
 
-  logger::print_status("Building " + std::to_string(build_order.size()) +
+  logger::print_action("Building", std::to_string(build_order.size()) +
                        " projects in workspace: " + workspace_name_);
 
   if (verbose) {
-    logger::print_status("Build order:");
+    logger::print_action("Build order", "");
     for (size_t i = 0; i < build_order.size(); ++i) {
-      logger::print_status("  " + std::to_string(i + 1) + ". " +
+      logger::print_action("", "  " + std::to_string(i + 1) + ". " +
                            build_order[i]);
     }
   }
@@ -1359,7 +1358,7 @@ bool workspace::build_all(const std::string &config, int num_jobs,
     }
 
     const auto &project = *it;
-    logger::print_status("Building project: " + project.name);
+    logger::print_action("Building", project.name);
 
     // Create build directory if it doesn't exist
     std::filesystem::path build_dir = project.path / "build";
@@ -1423,7 +1422,7 @@ bool workspace::build_all(const std::string &config, int num_jobs,
     }
 
     // Run CMake configure
-    logger::print_status("Configuring project with CMake...");
+    logger::configuring(project.name);
     bool configure_success =
         execute_tool("cmake", cmake_args, "", "CMake Configure", verbose);
 
@@ -1443,7 +1442,7 @@ bool workspace::build_all(const std::string &config, int num_jobs,
       build_args.push_back(std::to_string(num_jobs));
     }
 
-    logger::print_status("Building project: " + project.name);
+    logger::print_action("Building", project.name);
     bool build_success =
         execute_tool("cmake", build_args, "", "CMake Build", verbose);
 
@@ -1453,11 +1452,11 @@ bool workspace::build_all(const std::string &config, int num_jobs,
       continue;
     }
 
-    logger::print_success("Successfully built project: " + project.name);
+    logger::finished(project.name);
   }
 
   if (all_success) {
-    logger::print_success("All projects built successfully");
+    logger::finished("all projects");
   } else {
     logger::print_warning("Some projects failed to build");
   }
@@ -1482,7 +1481,7 @@ bool workspace::build_project(const std::string &project_name,
   try {
     // Change to project directory
     std::filesystem::current_path(project->path);
-    logger::print_status("Building project '" + project->name + "'...");
+    logger::print_action("Building", project->name);
 
     // Load project configuration
     toml_reader project_config;
@@ -1516,15 +1515,14 @@ bool workspace::build_project(const std::string &project_name,
 
     // If build dir doesn't exist, create it
     if (!std::filesystem::exists(build_dir)) {
-      logger::print_status("Creating build directory: " + build_dir.string());
+      logger::creating(build_dir.string());
       std::filesystem::create_directories(build_dir);
     }
 
     // Always regenerate CMakeLists.txt to ensure it matches the current
     // cforge.toml
     std::filesystem::path cmakelists_path = project->path / "CMakeLists.txt";
-    logger::print_status("Generating CMakeLists.txt for project '" +
-                         project->name + "'...");
+    logger::print_action("Generating", "CMakeLists.txt for " + project->name);
 
     // Remove existing CMakeLists.txt if it exists
     if (std::filesystem::exists(cmakelists_path)) {
@@ -1540,8 +1538,7 @@ bool workspace::build_project(const std::string &project_name,
       return false;
     }
 
-    logger::print_success("Generated CMakeLists.txt for project '" +
-                          project->name + "'");
+    logger::finished("CMakeLists.txt for " + project->name);
 
     // Run CMake configure
     std::vector<std::string> cmake_args;
@@ -1610,7 +1607,7 @@ bool workspace::build_project(const std::string &project_name,
       return false;
     }
 
-    logger::print_success("Project '" + project->name + "' built successfully");
+    logger::finished(project->name);
 
     // Restore current directory
     std::filesystem::current_path(current_dir);
@@ -1667,7 +1664,7 @@ bool workspace::run_project(const std::string &project_name,
   }
 
   const auto &project = *it;
-  logger::print_status("Running project: " + project.name);
+  logger::print_action("Running", project.name);
 
   // Make sure the project is built
   if (!build_project(project.name, config, 0, verbose)) {
@@ -1684,10 +1681,10 @@ bool workspace::run_project(const std::string &project_name,
     return false;
   }
 
-  logger::print_status("Running executable: " + executable.string());
+  logger::print_action("Running", executable.string());
 
   // Display program output header
-  logger::print_status("Program Output\n────────────");
+  logger::print_action("Program Output", "\n────────────");
 
   // Create custom callbacks to display raw program output
   std::function<void(const std::string &)> stdout_callback =
@@ -1711,7 +1708,7 @@ bool workspace::run_project(const std::string &project_name,
     return false;
   }
 
-  logger::print_success("Project executed successfully: " + project.name);
+  logger::finished(project.name);
   return true;
 }
 
@@ -1769,7 +1766,7 @@ bool workspace::create_workspace(const std::filesystem::path &workspace_path,
                           std::string(ex.what()));
   }
 
-  logger::print_success("Workspace created successfully: " + workspace_name);
+  logger::finished("workspace " + workspace_name);
   return true;
 }
 
@@ -1900,7 +1897,7 @@ bool generate_workspace_cmakelists(const std::filesystem::path &workspace_dir,
         return true;
     }
 
-    logger::print_status("Generating workspace CMakeLists.txt from " + std::string(WORKSPACE_FILE));
+    logger::print_action("Generating", "workspace CMakeLists.txt from " + std::string(WORKSPACE_FILE));
 
     // Create CMakeLists.txt if needed
     std::ofstream cmakelists(cmakelists_path);
@@ -2178,14 +2175,14 @@ bool workspace_config::add_project_dependency(const std::string &project_name,
       // Check if the dependency already exists
       if (std::find(project.dependencies.begin(), project.dependencies.end(),
                     dependency) != project.dependencies.end()) {
-        logger::print_status("Dependency already exists: " + project_name +
+        logger::print_action("Skipping", "dependency already exists: " + project_name +
                              " -> " + dependency);
         return true;
       }
 
       // Add dependency
       project.dependencies.push_back(dependency);
-      logger::print_status("Added dependency: " + project_name + " -> " +
+      logger::print_action("Adding", "dependency: " + project_name + " -> " +
                            dependency);
       return true;
     }

@@ -5,64 +5,30 @@
  */
 
 #include "cforge/log.hpp"
+#include "core/build_utils.hpp"
 #include "core/commands.hpp"
 #include "core/constants.h"
 #include "core/file_system.h"
 #include "core/process_utils.hpp"
+#include "core/script_runner.hpp"
 #include "core/toml_reader.hpp"
 #include "core/workspace.hpp"
 
 #include <algorithm>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <functional>
 #include <iostream>
+#include <set>
+#include <sstream>
 #include <string>
 #include <vector>
-#include <set>
-#include <cstdlib>
-#include <sstream>
 
 using namespace cforge;
 
-/**
- * @brief Determine CMake generator to detect multi-config support
- */
-static std::string get_cmake_generator() {
-#ifdef _WIN32
-  if (is_command_available("ninja", 15)) {
-    return "Ninja Multi-Config";
-  }
-  return "Visual Studio 17 2022";
-#else
-  return "Unix Makefiles";
-#endif
-}
-
-/**
- * @brief Get build directory path based on base directory and configuration, respecting multi-config generators
- */
-static std::filesystem::path
-get_build_dir_for_config(const std::string &base_dir,
-                         const std::string &config) {
-  std::string generator = get_cmake_generator();
-  bool multi = generator.find("Multi-Config") != std::string::npos ||
-               generator.find("Visual Studio") != std::string::npos;
-  std::filesystem::path build_path(base_dir);
-  if (multi || config.empty()) {
-    if (!std::filesystem::exists(build_path))
-      std::filesystem::create_directories(build_path);
-    return build_path;
-  }
-  // Single-config: append lowercase config
-  std::string cfg = config;
-  std::transform(cfg.begin(), cfg.end(), cfg.begin(), ::tolower);
-  std::string dir = base_dir + "-" + cfg;
-  build_path = dir;
-  if (!std::filesystem::exists(build_path))
-    std::filesystem::create_directories(build_path);
-  return build_path;
-}
+// Note: get_cmake_generator() and get_build_dir_for_config() are now in
+// build_utils.hpp
 
 /**
  * @brief Find the executable file for a project
@@ -209,8 +175,7 @@ find_project_executable(const std::filesystem::path &project_path,
   }
 
   // Final attempt: recursive search in build directory
-  logger::print_status("Performing recursive search for executable in: " +
-                       (project_path / build_dir).string());
+  logger::print_action("Searching", (project_path / build_dir).string());
   try {
     for (const auto &entry : std::filesystem::recursive_directory_iterator(
              project_path / build_dir)) {
@@ -230,9 +195,9 @@ find_project_executable(const std::filesystem::path &project_path,
   }
 
   // List all valid executables found for debugging
-  logger::print_error("No matching executable found for project: " +
+  logger::print_error("no matching executable found for project: " +
                       project_name);
-  logger::print_status("Listing all executables found:");
+  logger::print_action("Listing", "all executables found");
   int found_count = 0;
 
   for (const auto &search_path : search_paths) {
@@ -244,7 +209,7 @@ find_project_executable(const std::filesystem::path &project_path,
       for (const auto &entry :
            std::filesystem::directory_iterator(search_path)) {
         if (is_valid_executable(entry.path())) {
-          logger::print_status("  - " + entry.path().string());
+          logger::print_action("", "  - " + entry.path().string());
           found_count++;
         }
       }
@@ -253,8 +218,7 @@ find_project_executable(const std::filesystem::path &project_path,
   }
 
   if (found_count == 0) {
-    logger::print_status("No executables found. The project might not have "
-                         "been built correctly.");
+    logger::print_action("Info", "no executables found, project might not have been built correctly");
   }
 
   return std::filesystem::path();
@@ -319,11 +283,11 @@ static bool build_project_for_run(const std::filesystem::path &project_dir,
       tbl = toml::parse_file(project_toml.string());
       toml_reader proj_cfg(tbl);
       if (!generate_cmakelists_from_toml(project_dir, proj_cfg, verbose)) {
-        logger::print_error("Failed to generate CMakeLists.txt from cforge.toml");
+        logger::print_error("failed to generate CMakeLists.txt from cforge.toml");
         return false;
       }
     } catch (...) {
-      logger::print_error("Error parsing cforge.toml for automatic CMakeLists generation");
+      logger::print_error("error parsing cforge.toml for automatic CMakeLists generation");
       return false;
     }
   }
@@ -344,14 +308,14 @@ static bool build_project_for_run(const std::filesystem::path &project_dir,
     try {
       std::filesystem::create_directories(build_dir);
     } catch (const std::exception &ex) {
-      logger::print_error("Failed to create build directory: " +
+      logger::print_error("failed to create build directory: " +
                           std::string(ex.what()));
       return false;
     }
   }
 
   // Configure the project
-  logger::print_status("Configuring project...");
+  logger::print_action("Configuring", "project");
   std::vector<std::string> config_args = {
       "-S", source_dir.string(),
       "-B", build_dir.string(),
@@ -361,12 +325,12 @@ static bool build_project_for_run(const std::filesystem::path &project_dir,
   bool config_success =
       execute_tool(build_cmd, config_args, "", "CMake Configure", verbose);
   if (!config_success) {
-    logger::print_error("Failed to configure project");
+    logger::print_error("failed to configure project");
     return false;
   }
 
   // Build the project
-  logger::print_status("Building project...");
+  logger::building(project_dir.filename().string());
   std::vector<std::string> build_args = {"--build", build_dir.string(),
                                          "--config", config};
 
@@ -376,7 +340,7 @@ static bool build_project_for_run(const std::filesystem::path &project_dir,
     return false;
   }
 
-  logger::print_success("Project built successfully");
+  logger::finished(config);
   return true;
 }
 
@@ -472,7 +436,7 @@ cforge_int_t cforge_cmd_run(const cforge_context_t *ctx) {
 
     // Handle workspace-run only when at the workspace root; subprojects fall through to single-run
     if (is_workspace && project_dir == workspace_root) {
-      logger::print_status("Running in workspace context: " + project_dir.string());
+      logger::print_action("Running", "in workspace context: " + project_dir.string());
       
       // Ensure workspace CMakeLists.txt exists (generate if needed)
       std::filesystem::path ws_cmake = project_dir / "CMakeLists.txt";
@@ -480,7 +444,7 @@ cforge_int_t cforge_cmd_run(const cforge_context_t *ctx) {
         logger::print_verbose("Generating workspace CMakeLists.txt for run");
         toml_reader ws_cfg(toml::parse_file((project_dir / WORKSPACE_FILE).string()));
         if (!generate_workspace_cmakelists(project_dir, ws_cfg, verbose)) {
-          logger::print_error("Failed to generate workspace CMakeLists.txt");
+          logger::print_error("failed to generate workspace CMakeLists.txt");
           return 1;
         }
       }
@@ -495,7 +459,7 @@ cforge_int_t cforge_cmd_run(const cforge_context_t *ctx) {
       // If user skipped build but config not built, build anyway
       if (skip_build && !std::filesystem::exists(ws_build_dir / "CMakeCache.txt")) {
         need_build = true;
-        logger::print_status("Workspace build not found for config '" + config + "', configuring and building workspace");
+        logger::print_action("Info", "workspace build not found for config '" + config + "', configuring and building workspace");
       }
       if (need_build) {
         // Prepare context for build
@@ -513,11 +477,11 @@ cforge_int_t cforge_cmd_run(const cforge_context_t *ctx) {
         free((void*)build_ctx.args.config);
         if (build_ctx.args.verbosity) free((void*)build_ctx.args.verbosity);
         if (build_res != 0) {
-          logger::print_error("Workspace build failed");
+          logger::print_error("workspace build failed");
           return build_res;
         }
       } else {
-        logger::print_status("Skipping workspace build as requested");
+        logger::print_action("Skipping", "workspace build as requested");
       }
       std::filesystem::path workspace_file = project_dir / WORKSPACE_FILE;
       toml_reader workspace_config(toml::parse_file(workspace_file.string()));
@@ -543,7 +507,7 @@ cforge_int_t cforge_cmd_run(const cforge_context_t *ctx) {
         }
       }
       if (to_run.empty()) {
-        logger::print_error("No startup project set in workspace");
+        logger::print_error("no startup project set in workspace");
         return 1;
       }
       // Run each startup project
@@ -552,7 +516,7 @@ cforge_int_t cforge_cmd_run(const cforge_context_t *ctx) {
         // Determine project directory
         std::filesystem::path proj_path = project_dir / proj_name;
         if (!std::filesystem::exists(proj_path / CFORGE_FILE)) {
-          logger::print_warning("Skipping missing project: " + proj_name);
+          logger::print_warning("skipping missing project: " + proj_name);
           overall_success = false;
           continue;
         }
@@ -562,7 +526,7 @@ cforge_int_t cforge_cmd_run(const cforge_context_t *ctx) {
         // Find executable
         auto exe = find_project_executable(proj_path, ws_build_dir.string(), config, real_name);
         if (exe.empty()) {
-          logger::print_error("Executable not found: " + proj_name);
+          logger::print_error("executable not found: " + proj_name);
           overall_success = false;
           continue;
         }
@@ -575,19 +539,19 @@ cforge_int_t cforge_cmd_run(const cforge_context_t *ctx) {
         }
         // Spawn in new terminal
         if (!spawn_in_terminal(oss.str())) {
-          logger::print_error("Failed to spawn terminal for: " + proj_name);
+          logger::print_error("failed to spawn terminal for: " + proj_name);
           overall_success = false;
         }
       }
       return overall_success ? 0 : 1;
     } else {
       // Handle single project run
-      logger::print_status("Running in single project context");
+      logger::print_action("Running", "in single project context");
 
       // Check if this is a valid cforge project
       std::filesystem::path config_path = project_dir / CFORGE_FILE;
       if (!std::filesystem::exists(config_path)) {
-        logger::print_error("Not a valid cforge project (missing " +
+        logger::print_error("not a valid cforge project (missing " +
                             std::string(CFORGE_FILE) + ")");
         return 1;
       }
@@ -597,7 +561,7 @@ cforge_int_t cforge_cmd_run(const cforge_context_t *ctx) {
       try {
         config_table = toml::parse_file(config_path.string());
       } catch (const toml::parse_error &e) {
-        logger::print_error("Failed to parse " + std::string(CFORGE_FILE) +
+        logger::print_error("failed to parse " + std::string(CFORGE_FILE) +
                             ": " + std::string(e.what()));
         return 1;
       }
@@ -611,14 +575,14 @@ cforge_int_t cforge_cmd_run(const cforge_context_t *ctx) {
       }
 
       // Log project info
-      logger::print_status("Project: " + project_name);
-      logger::print_status("Configuration: " + config);
+      logger::print_action("Project", project_name);
+      logger::print_action("Configuration", config);
 
       // Check binary type
       std::string binary_type =
           project_config.get_string("project.binary_type", "executable");
       if (binary_type != "executable") {
-        logger::print_error("Project is not an executable (binary_type is '" +
+        logger::print_error("project is not an executable (binary_type is '" +
                             binary_type + "')");
         return 1;
       }
@@ -630,11 +594,11 @@ cforge_int_t cforge_cmd_run(const cforge_context_t *ctx) {
       // Build the project if needed
       if (!skip_build) {
         if (!build_project_for_run(project_dir, config, verbose)) {
-          logger::print_error("Failed to build project");
+          logger::print_error("failed to build project");
           return 1;
         }
       } else {
-        logger::print_status("Skipping build step as requested");
+        logger::print_action("Skipping", "build step as requested");
       }
 
       // Find the executable
@@ -642,15 +606,15 @@ cforge_int_t cforge_cmd_run(const cforge_context_t *ctx) {
           project_dir, build_dir_name, config, project_name);
 
       if (executable.empty()) {
-        logger::print_error("Executable not found for project: " +
+        logger::print_error("executable not found for project: " +
                             project_name);
         return 1;
       }
 
-      logger::print_status("Running executable: " + executable.string());
+      logger::running(executable.string());
 
       // Display program output header
-      logger::print_status("Program Output\n");
+      logger::print_action("", "Program Output\n");
 
       // Create callbacks to display raw program output
       std::function<void(const std::string &)> stdout_callback =
@@ -670,19 +634,19 @@ cforge_int_t cforge_cmd_run(const cforge_context_t *ctx) {
       std::cout << std::endl;
 
       if (result.success) {
-        logger::print_success("Program exited with code 0");
+        logger::finished(config);
         return 0;
       } else {
-        logger::print_error("Program exited with code: " +
+        logger::print_error("program exited with code: " +
                             std::to_string(result.exit_code));
         return result.exit_code;
       }
     }
   } catch (const std::exception &ex) {
-    logger::print_error("Exception: " + std::string(ex.what()));
+    logger::print_error("exception: " + std::string(ex.what()));
     return 1;
   } catch (...) {
-    logger::print_error("Unknown exception occurred");
+    logger::print_error("unknown exception occurred");
     return 1;
   }
 

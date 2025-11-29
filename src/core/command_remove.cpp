@@ -115,7 +115,7 @@ remove_dependency_from_config(const std::filesystem::path &config_file,
   outfile.close();
 
   if (verbose) {
-    logger::print_status("Removed dependency: " + package_name);
+    logger::print_action("Removed", package_name);
   }
 
   return true;
@@ -167,7 +167,7 @@ static bool remove_package_with_vcpkg(const std::filesystem::path &project_dir,
   std::vector<std::string> args = {"remove", package_name};
 
   // Run the command
-  logger::print_status("Removing package: " + package_name);
+  logger::removing(package_name);
 
   auto result = execute_process(
       command, args,
@@ -206,7 +206,7 @@ static bool remove_git_repo(const std::filesystem::path &project_dir,
     try {
       std::filesystem::remove_all(repo_path);
       if (verbose) {
-        logger::print_status("Removed cloned git dependency: " + package_name);
+        logger::print_action("Removed", "cloned git dependency: " + package_name);
       }
       return true;
     } catch (const std::exception &e) {
@@ -383,6 +383,6 @@ cforge_int_t cforge_cmd_remove(const cforge_context_t *ctx) {
     return 1;
   }
 
-  logger::print_success("Successfully removed dependency: " + package_name);
+  logger::print_action("Removed", package_name);
   return 0;
 }

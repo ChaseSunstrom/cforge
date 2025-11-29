@@ -48,6 +48,7 @@ cforge_int_t cforge_cmd_help(const cforge_context_t *ctx) {
     logger::print_plain("  update    Update cforge");
     logger::print_plain("  ide       Generate IDE project files");
     logger::print_plain("  list      List dependencies or projects");
+    logger::print_plain("  lock      Manage dependency lock file for reproducible builds");
     logger::print_plain("  version   Show version information");
     logger::print_plain("  help      Show help for a specific command");
     logger::print_plain("");
@@ -361,6 +362,30 @@ cforge_int_t cforge_cmd_help(const cforge_context_t *ctx) {
     logger::print_plain("Usage: cforge pack [options]");
     logger::print_plain("");
     logger::print_plain("See 'cforge help package' for details");
+  } else if (specific_command == "lock") {
+    logger::print_plain("cforge lock - Manage dependency lock file");
+    logger::print_plain("");
+    logger::print_plain("Usage: cforge lock [options]");
+    logger::print_plain("");
+    logger::print_plain("Options:");
+    logger::print_plain("  --verify, -v   Verify dependencies match lock file");
+    logger::print_plain("  --clean, -c    Remove the lock file");
+    logger::print_plain("  --force, -f    Force regeneration even if lock exists");
+    logger::print_plain("  --help, -h     Show this help message");
+    logger::print_plain("");
+    logger::print_plain("The lock file (cforge.lock) ensures reproducible builds by");
+    logger::print_plain("tracking exact versions (commit hashes) of all dependencies.");
+    logger::print_plain("");
+    logger::print_plain("Examples:");
+    logger::print_plain("  cforge lock              Generate/update lock file");
+    logger::print_plain("  cforge lock --verify     Check if deps match lock file");
+    logger::print_plain("  cforge lock --force      Regenerate lock file");
+    logger::print_plain("  cforge lock --clean      Remove lock file");
+    logger::print_plain("");
+    logger::print_plain("Best practices:");
+    logger::print_plain("  1. Commit cforge.lock to version control");
+    logger::print_plain("  2. Run 'cforge lock --verify' in CI pipelines");
+    logger::print_plain("  3. Run 'cforge lock' after adding/updating dependencies");
   } else {
     logger::print_error("Unknown command: " + specific_command);
     logger::print_plain("Run 'cforge help' for a list of available commands");

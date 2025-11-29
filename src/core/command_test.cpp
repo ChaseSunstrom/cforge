@@ -4,45 +4,25 @@
  */
 
 #include "cforge/log.hpp"
+#include "core/build_utils.hpp"
 #include "core/commands.hpp"
 #include "core/constants.h"
 #include "core/file_system.h"
 #include "core/process_utils.hpp"
+#include "core/script_runner.hpp"
 #include "core/toml_reader.hpp"
 
 #include <algorithm>
 #include <filesystem>
-#include <string>
-#include <vector>
 #include <fstream>
 #include <regex>
 #include <sstream>
+#include <string>
+#include <vector>
 
 using namespace cforge;
 
-/**
- * @brief Get build directory path based on base directory and configuration
- *
- * @param base_dir Base build directory from configuration
- * @param config Build configuration (Release, Debug, etc.)
- * @return std::filesystem::path The configured build directory
- */
-static std::filesystem::path
-get_build_dir_for_config(const std::string &base_dir,
-                         const std::string &config) {
-  // If config is empty or the default "Release", use the base dir as is
-  if (config.empty() || config == "Release") {
-    return base_dir;
-  }
-
-  // Otherwise, append the lowercase config name to the build directory
-  std::string config_lower = config;
-  std::transform(config_lower.begin(), config_lower.end(), config_lower.begin(),
-                 ::tolower);
-
-  // Format: build-config (e.g., build-debug)
-  return base_dir + "-" + config_lower;
-}
+// Note: get_build_dir_for_config() is now in build_utils.hpp
 
 /**
  * @brief Find the test executable in the build directory
@@ -80,8 +60,7 @@ find_test_executable(const std::filesystem::path &build_dir,
   // Check for the executable with the naming convention
   for (const auto &path : search_paths) {
     if (std::filesystem::exists(path)) {
-      logger::print_status("Found test executable with expected name: " +
-                           path.string());
+      logger::print_action("Found", "test executable: " + path.string());
       return path;
     }
   }
@@ -106,7 +85,7 @@ find_test_executable(const std::filesystem::path &build_dir,
           build_dir}) {
       std::filesystem::path alt_path = base_path / alt_name;
       if (std::filesystem::exists(alt_path)) {
-        logger::print_status("Found alternative test executable: " +
+        logger::print_action("Found", "alternative test executable: " +
                              alt_path.string());
         return alt_path;
       }
@@ -115,7 +94,7 @@ find_test_executable(const std::filesystem::path &build_dir,
 
   // If still not found, do a recursive search for any executable that might be
   // a test
-  logger::print_status("Recursively searching for test executable...");
+  logger::print_action("Searching", "recursively for test executable");
 
   for (const auto &entry :
        std::filesystem::recursive_directory_iterator(build_dir)) {
@@ -133,7 +112,7 @@ find_test_executable(const std::filesystem::path &build_dir,
 #else
         if ((entry.status().permissions() & std::filesystem::perms::owner_exec) != std::filesystem::perms::none) {
 #endif
-          logger::print_status("Found test executable via search: " +
+          logger::print_action("Found", "test executable: " +
                                entry.path().string());
           return entry.path();
         }
@@ -159,7 +138,7 @@ static bool run_ctest(const std::filesystem::path &build_dir, bool verbose,
     args.push_back(std::to_string(jobs));
   }
 
-  logger::print_status("Running tests with CTest...");
+  logger::testing("CTest");
   auto result =
       execute_tool(command, args, build_dir.string(), "CTest", verbose);
 
@@ -180,8 +159,7 @@ static bool run_test_executable(const std::filesystem::path &test_executable,
     working_dir = std::filesystem::current_path();
   }
 
-  logger::print_status("Running tests with " +
-                       test_executable.filename().string());
+  logger::testing(test_executable.filename().string());
   auto result =
       execute_tool(command, test_args, working_dir.string(), "Test", verbose);
 
@@ -209,10 +187,10 @@ cforge_int_t cforge_cmd_test(const cforge_context_t *ctx) {
   // Determine test directory
   std::string test_dir = cfg.get_string("test.directory", "tests");
   fs::path tests_src = project_dir / test_dir;
-  logger::print_status("Using test directory: " + tests_src.string());
+  logger::print_action("Using", "test directory: " + tests_src.string());
   // Create test directory if missing
   if (!fs::exists(tests_src)) {
-    logger::print_status("Creating test directory: " + tests_src.string());
+    logger::print_action("Creating", "test directory: " + tests_src.string());
     try {
       fs::create_directories(tests_src);
     } catch (const std::exception &e) {
@@ -224,7 +202,7 @@ cforge_int_t cforge_cmd_test(const cforge_context_t *ctx) {
   // Generate unified C/C++ test framework header
   fs::path header_src = tests_src / "test_framework.h";
   if (!fs::exists(header_src)) {
-    logger::print_status("Generating test framework header: " + header_src.string());
+    logger::print_action("Generating", "test framework header: " + header_src.string());
     std::ofstream header_file(header_src);
     header_file << R"TFH(
 #ifndef TEST_FRAMEWORK_H
@@ -276,7 +254,7 @@ extern "C" {
   // Generate test_main.cpp by scanning TEST(Category,Name)
   fs::path main_src = tests_src / "test_main.cpp";
   // Always regenerate test_main.cpp
-  logger::print_status("Generating test_main.cpp via scan: " + main_src.string());
+  logger::print_action("Generating", "test_main.cpp via scan: " + main_src.string());
   std::ofstream main_file(main_src);
   // Includes for test runner
   main_file << "#include \"test_framework.h\"\n";
@@ -357,7 +335,7 @@ extern "C" {
   // Write CMakeLists.txt for tests
   fs::path cmake_tests = tests_src / "CMakeLists.txt";
   if (!fs::exists(cmake_tests)) {
-  logger::print_status("Generating CMakeLists.txt for tests: " + cmake_tests.string());
+  logger::print_action("Generating", "CMakeLists.txt for tests: " + cmake_tests.string());
   std::ofstream cmake_file(cmake_tests);
   cmake_file << "cmake_minimum_required(VERSION 3.15)\n";
   cmake_file << "project(" << project_name << "_tests C CXX)\n";
@@ -411,13 +389,13 @@ extern "C" {
 
   // Configure tests via CMake to place binaries in output_tests
   bool verbose = logger::get_verbosity() == log_verbosity::VERBOSITY_VERBOSE;
-  logger::print_status("Configuring tests with CMake...");
+  logger::print_action("Configuring", "tests with CMake");
   std::vector<std::string> cmake_args = {"-S", tests_src.string(), "-B", output_tests.string()};
   // Determine build configuration (allow -c/--config)
   std::string build_config;
   if (ctx->args.config && std::strlen(ctx->args.config) > 0) {
     build_config = ctx->args.config;
-    logger::print_status("Using build configuration: " + build_config);
+    logger::print_action("Using", "build configuration: " + build_config);
   } else {
     build_config = cfg.get_string("build.build_type", "Debug");
   }
@@ -426,14 +404,14 @@ extern "C" {
     logger::print_error("Failed to configure tests");
     return 1;
   }
-  logger::print_status("Building tests via CMake...");
+  logger::building("tests");
   // Build tests via CMake with specific configuration
   std::vector<std::string> build_args = {"--build", output_tests.string(), "--config", build_config};
   if (!execute_tool("cmake", build_args, "", "CTest Build", verbose)) {
     logger::print_error("Failed to build tests");
     return 1;
   }
-  logger::print_success("Tests built successfully in " + output_tests.string());
+  logger::finished("test");
 
   // Determine test executable name and path (respect multi-config)
   std::string exe_name = project_name + "_tests";
@@ -445,21 +423,21 @@ extern "C" {
   fs::path config_exec = output_tests / build_config / exe_name;
   if (fs::exists(config_exec)) {
     test_exec = config_exec;
-    logger::print_status("Found test executable for config '" + build_config + "': " + test_exec.string());
+    logger::print_action("Found", "test executable for config '" + build_config + "': " + test_exec.string());
   } else {
     // 2) try top-level
     fs::path direct_exec = output_tests / exe_name;
     if (fs::exists(direct_exec)) {
       test_exec = direct_exec;
-      logger::print_status("Found test executable at top-level: " + test_exec.string());
+      logger::print_action("Found", "test executable at top-level: " + test_exec.string());
     } else {
       // 3) recursive fallback
-      logger::print_status("Searching recursively for test executable under " + output_tests.string());
+      logger::print_action("Searching", "recursively for test executable under " + output_tests.string());
       for (auto &entry : fs::recursive_directory_iterator(output_tests)) {
         if (!entry.is_regular_file()) continue;
         if (entry.path().filename() == exe_name) {
           test_exec = entry.path();
-          logger::print_status("Found test executable via recursive search: " + test_exec.string());
+          logger::print_action("Found", "test executable: " + test_exec.string());
           break;
         }
       }
@@ -469,7 +447,7 @@ extern "C" {
     logger::print_error("Test executable not found for config '" + build_config + "'");
     return 1;
   }
-  logger::print_status("Running test executable: " + test_exec.string());
+  logger::running(test_exec.string());
   // Collect test executable arguments: skip CForge flags and split at `--`
   std::vector<std::string> test_args;
   bool found_dd = false;
@@ -505,12 +483,12 @@ extern "C" {
       if (idx > 0) oss << ' ';
       oss << test_args[idx];
     }
-    logger::print_status("Passing arguments to test executable: " + oss.str());
+    logger::print_action("Passing", "arguments to test executable: " + oss.str());
   }
   // Always show test program output
   if (!run_test_executable(test_exec, test_args, true)) {
     return 1;
   }
-  logger::print_success("All tests passed.");
+  logger::finished("test");
   return 0;
 }

@@ -51,3 +51,5 @@ CMakeCache.txt
 *.exe
 *.out
 *.app
+
+.claude/

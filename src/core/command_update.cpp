@@ -59,7 +59,7 @@ static bool update_vcpkg(const std::filesystem::path &project_dir,
 
   if (!std::filesystem::exists(vcpkg_dir)) {
     logger::print_error("vcpkg not found at: " + vcpkg_dir.string());
-    logger::print_status("Run 'cforge vcpkg' to set up vcpkg integration");
+    logger::print_action("Run", "'cforge vcpkg' to set up vcpkg integration");
     return false;
   }
 
@@ -67,7 +67,7 @@ static bool update_vcpkg(const std::filesystem::path &project_dir,
   std::string git_cmd = "git";
   std::vector<std::string> git_args = {"pull", "--rebase"};
 
-  logger::print_status("Updating vcpkg...");
+  logger::updating("vcpkg");
 
   auto result = execute_process(
       git_cmd, git_args, vcpkg_dir.string(),
@@ -95,7 +95,7 @@ static bool update_vcpkg(const std::filesystem::path &project_dir,
   bootstrap_args = {"-disableMetrics"};
 #endif
 
-  logger::print_status("Running vcpkg bootstrap...");
+  logger::print_action("Running", "vcpkg bootstrap");
 
   auto bootstrap_result = execute_process(
       bootstrap_cmd, bootstrap_args, vcpkg_dir.string(),
@@ -127,7 +127,7 @@ static bool update_dependencies_with_vcpkg(
     const std::filesystem::path &project_dir,
     const std::map<std::string, std::string> &dependencies, bool verbose) {
   if (dependencies.empty()) {
-    logger::print_status("No dependencies to update");
+    logger::print_action("Skipping", "No dependencies to update");
     return true;
   }
 
@@ -142,7 +142,7 @@ static bool update_dependencies_with_vcpkg(
 
   if (!std::filesystem::exists(vcpkg_exe)) {
     logger::print_error("vcpkg not found at: " + vcpkg_exe.string());
-    logger::print_status("Run 'cforge vcpkg' to set up vcpkg integration");
+    logger::print_action("Run", "'cforge vcpkg' to set up vcpkg integration");
     return false;
   }
 
@@ -150,7 +150,7 @@ static bool update_dependencies_with_vcpkg(
   std::string command = vcpkg_exe.string();
   std::vector<std::string> args = {"update"};
 
-  logger::print_status("Running vcpkg update...");
+  logger::print_action("Running", "vcpkg update");
 
   auto result = execute_process(
       command, args, "",
@@ -178,7 +178,7 @@ static bool update_dependencies_with_vcpkg(
 
     std::vector<std::string> install_args = {"install", package_spec};
 
-    logger::print_status("Updating package: " + package_spec);
+    logger::updating(package_spec);
 
     auto install_result = execute_process(
         command, install_args, "",
@@ -213,7 +213,7 @@ static bool update_dependencies_with_git(const std::filesystem::path &project_di
     }
     std::filesystem::path repo_path = deps_dir / name;
     if (std::filesystem::exists(repo_path)) {
-      logger::print_status("Updating git dependency: " + name);
+      logger::updating(name);
       auto result = execute_process(
           "git", {"pull"}, repo_path.string(),
           [verbose](const std::string &line) { if (verbose) logger::print_verbose(line); },
@@ -223,7 +223,7 @@ static bool update_dependencies_with_git(const std::filesystem::path &project_di
         all_success = false;
       }
     } else {
-      logger::print_status("Cloning git dependency: " + name);
+      logger::print_action("Cloning", name);
       auto result = execute_process(
           "git", {"clone", url, repo_path.string()}, "",
           [verbose](const std::string &line) { if (verbose) logger::print_verbose(line); },
@@ -278,7 +278,7 @@ cforge_int_t cforge_cmd_update(const cforge_context_t *ctx) {
         install_path = installer_instance.get_default_install_path();
       }
     }
-    logger::print_status("Install path: " + install_path);
+    logger::print_action("Install path", install_path);
 
     // Prepare temporary clone directory
     std::filesystem::path temp_dir =
@@ -289,7 +289,7 @@ cforge_int_t cforge_cmd_update(const cforge_context_t *ctx) {
 
     // Clone repository
     const std::string repo_url = "https://github.com/ChaseSunstrom/cforge.git";
-    logger::print_status("Cloning cforge from GitHub: " + repo_url);
+    logger::print_action("Cloning", "cforge from GitHub: " + repo_url);
     if (!execute_tool(
             "git", {"clone", "--branch", "master", repo_url, temp_dir.string()},
             "", "Git Clone", add_to_path)) {
@@ -310,7 +310,7 @@ cforge_int_t cforge_cmd_update(const cforge_context_t *ctx) {
     }
 
     if (ok) {
-      logger::print_success("cforge updated successfully to path: " +
+      logger::finished("cforge updated successfully to path: " +
                             install_path);
       return 0;
     } else {
@@ -351,7 +351,7 @@ cforge_int_t cforge_cmd_update(const cforge_context_t *ctx) {
     logger::print_warning("Failed to update some git dependencies");
   }
   if (vcpkg_updated && deps_updated && git_ok) {
-    logger::print_success("Successfully updated all dependencies");
+    logger::finished("Successfully updated all dependencies");
     return 0;
   } else {
     logger::print_error("Failed to update one or more dependencies");

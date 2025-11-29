@@ -34,7 +34,7 @@ using namespace cforge;
 static bool generate_vs_project(const std::filesystem::path &project_dir,
                                 const std::filesystem::path &build_dir,
                                 bool verbose) {
-  logger::print_status("Generating Visual Studio project files...");
+  logger::print_action("Generating", "Visual Studio project files");
 
   // Create build directory if it doesn't exist
   if (!std::filesystem::exists(build_dir)) {
@@ -55,7 +55,7 @@ static bool generate_vs_project(const std::filesystem::path &project_dir,
   bool success = execute_tool("cmake", cmake_args, "", "CMake", verbose);
 
   if (success) {
-    logger::print_success("Visual Studio project files generated successfully");
+    logger::generated("Visual Studio project files");
     logger::print_status("Open " + build_dir.string() +
                          "/*.sln to start working with the project");
   } else {
@@ -77,7 +77,7 @@ static bool
 generate_codeblocks_project(const std::filesystem::path &project_dir,
                             const std::filesystem::path &build_dir,
                             bool verbose) {
-  logger::print_status("Generating CodeBlocks project files...");
+  logger::print_action("Generating", "CodeBlocks project files");
 
   // Create build directory if it doesn't exist
   if (!std::filesystem::exists(build_dir)) {
@@ -98,7 +98,7 @@ generate_codeblocks_project(const std::filesystem::path &project_dir,
   bool success = execute_tool("cmake", cmake_args, "", "CMake", verbose);
 
   if (success) {
-    logger::print_success("CodeBlocks project files generated successfully");
+    logger::generated("CodeBlocks project files");
     logger::print_status("Open " + build_dir.string() +
                          "/*.cbp to start working with the project");
   } else {
@@ -119,7 +119,7 @@ generate_codeblocks_project(const std::filesystem::path &project_dir,
 static bool generate_xcode_project(const std::filesystem::path &project_dir,
                                    const std::filesystem::path &build_dir,
                                    bool verbose) {
-  logger::print_status("Generating Xcode project files...");
+  logger::print_action("Generating", "Xcode project files");
 
   // Create build directory if it doesn't exist
   if (!std::filesystem::exists(build_dir)) {
@@ -139,7 +139,7 @@ static bool generate_xcode_project(const std::filesystem::path &project_dir,
   bool success = execute_tool("cmake", cmake_args, "", "CMake", verbose);
 
   if (success) {
-    logger::print_success("Xcode project files generated successfully");
+    logger::generated("Xcode project files");
     logger::print_status("Open " + build_dir.string() +
                          "/*.xcodeproj to start working with the project");
   } else {
@@ -160,7 +160,7 @@ static bool generate_xcode_project(const std::filesystem::path &project_dir,
 static bool generate_clion_project(const std::filesystem::path &project_dir,
                                    const std::filesystem::path &build_dir,
                                    bool verbose) {
-  logger::print_status("Setting up project for CLion...");
+  logger::print_action("Setting up", "project for CLion");
 
   // Create build directory if it doesn't exist
   if (!std::filesystem::exists(build_dir)) {
@@ -180,7 +180,7 @@ static bool generate_clion_project(const std::filesystem::path &project_dir,
   bool success = execute_tool("cmake", cmake_args, "", "CMake", verbose);
 
   if (success) {
-    logger::print_success("Project set up for CLion successfully");
+    logger::print_action("Set up", "project for CLion");
     logger::print_status("Open the project root directory in CLion");
   } else {
     logger::print_error("Failed to set up project for CLion");
@@ -632,7 +632,7 @@ static bool generate_vs_workspace_solution(const std::filesystem::path &workspac
         std::ofstream out(proj_file);
         for (auto &l : lines) out << l << '\n';
     }
-    logger::print_success("Visual Studio solution and project files generated successfully");
+    logger::generated("Visual Studio solution and project files");
     logger::print_status("Open " + (workspace_dir / (ws.get_name() + ".sln")).string() + " to start working");
     return true;
 }
@@ -672,7 +672,7 @@ static bool generate_vs_project_direct(const std::filesystem::path &project_dir,
     if (!write_sln_single(out_dir, name, guid, verbose)) {
         return false;
     }
-    logger::print_success("Visual Studio solution and project files generated successfully");
+    logger::generated("Visual Studio solution and project files");
     logger::print_status("Open " + (out_dir / (name + ".sln")).string() + " to start working");
     return true;
 }

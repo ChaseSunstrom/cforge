@@ -44,6 +44,12 @@ typedef struct {
 } cforge_command_args_t;
 
 /**
+ * @brief Maximum path length for cforge paths
+ * @details 4096 handles most long path scenarios on Windows and Unix
+ */
+#define CFORGE_MAX_PATH 4096
+
+/**
  * @brief Context structure for command execution
  * @details This structure holds the context for executing a command, including
  * the command arguments and working directory.
@@ -51,7 +57,7 @@ typedef struct {
 typedef struct {
   cforge_command_args_t args;
   bool is_workspace;
-  cforge_char_t working_dir[256];
+  cforge_char_t working_dir[CFORGE_MAX_PATH];
 } cforge_context_t;
 
 /**

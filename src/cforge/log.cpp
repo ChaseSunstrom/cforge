@@ -1,6 +1,17 @@
 /**
  * @file log.cpp
- * @brief Implementation of logging utilities
+ * @brief Cargo-style logging implementation
+ *
+ * Output format:
+ *   {status:>12} {message}
+ *
+ * Examples:
+ *      Compiling myproject v0.1.0
+ *       Building target/debug/myproject
+ *       Finished dev [unoptimized] target(s) in 1.23s
+ *        Running `target/debug/myproject`
+ *        warning: unused variable
+ *          error: cannot find value
  */
 
 #include <iostream>
@@ -11,101 +22,221 @@
 
 #ifdef __cplusplus
 namespace cforge {
+
 log_verbosity logger::s_verbosity = log_verbosity::VERBOSITY_NORMAL;
 
 void logger::set_verbosity(log_verbosity level) { s_verbosity = level; }
 
 log_verbosity logger::get_verbosity() { return s_verbosity; }
 
-void logger::print_header(const std::string &message) {
+// ============================================================
+// Core formatting helper
+// ============================================================
+
+void logger::print_status_line(const std::string &status,
+                               const std::string &message,
+                               fmt::color status_color, bool is_bold,
+                               FILE *stream) {
+  // Right-align status word to STATUS_WIDTH characters
+  if (is_bold) {
+    fmt::print(stream, fg(status_color) | fmt::emphasis::bold, "{:>{}}", status,
+               STATUS_WIDTH);
+  } else {
+    fmt::print(stream, fg(status_color), "{:>{}}", status, STATUS_WIDTH);
+  }
+  fmt::print(stream, " {}\n", message);
+}
+
+// ============================================================
+// Main logging functions
+// ============================================================
+
+void logger::print_action(const std::string &action,
+                          const std::string &message) {
   if (s_verbosity == log_verbosity::VERBOSITY_QUIET)
     return;
-
-  // Use UTF-8 raw string literal for box drawing
-  fmt::print(u8R"(┌───────────────────────────────────────────────────┐
-│ {:<49} │
-└───────────────────────────────────────────────────┘
-
-)" , message);
+  print_status_line(action, message, fmt::color::green);
 }
 
 void logger::print_status(const std::string &message) {
   if (s_verbosity == log_verbosity::VERBOSITY_QUIET)
     return;
-  // Prefix with caret and INFO status
-  fmt::print(fg(fmt::color::white), "> ");
-  fmt::print(fg(fmt::color::white), "{} ", message);
-  fmt::print(fg(fmt::color::blue), "[INFO]\n");
+  // Use a generic status indicator for info messages
+  print_status_line("", message, fmt::color::cyan);
 }
 
 void logger::print_success(const std::string &message) {
   if (s_verbosity == log_verbosity::VERBOSITY_QUIET)
     return;
-  // Prefix with caret and OK status
-  fmt::print(fg(fmt::color::white), "> ");
-  fmt::print(fg(fmt::color::white), "{} ", message);
-  fmt::print(fg(fmt::color::green), "[OK]\n");
-}
-
-void logger::print_plain(const std::string &message) {
-  // Prefix with caret
-  fmt::print(fg(fmt::color::white), "> {}\n", message);
+  print_status_line("Finished", message, fmt::color::green);
 }
 
 void logger::print_warning(const std::string &message) {
-  // Prefix with caret and WARNING status
-  fmt::print(fg(fmt::color::white), "> ");
-  fmt::print(fg(fmt::color::white), "{} ", message);
-  fmt::print(fg(fmt::color::yellow), "[WARNING]\n");
+  // Warnings always show unless quiet
+  if (s_verbosity == log_verbosity::VERBOSITY_QUIET)
+    return;
+  print_status_line("warning", message, fmt::color::yellow, true, stderr);
 }
 
 void logger::print_error(const std::string &message) {
-  // Prefix with caret and FAILURE status
-  fmt::print(stderr, fg(fmt::color::white), "> ");
-  fmt::print(stderr, fg(fmt::color::white), "{} ", message);
-  fmt::print(stderr, fg(fmt::color::red), "[FAILURE]\n");
+  // Errors always show
+  print_status_line("error", message, fmt::color::red, true, stderr);
+}
+
+void logger::print_verbose(const std::string &message) {
+  // Check if this looks like an error (for backwards compat)
+  if (message.find("error") != std::string::npos ||
+      message.find("Error") != std::string::npos ||
+      message.find("ERROR") != std::string::npos) {
+    print_error(message);
+    return;
+  }
+
+  if (s_verbosity != log_verbosity::VERBOSITY_VERBOSE)
+    return;
+
+  // Gray, non-bold for verbose output
+  print_status_line("", message, fmt::color::gray, false);
+}
+
+// ============================================================
+// Cargo-style action helpers
+// ============================================================
+
+void logger::compiling(const std::string &target) {
+  if (s_verbosity == log_verbosity::VERBOSITY_QUIET)
+    return;
+  print_status_line("Compiling", target, fmt::color::green);
+}
+
+void logger::building(const std::string &target) {
+  if (s_verbosity == log_verbosity::VERBOSITY_QUIET)
+    return;
+  print_status_line("Building", target, fmt::color::green);
+}
+
+void logger::running(const std::string &command) {
+  if (s_verbosity == log_verbosity::VERBOSITY_QUIET)
+    return;
+  print_status_line("Running", command, fmt::color::green);
+}
+
+void logger::finished(const std::string &config, const std::string &time) {
+  if (s_verbosity == log_verbosity::VERBOSITY_QUIET)
+    return;
+  std::string msg = config + " target(s)";
+  if (!time.empty()) {
+    msg += " in " + time;
+  }
+  print_status_line("Finished", msg, fmt::color::green);
+}
+
+void logger::fetching(const std::string &target) {
+  if (s_verbosity == log_verbosity::VERBOSITY_QUIET)
+    return;
+  print_status_line("Fetching", target, fmt::color::green);
+}
+
+void logger::updating(const std::string &target) {
+  if (s_verbosity == log_verbosity::VERBOSITY_QUIET)
+    return;
+  print_status_line("Updating", target, fmt::color::green);
+}
+
+void logger::installing(const std::string &target) {
+  if (s_verbosity == log_verbosity::VERBOSITY_QUIET)
+    return;
+  print_status_line("Installing", target, fmt::color::green);
+}
+
+void logger::removing(const std::string &target) {
+  if (s_verbosity == log_verbosity::VERBOSITY_QUIET)
+    return;
+  print_status_line("Removing", target, fmt::color::green);
+}
+
+void logger::creating(const std::string &target) {
+  if (s_verbosity == log_verbosity::VERBOSITY_QUIET)
+    return;
+  print_status_line("Creating", target, fmt::color::green);
+}
+
+void logger::created(const std::string &target) {
+  if (s_verbosity == log_verbosity::VERBOSITY_QUIET)
+    return;
+  print_status_line("Created", target, fmt::color::green);
+}
+
+void logger::generated(const std::string &target) {
+  if (s_verbosity == log_verbosity::VERBOSITY_QUIET)
+    return;
+  print_status_line("Generated", target, fmt::color::green);
+}
+
+void logger::configuring(const std::string &target) {
+  if (s_verbosity == log_verbosity::VERBOSITY_QUIET)
+    return;
+  print_status_line("Configuring", target, fmt::color::green);
+}
+
+void logger::linking(const std::string &target) {
+  if (s_verbosity == log_verbosity::VERBOSITY_QUIET)
+    return;
+  print_status_line("Linking", target, fmt::color::green);
+}
+
+void logger::testing(const std::string &target) {
+  if (s_verbosity == log_verbosity::VERBOSITY_QUIET)
+    return;
+  print_status_line("Testing", target, fmt::color::green);
+}
+
+void logger::packaging(const std::string &target) {
+  if (s_verbosity == log_verbosity::VERBOSITY_QUIET)
+    return;
+  print_status_line("Packaging", target, fmt::color::green);
+}
+
+void logger::cleaning(const std::string &target) {
+  if (s_verbosity == log_verbosity::VERBOSITY_QUIET)
+    return;
+  print_status_line("Cleaning", target, fmt::color::green);
+}
+
+// ============================================================
+// Legacy compatibility
+// ============================================================
+
+void logger::print_header(const std::string &message) {
+  if (s_verbosity == log_verbosity::VERBOSITY_QUIET)
+    return;
+  // Simple header without box drawing
+  fmt::print(fg(fmt::color::cyan) | fmt::emphasis::bold, "{}\n", message);
 }
 
 void logger::print_step(const std::string &action, const std::string &target) {
   if (s_verbosity == log_verbosity::VERBOSITY_QUIET)
     return;
-  // Prefix with caret and STEP status
-  fmt::print(fg(fmt::color::white), "> ");
-  fmt::print(fg(fmt::color::white), "{} {} ", action, target);
-  fmt::print(fg(fmt::color::blue), "[STEP]\n");
+  print_status_line(action, target, fmt::color::green);
 }
 
-void logger::print_verbose(const std::string &message) {
-  // Always print error messages regardless of verbosity level
-  if (message.find("error") != std::string::npos ||
-      message.find("Error") != std::string::npos ||
-      message.find("ERROR") != std::string::npos) {
-    // Prefix with caret and FAILURE status for error in verbose
-    fmt::print(stderr, fg(fmt::color::white), "> ");
-    fmt::print(stderr, fg(fmt::color::white), "{} ", message);
-    fmt::print(stderr, fg(fmt::color::red), "[FAILURE]\n");
-    return;
-  }
-
-  // Only print non-error messages in verbose mode
-  if (s_verbosity != log_verbosity::VERBOSITY_VERBOSE)
-    return;
-  // Prefix with caret and VERBOSE status
-  fmt::print(fg(fmt::color::white), "> ");
-  fmt::print(fg(fmt::color::white), "{} ", message);
-  fmt::print(fg(fmt::color::gray), "[VERBOSE]\n");
+void logger::print_plain(const std::string &message) {
+  fmt::print("{}\n", message);
 }
 
 void logger::print_lines(const std::vector<std::string> &messages) {
   for (const auto &message : messages) {
-    print_status(message);
+    print_plain(message);
   }
 }
 
 } // namespace cforge
 
+// ============================================================
 // C wrapper implementations
+// ============================================================
 extern "C" {
+
 void cforge_set_verbosity_impl(cforge_log_verbosity_t level) {
   cforge::log_verbosity cpp_level;
   switch (level) {
@@ -161,5 +292,6 @@ void cforge_print_step(cforge_cstring_t action, cforge_cstring_t target) {
 void cforge_print_verbose(cforge_cstring_t message) {
   cforge::logger::print_verbose(message);
 }
+
 } // extern "C"
 #endif // __cplusplus

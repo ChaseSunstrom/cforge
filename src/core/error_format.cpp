@@ -85,263 +85,118 @@ std::string format_build_errors(const std::string &error_output) {
   return ss.str();
 }
 
-// Add a new function to format a diagnostic to string
+// Format a diagnostic in Cargo/Rust style
 std::string format_diagnostic_to_string(const diagnostic &diag) {
   std::stringstream ss;
 
-  // Determine the level-specific formatting and colors
+  // Determine the level-specific formatting
   std::string level_str;
-  std::string level_label;
   fmt::color level_color;
 
   switch (diag.level) {
   case diagnostic_level::ERROR:
     level_str = "error";
-    level_label = "ERROR";
-    level_color = fmt::color::crimson;
+    level_color = fmt::color::red;
     break;
   case diagnostic_level::WARNING:
     level_str = "warning";
-    level_label = "WARN";
-    level_color = fmt::color::gold;
+    level_color = fmt::color::yellow;
     break;
   case diagnostic_level::NOTE:
     level_str = "note";
-    level_label = "NOTE";
-    level_color = fmt::color::steel_blue;
+    level_color = fmt::color::cyan;
     break;
   case diagnostic_level::HELP:
     level_str = "help";
-    level_label = "HELP";
-    level_color = fmt::color::medium_sea_green;
+    level_color = fmt::color::green;
     break;
   }
 
-  // Format the error header with improved layout
-  ss << fmt::format(fg(level_color), "{}", level_label)
-     << fmt::format(fg(fmt::color::white), "[")
-     << fmt::format(fg(fmt::color::light_blue), "{}", diag.code)
-     << fmt::format(fg(fmt::color::white), "]: ")
-     << fmt::format(fg(fmt::color::white), "{}", diag.message) << "\n";
+  // Cargo-style header: "error[E0425]: cannot find value `x`"
+  ss << fmt::format(fg(level_color) | fmt::emphasis::bold, "{}", level_str);
+  if (!diag.code.empty()) {
+    ss << fmt::format(fg(level_color) | fmt::emphasis::bold, "[{}]", diag.code);
+  }
+  ss << fmt::format(fg(fmt::color::white) | fmt::emphasis::bold, ": {}\n", diag.message);
 
-  // Format file location with improved arrow and spacing
+  // File location: " --> src/main.cpp:10:5"
   if (!diag.file_path.empty()) {
-    ss << fmt::format(fg(fmt::color::light_blue), " --> ")
-       << fmt::format(fg(fmt::color::white), "{}", diag.file_path);
-
+    ss << fmt::format(fg(fmt::color::cyan), "  --> ");
+    ss << diag.file_path;
     if (diag.line_number > 0) {
-      ss << fmt::format(fg(fmt::color::white), ":")
-         << fmt::format(fg(fmt::color::yellow), "{}", diag.line_number);
+      ss << ":" << diag.line_number;
       if (diag.column_number > 0) {
-        ss << fmt::format(fg(fmt::color::white), ":")
-           << fmt::format(fg(fmt::color::yellow), "{}", diag.column_number);
+        ss << ":" << diag.column_number;
       }
     }
     ss << "\n";
-
-    // Add visual spacing and line marker
-    ss << fmt::format(fg(fmt::color::light_blue), "  |\n");
   }
 
-  // Format the code snippet with improved highlighting
-  if (!diag.line_content.empty()) {
-    // Print line number and code with consistent spacing
-    ss << fmt::format(fg(fmt::color::yellow), "{:4}", diag.line_number)
-       << fmt::format(fg(fmt::color::light_blue), " | ")
-       << fmt::format(fg(fmt::color::white), "{}", diag.line_content) << "\n";
+  // Code snippet with line numbers
+  if (!diag.line_content.empty() && diag.line_number > 0) {
+    // Calculate gutter width based on line number
+    int gutter_width = std::to_string(diag.line_number).length();
+    if (gutter_width < 2) gutter_width = 2;
 
-    // Print error pointer with improved visual indicators
-    ss << fmt::format(fg(fmt::color::light_blue), "    | ");
+    // Empty line before code
+    ss << fmt::format(fg(fmt::color::cyan), "{:>{}} |\n", "", gutter_width);
+
+    // The actual code line
+    ss << fmt::format(fg(fmt::color::cyan), "{:>{}} | ", diag.line_number, gutter_width);
+    ss << diag.line_content << "\n";
+
+    // The error pointer line
+    ss << fmt::format(fg(fmt::color::cyan), "{:>{}} | ", "", gutter_width);
 
     if (diag.column_number > 0) {
-      size_t token_start = std::max(0, diag.column_number - 1);
+      size_t col = static_cast<size_t>(diag.column_number - 1);
       size_t token_length = 1;
 
-      // Determine token length with improved identifier detection
-      if (token_start < diag.line_content.length()) {
-        if (std::isalnum(diag.line_content[token_start]) ||
-            diag.line_content[token_start] == '_' ||
-            diag.line_content[token_start] == ':') {
-          // Find beginning of the identifier or scope operator
-          while (token_start > 0 &&
-                 (std::isalnum(diag.line_content[token_start - 1]) ||
-                  diag.line_content[token_start - 1] == '_' ||
-                  diag.line_content[token_start - 1] == ':')) {
-            token_start--;
-          }
+      // Try to find the token length
+      if (col < diag.line_content.length()) {
+        if (std::isalnum(diag.line_content[col]) || diag.line_content[col] == '_') {
+          size_t start = col;
+          size_t end = col;
 
-          // Find the end of the identifier
-          size_t token_end = token_start;
-          while (token_end < diag.line_content.length() &&
-                 (std::isalnum(diag.line_content[token_end]) ||
-                  diag.line_content[token_end] == '_' ||
-                  diag.line_content[token_end] == ':')) {
-            token_end++;
+          // Find token boundaries
+          while (end < diag.line_content.length() &&
+                 (std::isalnum(diag.line_content[end]) || diag.line_content[end] == '_')) {
+            end++;
           }
-
-          token_length = token_end - token_start;
+          token_length = end - start;
+          if (token_length == 0) token_length = 1;
         }
       }
 
-      // Print spaces up to the token start
-      for (size_t i = 0; i < token_start; i++) {
-        ss << " ";
-      }
-
-      // Print carets with improved visibility
-      std::string carets(token_length, '^');
-      ss << fmt::format(fg(level_color), "{}", carets) << "\n";
-
-      // Add additional context line for better readability
-      ss << fmt::format(fg(fmt::color::light_blue), "    |\n");
+      // Print spaces then carets
+      ss << std::string(col, ' ');
+      ss << fmt::format(fg(level_color) | fmt::emphasis::bold, "{}\n", std::string(token_length, '^'));
     } else {
-      // If no column, show a more visible indicator
-      ss << fmt::format(fg(level_color), "^~~~") << "\n";
-      ss << fmt::format(fg(fmt::color::light_blue), "    |\n");
+      ss << fmt::format(fg(level_color) | fmt::emphasis::bold, "^\n");
     }
   }
 
-  // Add any additional notes
-  if (!diag.notes.empty()) {
-    for (const auto &note : diag.notes) {
-      ss << fmt::format(fg(fmt::color::steel_blue), "note: ") 
-         << fmt::format(fg(fmt::color::white), "{}", note) << "\n";
-    }
+  // Notes
+  for (const auto &note : diag.notes) {
+    ss << fmt::format(fg(fmt::color::cyan) | fmt::emphasis::bold, "   = note: ");
+    ss << note << "\n";
   }
 
-  // Add help text - prefer new help field over legacy help_text
-  if (!diag.help.empty()) {
-    ss << fmt::format(fg(fmt::color::medium_sea_green), "help: ") 
-       << fmt::format(fg(fmt::color::white), "{}", diag.help) << "\n";
-  } else if (!diag.help_text.empty()) {
-    ss << fmt::format(fg(fmt::color::medium_sea_green), "help: ") 
-       << fmt::format(fg(fmt::color::white), "{}", diag.help_text) << "\n";
+  // Help text
+  std::string help = diag.help.empty() ? diag.help_text : diag.help;
+  if (!help.empty()) {
+    ss << fmt::format(fg(fmt::color::green) | fmt::emphasis::bold, "   = help: ");
+    ss << help << "\n";
   }
 
+  ss << "\n";
   return ss.str();
 }
 
-void print_diagnostic(const diagnostic &diagnostic) {
-  // Determine the level-specific formatting
-  fmt::text_style level_style;
-  std::string level_str;
-  std::string level_label;
-
-  switch (diagnostic.level) {
-  case diagnostic_level::ERROR:
-    level_style = ERROR_COLOR | fmt::emphasis::bold;
-    level_str = "error";
-    level_label = "ERROR";
-    break;
-  case diagnostic_level::WARNING:
-    level_style = WARNING_COLOR | fmt::emphasis::bold;
-    level_str = "warning";
-    level_label = "WARN";
-    break;
-  case diagnostic_level::NOTE:
-    level_style = NOTE_COLOR | fmt::emphasis::bold;
-    level_str = "note";
-    level_label = "NOTE";
-    break;
-  case diagnostic_level::HELP:
-    level_style = HELP_COLOR | fmt::emphasis::bold;
-    level_str = "help";
-    level_label = "HELP";
-    break;
-  }
-
-  // Print the error header
-  fmt::print(level_style, "{}[{}]", level_label, diagnostic.code);
-  fmt::print(": {}\n", diagnostic.message);
-
-  // Print file location information if available
-  if (!diagnostic.file_path.empty()) {
-    fmt::print(LOCATION_COLOR | fmt::emphasis::bold, " --> ");
-    fmt::print("{}", diagnostic.file_path);
-
-    if (diagnostic.line_number > 0) {
-      fmt::print(":{}", diagnostic.line_number);
-      if (diagnostic.column_number > 0) {
-        fmt::print(":{}", diagnostic.column_number);
-      }
-    }
-    fmt::print("\n");
-  }
-
-  // Print the code snippet if available
-  if (!diagnostic.line_content.empty()) {
-    // Print line number
-    fmt::print(LOCATION_COLOR, "{:>4} | ", diagnostic.line_number);
-
-    if (diagnostic.column_number > 0) {
-      // Find the start of the relevant token
-      size_t token_start = std::max(0, diagnostic.column_number - 1);
-      size_t token_length =
-          1; // Default to 1 if we can't determine the actual length
-
-      // Try to find the token boundary
-      if (token_start < diagnostic.line_content.length()) {
-        // If it's an identifier, find the whole word
-        if (std::isalnum(diagnostic.line_content[token_start]) ||
-            diagnostic.line_content[token_start] == '_') {
-          // Find the beginning of the identifier
-          while (token_start > 0 &&
-                 (std::isalnum(diagnostic.line_content[token_start - 1]) ||
-                  diagnostic.line_content[token_start - 1] == '_')) {
-            token_start--;
-          }
-
-          // Find the end of the identifier
-          size_t token_end = token_start;
-          while (token_end < diagnostic.line_content.length() &&
-                 (std::isalnum(diagnostic.line_content[token_end]) ||
-                  diagnostic.line_content[token_end] == '_')) {
-            token_end++;
-          }
-
-          token_length = token_end - token_start;
-        }
-      }
-
-      // Print the line with the problematic token highlighted
-      std::string before = diagnostic.line_content.substr(0, token_start);
-      std::string token =
-          diagnostic.line_content.substr(token_start, token_length);
-      std::string after =
-          diagnostic.line_content.substr(token_start + token_length);
-
-      fmt::print("{}", before);
-      fmt::print(HIGHLIGHT_COLOR | fmt::emphasis::bold, "{}", token);
-      fmt::print("{}\n", after);
-
-      // Print the error caret pointing to the column
-      fmt::print(LOCATION_COLOR, "{:>4} | ", "");
-
-      // Print spaces up to the token start
-      for (size_t i = 0; i < token_start; i++) {
-        fmt::print(" ");
-      }
-
-      // Print carets under the entire token
-      for (size_t i = 0; i < token_length; i++) {
-        fmt::print(CARET_COLOR | fmt::emphasis::bold, "^");
-      }
-
-      fmt::print("\n");
-    } else {
-      // Simple line printing without highlighting if we don't have column info
-      fmt::print("{}\n", diagnostic.line_content);
-    }
-  }
-
-  // Print help text if available
-  if (!diagnostic.help_text.empty()) {
-    fmt::print(HELP_COLOR | fmt::emphasis::bold, "help: {}\n",
-               diagnostic.help_text);
-  }
-
-  // Add a newline for spacing
-  fmt::print("\n");
+void print_diagnostic(const diagnostic &diag) {
+  // Simply print the formatted string to stderr
+  std::string formatted = format_diagnostic_to_string(diag);
+  fmt::print(stderr, "{}", formatted);
 }
 
 std::vector<diagnostic> extract_diagnostics(const std::string &error_output) {

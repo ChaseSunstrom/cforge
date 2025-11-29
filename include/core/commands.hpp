@@ -151,3 +151,11 @@ cforge_int_t cforge_cmd_list(const cforge_context_t *ctx);
  * @return cforge_int_t Exit code (0 for success)
  */
 cforge_int_t cforge_cmd_package(const cforge_context_t *ctx);
+
+/**
+ * @brief Handle the 'lock' command to manage dependency lock file
+ *
+ * @param ctx Context containing parsed arguments
+ * @return cforge_int_t Exit code (0 for success)
+ */
+cforge_int_t cforge_cmd_lock(const cforge_context_t *ctx);

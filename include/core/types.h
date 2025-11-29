@@ -5,7 +5,12 @@
 
 #ifndef CFORGE_TYPES_H
 #define CFORGE_TYPES_H
+
+#ifdef __cplusplus
 #include <cstddef>
+#else
+#include <stddef.h>
+#endif
 
 typedef unsigned char cforge_byte_t;       /**< Byte type */
 typedef unsigned short cforge_ushort_t;    /**< Word type */

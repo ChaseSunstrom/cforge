@@ -10,7 +10,7 @@
 #define COLOR_CYAN  "\x1b[36m"
 #define COLOR_RESET "\x1b[0m"
 
-/// Assertion macro: returns 1 on failure, 0 on success
+/// Assertion macro: returns 1 on failure, continues on success
 #define test_assert(expr)                           \
     do {                                           \
         if (!(expr)) {                             \
@@ -20,7 +20,6 @@
                 #expr, __FILE__, __LINE__);       \
             return 1;                             \
         }                                          \
-        return 0;                                  \
     } while (0)
 #define cf_assert(expr) test_assert(expr)
 

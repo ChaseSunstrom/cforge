@@ -53,9 +53,9 @@ split_project_list(const std::string &project_list) {
 struct workspace_project {
   std::string name;
   std::filesystem::path path;
-  bool is_startup = false;
   std::vector<std::string> dependencies;
-  bool is_startup_project = false;
+  bool is_startup = false;          ///< Runtime flag: true if this is the active startup project
+  bool is_startup_project = false;  ///< Config flag: true if marked as startup in workspace config
 };
 
 /**

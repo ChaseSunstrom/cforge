@@ -94,10 +94,10 @@ static bool create_gitignore(const std::filesystem::path &project_path) {
   std::filesystem::path gitignore_path = project_path / ".gitignore";
 
   if (std::filesystem::exists(gitignore_path) && !g_force_overwrite) {
-    logger::print_warning(".gitignore already exists. Skipping.");
+    logger::print_warning(".gitignore already exists, skipping");
     return true;
   } else if (std::filesystem::exists(gitignore_path) && g_force_overwrite) {
-    logger::print_status("Overwriting .gitignore file");
+    logger::print_action("Overwriting", ".gitignore");
   }
 
   std::ofstream gitignore(gitignore_path);
@@ -160,7 +160,7 @@ static bool create_gitignore(const std::filesystem::path &project_path) {
 
   gitignore.close();
 
-  logger::print_success("Created .gitignore file");
+  logger::created(".gitignore");
   return true;
 }
 
@@ -176,10 +176,10 @@ static bool create_readme(const std::filesystem::path &project_path,
   std::filesystem::path readme_path = project_path / "README.md";
 
   if (std::filesystem::exists(readme_path) && !g_force_overwrite) {
-    logger::print_warning("README.md already exists. Skipping.");
+    logger::print_warning("README.md already exists, skipping");
     return true;
   } else if (std::filesystem::exists(readme_path) && g_force_overwrite) {
-    logger::print_status("Overwriting README.md file");
+    logger::print_action("Overwriting", "README.md");
   }
 
   std::ofstream readme(readme_path);
@@ -212,7 +212,7 @@ static bool create_readme(const std::filesystem::path &project_path,
 
   readme.close();
 
-  logger::print_success("Created README.md file");
+  logger::created("README.md");
   return true;
 }
 
@@ -233,10 +233,10 @@ static bool create_cmakelists(const std::filesystem::path &project_path,
   std::filesystem::path cmakelists_path = project_path / "CMakeLists.txt";
 
   if (std::filesystem::exists(cmakelists_path) && !g_force_overwrite) {
-    logger::print_warning("CMakeLists.txt already exists. Skipping.");
+    logger::print_warning("CMakeLists.txt already exists, skipping");
     return true;
   } else if (std::filesystem::exists(cmakelists_path) && g_force_overwrite) {
-    logger::print_status("Overwriting CMakeLists.txt file");
+    logger::print_action("Overwriting", "CMakeLists.txt");
   }
 
   std::ofstream cmakelists(cmakelists_path);
@@ -405,7 +405,7 @@ static bool create_cmakelists(const std::filesystem::path &project_path,
   cmakelists << "endif()\n";
 
   cmakelists.close();
-  logger::print_success("Created CMakeLists.txt file with workspace support");
+  logger::created("CMakeLists.txt");
   return true;
 }
 
@@ -424,10 +424,10 @@ static bool create_cforge_toml(const std::filesystem::path &project_path,
   std::filesystem::path config_path = project_path / CFORGE_FILE;
 
   if (std::filesystem::exists(config_path) && !g_force_overwrite) {
-    logger::print_warning("cforge.toml already exists. Skipping.");
+    logger::print_warning("cforge.toml already exists, skipping");
     return true;
   } else if (std::filesystem::exists(config_path) && g_force_overwrite) {
-    logger::print_status("Overwriting cforge.toml file");
+    logger::print_action("Overwriting", "cforge.toml");
   }
 
   std::ofstream config(config_path);
@@ -532,7 +532,7 @@ static bool create_cforge_toml(const std::filesystem::path &project_path,
   config << "# OpenGL = true  # System-provided dependency\n";
 
   config.close();
-  logger::print_success("Created cforge.toml file");
+  logger::created("cforge.toml");
   return true;
 }
 
@@ -556,10 +556,10 @@ static bool create_main_cpp(const std::filesystem::path &project_path,
     std::filesystem::path main_cpp_path = src_dir / "main.cpp";
 
     if (std::filesystem::exists(main_cpp_path) && !g_force_overwrite) {
-      logger::print_warning("main.cpp already exists. Skipping.");
+      logger::print_warning("main.cpp already exists, skipping");
       return true;
     } else if (std::filesystem::exists(main_cpp_path) && g_force_overwrite) {
-      logger::print_status("Overwriting main.cpp file");
+      logger::print_action("Overwriting", "main.cpp");
     }
 
     std::ofstream main_cpp(main_cpp_path);
@@ -590,8 +590,7 @@ static bool create_main_cpp(const std::filesystem::path &project_path,
     main_cpp << "}\n";
 
     main_cpp.close();
-
-    logger::print_success("Created main.cpp file");
+    logger::created("src/main.cpp");
     return true;
   }
 
@@ -625,10 +624,10 @@ static bool create_include_files(const std::filesystem::path &project_path,
       project_include_dir / "example.hpp";
 
   if (std::filesystem::exists(example_header_path) && !g_force_overwrite) {
-    logger::print_warning("example.hpp already exists. Skipping.");
+    logger::print_warning("example.hpp already exists, skipping");
     return true;
   } else if (std::filesystem::exists(example_header_path) && g_force_overwrite) {
-    logger::print_status("Overwriting example.hpp file");
+    logger::print_action("Overwriting", "example.hpp");
   }
 
   std::ofstream example_header(example_header_path);
@@ -674,10 +673,10 @@ create_example_implementation(const std::filesystem::path &project_path,
   std::filesystem::path example_cpp_path = src_dir / "example.cpp";
 
   if (std::filesystem::exists(example_cpp_path) && !g_force_overwrite) {
-    logger::print_warning("example.cpp already exists. Skipping.");
+    logger::print_warning("example.cpp already exists, skipping");
     return true;
   } else if (std::filesystem::exists(example_cpp_path) && g_force_overwrite) {
-    logger::print_status("Overwriting example.cpp file");
+    logger::print_action("Overwriting", "example.cpp");
   }
 
   std::ofstream example_cpp(example_cpp_path);
@@ -721,10 +720,10 @@ static bool create_test_files(const std::filesystem::path &project_path,
   std::filesystem::path tests_cmake_path = tests_dir / "CMakeLists.txt";
 
   if (std::filesystem::exists(tests_cmake_path) && !g_force_overwrite) {
-    logger::print_warning("tests/CMakeLists.txt already exists. Skipping.");
+    logger::print_warning("tests/CMakeLists.txt already exists, skipping");
   } else {
     if (std::filesystem::exists(tests_cmake_path) && g_force_overwrite) {
-      logger::print_status("Overwriting tests/CMakeLists.txt file");
+      logger::print_action("Overwriting", "tests/CMakeLists.txt");
     }
     std::ofstream tests_cmake(tests_cmake_path);
     if (!tests_cmake.is_open()) {
@@ -771,10 +770,10 @@ static bool create_test_files(const std::filesystem::path &project_path,
   std::filesystem::path test_main_path = tests_dir / "test_main.cpp";
 
   if (std::filesystem::exists(test_main_path) && !g_force_overwrite) {
-    logger::print_warning("test_main.cpp already exists. Skipping.");
+    logger::print_warning("test_main.cpp already exists, skipping");
   } else {
     if (std::filesystem::exists(test_main_path) && g_force_overwrite) {
-      logger::print_status("Overwriting test_main.cpp file");
+      logger::print_action("Overwriting", "test_main.cpp");
     }
     std::ofstream test_main(test_main_path);
     if (!test_main.is_open()) {
@@ -798,10 +797,10 @@ static bool create_test_files(const std::filesystem::path &project_path,
   std::filesystem::path test_example_path = tests_dir / "test_example.cpp";
 
   if (std::filesystem::exists(test_example_path) && !g_force_overwrite) {
-    logger::print_warning("test_example.cpp already exists. Skipping.");
+    logger::print_warning("test_example.cpp already exists, skipping");
   } else {
     if (std::filesystem::exists(test_example_path) && g_force_overwrite) {
-      logger::print_status("Overwriting test_example.cpp file");
+      logger::print_action("Overwriting", "test_example.cpp");
     }
     std::ofstream test_example(test_example_path);
     if (!test_example.is_open()) {
@@ -841,10 +840,10 @@ static bool create_license_file(const std::filesystem::path &project_path,
   std::filesystem::path license_path = project_path / "LICENSE";
 
   if (std::filesystem::exists(license_path) && !g_force_overwrite) {
-    logger::print_warning("LICENSE already exists. Skipping.");
+    logger::print_warning("LICENSE already exists, skipping");
     return true;
   } else if (std::filesystem::exists(license_path) && g_force_overwrite) {
-    logger::print_status("Overwriting LICENSE file");
+    logger::print_action("Overwriting", "LICENSE");
   }
 
   std::ofstream license(license_path);
@@ -892,7 +891,7 @@ static bool create_license_file(const std::filesystem::path &project_path,
 
   license.close();
 
-  logger::print_success("Created LICENSE file (MIT license)");
+  logger::created("LICENSE (MIT)");
   return true;
 }
 
@@ -915,19 +914,18 @@ static bool init_git_repository(const std::filesystem::path &project_path,
                                 bool verbose) {
   // If Git initialization wasn't explicitly requested, just return success
   if (!verbose) {
-    logger::print_status(
-        "Git initialization skipped (use --git flag to enable)");
+    logger::print_action("Skipped", "git initialization (use --git flag to enable)");
     return true;
   }
 
   // First check if git is available
   if (!is_git_available()) {
     logger::print_warning(
-        "Git not found in PATH. Skipping git initialization.");
+        "Git not found in PATH, skipping git initialization");
     return true; // Not critical for project creation
   }
 
-  logger::print_status("Initializing git repository...");
+  logger::print_action("Initializing", "git repository");
 
   std::vector<std::string> git_args = {"init"};
 
@@ -936,11 +934,11 @@ static bool init_git_repository(const std::filesystem::path &project_path,
       execute_tool("git", git_args, project_path.string(), "Git", verbose, 20);
 
   if (result) {
-    logger::print_success("Initialized git repository");
+    logger::created("git repository");
 
     // Create an initial commit (optional)
     if (verbose) {
-      logger::print_status("Creating initial commit...");
+      logger::print_action("Creating", "initial commit");
 
       // Add all files
       std::vector<std::string> git_add_args = {"add", "."};
@@ -956,19 +954,19 @@ static bool init_git_repository(const std::filesystem::path &project_path,
                          "Git commit", verbose, 10);
 
         if (commit_result) {
-          logger::print_success("Created initial commit");
+          logger::created("initial commit");
         } else {
           logger::print_warning(
-              "Failed to create initial commit. This is not critical.");
+              "Failed to create initial commit. This is not critical");
         }
       } else {
         logger::print_warning(
-            "Failed to add files to git. This is not critical.");
+            "Failed to add files to git. This is not critical");
       }
     }
   } else {
     logger::print_warning("Failed to initialize git repository. This is not "
-                          "critical for project creation.");
+                          "critical for project creation");
   }
 
   // Return true regardless of git initialization result
@@ -1020,10 +1018,10 @@ generate_workspace_cmakelists(const std::filesystem::path &workspace_dir,
   std::filesystem::path cmakelists_path = workspace_dir / "CMakeLists.txt";
 
   if (std::filesystem::exists(cmakelists_path) && !g_force_overwrite) {
-    logger::print_warning("Workspace-level CMakeLists.txt already exists. Skipping.");
+    logger::print_warning("Workspace-level CMakeLists.txt already exists, skipping");
     return true;
   } else if (std::filesystem::exists(cmakelists_path) && g_force_overwrite) {
-    logger::print_status("Overwriting workspace-level CMakeLists.txt file");
+    logger::print_action("Overwriting", "workspace-level CMakeLists.txt");
   }
 
   std::ofstream cmakelists(cmakelists_path);
@@ -1076,8 +1074,7 @@ generate_workspace_cmakelists(const std::filesystem::path &workspace_dir,
   cmakelists << "\")\n";
 
   cmakelists.close();
-  logger::print_success("Generated workspace CMakeLists.txt at: " +
-                        cmakelists_path.string());
+  logger::created("workspace CMakeLists.txt");
   return true;
 }
 
@@ -1183,8 +1180,6 @@ cforge_int_t cforge_cmd_init(const cforge_context_t *ctx) {
   std::cerr.flush();
 
   try {
-    logger::print_status("Starting init command execution");
-
     // Check if a workspace configuration file exists in the current directory
     std::filesystem::path workspace_file_path =
         std::filesystem::path(ctx->working_dir) / WORKSPACE_FILE;
@@ -1209,7 +1204,6 @@ cforge_int_t cforge_cmd_init(const cforge_context_t *ctx) {
       // First check for positional project name (before any flag)
       if (ctx->args.arg_count > 0 && ctx->args.args[0][0] != '-') {
         project_name = ctx->args.args[0];
-        logger::print_status("Using positional project name: " + project_name);
       }
 
       // Parse flag arguments
@@ -1219,27 +1213,21 @@ cforge_int_t cforge_cmd_init(const cforge_context_t *ctx) {
         // Handle overwrite flag
         if (arg == "--overwrite") {
           g_force_overwrite = true;
-          logger::print_status("Overwrite enabled: will overwrite existing files");
         }
         // Handle --from-file flag
         else if (arg == "--from-file" || arg == "-f") {
           from_file = true;
-          logger::print_status("Will use existing workspace.cforge.toml file");
         }
         // Handle --name or -n parameter
         else if (arg == "--name" || arg == "-n") {
           if (i + 1 < ctx->args.arg_count && ctx->args.args[i + 1][0] != '-') {
             project_name = ctx->args.args[i + 1];
-            logger::print_status("Using project name from --name flag: " +
-                                 project_name);
             i++; // Skip the value in next iteration
           }
         }
         // Handle --name=VALUE format
         else if (arg.compare(0, 7, "--name=") == 0) {
           project_name = arg.substr(7);
-          logger::print_status("Using project name from --name= format: " +
-                               project_name);
         }
         // Handle --workspace or -w parameter
         else if (arg == "--workspace" || arg == "-w") {
@@ -1248,25 +1236,17 @@ cforge_int_t cforge_cmd_init(const cforge_context_t *ctx) {
           // Check if next argument exists and is a value (not a flag)
           if (i + 1 < ctx->args.arg_count && ctx->args.args[i + 1][0] != '-') {
             workspace_name = ctx->args.args[i + 1];
-            logger::print_status("Using workspace name from command line: " +
-                                 workspace_name);
             i++; // Skip the value in next iteration
           } else {
             // Use current directory name if no name provided
             workspace_name =
                 std::filesystem::path(ctx->working_dir).filename().string();
-            logger::print_status(
-                "No workspace name provided, using current directory: " +
-                workspace_name);
           }
         }
         // Handle --workspace=VALUE format
         else if (arg.compare(0, 12, "--workspace=") == 0) {
           is_workspace = true;
           workspace_name = arg.substr(12);
-          logger::print_status(
-              "Using workspace name from --workspace= format: " +
-              workspace_name);
         }
         // Handle --projects or -p parameter
         else if (arg == "--projects" || arg == "-p") {
@@ -1296,21 +1276,12 @@ cforge_int_t cforge_cmd_init(const cforge_context_t *ctx) {
             }
             i = j - 1; // Update index to the last project name
           }
-
-          // Log found projects
-          for (const auto &proj : project_names) {
-            logger::print_status("Found project: " + proj);
-          }
         }
         // Handle --projects=VALUE format
         else if (arg.compare(0, 11, "--projects=") == 0) {
           has_projects_flag = true;
           std::string projects_list = arg.substr(11);
           project_names = parse_project_list(projects_list);
-
-          for (const auto &proj : project_names) {
-            logger::print_status("Found project from list: " + proj);
-          }
         }
         // Handle --cpp or -c parameter for C++ standard
         else if (arg == "--cpp" || arg == "-c") {
@@ -1347,7 +1318,6 @@ cforge_int_t cforge_cmd_init(const cforge_context_t *ctx) {
 
     // Apply selected template
     g_template_name = template_name;
-    logger::print_status("Using init template: " + g_template_name);
 
     // If user didn't set workspace flag but specified projects, don't force
     // workspace mode
@@ -1357,43 +1327,11 @@ cforge_int_t cforge_cmd_init(const cforge_context_t *ctx) {
     // default project
     if (is_workspace && project_names.empty()) {
       project_names.push_back(project_name);
-      logger::print_status(
-          "No projects specified for workspace, using default project: '" +
-          project_name + "'");
     }
-
-    // Log configuration details
-    logger::print_status("Configuration:");
-    logger::print_status("- Is workspace: " +
-                         std::string(is_workspace ? "yes" : "no"));
-    if (is_workspace) {
-      logger::print_status("- Workspace name: " + workspace_name);
-      logger::print_status("- Project count: " +
-                           std::to_string(project_names.size()));
-      logger::print_status("- Projects: ");
-      for (const auto &proj : project_names) {
-        logger::print_status("  * " + proj);
-      }
-    } else if (create_multiple_projects) {
-      logger::print_status("- Creating multiple projects: " +
-                           std::to_string(project_names.size()));
-      logger::print_status("- Projects: ");
-      for (const auto &proj : project_names) {
-        logger::print_status("  * " + proj);
-      }
-    } else {
-      logger::print_status("- Project name: " + project_name);
-    }
-    logger::print_status("- C++ standard: " + cpp_standard);
-    logger::print_status("- With tests: " +
-                         std::string(with_tests ? "yes" : "no"));
-    logger::print_status("- With git: " + std::string(with_git ? "yes" : "no"));
-    logger::print_status("- Using template: " + template_name);
 
     // Handle loading from existing workspace file if requested
     if (from_file && workspace_file_exists) {
-      logger::print_status("Initializing from existing workspace file: " +
-                           workspace_file_path.string());
+      logger::print_action("Loading", workspace_file_path.string());
 
       // Load the workspace configuration
       workspace_config config;
@@ -1405,17 +1343,13 @@ cforge_int_t cforge_cmd_init(const cforge_context_t *ctx) {
 
       // Get the workspace name
       std::string ws_name = config.get_name();
-      logger::print_status("Loaded workspace: " + ws_name);
 
       // Get the projects from the workspace
       std::vector<workspace_project> projects = config.get_projects();
-      logger::print_status("Found " + std::to_string(projects.size()) +
-                           " projects in workspace");
 
       // Create each project
       for (const auto &project : projects) {
-        logger::print_status("Creating project '" + project.name +
-                             "' from workspace configuration...");
+        logger::creating(project.name);
 
         // Create the project directory
         std::filesystem::path project_dir =
@@ -1423,8 +1357,6 @@ cforge_int_t cforge_cmd_init(const cforge_context_t *ctx) {
         if (!std::filesystem::exists(project_dir)) {
           try {
             std::filesystem::create_directories(project_dir);
-            logger::print_status("Created project directory: " +
-                                 project_dir.string());
           } catch (const std::exception &ex) {
             logger::print_error("Failed to create project directory: " +
                                 project_dir.string() + " Error: " + ex.what());
@@ -1439,19 +1371,15 @@ cforge_int_t cforge_cmd_init(const cforge_context_t *ctx) {
           continue;
         }
 
-        logger::print_success("Project '" + project.name +
-                              "' created successfully");
+        logger::created(project.name);
       }
 
-      logger::print_success(
-          "All projects from workspace file initialized successfully");
+      logger::finished(ws_name);
       return 0;
     }
     // Handle workspace creation
     else if (is_workspace) {
-      logger::print_status("Creating workspace '" + workspace_name + "' with " +
-                           std::to_string(project_names.size()) +
-                           " project(s)...");
+      logger::creating(workspace_name);
 
       // Create workspace directory
       std::filesystem::path workspace_dir = ctx->working_dir;
@@ -1459,17 +1387,12 @@ cforge_int_t cforge_cmd_init(const cforge_context_t *ctx) {
       // Use the provided workspace name to create a subdirectory
       if (!workspace_name.empty()) {
         workspace_dir = workspace_dir / workspace_name;
-        logger::print_status("Full workspace path: " + workspace_dir.string());
 
         // Create the workspace directory if it doesn't exist
         if (!std::filesystem::exists(workspace_dir)) {
           try {
             bool created = std::filesystem::create_directories(workspace_dir);
-            if (created) {
-              logger::print_status(
-                  "Successfully created workspace directory: " +
-                  workspace_dir.string());
-            } else {
+            if (!created) {
               logger::print_error(
                   "Failed to create workspace directory (returned false)");
               return 1;
@@ -1479,9 +1402,6 @@ cforge_int_t cforge_cmd_init(const cforge_context_t *ctx) {
                                 std::string(ex.what()));
             return 1;
           }
-        } else {
-          logger::print_status("Using existing workspace directory: " +
-                               workspace_dir.string());
         }
       }
 
@@ -1498,35 +1418,20 @@ cforge_int_t cforge_cmd_init(const cforge_context_t *ctx) {
         }
         test_file.close();
         std::filesystem::remove(test_path);
-        logger::print_status("Workspace directory is writable");
       } catch (const std::exception &ex) {
         logger::print_error("Failed to write to workspace directory: " +
                             std::string(ex.what()));
         return 1;
       }
 
-      logger::print_status("Creating workspace at: " + workspace_dir.string());
-
-      // Debug: Print what config file we're trying to create
       std::filesystem::path config_path = workspace_dir / WORKSPACE_FILE;
-      logger::print_status("Workspace config will be created at: " +
-                           config_path.string());
-
-      // Build projects string for logging
-      std::string projects_str = "";
-      for (size_t i = 0; i < project_names.size(); ++i) {
-        if (i > 0)
-          projects_str += ", ";
-        projects_str += project_names[i];
-      }
-      logger::print_status("Adding projects: " + projects_str);
 
       // Create workspace configuration file directly
       if (std::filesystem::exists(config_path) && !g_force_overwrite) {
-        logger::print_warning("Workspace configuration file '" + config_path.string() + "' already exists. Skipping creation.");
+        logger::print_warning("Workspace configuration file '" + config_path.string() + "' already exists. Skipping creation");
       } else {
         if (std::filesystem::exists(config_path) && g_force_overwrite) {
-          logger::print_status("Overwriting workspace configuration file: " + config_path.string());
+          logger::print_action("Overwriting", "workspace configuration");
         }
         std::ofstream config_file(config_path);
         if (!config_file.is_open()) {
@@ -1553,7 +1458,7 @@ cforge_int_t cforge_cmd_init(const cforge_context_t *ctx) {
         }
 
         config_file.close();
-        logger::print_success("Created workspace configuration file");
+        logger::created("workspace configuration");
       }
 
       // Generate workspace-level CMakeLists.txt
@@ -1569,8 +1474,7 @@ cforge_int_t cforge_cmd_init(const cforge_context_t *ctx) {
 
       for (const auto &proj_name : project_names) {
         std::filesystem::path project_dir = workspace_dir / proj_name;
-        logger::print_status("Creating project '" + proj_name + "' at " +
-                             project_dir.string());
+        logger::creating(proj_name);
 
         // Create the project with detailed logging
         if (!create_project(project_dir, proj_name, cpp_standard, with_git,
@@ -1581,13 +1485,11 @@ cforge_int_t cforge_cmd_init(const cforge_context_t *ctx) {
           continue;
         }
 
-        logger::print_success("Project '" + proj_name +
-                              "' created successfully");
+        logger::created(proj_name);
       }
 
       if (all_projects_success) {
-        logger::print_success("Workspace '" + workspace_name +
-                              "' created successfully");
+        logger::finished(workspace_name);
       } else {
         logger::print_warning("Workspace '" + workspace_name +
                               "' created with some errors");
@@ -1597,17 +1499,14 @@ cforge_int_t cforge_cmd_init(const cforge_context_t *ctx) {
     }
     // Handle multiple projects creation (without workspace)
     else if (create_multiple_projects) {
-      logger::print_status("Creating " + std::to_string(project_names.size()) +
-                           " standalone projects...");
-
       bool all_projects_success = true;
 
       for (const auto &proj_name : project_names) {
+        logger::creating(proj_name);
+
         // Create the project in a new directory named after the project
         std::filesystem::path project_dir =
             std::filesystem::path(ctx->working_dir) / proj_name;
-        logger::print_status("Creating project '" + proj_name + "' at " +
-                             project_dir.string());
 
         // Create the directory if it doesn't exist
         if (!std::filesystem::exists(project_dir)) {
@@ -1635,13 +1534,10 @@ cforge_int_t cforge_cmd_init(const cforge_context_t *ctx) {
           continue;
         }
 
-        logger::print_success("Project '" + proj_name +
-                              "' created successfully");
+        logger::created(proj_name);
       }
 
-      if (all_projects_success) {
-        logger::print_success("All projects created successfully");
-      } else {
+      if (!all_projects_success) {
         logger::print_warning("Some projects could not be created");
       }
 
@@ -1649,7 +1545,7 @@ cforge_int_t cforge_cmd_init(const cforge_context_t *ctx) {
     }
     // Handle single project creation
     else {
-      logger::print_status("Creating project '" + project_name + "'...");
+      logger::creating(project_name);
 
       // Decide whether to create in current directory or subdirectory
       std::filesystem::path project_dir;
@@ -1659,8 +1555,6 @@ cforge_int_t cforge_cmd_init(const cforge_context_t *ctx) {
       if (ctx->args.arg_count > 0 && ctx->args.args[0][0] != '-') {
         // Use the provided project name to create a subdirectory
         project_dir = std::filesystem::path(ctx->working_dir) / project_name;
-        logger::print_status("Project will be created in new directory: " +
-                             project_dir.string());
 
         // Create the directory if it doesn't exist
         if (!std::filesystem::exists(project_dir)) {
@@ -1680,8 +1574,6 @@ cforge_int_t cforge_cmd_init(const cforge_context_t *ctx) {
       } else {
         // Create in the current directory
         project_dir = std::filesystem::path(ctx->working_dir);
-        logger::print_status("Project will be created in current directory: " +
-                             project_dir.string());
       }
 
       // Verify the directory is writable
@@ -1704,9 +1596,6 @@ cforge_int_t cforge_cmd_init(const cforge_context_t *ctx) {
         return 1;
       }
 
-      // Create the project files
-      logger::print_status("Creating project files...");
-
       // Default build type and CMake preset
       std::string build_type = "Debug";
       std::string cmake_preset = "";
@@ -1718,8 +1607,7 @@ cforge_int_t cforge_cmd_init(const cforge_context_t *ctx) {
         return 1;
       }
 
-      logger::print_success("Project '" + project_name +
-                            "' created successfully");
+      logger::finished(project_name);
     }
 
     return 0;

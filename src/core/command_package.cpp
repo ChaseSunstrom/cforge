@@ -323,7 +323,7 @@ create_workspace_package(const std::string &workspace_name,
                          const std::vector<workspace_project> &projects,
                          const std::string &build_config, bool verbose,
                          const std::filesystem::path &workspace_dir) {
-  logger::print_status("Creating consolidated workspace package...");
+  logger::creating("consolidated workspace package");
 
   // Create a staging area for all project outputs
   std::filesystem::path staging_dir = workspace_dir / "packages" / "staging";
@@ -537,7 +537,7 @@ create_workspace_package(const std::string &workspace_name,
   }
 
   // Create the zip file
-  logger::print_status("Creating workspace package: " + package_filename);
+  logger::creating("workspace package: " + package_filename);
 
   bool success = false;
 
@@ -558,7 +558,7 @@ create_workspace_package(const std::string &workspace_name,
   cmd_args.push_back(safe_ps_cmd);
 
   // Print command for debugging
-  logger::print_status("Executing ZIP command: " + zip_cmd + " " + safe_ps_cmd);
+  logger::print_verbose("Executing ZIP command: " + zip_cmd + " " + safe_ps_cmd);
 
   // Execute the command with explicit capture of output
   process_result result =
@@ -611,8 +611,7 @@ create_workspace_package(const std::string &workspace_name,
   if (success) {
     // Check that the file was actually created
     if (std::filesystem::exists(output_file)) {
-      logger::print_success("Workspace package created: " +
-                            output_file.string());
+      logger::print_action("Created", output_file.string());
 
       // Clean up staging directory
       try {
@@ -742,7 +741,7 @@ static std::vector<std::string> get_default_generators() {
 static bool download_and_install_nsis(bool verbose) {
 #ifdef _WIN32
   logger::print_status("NSIS not found. Attempting to download and install "
-                       "NSIS automatically...");
+                       "NSIS automatically");
 
   // Create temp directory for download
   std::filesystem::path temp_dir =
@@ -754,7 +753,7 @@ static bool download_and_install_nsis(bool verbose) {
   std::filesystem::path nsis_installer = temp_dir / "nsis-installer.exe";
 
   // Download NSIS installer
-  logger::print_status("Downloading NSIS installer...");
+  logger::fetching("NSIS installer");
   std::vector<std::string> curl_args = {
       "-L", "-o", nsis_installer.string(),
       "https://sourceforge.net/projects/nsis/files/NSIS%203/3.08/"
@@ -768,7 +767,7 @@ static bool download_and_install_nsis(bool verbose) {
   }
 
   // Run installer silently - try as admin if possible
-  logger::print_status("Installing NSIS (this may take a moment)...");
+  logger::installing("NSIS (this may take a moment)");
 
   // First try with normal privileges
   std::vector<std::string> install_args = {
@@ -781,7 +780,7 @@ static bool download_and_install_nsis(bool verbose) {
   if (!install_success) {
     // Try to run elevated (this might show a UAC prompt)
     logger::print_status(
-        "Attempting to install NSIS with administrator privileges...");
+        "Attempting to install NSIS with administrator privileges");
 
     std::vector<std::string> runas_args = {"/trustlevel:0x20000",
                                            nsis_installer.string(), "/S"};
@@ -799,7 +798,7 @@ static bool download_and_install_nsis(bool verbose) {
     return false;
   }
 
-  logger::print_success("NSIS installed successfully");
+  logger::print_action("Installed", "NSIS successfully");
 
   // Wait a moment for installation to complete
   std::this_thread::sleep_for(std::chrono::seconds(3));
@@ -965,7 +964,7 @@ display_only_final_packages(const std::vector<std::filesystem::path> &packages,
     return;
   }
 
-  logger::print_status("Package(s) created:");
+  logger::print_status("Package(s) created");
 
   int count = 0;
   for (const auto &package : packages) {
@@ -1062,7 +1061,7 @@ static bool run_cpack(const std::filesystem::path &build_dir,
   // Re-run CMake configure to reset install prefix for packaging
   {
     std::filesystem::path project_dir = build_dir.parent_path();
-    logger::print_status("Reconfiguring CMake for packaging (empty install prefix)...");
+    logger::configuring("CMake for packaging (empty install prefix)");
     auto reconfig = execute_process(
         "cmake",
         std::vector<std::string>{"-S", project_dir.string(), "-B", build_dir.string(), "-DCMAKE_INSTALL_PREFIX="},
@@ -1146,7 +1145,7 @@ static bool run_cpack(const std::filesystem::path &build_dir,
   }
 
   // Build the cpack command
-  logger::print_status("Creating packages with CPack...");
+  logger::packaging("with CPack");
 
   // Split the command into command and arguments
   std::vector<std::string> cpack_args;
@@ -1501,7 +1500,7 @@ static bool run_cpack(const std::filesystem::path &build_dir,
 
   if (verbose) {
     // Don't print the entire command - it's too long and may cause heap issues
-    logger::print_status("Running CPack command to create packages...");
+    logger::running("CPack command to create packages");
     logger::print_verbose("CPack working directory: " + build_dir.string());
     logger::print_verbose("CPack package output directory: " +
                           package_dir.string());
@@ -1589,7 +1588,7 @@ static bool run_cpack(const std::filesystem::path &build_dir,
     }
 
     if (nsis_error) {
-      logger::print_status("CPack failed. Checking if NSIS is installed...");
+      logger::print_status("CPack failed. Checking if NSIS is installed");
 
       // Remove NSIS from generators so we can still produce other packages
       std::vector<std::string> non_nsis_generators;
@@ -1601,7 +1600,7 @@ static bool run_cpack(const std::filesystem::path &build_dir,
 
       // Attempt to install NSIS automatically
       if (download_and_install_nsis(verbose)) {
-        logger::print_status("Retrying package creation with CPack...");
+        logger::print_status("Retrying package creation with CPack");
 
         // Extract pkg_name and pkg_version to reuse them in the retry
         std::string pkg_name = project_name;
@@ -1620,7 +1619,7 @@ static bool run_cpack(const std::filesystem::path &build_dir,
       } else if (!non_nsis_generators.empty()) {
         // If NSIS installation failed but we have other generators, try with
         // them
-        logger::print_status("Trying to create packages without NSIS...");
+        logger::print_status("Trying to create packages without NSIS");
 
         std::vector<std::string> new_args = cpack_args;
 
@@ -2055,7 +2054,7 @@ static bool package_single_project(
     }
 
     logger::print_status(
-        "Build directory not found or incomplete, building project first...");
+        "Build directory not found or incomplete, building project first");
 
     // Create a modified context with the correct configuration
     cforge_context_t build_ctx;
@@ -2134,7 +2133,7 @@ static bool package_single_project(
     // If the directory still doesn't exist, we need to check other common
     // formats
     if (!build_dir_exists_now) {
-      logger::print_status("Searching for build directory after build...");
+      logger::print_status("Searching for build directory after build");
 
       // Try to find the actual build directory created
       std::filesystem::path parent_dir = project_dir;
@@ -2160,7 +2159,7 @@ static bool package_single_project(
       // Find any build directory by inspecting subdirectories of project_dir
       bool found_build_dir = false;
       if (!found_build_dir) {
-        logger::print_status("Looking for build directories in project...");
+        logger::print_status("Looking for build directories in project");
         try {
           for (const auto &entry :
                std::filesystem::directory_iterator(parent_dir)) {
@@ -2171,7 +2170,7 @@ static bool package_single_project(
                 // Check if this has CMake files
                 if (std::filesystem::exists(entry.path() / "CMakeCache.txt")) {
                   build_dir = entry.path();
-                  logger::print_status("Found build directory by inspection: " +
+                  logger::print_verbose("Found build directory by inspection: " +
                                        build_dir.string());
                   found_build_dir = true;
                   break;
@@ -2189,7 +2188,7 @@ static bool package_single_project(
                       if (std::filesystem::exists(subdir.path() /
                                                   "CMakeCache.txt")) {
                         build_dir = subdir.path();
-                        logger::print_status(
+                        logger::print_verbose(
                             "Found build subdirectory by inspection: " +
                             build_dir.string());
                         found_build_dir = true;
@@ -2216,7 +2215,7 @@ static bool package_single_project(
 
         if (std::filesystem::exists(check_dir)) {
           build_dir = check_dir;
-          logger::print_status("Found build directory: " + build_dir.string());
+          logger::print_verbose("Found build directory: " + build_dir.string());
           found_build_dir = true;
           break;
         }
@@ -2224,14 +2223,14 @@ static bool package_single_project(
 
       // If we still can't find it, check recursive for any CMakeCache.txt
       if (!found_build_dir) {
-        logger::print_status("Searching for CMake build directories...");
+        logger::print_status("Searching for CMake build directories");
 
         for (const auto &entry :
              std::filesystem::recursive_directory_iterator(parent_dir)) {
           if (entry.is_regular_file() &&
               entry.path().filename() == "CMakeCache.txt") {
             build_dir = entry.path().parent_path();
-            logger::print_status("Found CMake build directory: " +
+            logger::print_verbose("Found CMake build directory: " +
                                  build_dir.string());
             found_build_dir = true;
             break;
@@ -2247,7 +2246,7 @@ static bool package_single_project(
         if (std::filesystem::exists(bin_dir)) {
           // Go up two levels to get the build directory
           build_dir = bin_dir.parent_path().parent_path();
-          logger::print_status("Found build directory via bin folder: " +
+          logger::print_verbose("Found build directory via bin folder: " +
                                build_dir.string());
           found_build_dir = true;
         }
@@ -2262,7 +2261,7 @@ static bool package_single_project(
     }
   } else if (!skip_build) {
     // Always rebuild to ensure we have the latest version
-    logger::print_status("Rebuilding project before packaging...");
+    logger::building("project before packaging");
 
     // Create a modified context with the correct configuration
     cforge_context_t build_ctx;
@@ -2333,7 +2332,7 @@ static bool package_single_project(
       return false;
     }
   } else {
-    logger::print_status("Skipping build as requested with --no-build");
+    logger::print_action("Skipping", "build as requested with --no-build");
   }
 
   // Verify that the build directory now exists
@@ -2379,7 +2378,7 @@ static bool package_single_project(
         gen_str += ", ";
       gen_str += available_generators[i];
     }
-    logger::print_status(gen_str);
+    logger::print_verbose(gen_str);
   }
 
   // Filter out unsupported generators based on available CPack tools
@@ -2397,7 +2396,7 @@ static bool package_single_project(
       return 1;
     }
     available_generators = valid_gens;
-    logger::print_status("Using valid package generators: " + join_strings(available_generators, ", "));
+    logger::print_verbose("Using valid package generators: " + join_strings(available_generators, ", "));
   }
 
   // Package the project using the project_name and project_version already
@@ -2502,7 +2501,7 @@ list_packages(const std::filesystem::path &dir,
  * @return cforge_int_t Exit code (0 for success)
  */
 cforge_int_t cforge_cmd_package(const cforge_context_t *ctx) {
-  logger::print_status("Starting packaging process...");
+  logger::packaging("project");
 
   // Check if this is a workspace
   std::filesystem::path current_dir = std::filesystem::path(ctx->working_dir);
@@ -2554,7 +2553,7 @@ cforge_int_t cforge_cmd_package(const cforge_context_t *ctx) {
     config_name[0] = std::toupper(config_name[0]);
   }
 
-  logger::print_status("Using build configuration: " + config_name);
+  logger::print_action("Config", config_name);
 
   // Check for build first flag
   bool skip_build = false;
@@ -2605,7 +2604,7 @@ cforge_int_t cforge_cmd_package(const cforge_context_t *ctx) {
   try {
     if (is_workspace) {
         // Consolidated workspace packaging
-        logger::print_status("Packaging in workspace context: " + current_dir.string());
+        logger::print_verbose("Packaging in workspace context: " + current_dir.string());
 
         // Load workspace configuration
         toml::table workspace_table;
@@ -2632,7 +2631,7 @@ cforge_int_t cforge_cmd_package(const cforge_context_t *ctx) {
 
         // Build all projects if needed
         if (!skip_build) {
-            logger::print_status("Building all projects in workspace before packaging...");
+            logger::building("all projects in workspace before packaging");
             cforge_context_t build_ctx;
             memset(&build_ctx, 0, sizeof(build_ctx));
             strncpy(build_ctx.working_dir, ctx->working_dir, sizeof(build_ctx.working_dir) - 1);
@@ -2665,7 +2664,7 @@ cforge_int_t cforge_cmd_package(const cforge_context_t *ctx) {
         return success ? 0 : 1;
     } else {
       // Handle single project packaging
-      logger::print_status("Packaging in single project context");
+      logger::print_verbose("Packaging in single project context");
 
       // Check if this is a valid cforge project
       std::filesystem::path config_path = current_dir / CFORGE_FILE;
@@ -2698,9 +2697,9 @@ cforge_int_t cforge_cmd_package(const cforge_context_t *ctx) {
           project_config.get_string("project.version", "0.1.0");
 
       // Log project info
-      logger::print_status("Project: " + project_name);
-      logger::print_status("Version: " + project_version);
-      logger::print_status("Configuration: " + config_name);
+      logger::print_action("Project", project_name);
+      logger::print_action("Version", project_version);
+      logger::print_action("Config", config_name);
 
       // Check if packaging is enabled
       if (!project_config.get_bool("package.enabled", true)) {
@@ -2712,7 +2711,7 @@ cforge_int_t cforge_cmd_package(const cforge_context_t *ctx) {
 
       // Build the project if needed
       if (!skip_build) {
-        logger::print_status("Building project before packaging...");
+        logger::building("project before packaging");
 
         if (!build_project(ctx)) {
           logger::print_error("Build failed, cannot continue with packaging");
@@ -2720,7 +2719,7 @@ cforge_int_t cforge_cmd_package(const cforge_context_t *ctx) {
         }
 
       } else {
-        logger::print_status("Skipping build as requested");
+        logger::print_action("Skipping", "build as requested");
       }
 
       // If no generators specified, check project
@@ -2738,7 +2737,7 @@ cforge_int_t cforge_cmd_package(const cforge_context_t *ctx) {
         }
       }
 
-      logger::print_status("Using package generators: " +
+      logger::print_verbose("Using package generators: " +
                            join_strings(generators, ", "));
 
       // Filter out unsupported package generators for this platform
@@ -2757,7 +2756,7 @@ cforge_int_t cforge_cmd_package(const cforge_context_t *ctx) {
         }
         if (filtered.size() != generators.size()) {
           generators = filtered;
-          logger::print_status("Proceeding with filtered generators: " + join_strings(generators, ", "));
+          logger::print_verbose("Proceeding with filtered generators: " + join_strings(generators, ", "));
         }
       }
 
@@ -2777,7 +2776,7 @@ cforge_int_t cforge_cmd_package(const cforge_context_t *ctx) {
         return 1;
       }
 
-      logger::print_success("Packaging completed successfully");
+      logger::finished("packaging");
 
       return 0;
     }

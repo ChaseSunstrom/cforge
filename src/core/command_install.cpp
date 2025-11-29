@@ -8,6 +8,7 @@
 #include "core/constants.h"
 #include "core/installer.hpp"
 #include "core/process_utils.hpp"
+#include "core/workspace.hpp"
 #include "core/workspace_utils.hpp"
 
 #include <cstring>
@@ -55,30 +56,30 @@ cforge_int_t cforge_cmd_install(const cforge_context_t *ctx) {
       // Build configuration for install
       if ((arg == "--config" || arg == "-c") && i+1 < ctx->args.arg_count) {
         build_config = ctx->args.args[++i];
-        logger::print_status("Using build configuration: " + build_config);
+        logger::print_action("Config", build_config);
         continue;
       } else if (arg.rfind("--config=",0) == 0) {
         build_config = arg.substr(9);
-        logger::print_status("Using build configuration: " + build_config);
+        logger::print_action("Config", build_config);
         continue;
       }
       if (arg == "--add-to-path") {
         add_to_path = true;
-        logger::print_status("Will add to PATH environment variable");
+        logger::print_action("Option", "will add to PATH environment variable");
       } else if (arg == "--from" && i+1 < ctx->args.arg_count) {
         project_source = ctx->args.args[++i]; have_from = true;
-        logger::print_status("Source: " + project_source);
+        logger::print_action("Source", project_source);
       } else if (arg == "--to" && i+1 < ctx->args.arg_count) {
         install_path = ctx->args.args[++i]; have_to = true;
-        logger::print_status("Target install path: " + install_path);
+        logger::print_action("Target", install_path);
       } else if ((arg == "--name" || arg == "-n") &&
                  i + 1 < ctx->args.arg_count) {
         project_name_override = ctx->args.args[++i];
-        logger::print_status("Project name override: " + project_name_override);
+        logger::print_action("Name", project_name_override);
       } else if (arg == "--env" && i+1 < ctx->args.arg_count) {
         // Set environment variable name for installation
         env_var = ctx->args.args[++i];
-        logger::print_status("Environment variable to set: " + env_var);
+        logger::print_action("Env", env_var);
       } else if (!have_from && project_source.empty() && arg.rfind("-",0)!=0) {
         // positional first => source
         project_source = arg;
@@ -117,7 +118,7 @@ cforge_int_t cforge_cmd_install(const cforge_context_t *ctx) {
   };
 
   if (is_workspace) {
-    logger::print_status("Building workspace before installation...");
+    logger::print_action("Building", "workspace before installation");
     // Build the workspace
     cforge_context_t build_ctx;
     memset(&build_ctx, 0, sizeof(build_ctx));
@@ -139,9 +140,9 @@ cforge_int_t cforge_cmd_install(const cforge_context_t *ctx) {
       logger::print_error("Workspace build failed");
       return build_res;
     }
-    logger::print_success("Workspace built successfully");
+    logger::finished("workspace build");
     // Now install projects from build artifacts
-    logger::print_status("Installing workspace projects from: " + project_source);
+    logger::installing("workspace projects from " + project_source);
     // Load workspace.toml and determine main startup project
     toml_reader ws_cfg(toml::parse_file((source_path / WORKSPACE_FILE).string()));
     std::string main_project = ws_cfg.get_string("workspace.main_project", "");
@@ -163,7 +164,7 @@ cforge_int_t cforge_cmd_install(const cforge_context_t *ctx) {
         logger::print_verbose("Skipping non-startup executable project: " + name);
         continue;
       }
-      logger::print_status("Installing project: " + name);
+      logger::installing(name);
       install_proj(proj_path.string());
     }
   } else {
@@ -177,7 +178,7 @@ cforge_int_t cforge_cmd_install(const cforge_context_t *ctx) {
         auto temp_dir = std::filesystem::temp_directory_path() / "cforge_install_temp";
         if (std::filesystem::exists(temp_dir)) std::filesystem::remove_all(temp_dir);
         std::filesystem::create_directories(temp_dir);
-        logger::print_status("Cloning project from Git: " + source);
+        logger::print_action("Cloning", source);
         if (!execute_tool("git", {"clone", source, temp_dir.string()}, "", "Git Clone", add_to_path)) {
           logger::print_error("Git clone failed: " + source);
           return 1;
@@ -196,8 +197,8 @@ cforge_int_t cforge_cmd_install(const cforge_context_t *ctx) {
       if (needs_cleanup) { try { std::filesystem::remove_all(source); } catch(...) {} }
       if (!success) { logger::print_error("Project installation failed"); return 1; }
     }
-    logger::print_success("Project installed successfully");
+    logger::finished("project installation");
   }
-  logger::print_success("Install command completed");
+  logger::finished("install");
   return 0;
 }

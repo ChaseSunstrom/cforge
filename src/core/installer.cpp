@@ -46,7 +46,7 @@ bool installer::install(const std::string &install_path, bool add_to_path) {
     target_path = install_path;
   }
 
-  logger::print_status("Installing cforge to: " + target_path.string());
+  logger::installing("cforge to: " + target_path.string());
 
   // Ensure parent directory exists
   {
@@ -103,22 +103,21 @@ bool installer::install(const std::string &install_path, bool add_to_path) {
     if (!update_path_env(bin_path)) {
       logger::print_warning("Failed to update PATH environment variable");
     } else {
-      logger::print_success(
-          "Added installation directory to PATH environment variable");
+      logger::print_action("Added", "installation directory to PATH environment variable");
     }
   }
 
-  logger::print_success("cforge has been installed successfully to " +
+  logger::finished("cforge has been installed successfully to " +
                         target_path.string());
   return true;
 }
 
 bool installer::update() {
-  logger::print_status("Starting cforge self-update...");
+  logger::print_status("Starting cforge self-update");
 
   // Verify installation
   if (!is_installed()) {
-    logger::print_error("cforge is not installed. Please run 'cforge install' first.");
+    logger::print_error("cforge is not installed. Please run 'cforge install' first");
     return false;
   }
 
@@ -129,7 +128,7 @@ bool installer::update() {
 
   // If this installation was a Git checkout, pull latest
   if (std::filesystem::exists(git_dir) && std::filesystem::is_directory(git_dir)) {
-    logger::print_status("Detected Git repository. Pulling latest changes...");
+    logger::print_status("Detected Git repository. Pulling latest changes");
     auto result = execute_process(
         "git",
         std::vector<std::string>{"-C", install_path.string(), "pull", "--rebase"},
@@ -140,7 +139,7 @@ bool installer::update() {
       logger::print_error("Git pull failed (exit code " + std::to_string(result.exit_code) + ")");
       return false;
     }
-    logger::print_status("Reinstalling updated cforge...");
+    logger::installing("updated cforge");
     return install(install_location);
   }
 
@@ -150,7 +149,7 @@ bool installer::update() {
   if (std::filesystem::exists(tmp)) {
     std::filesystem::remove_all(tmp);
   }
-  logger::print_status("Cloning cforge repository...");
+  logger::fetching("cforge repository");
   auto clone_result = execute_process(
       "git",
       std::vector<std::string>{"clone", CFORGE_REPO_URL, tmp.string()},
@@ -161,7 +160,7 @@ bool installer::update() {
     logger::print_error("Git clone failed (exit code " + std::to_string(clone_result.exit_code) + ")");
     return false;
   }
-  logger::print_status("Installing new version...");
+  logger::installing("new version");
   bool ok = install(tmp.string());
   std::filesystem::remove_all(tmp);
   return ok;
@@ -233,7 +232,7 @@ bool installer::install_project(const std::string &project_path,
     target_path = effective_install_path;
   }
 
-  logger::print_status("Installing to: " + target_path.string());
+  logger::installing("to: " + target_path.string());
 
   // Ensure parent directory exists for project install
   {
@@ -267,7 +266,7 @@ bool installer::install_project(const std::string &project_path,
   }
 
   // Build the project first (verbose) or skip if in a workspace
-  print_verbose("Building project before installation...");
+  print_verbose("Building project before installation");
   // Save original working directory
   std::filesystem::path original_path = std::filesystem::current_path();
   // Detect if this project is inside a workspace
@@ -294,17 +293,17 @@ bool installer::install_project(const std::string &project_path,
     build_success = false;
     if (has_cmake) {
       // Build the project with CMake
-      logger::print_status("Building project in Release mode...");
+      logger::print_status("Building project in Release mode");
       std::vector<std::string> cmake_args = {"..", "-G", "Ninja",
                                              "-DCMAKE_BUILD_TYPE=Release"};
       build_success = execute_tool("cmake", cmake_args, project_dir.string(),
-                                   "CMake Configure", 
+                                   "CMake Configure",
                                    logger::get_verbosity() == log_verbosity::VERBOSITY_VERBOSE,
                                    120);
 
       if (build_success) {
         // Build the project with Ninja
-        logger::print_status("Building project in Release mode...");
+        logger::print_status("Building project in Release mode");
         std::vector<std::string> ninja_args = {};
         build_success = execute_tool("ninja", ninja_args, project_dir.string(),
                                      "Ninja Build", 
@@ -314,7 +313,7 @@ bool installer::install_project(const std::string &project_path,
     } else {
       // No CMake, try looking for a Makefile
       if (std::filesystem::exists(project_dir / "Makefile")) {
-        print_verbose("Building project with Makefile...");
+        print_verbose("Building project with Makefile");
         try {
 #ifdef _WIN32
           bool make_available = is_command_available("make") ||
@@ -322,7 +321,7 @@ bool installer::install_project(const std::string &project_path,
                                 is_command_available("nmake");
           if (!make_available) {
             logger::print_warning("No make tool found (make, mingw32-make, "
-                                  "nmake). Skipping build.");
+                                  "nmake). Skipping build");
             build_success = false;
           } else {
             // Try different make tools
@@ -340,7 +339,7 @@ bool installer::install_project(const std::string &project_path,
 #else
           bool make_available = is_command_available("make");
           if (!make_available) {
-            logger::print_warning("Make is not available. Skipping build.");
+            logger::print_warning("Make is not available. Skipping build");
             build_success = false;
           } else {
             int make_result = system("make");
@@ -353,14 +352,14 @@ bool installer::install_project(const std::string &project_path,
         }
       } else {
         // Assume the project is pre-built
-        print_verbose("No build system detected. Assuming pre-built project.");
+        print_verbose("No build system detected. Assuming pre-built project");
         build_success = true;
       }
     }
     if (!build_success) {
-      logger::print_warning("Build failed or skipped; searching for pre-built executables.");
+      logger::print_warning("Build failed or skipped; searching for pre-built executables");
     } else {
-      print_verbose("Build completed successfully.");
+      print_verbose("Build completed successfully");
     }
     // Restore working directory after build
     std::filesystem::current_path(original_path);
@@ -373,7 +372,7 @@ bool installer::install_project(const std::string &project_path,
 
   if (project_type == "executable") {
     // For executables, only copy the binary and necessary resources
-    logger::print_status("Installing executable...");
+    logger::installing("executable");
 
     // Create 'bin' subdirectory in the install path
     std::filesystem::path install_bin = target_path / "bin";
@@ -681,7 +680,7 @@ bool installer::install_project(const std::string &project_path,
     update_env_var(project_name_override, target_path);
   }
 
-  logger::print_success("Project " + project_name + " installed to " + target_path.string());
+  logger::finished("Project " + project_name + " installed to " + target_path.string());
   return true;
 }
 
@@ -1291,7 +1290,7 @@ bool installer::update_path_env(const std::filesystem::path &bin_path) const {
                       (LPARAM) "Environment", SMTO_ABORTIFHUNG, 5000, NULL);
 
   logger::print_status("Added to PATH environment variable. Changes may "
-                       "require a new terminal or system restart.");
+                       "require a new terminal or system restart");
   return true;
 #else
   // On Unix-like systems, update .bashrc or similar

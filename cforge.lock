@@ -1,0 +1,23 @@
+# cforge.lock - DO NOT EDIT MANUALLY
+# This file is auto-generated and tracks exact dependency versions
+# for reproducible builds.
+#
+# To update dependencies, run: cforge deps update
+# To force regeneration, delete this file and rebuild.
+
+[metadata]
+version = "1"
+generated = "2025-11-29T23:54:23Z"
+
+[dependency.fmt]
+source = "git"
+url = "https://github.com/fmtlib/fmt.git"
+version = "11.1.4"
+resolved = "123913715afeb8a437e6388b4473fcc4753e1c9a"
+
+[dependency.tomlplusplus]
+source = "git"
+url = "https://github.com/marzer/tomlplusplus.git"
+version = "v3.4.0"
+resolved = "30172438cee64926dc41fdd9c11fb3ba5b2ba9de"
+

@@ -111,7 +111,7 @@ static bool clone_vcpkg(const std::filesystem::path &project_dir,
   std::filesystem::path vcpkg_dir = project_dir / "vcpkg";
 
   if (std::filesystem::exists(vcpkg_dir)) {
-    logger::print_status("vcpkg is already installed");
+    logger::print_action("Done", "vcpkg is already installed");
     return true;
   }
 
@@ -129,7 +129,7 @@ static bool clone_vcpkg(const std::filesystem::path &project_dir,
   std::vector<std::string> git_args = {
       "clone", "https://github.com/microsoft/vcpkg.git", vcpkg_dir.string()};
 
-  logger::print_status("Cloning vcpkg repository...");
+  logger::fetching("vcpkg repository");
 
   auto result = execute_process(
       git_cmd, git_args,
@@ -158,7 +158,7 @@ static bool clone_vcpkg(const std::filesystem::path &project_dir,
   bootstrap_args = {"-disableMetrics"};
 #endif
 
-  logger::print_status("Bootstrapping vcpkg...");
+  logger::installing("vcpkg");
 
   auto bootstrap_result = execute_process(
       bootstrap_cmd, bootstrap_args, vcpkg_dir.string(),
@@ -205,7 +205,7 @@ static bool setup_vcpkg_integration(const std::filesystem::path &project_dir,
   std::string command = vcpkg_exe.string();
   std::vector<std::string> args = {"integrate", "install"};
 
-  logger::print_status("Setting up vcpkg integration...");
+  logger::print_action("Integrating", "vcpkg");
 
   auto result = execute_process(
       command, args,
@@ -295,7 +295,7 @@ static bool forward_to_vcpkg(const std::filesystem::path &project_dir,
     }
   }
 
-  logger::print_status("Running vcpkg command: " + command_str);
+  logger::print_action("Running", "vcpkg command: " + command_str);
 
   auto result = execute_process(
       command, vcpkg_args,
@@ -353,10 +353,10 @@ cforge_int_t cforge_cmd_vcpkg(const cforge_context_t *ctx) {
 #endif
 
     if (std::filesystem::exists(vcpkg_exe)) {
-      logger::print_status("vcpkg is already installed");
+      logger::print_action("Done", "vcpkg is already installed");
     } else {
       // Clone vcpkg
-      logger::print_status("Cloning vcpkg...");
+      logger::fetching("vcpkg");
       std::string git_cmd = "git";
       std::vector<std::string> git_args = {"clone", "https://github.com/Microsoft/vcpkg.git", vcpkg_path.string()};
 
@@ -372,7 +372,7 @@ cforge_int_t cforge_cmd_vcpkg(const cforge_context_t *ctx) {
       }
 
       // Bootstrap vcpkg
-      logger::print_status("Bootstrapping vcpkg...");
+      logger::installing("vcpkg");
 #ifdef _WIN32
       std::string bootstrap_cmd = (vcpkg_path / "bootstrap-vcpkg.bat").string();
 #else
@@ -410,7 +410,7 @@ cforge_int_t cforge_cmd_vcpkg(const cforge_context_t *ctx) {
       logger::print_status("Please set VCPKG_ROOT to: " + vcpkg_root);
     }
 
-    logger::print_success("vcpkg has been successfully installed");
+    logger::finished("vcpkg has been successfully installed");
     return 0;
   } else if (command == "update") {
     // Get vcpkg path
@@ -421,7 +421,7 @@ cforge_int_t cforge_cmd_vcpkg(const cforge_context_t *ctx) {
     }
 
     // Update vcpkg
-    logger::print_status("Updating vcpkg...");
+    logger::updating("vcpkg");
     std::string git_cmd = "git";
     std::vector<std::string> git_args = {"pull"};
 
@@ -437,7 +437,7 @@ cforge_int_t cforge_cmd_vcpkg(const cforge_context_t *ctx) {
     }
 
     // Update packages
-    logger::print_status("Updating packages...");
+    logger::updating("packages");
     std::string vcpkg_cmd = (vcpkg_path / "vcpkg").string();
     std::vector<std::string> vcpkg_args = {"upgrade", "--no-dry-run"};
 
@@ -452,7 +452,7 @@ cforge_int_t cforge_cmd_vcpkg(const cforge_context_t *ctx) {
       return 1;
     }
 
-    logger::print_success("vcpkg and packages have been updated");
+    logger::finished("vcpkg and packages have been updated");
     return 0;
   } else if (command == "list") {
     // Get vcpkg path

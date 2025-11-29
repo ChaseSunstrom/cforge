@@ -118,6 +118,8 @@ extern "C" cforge_int_t cforge_dispatch_command(const cforge_context_t *ctx) {
     return cforge_cmd_list(ctx);
   } else if (strcmp(ctx->args.command, "pack") == 0) {
     return cforge_cmd_package(ctx);
+  } else if (strcmp(ctx->args.command, "lock") == 0) {
+    return cforge_cmd_lock(ctx);
   } else if (strcmp(ctx->args.command, "help") == 0 ||
              strcmp(ctx->args.command, "--help") == 0 ||
              strcmp(ctx->args.command, "-h") == 0) {

@@ -162,8 +162,7 @@ execute_process(const std::string &command,
                                    .count();
 
       if (since_last_status > 5) {
-        logger::print_status("Command still running... (elapsed: " +
-                             std::to_string(elapsed_seconds) + "s)");
+        logger::running(command + " (still running...)");
         last_status_time = current_time;
       }
     }
@@ -467,7 +466,7 @@ bool execute_tool(const std::string &command,
   std::string tool_name_to_use = tool_name.empty() ? command : tool_name;
 
   if (verbose) {
-    logger::print_status("Command: " + cmd_str);
+    logger::print_action("Running", cmd_str);
   }
 
   // Collect output
@@ -481,7 +480,7 @@ bool execute_tool(const std::string &command,
       std::istringstream ss(chunk);
       while (std::getline(ss, line)) {
         if (!line.empty()) {
-          logger::print_status(line);
+          logger::print_action("Output", line);
         }
       }
     };
@@ -495,7 +494,7 @@ bool execute_tool(const std::string &command,
       std::istringstream ss(chunk);
       while (std::getline(ss, line)) {
         if (!line.empty()) {
-          logger::print_status(line);
+          logger::print_action("Output", line);
         }
       }
     };

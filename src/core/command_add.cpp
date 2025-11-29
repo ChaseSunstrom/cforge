@@ -9,6 +9,7 @@
 #include "core/file_system.h"
 #include "core/process_utils.hpp"
 #include "core/toml_reader.hpp"
+#include "core/workspace.hpp"
 #include "core/workspace_utils.hpp"
 #include <filesystem>
 #include <fstream>
@@ -75,7 +76,7 @@ static bool add_dependency_to_config(const std::filesystem::path &project_dir,
   outfile.close();
 
   if (verbose) {
-    logger::print_status("Added dependency: " + entry);
+    logger::print_action("Added", entry);
   }
 
   return true;
@@ -119,7 +120,7 @@ static bool install_package_with_vcpkg(const std::filesystem::path &project_dir,
       vcpkg_exe = global_exe;
     } else {
       logger::print_error("vcpkg not found. Checked: " + project_vcpkg_exe.string() + " and " + global_exe.string());
-      logger::print_status("Run 'cforge vcpkg setup' to set up vcpkg integration");
+      logger::print_action("Run", "cforge vcpkg setup to set up vcpkg integration");
       return false;
     }
   }
@@ -135,7 +136,7 @@ static bool install_package_with_vcpkg(const std::filesystem::path &project_dir,
   std::vector<std::string> args = {"install", package_spec};
 
   // Run the command
-  logger::print_status("Installing package: " + package_spec);
+  logger::installing(package_spec);
 
   auto result = execute_process(
       command, args,
@@ -169,7 +170,7 @@ static bool clone_git_repo(const std::string& url, const std::string& target_dir
     
     // Check if directory already exists
     if (std::filesystem::exists(target_dir)) {
-        logger::print_status("Directory already exists, updating instead of cloning");
+        logger::print_action("Updating", target_dir);
         
         // Fetch updates
         std::vector<std::string> fetch_args = {"fetch", "--tags"};
@@ -190,7 +191,7 @@ static bool clone_git_repo(const std::string& url, const std::string& target_dir
         
         // If a tag is specified, check it out
         if (!tag.empty() && tag != "") {
-            logger::print_status("Checking out tag: " + tag);
+            logger::print_action("Checking out", "tag " + tag);
             std::string tag_ref = "v" + tag;  // Try with 'v' prefix first
             std::vector<std::string> checkout_args = {"checkout", tag_ref};
             if (!verbose) {
@@ -232,7 +233,7 @@ static bool clone_git_repo(const std::string& url, const std::string& target_dir
         return false;
     }
     
-    logger::print_status("Cloning Git dependency from " + https_url);
+    logger::print_action("Cloning", https_url);
     
     // Build the Git command arguments
     std::vector<std::string> args = {"clone", "--recursive"};
@@ -403,8 +404,8 @@ cforge_int_t cforge_cmd_add(const cforge_context_t *ctx) {
   // If not in workspace root, ensure this is a project directory
   if (!in_workspace_root && !std::filesystem::exists(config_file)) {
     logger::print_error(
-        "Not a cforge project directory (cforge.toml not found)");
-    logger::print_status("Run 'cforge init' to create a new project");
+        "not a cforge project directory (cforge.toml not found)");
+    logger::print_action("Run", "cforge init to create a new project");
     return 1;
   }
 
@@ -435,10 +436,10 @@ cforge_int_t cforge_cmd_add(const cforge_context_t *ctx) {
 
   // Check if package name was provided
   if (args.empty() || args[0].empty() || args[0][0] == '-') {
-    logger::print_error("Package name not specified");
-    logger::print_status("Usage: cforge add <package> [--git|--vcpkg]");
-    logger::print_status("For git dependencies: cforge add --git <name> <url> [--tag <version>]");
-    logger::print_status("For vcpkg dependencies: cforge add <package>[:version] [--vcpkg]");
+    logger::print_error("package name not specified");
+    logger::print_action("Usage", "cforge add <package> [--git|--vcpkg]");
+    logger::print_action("For git dependencies", "cforge add --git <name> <url> [--tag <version>]");
+    logger::print_action("For vcpkg dependencies", "cforge add <package>[:version] [--vcpkg]");
     return 1;
   }
 
@@ -448,7 +449,7 @@ cforge_int_t cforge_cmd_add(const cforge_context_t *ctx) {
   if (mode_git) {
     if (args.size() < 2) {
       logger::print_error("URL for git dependency not specified");
-      logger::print_status("Usage: cforge add --git <name> <url> [--tag <version>]");
+      logger::print_action("Usage", "cforge add --git <name> <url> [--tag <version>]");
       return 1;
     }
     package_version_or_url = args[1];
@@ -502,9 +503,9 @@ cforge_int_t cforge_cmd_add(const cforge_context_t *ctx) {
       return 1;
     }
     if (!inst_all) {
-      logger::print_warning("Dependency '" + package_name + "' added to config in workspace, but installation failed in some projects. Run 'cforge vcpkg setup' then 'cforge add " + package_name + "' to install.");
+      logger::print_warning("Dependency '" + package_name + "' added to config in workspace, but installation failed in some projects. Run 'cforge vcpkg setup' then 'cforge add " + package_name + "' to install");
     }
-    logger::print_success("Successfully added dependency: " + package_name + " to workspace projects");
+    logger::print_action("Added", package_name + " to workspace projects");
     return 0;
   }
 
@@ -534,9 +535,9 @@ cforge_int_t cforge_cmd_add(const cforge_context_t *ctx) {
       return 1;
     }
     if (!inst_ok) {
-      logger::print_warning("Dependency '" + package_name + "' added to config, but installation failed. Run 'cforge vcpkg setup' then 'cforge add " + package_name + "' to install.");
+      logger::print_warning("Dependency '" + package_name + "' added to config, but installation failed. Run 'cforge vcpkg setup' then 'cforge add " + package_name + "' to install");
     }
-    logger::print_success("Successfully added dependency: " + package_name);
+    logger::print_action("Added", package_name);
     return 0;
   }
 }

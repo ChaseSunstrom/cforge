@@ -1,6 +1,6 @@
 [project]
 name = "cforge"
-version = "2.0.0"
+version = "2.2.0"
 description = "A C/C++ build tool with dependency management"
 cpp_standard = "17"
 binary_type = "executable"
@@ -36,5 +36,7 @@ contact = "Chase Sunstrom <casunstrom@gmail.com>"
 directory = "vendor"
 
 [dependencies.git]
-tomlplusplus = { url = "https://github.com/marzer/tomlplusplus.git", tag = "", target_name = "" }
-fmt = { url = "https://github.com/fmtlib/fmt.git", tag = "", target_name = ""}
+# TOML parsing library - using latest main branch
+tomlplusplus = { url = "https://github.com/marzer/tomlplusplus.git", tag = "v3.4.0", link = false }
+# Formatting library - using latest main branch
+fmt = { url = "https://github.com/fmtlib/fmt.git", tag = "11.1.4" }
