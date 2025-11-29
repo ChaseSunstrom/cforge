@@ -66,25 +66,26 @@ CForge is a modern build system designed to simplify C/C++ project management. I
 
 ## 📥 Installation
 
-Use the provided bootstrap scripts to build and install CForge.
+Use the provided install scripts to build and install CForge.
 
 ### Linux/macOS (Bash)
 
 ```bash
-bash scripts/bootstrap.sh
+# One-liner installation:
+curl -fsSL https://raw.githubusercontent.com/ChaseSunstrom/cforge/master/scripts/install.sh | bash
+
+# Or with options:
+curl -fsSL https://raw.githubusercontent.com/ChaseSunstrom/cforge/master/scripts/install.sh | bash -s -- --prefix=/usr/local
+
 ```
 
 ### Windows (PowerShell)
 
 ```powershell
-.\scripts\bootstrap.ps1
+# One-liner installation (run in PowerShell):
+irm https://raw.githubusercontent.com/ChaseSunstrom/cforge/master/scripts/install.ps1 | iex
 ```
 
-### Windows (Batch)
-
-```batch
-scripts\bootstrap.bat
-```
 
 ### Prerequisites
 
