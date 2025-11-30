@@ -92,13 +92,6 @@ target_include_directories(${PROJECT_NAME} PUBLIC
     "${SOURCE_DIR}/include"
 )
 
-# Definitions for config 'Debug'
-if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-  target_compile_definitions(${PROJECT_NAME} PUBLIC DEBUG=1)
-  target_compile_definitions(${PROJECT_NAME} PUBLIC FMT_HEADER_ONLY=ON)
-  target_compile_definitions(${PROJECT_NAME} PUBLIC FMT_UNICODE=0)
-endif()
-
 # Link libraries
 target_link_libraries(${PROJECT_NAME} PUBLIC
     fmt

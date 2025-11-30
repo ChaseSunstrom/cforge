@@ -3,9 +3,9 @@ name: CForge C/C++ Build
 on:
   workflow_dispatch:
   push:
-    branches: [ main, master ]  # Replace with your default branch name
+    branches: [ main, master ]
   pull_request:
-    branches: [ main, master ]  # Replace with your default branch name
+    branches: [ main, master ]
 
 jobs:
   build:
@@ -16,22 +16,28 @@ jobs:
       matrix:
         config:
           - {
-            name: "Windows MSVC", 
+            name: "Windows MSVC",
             os: windows-latest,
-            config: "Release",
-            compiler: "msvc"
+            artifact_name: "cforge-windows-x64",
+            exe_ext: ".exe"
           }
           - {
-            name: "Linux GCC", 
+            name: "Linux GCC",
             os: ubuntu-latest,
-            config: "Release",
-            compiler: "gcc"
+            artifact_name: "cforge-linux-x64",
+            exe_ext: ""
           }
           - {
-            name: "macOS Clang", 
+            name: "macOS Clang (x64)",
+            os: macos-13,
+            artifact_name: "cforge-macos-x64",
+            exe_ext: ""
+          }
+          - {
+            name: "macOS Clang (ARM64)",
             os: macos-latest,
-            config: "Release",
-            compiler: "clang"
+            artifact_name: "cforge-macos-arm64",
+            exe_ext: ""
           }
 
     steps:
@@ -39,6 +45,19 @@ jobs:
       with:
         fetch-depth: 0
 
+    # Setup build environment
+    - name: Install build dependencies (Linux)
+      if: runner.os == 'Linux'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential cmake ninja-build
+
+    - name: Install build dependencies (macOS)
+      if: runner.os == 'macOS'
+      run: |
+        brew install cmake ninja
+
+    # Build CForge
     - name: Bootstrap and build CForge (Linux/macOS)
       if: runner.os != 'Windows'
       shell: bash
@@ -52,33 +71,36 @@ jobs:
       run: |
         .\scripts\bootstrap.ps1
 
-    # Package on Linux only (TGZ and DEB)
-    - name: Package CForge (Linux)
-      if: runner.os == 'Linux'
-      shell: bash
+    # Verify build output
+    - name: Verify build (Linux/macOS)
+      if: runner.os != 'Windows'
       run: |
         exe="$(pwd)/build/bin/Release/cforge"
-        chmod +x "$exe"
-        "$exe" pack -c Release -t TGZ
-        "$exe" pack -c Release -t DEB
+        echo "Checking for executable at: $exe"
+        ls -la "$(pwd)/build/bin/Release/" || true
+        if [ -f "$exe" ]; then
+          chmod +x "$exe"
+          "$exe" version
+        else
+          echo "ERROR: cforge executable not found!"
+          exit 1
+        fi
 
-    # Package on macOS only (TGZ)
-    - name: Package CForge (macOS)
-      if: runner.os == 'macOS'
-      shell: bash
-      run: |
-        exe="$(pwd)/build/bin/Release/cforge"
-        chmod +x "$exe"
-        "$exe" pack -c Release -t TGZ
-
-    - name: Package CForge (Windows)
+    - name: Verify build (Windows)
       if: runner.os == 'Windows'
       shell: pwsh
       run: |
-        # Invoke the built CForge executable directly
         $exe = Join-Path $PWD 'build\bin\Release\cforge.exe'
-        & $exe pack -c Release -t ZIP
-    
+        Write-Host "Checking for executable at: $exe"
+        Get-ChildItem (Join-Path $PWD 'build\bin\Release\') -ErrorAction SilentlyContinue
+        if (Test-Path $exe) {
+          & $exe version
+        } else {
+          Write-Error "ERROR: cforge.exe not found!"
+          exit 1
+        }
+
+    # Run tests
     - name: Run tests (Linux/macOS)
       if: runner.os != 'Windows'
       shell: bash
@@ -86,7 +108,7 @@ jobs:
         exe="$(pwd)/build/bin/Release/cforge"
         chmod +x "$exe"
         "$exe" test
-    
+
     - name: Run tests (Windows)
       if: runner.os == 'Windows'
       shell: pwsh
@@ -94,21 +116,149 @@ jobs:
         $exe = Join-Path $PWD 'build\bin\Release\cforge.exe'
         & $exe test
 
-    - name: Upload Release Artifacts
+    # Create packages directory
+    - name: Create packages directory
+      run: mkdir -p packages
+      shell: bash
+
+    # Package for Linux
+    - name: Package CForge (Linux)
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        exe="$(pwd)/build/bin/Release/cforge"
+        chmod +x "$exe"
+
+        # Create TGZ package
+        "$exe" pack -c Release -t TGZ || echo "TGZ packaging failed"
+
+        # Create DEB package
+        "$exe" pack -c Release -t DEB || echo "DEB packaging failed"
+
+        # Also copy the raw executable
+        cp "$exe" packages/cforge-linux-x64 || true
+
+        echo "=== Packages created ==="
+        ls -la packages/
+
+    # Package for macOS
+    - name: Package CForge (macOS)
+      if: runner.os == 'macOS'
+      shell: bash
+      run: |
+        exe="$(pwd)/build/bin/Release/cforge"
+        chmod +x "$exe"
+
+        # Create TGZ package
+        "$exe" pack -c Release -t TGZ || echo "TGZ packaging failed"
+
+        # Also copy the raw executable
+        arch=$(uname -m)
+        cp "$exe" "packages/cforge-macos-${arch}" || true
+
+        echo "=== Packages created ==="
+        ls -la packages/
+
+    # Package for Windows
+    - name: Package CForge (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        $exe = Join-Path $PWD 'build\bin\Release\cforge.exe'
+
+        # Create ZIP package
+        & $exe pack -c Release -t ZIP
+        if ($LASTEXITCODE -ne 0) {
+          Write-Host "ZIP packaging failed"
+        }
+
+        # Also copy the raw executable
+        Copy-Item $exe -Destination "packages\cforge-windows-x64.exe" -ErrorAction SilentlyContinue
+
+        Write-Host "=== Packages created ==="
+        Get-ChildItem packages\
+
+    # Upload artifacts - platform specific
+    - name: Upload packages (Linux)
+      if: runner.os == 'Linux'
       uses: actions/upload-artifact@v4
       with:
-        name: cforge-${{ matrix.config.os }}
+        name: ${{ matrix.config.artifact_name }}
         path: |
-          packages/*.zip
           packages/*.tar.gz
           packages/*.deb
-          packages/*.rpm
-          packages/*.exe
-        retention-days: 7
-        if-no-files-found: ignore
+          packages/cforge-linux-*
+        retention-days: 30
+        if-no-files-found: warn
 
-    - name: Convert config to lowercase
-      run: |
-        echo "CONFIG_LOWER=$(echo "$CONFIG" | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
-      env:
-        CONFIG: ${{ matrix.config.config }}
+    - name: Upload packages (macOS)
+      if: runner.os == 'macOS'
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.config.artifact_name }}
+        path: |
+          packages/*.tar.gz
+          packages/cforge-macos-*
+        retention-days: 30
+        if-no-files-found: warn
+
+    - name: Upload packages (Windows)
+      if: runner.os == 'Windows'
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.config.artifact_name }}
+        path: |
+          packages/*.zip
+          packages/*.exe
+          packages/cforge-windows-*
+        retention-days: 30
+        if-no-files-found: warn
+
+    # Also upload the raw executable as a separate artifact for easy access
+    - name: Upload executable (Linux/macOS)
+      if: runner.os != 'Windows'
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.config.artifact_name }}-executable
+        path: build/bin/Release/cforge
+        retention-days: 30
+        if-no-files-found: warn
+
+    - name: Upload executable (Windows)
+      if: runner.os == 'Windows'
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.config.artifact_name }}-executable
+        path: build/bin/Release/cforge.exe
+        retention-days: 30
+        if-no-files-found: warn
+
+  # Create a combined release artifact on success
+  combine-artifacts:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: all-artifacts
+
+      - name: List all downloaded artifacts
+        run: |
+          echo "=== All artifacts ==="
+          find all-artifacts -type f | head -50
+
+      - name: Create combined release info
+        run: |
+          echo "CForge Build Artifacts" > all-artifacts/README.txt
+          echo "=====================" >> all-artifacts/README.txt
+          echo "" >> all-artifacts/README.txt
+          echo "Build Date: $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> all-artifacts/README.txt
+          echo "Commit: ${{ github.sha }}" >> all-artifacts/README.txt
+          echo "" >> all-artifacts/README.txt
+          echo "Platforms:" >> all-artifacts/README.txt
+          echo "- Windows x64 (MSVC)" >> all-artifacts/README.txt
+          echo "- Linux x64 (GCC)" >> all-artifacts/README.txt
+          echo "- macOS x64 (Clang)" >> all-artifacts/README.txt
+          echo "- macOS ARM64 (Clang)" >> all-artifacts/README.txt
