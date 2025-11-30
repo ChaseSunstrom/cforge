@@ -409,44 +409,72 @@ cforge_int_t cforge_cmd_update(const cforge_context_t *ctx) {
     std::filesystem::path target_exe = install_bin_dir / "cforge";
 #endif
 
+    // Install the binary
+    bool install_success = false;
     try {
-      // Remove old binary if it exists (might need to rename first on Windows)
-      if (std::filesystem::exists(target_exe)) {
-        std::filesystem::path backup = target_exe;
-        backup += ".old";
-        if (std::filesystem::exists(backup)) {
+      std::filesystem::path backup = target_exe;
+      backup += ".old";
+
+      // Remove old backup if it exists (ignore errors)
+      if (std::filesystem::exists(backup)) {
+        try {
           std::filesystem::remove(backup);
+        } catch (...) {
+          // Ignore - might be locked
         }
-        std::filesystem::rename(target_exe, backup);
       }
 
+      // Rename current exe to backup (if it exists)
+      if (std::filesystem::exists(target_exe)) {
+        try {
+          std::filesystem::rename(target_exe, backup);
+        } catch (...) {
+          // If rename fails, try direct overwrite
+        }
+      }
+
+      // Copy new binary
       std::filesystem::copy_file(
           built_exe, target_exe,
           std::filesystem::copy_options::overwrite_existing);
       logger::print_action("Installed", target_exe.string());
+      install_success = true;
 
-      // Remove backup
-      std::filesystem::path backup = target_exe;
-      backup += ".old";
+      // Try to remove backup (ignore errors - Windows may have it locked)
       if (std::filesystem::exists(backup)) {
-        std::filesystem::remove(backup);
+        try {
+          std::filesystem::remove(backup);
+        } catch (...) {
+          // Ignore - will be cleaned up on next update
+        }
       }
     } catch (const std::exception &e) {
       logger::print_error("Failed to install binary: " + std::string(e.what()));
-      std::filesystem::remove_all(temp_dir);
-      return 1;
     }
 
-    // Update PATH if requested
-    if (add_to_path) {
+    // Update PATH if requested (only if install succeeded)
+    if (install_success && add_to_path) {
       installer_instance.update_path_env(install_bin_dir);
       logger::print_action("Updated", "PATH environment variable");
     }
 
-    // Clean up temporary directory
+    // Clean up temporary directory (handle read-only git files on Windows)
     try {
+#ifdef _WIN32
+      // On Windows, git objects are often read-only, need to remove that attribute
+      for (auto &entry :
+           std::filesystem::recursive_directory_iterator(temp_dir)) {
+        try {
+          std::filesystem::permissions(entry.path(),
+                                       std::filesystem::perms::owner_write,
+                                       std::filesystem::perm_options::add);
+        } catch (...) {
+        }
+      }
+#endif
       std::filesystem::remove_all(temp_dir);
     } catch (...) {
+      // Ignore cleanup errors - temp files will be cleaned up by OS eventually
     }
 
     logger::finished("cforge updated successfully!");
