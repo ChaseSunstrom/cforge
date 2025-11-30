@@ -75,11 +75,47 @@ std::string format_build_errors(const std::string &error_output) {
     return "";
   }
 
+  // Deduplicate similar errors (especially linker errors)
+  filtered_diagnostics = deduplicate_diagnostics(std::move(filtered_diagnostics));
+
+  // Add library suggestions to linker errors and generate fix suggestions for all
+  for (auto &diag : filtered_diagnostics) {
+    if (diag.code.find("LNK") != std::string::npos ||
+        diag.code.find("UNDEFINED") != std::string::npos) {
+      // Try to extract symbol and suggest library
+      std::regex symbol_regex(R"((?:undefined|unresolved)[^`'\"]*[`'\"]([^`'\"]+)[`'\"])");
+      std::smatch match;
+      if (std::regex_search(diag.message, match, symbol_regex)) {
+        std::string suggested_lib = suggest_library_for_symbol(match[1].str());
+        if (!suggested_lib.empty()) {
+          diag.notes.push_back("try linking: " + suggested_lib);
+        }
+      }
+    }
+
+    // Generate fix suggestions for this diagnostic
+    auto fixes = generate_fix_suggestions(diag);
+    diag.fixes.insert(diag.fixes.end(), fixes.begin(), fixes.end());
+  }
+
   // Format the diagnostics to a string
   std::stringstream ss;
   for (const auto &diag : filtered_diagnostics) {
-    // Format diagnostic to string instead of printing directly
-    ss << format_diagnostic_to_string(diag);
+    // Add occurrence count to message if > 1
+    if (diag.occurrence_count > 1) {
+      diagnostic diag_copy = diag;
+      diag_copy.message = diag.message + " (" + std::to_string(diag.occurrence_count) + " occurrences)";
+      ss << format_diagnostic_to_string(diag_copy);
+    } else {
+      ss << format_diagnostic_to_string(diag);
+    }
+  }
+
+  // Calculate and append summary
+  error_summary summary = calculate_error_summary(filtered_diagnostics);
+  std::string summary_str = format_error_summary(summary);
+  if (!summary_str.empty()) {
+    ss << "\n" << summary_str;
   }
 
   return ss.str();
@@ -189,6 +225,24 @@ std::string format_diagnostic_to_string(const diagnostic &diag) {
     ss << help << "\n";
   }
 
+  // Fix suggestions
+  if (!diag.fixes.empty()) {
+    for (size_t i = 0; i < diag.fixes.size() && i < 3; ++i) {  // Limit to 3 suggestions
+      const auto &fix = diag.fixes[i];
+      ss << fmt::format(fg(fmt::color::magenta) | fmt::emphasis::bold, "   = fix: ");
+      ss << fix.description;
+      if (!fix.replacement.empty() && fix.replacement.length() < 40) {
+        ss << fmt::format(fg(fmt::color::gray), " -> ");
+        ss << fmt::format(fg(fmt::color::green), "`{}`", fix.replacement);
+      }
+      ss << "\n";
+    }
+    if (diag.fixes.size() > 3) {
+      ss << fmt::format(fg(fmt::color::gray), "   = ... and {} more suggestion(s)\n",
+                        diag.fixes.size() - 3);
+    }
+  }
+
   ss << "\n";
   return ss.str();
 }
@@ -223,6 +277,10 @@ std::vector<diagnostic> extract_diagnostics(const std::string &error_output) {
 
   auto cpack_diags = parse_cpack_errors(error_output);
   all_diagnostics.insert(all_diagnostics.end(), cpack_diags.begin(), cpack_diags.end());
+
+  // Parse template errors (these are often missed by standard parsers)
+  auto template_diags = parse_template_errors(error_output);
+  all_diagnostics.insert(all_diagnostics.end(), template_diags.begin(), template_diags.end());
 
   return all_diagnostics;
 }
@@ -880,33 +938,185 @@ std::vector<diagnostic> parse_ninja_errors(const std::string &error_output) {
 std::vector<diagnostic> parse_linker_errors(const std::string &error_output) {
   std::vector<diagnostic> diagnostics;
 
-  // Regular expressions for linker errors
+  // ============================================================
+  // Regular expressions for various linker error formats
+  // ============================================================
+
   // LLD-style linker error: "lld-link: error: undefined symbol: ..."
   std::regex lld_error_regex(R"(lld-link:\s*error:\s*(.*))");
 
-  // ld-style linker error: "ld: undefined symbol: ..."
-  std::regex ld_error_regex(R"(ld(\.\S+)?:\s*.*error:\s*(.*))");
+  // ld-style linker error: "ld: undefined symbol: ..." or "/usr/bin/ld: error: ..."
+  std::regex ld_error_regex(R"((?:/[^\s:]+/)?ld(?:\.\S+)?:\s*(?:error:\s*)?(.*))");
 
-  // MSVC linker error: "LINK : fatal error LNK1181: cannot open input file
-  // '...'"
+  // MSVC linker error from LINK.exe: "LINK : fatal error LNK1181: ..."
   std::regex msvc_link_error_regex(
       R"(LINK\s*:\s*(?:fatal\s*)?error\s*(LNK\d+):\s*(.*))");
 
-  // Generic reference pattern: "referenced by file.obj"
-  std::regex reference_regex(R"(>>>\s*referenced by\s*([^:\n]+))");
+  // MSVC linker error from object files: "file.obj : error LNK2019: ..."
+  // This is a very common format that was previously missed
+  std::regex msvc_obj_error_regex(
+      R"(([^\s:]+\.obj)\s*:\s*(?:fatal\s*)?error\s*(LNK\d+):\s*(.*))");
 
-  // Try to extract specific error codes
-  std::regex linker_code_regex(R"(error\s+(\w+\d+):)");
+  // MSVC linker error with function context: "file.obj : error LNK2019: ... in function ..."
+  std::regex msvc_function_context_regex(
+      R"(function\s+[\"']?([^\"'\s]+)[\"']?)");
+
+  // GCC/Clang undefined reference: "file.o:(.text+0x...): undefined reference to `symbol'"
+  std::regex gcc_undefined_ref_regex(
+      R"(([^\s:]+\.o(?:bj)?)\s*:\s*(?:\([^)]+\)\s*:\s*)?undefined reference to [`']([^'`]+)[`'])");
+
+  // GCC/Clang undefined reference (simpler format): "undefined reference to `symbol'"
+  std::regex simple_undefined_ref_regex(
+      R"(undefined reference to [`']([^'`]+)[`'])");
+
+  // collect2 error: "collect2: error: ld returned 1 exit status"
+  std::regex collect2_error_regex(R"(collect2:\s*error:\s*(.*))");
+
+  // Clang linker error: "clang: error: linker command failed..."
+  std::regex clang_linker_error_regex(R"(clang(?:\+\+)?:\s*error:\s*(linker.*))");
+
+  // Generic reference pattern: ">>> referenced by file.obj" or "referenced by file.cpp:123"
+  std::regex reference_regex(R"((?:>>>)?\s*referenced by\s*([^:\n]+)(?::(\d+))?)");
+
+  // Symbol extraction for help text
+  std::regex symbol_extract_regex(R"((?:unresolved external symbol|undefined symbol|undefined reference to)\s*[\"'`]?([^\"'`\s\(]+))");
 
   std::string line;
   std::istringstream stream(error_output);
-  std::string current_error;
-  std::string current_file;
+  diagnostic *current_diag = nullptr;
+
+  // Helper to add linker-specific help text
+  auto add_linker_help = [](diagnostic &diag, const std::string &error_code) {
+    // Parse the error code number if it's an LNK error
+    if (error_code.find("LNK") == 0) {
+      try {
+        int code_num = std::stoi(error_code.substr(3));
+        switch (code_num) {
+        case 1104:
+          diag.help_text = "The file name specified could not be found. Check that the library path is correct.";
+          break;
+        case 1120:
+          diag.help_text = "One or more external symbols are unresolved. Make sure all required libraries are linked.";
+          break;
+        case 1181:
+          diag.help_text = "Cannot open the specified input file. Verify the file exists and the path is correct.";
+          break;
+        case 2001:
+          diag.help_text = "Unresolved external symbol. The symbol is declared but not defined. Check:\n"
+                           "   - Is the library containing this symbol linked?\n"
+                           "   - Is the symbol exported from a DLL correctly?\n"
+                           "   - Are you missing a lib file in your link dependencies?";
+          break;
+        case 2005:
+          diag.help_text = "Symbol is already defined in another object. Check for:\n"
+                           "   - Duplicate definitions in multiple source files\n"
+                           "   - Missing 'inline' on header-defined functions\n"
+                           "   - Missing include guards";
+          break;
+        case 2019:
+          diag.help_text = "Unresolved external symbol referenced in function. The function calls something that isn't defined. Check:\n"
+                           "   - Is the required library linked in cforge.toml?\n"
+                           "   - For Windows API, add the appropriate .lib (e.g., user32.lib, kernel32.lib)\n"
+                           "   - For third-party libs, verify include and library paths";
+          break;
+        case 2038:
+          diag.help_text = "Runtime library mismatch detected. All modules must use the same runtime library variant.";
+          break;
+        default:
+          diag.help_text = "Check that all required libraries are linked and symbols are correctly exported.";
+          break;
+        }
+      } catch (...) {
+        diag.help_text = "Check that all required libraries are linked.";
+      }
+    } else {
+      // Generic linker help
+      if (diag.message.find("undefined") != std::string::npos ||
+          diag.message.find("unresolved") != std::string::npos) {
+        diag.help_text = "Symbol not found during linking. Ensure:\n"
+                         "   - All required libraries are linked in cforge.toml\n"
+                         "   - Library paths are correct\n"
+                         "   - The symbol is actually defined (not just declared)";
+      } else if (diag.message.find("multiple definition") != std::string::npos ||
+                 diag.message.find("duplicate") != std::string::npos) {
+        diag.help_text = "Symbol defined multiple times. Check for:\n"
+                         "   - Duplicate definitions in source files\n"
+                         "   - Functions in headers missing 'inline' keyword\n"
+                         "   - Missing include guards in headers";
+      } else {
+        diag.help_text = "Check your linker configuration and library dependencies.";
+      }
+    }
+  };
+
+  // Helper to extract symbol name from error message for display
+  auto extract_symbol_name = [&symbol_extract_regex](const std::string &msg) -> std::string {
+    std::smatch match;
+    if (std::regex_search(msg, match, symbol_extract_regex)) {
+      return match[1].str();
+    }
+    return "";
+  };
 
   while (std::getline(stream, line)) {
     std::smatch matches;
 
-    // Try to match LLD linker errors
+    // Skip empty lines
+    if (line.empty() || line.find_first_not_of(" \t\r\n") == std::string::npos) {
+      continue;
+    }
+
+    // ============================================================
+    // MSVC object file linker errors (most common on Windows)
+    // ============================================================
+    if (std::regex_search(line, matches, msvc_obj_error_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.file_path = matches[1].str();
+      diag.code = matches[2].str();
+      diag.message = matches[3].str();
+      diag.line_number = 0;
+      diag.column_number = 0;
+
+      // Extract the symbol name for a cleaner message
+      std::string symbol = extract_symbol_name(diag.message);
+      if (!symbol.empty()) {
+        diag.notes.push_back("Missing symbol: " + symbol);
+      }
+
+      // Check for function context in the message
+      std::smatch func_match;
+      if (std::regex_search(diag.message, func_match, msvc_function_context_regex)) {
+        diag.notes.push_back("Referenced in function: " + func_match[1].str());
+      }
+
+      add_linker_help(diag, diag.code);
+      diagnostics.push_back(diag);
+      current_diag = &diagnostics.back();
+      continue;
+    }
+
+    // ============================================================
+    // MSVC LINK.exe errors
+    // ============================================================
+    if (std::regex_search(line, matches, msvc_link_error_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.code = matches[1].str();
+      diag.message = matches[2].str();
+      diag.file_path = "";
+      diag.line_number = 0;
+      diag.column_number = 0;
+
+      add_linker_help(diag, diag.code);
+      diagnostics.push_back(diag);
+      current_diag = &diagnostics.back();
+      continue;
+    }
+
+    // ============================================================
+    // LLD linker errors
+    // ============================================================
     if (std::regex_search(line, matches, lld_error_regex)) {
       diagnostic diag;
       diag.level = diagnostic_level::ERROR;
@@ -916,93 +1126,182 @@ std::vector<diagnostic> parse_linker_errors(const std::string &error_output) {
       diag.line_number = 0;
       diag.column_number = 0;
 
-      // Try to extract error code from the message
-      std::smatch code_match;
-      if (std::regex_search(message, code_match, linker_code_regex)) {
-        diag.code = code_match[1].str();
+      // Determine error code based on message
+      if (message.find("undefined symbol") != std::string::npos) {
+        diag.code = "LNK-UNDEFINED";
+        std::string symbol = extract_symbol_name(message);
+        if (!symbol.empty()) {
+          diag.notes.push_back("Missing symbol: " + symbol);
+        }
+      } else if (message.find("duplicate symbol") != std::string::npos) {
+        diag.code = "LNK-DUPLICATE";
+      } else if (message.find("cannot open") != std::string::npos) {
+        diag.code = "LNK-NOTFOUND";
+      } else if (message.find("unresolved") != std::string::npos) {
+        diag.code = "LNK-UNRESOLVED";
       } else {
-        diag.code = "LLD";
+        diag.code = "LNK";
+      }
 
-        // Add specific context based on the message
-        if (message.find("undefined symbol") != std::string::npos) {
-          diag.code += "-UNDEFINED";
-        } else if (message.find("duplicate symbol") != std::string::npos) {
-          diag.code += "-DUPLICATE";
-        } else if (message.find("cannot open") != std::string::npos) {
-          diag.code += "-NOTFOUND";
-        } else if (message.find("unresolved") != std::string::npos) {
-          diag.code += "-UNRESOLVED";
+      add_linker_help(diag, diag.code);
+      diagnostics.push_back(diag);
+      current_diag = &diagnostics.back();
+      continue;
+    }
+
+    // ============================================================
+    // GCC/Clang undefined reference with file context
+    // ============================================================
+    if (std::regex_search(line, matches, gcc_undefined_ref_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.code = "LNK-UNDEFINED";
+      diag.file_path = matches[1].str();
+      std::string symbol = matches[2].str();
+      diag.message = "undefined reference to `" + symbol + "'";
+      diag.notes.push_back("Missing symbol: " + symbol);
+      diag.line_number = 0;
+      diag.column_number = 0;
+
+      add_linker_help(diag, diag.code);
+      diagnostics.push_back(diag);
+      current_diag = &diagnostics.back();
+      continue;
+    }
+
+    // ============================================================
+    // Simple undefined reference (without file context)
+    // ============================================================
+    if (std::regex_search(line, matches, simple_undefined_ref_regex)) {
+      // Only create a new diagnostic if we don't already have one for this
+      bool already_captured = false;
+      std::string symbol = matches[1].str();
+
+      for (const auto &existing : diagnostics) {
+        if (existing.message.find(symbol) != std::string::npos) {
+          already_captured = true;
+          break;
         }
       }
 
-      diagnostics.push_back(diag);
-      current_error = message;
+      if (!already_captured) {
+        diagnostic diag;
+        diag.level = diagnostic_level::ERROR;
+        diag.code = "LNK-UNDEFINED";
+        diag.message = "undefined reference to `" + symbol + "'";
+        diag.notes.push_back("Missing symbol: " + symbol);
+        diag.file_path = "";
+        diag.line_number = 0;
+        diag.column_number = 0;
+
+        add_linker_help(diag, diag.code);
+        diagnostics.push_back(diag);
+        current_diag = &diagnostics.back();
+      }
+      continue;
     }
-    // Try to match ld linker errors
-    else if (std::regex_search(line, matches, ld_error_regex)) {
+
+    // ============================================================
+    // Clang linker wrapper errors
+    // ============================================================
+    if (std::regex_search(line, matches, clang_linker_error_regex)) {
       diagnostic diag;
       diag.level = diagnostic_level::ERROR;
-      std::string message = matches[2].str();
+      diag.code = "LNK-CLANG";
+      diag.message = matches[1].str();
+      diag.file_path = "";
+      diag.line_number = 0;
+      diag.column_number = 0;
+
+      diag.help_text = "The linker failed. Check the errors above for details about missing symbols or libraries.";
+      diagnostics.push_back(diag);
+      current_diag = &diagnostics.back();
+      continue;
+    }
+
+    // ============================================================
+    // collect2 errors (GCC linker wrapper)
+    // ============================================================
+    if (std::regex_search(line, matches, collect2_error_regex)) {
+      // collect2 is a summary error; we prefer the more specific errors above
+      // Only add if we haven't captured any linker errors yet
+      if (diagnostics.empty()) {
+        diagnostic diag;
+        diag.level = diagnostic_level::ERROR;
+        diag.code = "LNK-LD";
+        diag.message = matches[1].str();
+        diag.file_path = "";
+        diag.line_number = 0;
+        diag.column_number = 0;
+
+        diag.help_text = "The linker failed. Check for undefined references or missing libraries above.";
+        diagnostics.push_back(diag);
+        current_diag = &diagnostics.back();
+      }
+      continue;
+    }
+
+    // ============================================================
+    // ld linker errors
+    // ============================================================
+    if (std::regex_search(line, matches, ld_error_regex)) {
+      std::string message = matches[1].str();
+
+      // Skip if it's just a warning or note
+      if (message.find("warning") != std::string::npos &&
+          message.find("error") == std::string::npos) {
+        continue;
+      }
+
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
       diag.message = message;
       diag.file_path = "";
       diag.line_number = 0;
       diag.column_number = 0;
 
-      // Try to extract error code from the message
-      std::smatch code_match;
-      if (std::regex_search(message, code_match, linker_code_regex)) {
-        diag.code = code_match[1].str();
+      if (message.find("undefined reference") != std::string::npos ||
+          message.find("undefined symbol") != std::string::npos) {
+        diag.code = "LNK-UNDEFINED";
+      } else if (message.find("duplicate symbol") != std::string::npos ||
+                 message.find("multiple definition") != std::string::npos) {
+        diag.code = "LNK-DUPLICATE";
+      } else if (message.find("cannot find") != std::string::npos ||
+                 message.find("cannot open") != std::string::npos ||
+                 message.find("not found") != std::string::npos) {
+        diag.code = "LNK-NOTFOUND";
       } else {
-        diag.code = "LD";
-
-        // Add specific context based on the message
-        if (message.find("undefined reference") != std::string::npos ||
-            message.find("undefined symbol") != std::string::npos) {
-          diag.code += "-UNDEFINED";
-        } else if (message.find("duplicate symbol") != std::string::npos ||
-                   message.find("multiple definition") != std::string::npos) {
-          diag.code += "-DUPLICATE";
-        } else if (message.find("cannot find") != std::string::npos ||
-                   message.find("cannot open") != std::string::npos) {
-          diag.code += "-NOTFOUND";
-        } else if (message.find("unresolved") != std::string::npos) {
-          diag.code += "-UNRESOLVED";
-        }
+        diag.code = "LNK";
       }
 
+      add_linker_help(diag, diag.code);
       diagnostics.push_back(diag);
-      current_error = message;
+      current_diag = &diagnostics.back();
+      continue;
     }
-    // Try to match MSVC linker errors
-    else if (std::regex_search(line, matches, msvc_link_error_regex)) {
-      diagnostic diag;
-      diag.level = diagnostic_level::ERROR;
 
-      // MSVC has its own error codes like LNK2001, LNK2019, etc.
-      // We'll use those directly for more accuracy
-      diag.code = matches[1].str();
-      diag.message = matches[2].str();
-      diag.file_path = "";
-      diag.line_number = 0;
-      diag.column_number = 0;
-
-      diagnostics.push_back(diag);
-      current_error = matches[2].str();
-    }
-    // Try to match file references
-    else if (std::regex_search(line, matches, reference_regex)) {
-      if (!diagnostics.empty()) {
+    // ============================================================
+    // Reference context lines (add to current diagnostic)
+    // ============================================================
+    if (std::regex_search(line, matches, reference_regex)) {
+      if (current_diag != nullptr) {
         std::string file_ref = matches[1].str();
+        int ref_line = matches[2].matched ? std::stoi(matches[2].str()) : 0;
 
-        // If we have a current diagnostic, add the file reference to it
-        auto &last_diag = diagnostics.back();
-        if (last_diag.file_path.empty()) {
-          last_diag.file_path = file_ref;
+        if (current_diag->file_path.empty()) {
+          current_diag->file_path = file_ref;
+          if (ref_line > 0) {
+            current_diag->line_number = ref_line;
+          }
         } else {
-          // Add as help text if we already have a file path
-          last_diag.help_text += "Also referenced in: " + file_ref + "\n";
+          std::string note = "Also referenced in: " + file_ref;
+          if (ref_line > 0) {
+            note += ":" + std::to_string(ref_line);
+          }
+          current_diag->notes.push_back(note);
         }
       }
+      continue;
     }
   }
 
@@ -1099,6 +1398,1101 @@ std::vector<diagnostic> parse_cpack_errors(const std::string &error_output) {
   }
 
   return diagnostics;
+}
+
+// ============================================================
+// Template Error Parsing
+// ============================================================
+
+std::vector<diagnostic> parse_template_errors(const std::string &error_output) {
+  std::vector<diagnostic> diagnostics;
+
+  // MSVC template errors
+  // Example: error C2784: 'bool std::operator <(const std::vector<_Ty,_Alloc> &,const std::vector<_Ty,_Alloc> &)': could not deduce template argument
+  std::regex msvc_template_regex(
+      R"(([^(]+)\((\d+)(?:,(\d+))?\):\s*error\s+(C2\d{3}):\s*(.+template.+))");
+
+  // MSVC "required from" / "see reference to" chains
+  std::regex msvc_instantiation_regex(
+      R"(([^(]+)\((\d+)\):\s*(?:note|see reference to|see declaration))");
+
+  // GCC/Clang template errors
+  // Example: error: no matching function for call to 'func<int>()'
+  std::regex gcc_template_regex(
+      R"(([^:]+):(\d+):(\d+):\s*error:\s*(.*(?:template|instantiat|no matching|candidate|deduced).*))",
+      std::regex::icase);
+
+  // GCC/Clang "required from here" / "in instantiation of"
+  std::regex gcc_instantiation_regex(
+      R"(([^:]+):(\d+):(\d+):\s*(?:note|required from|in instantiation of)\s*(.*))");
+
+  // "candidate:" lines that follow template errors
+  std::regex candidate_regex(
+      R"(([^:]+):(\d+):(\d+):\s*note:\s*candidate:\s*(.*))");
+
+  // Simplify deeply nested template types for readability
+  auto simplify_template_type = [](const std::string &type) -> std::string {
+    std::string result = type;
+
+    // Replace std::basic_string<char, ...> with std::string
+    std::regex basic_string_regex(R"(std::basic_string<char[^>]*>)");
+    result = std::regex_replace(result, basic_string_regex, "std::string");
+
+    // Replace std::basic_ostream<char, ...> with std::ostream
+    std::regex basic_ostream_regex(R"(std::basic_ostream<char[^>]*>)");
+    result = std::regex_replace(result, basic_ostream_regex, "std::ostream");
+
+    // Replace std::basic_istream<char, ...> with std::istream
+    std::regex basic_istream_regex(R"(std::basic_istream<char[^>]*>)");
+    result = std::regex_replace(result, basic_istream_regex, "std::istream");
+
+    // Replace allocator details
+    std::regex allocator_regex(R"(,\s*std::allocator<[^>]+>)");
+    result = std::regex_replace(result, allocator_regex, "");
+
+    // Simplify __cxx11:: namespace
+    std::regex cxx11_regex(R"(__cxx11::)");
+    result = std::regex_replace(result, cxx11_regex, "");
+
+    return result;
+  };
+
+  std::string line;
+  std::istringstream stream(error_output);
+  diagnostic *current_template_error = nullptr;
+  int instantiation_depth = 0;
+  const int MAX_INSTANTIATION_DEPTH = 3;  // Only show top 3 levels
+
+  while (std::getline(stream, line)) {
+    std::smatch matches;
+
+    // Check for MSVC template errors
+    if (std::regex_search(line, matches, msvc_template_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.file_path = matches[1].str();
+      diag.line_number = std::stoi(matches[2].str());
+      diag.column_number = matches[3].matched ? std::stoi(matches[3].str()) : 0;
+      diag.code = matches[4].str();
+      diag.message = simplify_template_type(matches[5].str());
+
+      // Add help based on error code
+      int code_num = std::stoi(diag.code.substr(1));
+      switch (code_num) {
+      case 2782:
+        diag.help_text = "Template argument deduction failed. Try specifying template arguments explicitly.";
+        break;
+      case 2783:
+        diag.help_text = "Could not deduce template argument. Check that the argument types match the template parameters.";
+        break;
+      case 2784:
+        diag.help_text = "Template argument deduction failed for a function template. Ensure argument types are compatible.";
+        break;
+      case 2893:
+        diag.help_text = "Failed to specialize function template. Check template parameter constraints.";
+        break;
+      case 2913:
+        diag.help_text = "Template instantiation is ambiguous. Try using explicit template arguments.";
+        break;
+      case 2977:
+        diag.help_text = "Too many template arguments provided.";
+        break;
+      default:
+        diag.help_text = "Template error. Check template parameters and argument types.";
+        break;
+      }
+
+      diagnostics.push_back(diag);
+      current_template_error = &diagnostics.back();
+      instantiation_depth = 0;
+      continue;
+    }
+
+    // Check for GCC/Clang template errors
+    if (std::regex_search(line, matches, gcc_template_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.file_path = matches[1].str();
+      diag.line_number = std::stoi(matches[2].str());
+      diag.column_number = std::stoi(matches[3].str());
+      diag.message = simplify_template_type(matches[4].str());
+      diag.code = "TEMPLATE";
+
+      // Categorize the error
+      std::string msg_lower = diag.message;
+      std::transform(msg_lower.begin(), msg_lower.end(), msg_lower.begin(), ::tolower);
+
+      if (msg_lower.find("no matching") != std::string::npos) {
+        diag.code = "TEMPLATE-NOMATCH";
+        diag.help_text = "No matching function or template found. Check:\n"
+                         "   - Argument types match expected parameters\n"
+                         "   - Required headers are included\n"
+                         "   - Template arguments are correct";
+      } else if (msg_lower.find("ambiguous") != std::string::npos) {
+        diag.code = "TEMPLATE-AMBIGUOUS";
+        diag.help_text = "Multiple templates match. Use explicit template arguments to disambiguate.";
+      } else if (msg_lower.find("incomplete type") != std::string::npos) {
+        diag.code = "TEMPLATE-INCOMPLETE";
+        diag.help_text = "Type is incomplete (forward declared only). Include the full definition.";
+      } else if (msg_lower.find("deduced") != std::string::npos ||
+                 msg_lower.find("deduce") != std::string::npos) {
+        diag.code = "TEMPLATE-DEDUCTION";
+        diag.help_text = "Template argument deduction failed. Specify template arguments explicitly.";
+      } else {
+        diag.help_text = "Template instantiation error. Review template parameters and argument types.";
+      }
+
+      diagnostics.push_back(diag);
+      current_template_error = &diagnostics.back();
+      instantiation_depth = 0;
+      continue;
+    }
+
+    // Check for instantiation context (limit depth to avoid noise)
+    if (current_template_error != nullptr && instantiation_depth < MAX_INSTANTIATION_DEPTH) {
+      if (std::regex_search(line, matches, gcc_instantiation_regex) ||
+          std::regex_search(line, matches, msvc_instantiation_regex)) {
+        std::string context = matches[matches.size() > 4 ? 4 : 0].str();
+        if (!context.empty()) {
+          context = simplify_template_type(context);
+          std::string file = matches[1].str();
+          std::string line_num = matches[2].str();
+
+          // Extract just the filename for brevity
+          size_t last_slash = file.find_last_of("/\\");
+          if (last_slash != std::string::npos) {
+            file = file.substr(last_slash + 1);
+          }
+
+          current_template_error->notes.push_back(
+              "instantiated from " + file + ":" + line_num);
+          instantiation_depth++;
+        }
+        continue;
+      }
+
+      // Check for candidate functions
+      if (std::regex_search(line, matches, candidate_regex)) {
+        if (instantiation_depth < MAX_INSTANTIATION_DEPTH) {
+          std::string candidate = simplify_template_type(matches[4].str());
+          current_template_error->notes.push_back("candidate: " + candidate);
+          instantiation_depth++;
+        }
+        continue;
+      }
+    }
+
+    // Reset context on empty lines or unrelated content
+    if (line.empty() || line.find_first_not_of(" \t\r\n") == std::string::npos) {
+      current_template_error = nullptr;
+      instantiation_depth = 0;
+    }
+  }
+
+  return diagnostics;
+}
+
+// ============================================================
+// Error Deduplication
+// ============================================================
+
+std::vector<diagnostic> deduplicate_diagnostics(std::vector<diagnostic> diagnostics) {
+  if (diagnostics.empty()) {
+    return diagnostics;
+  }
+
+  std::vector<diagnostic> deduplicated;
+
+  // Helper to extract key parts for comparison
+  auto get_dedup_key = [](const diagnostic &d) -> std::string {
+    // For linker errors, dedupe by the symbol name
+    if (d.code.find("LNK") != std::string::npos ||
+        d.code.find("UNDEFINED") != std::string::npos) {
+      // Extract symbol name from message
+      std::regex symbol_regex(R"((?:undefined|unresolved)[^`'\"]*[`'\"]([^`'\"]+)[`'\"])");
+      std::smatch match;
+      if (std::regex_search(d.message, match, symbol_regex)) {
+        return d.code + "::" + match[1].str();
+      }
+    }
+
+    // For other errors, dedupe by code + message
+    return d.code + "::" + d.message;
+  };
+
+  std::map<std::string, size_t> seen_errors;  // key -> index in deduplicated
+
+  for (auto &diag : diagnostics) {
+    std::string key = get_dedup_key(diag);
+
+    auto it = seen_errors.find(key);
+    if (it != seen_errors.end()) {
+      // Already seen this error - increment count and merge notes
+      auto &existing = deduplicated[it->second];
+      existing.occurrence_count++;
+
+      // Add file reference as a note if different
+      if (!diag.file_path.empty() && diag.file_path != existing.file_path) {
+        std::string note = "also in: " + diag.file_path;
+        if (diag.line_number > 0) {
+          note += ":" + std::to_string(diag.line_number);
+        }
+        // Only add if we haven't exceeded note limit
+        if (existing.notes.size() < 5) {
+          existing.notes.push_back(note);
+        } else if (existing.notes.size() == 5) {
+          existing.notes.push_back("... and more");
+        }
+      }
+    } else {
+      // New error
+      seen_errors[key] = deduplicated.size();
+      deduplicated.push_back(std::move(diag));
+    }
+  }
+
+  return deduplicated;
+}
+
+// ============================================================
+// Error Summary
+// ============================================================
+
+error_summary calculate_error_summary(const std::vector<diagnostic> &diagnostics) {
+  error_summary summary;
+  std::map<std::string, int> category_counts;
+
+  for (const auto &diag : diagnostics) {
+    int count = diag.occurrence_count;
+
+    switch (diag.level) {
+    case diagnostic_level::ERROR:
+      summary.total_errors += count;
+      break;
+    case diagnostic_level::WARNING:
+      summary.total_warnings += count;
+      break;
+    case diagnostic_level::NOTE:
+      summary.total_notes += count;
+      break;
+    case diagnostic_level::HELP:
+      break;
+    }
+
+    // Categorize by error source
+    if (diag.code.find("LNK") != std::string::npos ||
+        diag.code.find("LD") != std::string::npos ||
+        diag.code.find("UNDEFINED") != std::string::npos ||
+        diag.code.find("DUPLICATE") != std::string::npos) {
+      summary.linker_errors += count;
+      category_counts["linker"] += count;
+    } else if (diag.code.find("TEMPLATE") != std::string::npos ||
+               diag.code.find("C278") != std::string::npos ||
+               diag.code.find("C289") != std::string::npos) {
+      summary.template_errors += count;
+      category_counts["template"] += count;
+    } else if (diag.code.find("CM") != std::string::npos ||
+               diag.code.find("CMAKE") != std::string::npos) {
+      summary.cmake_errors += count;
+      category_counts["cmake"] += count;
+    } else if (diag.level == diagnostic_level::ERROR) {
+      summary.compiler_errors += count;
+      category_counts["compiler"] += count;
+    }
+
+    // Also track by specific error type
+    if (diag.message.find("undefined") != std::string::npos ||
+        diag.message.find("unresolved") != std::string::npos) {
+      category_counts["undefined symbol"] += count;
+    } else if (diag.message.find("multiple definition") != std::string::npos ||
+               diag.message.find("already defined") != std::string::npos) {
+      category_counts["duplicate symbol"] += count;
+    } else if (diag.message.find("No such file") != std::string::npos ||
+               diag.message.find("not found") != std::string::npos ||
+               diag.message.find("cannot find") != std::string::npos) {
+      category_counts["file not found"] += count;
+    }
+  }
+
+  // Convert category counts to sorted vector
+  for (const auto &pair : category_counts) {
+    summary.error_categories.push_back(pair);
+  }
+  std::sort(summary.error_categories.begin(), summary.error_categories.end(),
+            [](const auto &a, const auto &b) { return a.second > b.second; });
+
+  return summary;
+}
+
+std::string format_error_summary(const error_summary &summary) {
+  if (summary.total_errors == 0 && summary.total_warnings == 0) {
+    return "";
+  }
+
+  std::stringstream ss;
+
+  // Main summary line
+  if (summary.total_errors > 0) {
+    ss << fmt::format(fg(fmt::color::red) | fmt::emphasis::bold, "error");
+    ss << fmt::format(fg(fmt::color::white) | fmt::emphasis::bold, ": build failed\n");
+  }
+
+  // Breakdown by source
+  ss << fmt::format(fg(fmt::color::cyan), "   |\n");
+
+  if (summary.compiler_errors > 0) {
+    ss << fmt::format(fg(fmt::color::cyan), "   = ");
+    ss << fmt::format(fg(fmt::color::red), "{} compiler error{}\n",
+                      summary.compiler_errors,
+                      summary.compiler_errors == 1 ? "" : "s");
+  }
+
+  if (summary.linker_errors > 0) {
+    ss << fmt::format(fg(fmt::color::cyan), "   = ");
+    ss << fmt::format(fg(fmt::color::red), "{} linker error{}\n",
+                      summary.linker_errors,
+                      summary.linker_errors == 1 ? "" : "s");
+  }
+
+  if (summary.template_errors > 0) {
+    ss << fmt::format(fg(fmt::color::cyan), "   = ");
+    ss << fmt::format(fg(fmt::color::red), "{} template error{}\n",
+                      summary.template_errors,
+                      summary.template_errors == 1 ? "" : "s");
+  }
+
+  if (summary.cmake_errors > 0) {
+    ss << fmt::format(fg(fmt::color::cyan), "   = ");
+    ss << fmt::format(fg(fmt::color::red), "{} CMake error{}\n",
+                      summary.cmake_errors,
+                      summary.cmake_errors == 1 ? "" : "s");
+  }
+
+  if (summary.total_warnings > 0) {
+    ss << fmt::format(fg(fmt::color::cyan), "   = ");
+    ss << fmt::format(fg(fmt::color::yellow), "{} warning{}\n",
+                      summary.total_warnings,
+                      summary.total_warnings == 1 ? "" : "s");
+  }
+
+  return ss.str();
+}
+
+// ============================================================
+// Library Suggestions for Common Symbols
+// ============================================================
+
+std::string suggest_library_for_symbol(const std::string &symbol) {
+  // Windows API function to library mappings
+  static const std::map<std::string, std::string> windows_libs = {
+      // User32.lib
+      {"MessageBox", "user32.lib"},
+      {"CreateWindow", "user32.lib"},
+      {"DefWindowProc", "user32.lib"},
+      {"RegisterClass", "user32.lib"},
+      {"GetMessage", "user32.lib"},
+      {"TranslateMessage", "user32.lib"},
+      {"DispatchMessage", "user32.lib"},
+      {"PostQuitMessage", "user32.lib"},
+      {"ShowWindow", "user32.lib"},
+      {"UpdateWindow", "user32.lib"},
+      {"SetWindowText", "user32.lib"},
+      {"GetWindowText", "user32.lib"},
+      {"SendMessage", "user32.lib"},
+      {"PostMessage", "user32.lib"},
+
+      // Kernel32.lib
+      {"CreateFile", "kernel32.lib"},
+      {"ReadFile", "kernel32.lib"},
+      {"WriteFile", "kernel32.lib"},
+      {"CloseHandle", "kernel32.lib"},
+      {"GetLastError", "kernel32.lib"},
+      {"CreateThread", "kernel32.lib"},
+      {"WaitForSingleObject", "kernel32.lib"},
+      {"Sleep", "kernel32.lib"},
+      {"GetModuleHandle", "kernel32.lib"},
+      {"LoadLibrary", "kernel32.lib"},
+      {"GetProcAddress", "kernel32.lib"},
+      {"VirtualAlloc", "kernel32.lib"},
+      {"VirtualFree", "kernel32.lib"},
+      {"HeapAlloc", "kernel32.lib"},
+      {"HeapFree", "kernel32.lib"},
+
+      // Gdi32.lib
+      {"CreateDC", "gdi32.lib"},
+      {"DeleteDC", "gdi32.lib"},
+      {"SelectObject", "gdi32.lib"},
+      {"CreateFont", "gdi32.lib"},
+      {"CreateBrush", "gdi32.lib"},
+      {"CreatePen", "gdi32.lib"},
+      {"BitBlt", "gdi32.lib"},
+      {"TextOut", "gdi32.lib"},
+
+      // Shell32.lib
+      {"ShellExecute", "shell32.lib"},
+      {"SHGetFolderPath", "shell32.lib"},
+      {"SHBrowseForFolder", "shell32.lib"},
+
+      // Ws2_32.lib (Winsock)
+      {"socket", "ws2_32.lib"},
+      {"connect", "ws2_32.lib"},
+      {"send", "ws2_32.lib"},
+      {"recv", "ws2_32.lib"},
+      {"bind", "ws2_32.lib"},
+      {"listen", "ws2_32.lib"},
+      {"accept", "ws2_32.lib"},
+      {"closesocket", "ws2_32.lib"},
+      {"WSAStartup", "ws2_32.lib"},
+      {"WSACleanup", "ws2_32.lib"},
+      {"gethostbyname", "ws2_32.lib"},
+      {"inet_addr", "ws2_32.lib"},
+      {"htons", "ws2_32.lib"},
+      {"ntohs", "ws2_32.lib"},
+
+      // Ole32.lib / OleAut32.lib
+      {"CoInitialize", "ole32.lib"},
+      {"CoUninitialize", "ole32.lib"},
+      {"CoCreateInstance", "ole32.lib"},
+      {"SysAllocString", "oleaut32.lib"},
+      {"SysFreeString", "oleaut32.lib"},
+
+      // Advapi32.lib
+      {"RegOpenKey", "advapi32.lib"},
+      {"RegCloseKey", "advapi32.lib"},
+      {"RegQueryValue", "advapi32.lib"},
+      {"RegSetValue", "advapi32.lib"},
+      {"OpenProcessToken", "advapi32.lib"},
+
+      // Winmm.lib
+      {"PlaySound", "winmm.lib"},
+      {"timeGetTime", "winmm.lib"},
+      {"mciSendString", "winmm.lib"},
+
+      // OpenGL
+      {"glBegin", "opengl32.lib"},
+      {"glEnd", "opengl32.lib"},
+      {"glVertex", "opengl32.lib"},
+      {"glClear", "opengl32.lib"},
+      {"wglCreateContext", "opengl32.lib"},
+      {"wglMakeCurrent", "opengl32.lib"},
+  };
+
+  // Unix library mappings
+  static const std::map<std::string, std::string> unix_libs = {
+      // pthread
+      {"pthread_create", "-lpthread"},
+      {"pthread_join", "-lpthread"},
+      {"pthread_mutex_init", "-lpthread"},
+      {"pthread_mutex_lock", "-lpthread"},
+
+      // math
+      {"sin", "-lm"},
+      {"cos", "-lm"},
+      {"tan", "-lm"},
+      {"sqrt", "-lm"},
+      {"pow", "-lm"},
+      {"log", "-lm"},
+      {"exp", "-lm"},
+      {"floor", "-lm"},
+      {"ceil", "-lm"},
+
+      // dl
+      {"dlopen", "-ldl"},
+      {"dlsym", "-ldl"},
+      {"dlclose", "-ldl"},
+
+      // rt
+      {"clock_gettime", "-lrt"},
+      {"timer_create", "-lrt"},
+      {"shm_open", "-lrt"},
+
+      // z (zlib)
+      {"compress", "-lz"},
+      {"uncompress", "-lz"},
+      {"deflate", "-lz"},
+      {"inflate", "-lz"},
+
+      // ssl
+      {"SSL_new", "-lssl -lcrypto"},
+      {"SSL_connect", "-lssl -lcrypto"},
+      {"SSL_read", "-lssl -lcrypto"},
+      {"SSL_write", "-lssl -lcrypto"},
+
+      // curl
+      {"curl_easy_init", "-lcurl"},
+      {"curl_easy_perform", "-lcurl"},
+      {"curl_easy_cleanup", "-lcurl"},
+  };
+
+  // Clean up the symbol name (remove decorations)
+  std::string clean_symbol = symbol;
+
+  // Remove MSVC decorations (__imp_, @N suffix, etc.)
+  if (clean_symbol.find("__imp_") == 0) {
+    clean_symbol = clean_symbol.substr(6);
+  }
+  size_t at_pos = clean_symbol.find('@');
+  if (at_pos != std::string::npos) {
+    clean_symbol = clean_symbol.substr(0, at_pos);
+  }
+
+  // Remove leading underscore (C decoration)
+  if (!clean_symbol.empty() && clean_symbol[0] == '_') {
+    clean_symbol = clean_symbol.substr(1);
+  }
+
+  // Check Windows libs first
+  for (const auto &pair : windows_libs) {
+    if (clean_symbol.find(pair.first) != std::string::npos) {
+      return pair.second;
+    }
+  }
+
+  // Check Unix libs
+  for (const auto &pair : unix_libs) {
+    if (clean_symbol.find(pair.first) != std::string::npos) {
+      return pair.second;
+    }
+  }
+
+  // Check for common C++ standard library symbols that need explicit linking
+  if (clean_symbol.find("std::filesystem") != std::string::npos) {
+    return "-lstdc++fs (GCC < 9) or built-in (GCC 9+)";
+  }
+
+  return "";
+}
+
+// ============================================================
+// Fix Suggestions
+// ============================================================
+
+std::string suggest_include_for_type(const std::string &type_name) {
+  // Map of common types to their headers
+  static const std::map<std::string, std::string> type_to_header = {
+      // Containers
+      {"vector", "<vector>"},
+      {"std::vector", "<vector>"},
+      {"map", "<map>"},
+      {"std::map", "<map>"},
+      {"unordered_map", "<unordered_map>"},
+      {"std::unordered_map", "<unordered_map>"},
+      {"set", "<set>"},
+      {"std::set", "<set>"},
+      {"unordered_set", "<unordered_set>"},
+      {"std::unordered_set", "<unordered_set>"},
+      {"list", "<list>"},
+      {"std::list", "<list>"},
+      {"deque", "<deque>"},
+      {"std::deque", "<deque>"},
+      {"array", "<array>"},
+      {"std::array", "<array>"},
+      {"queue", "<queue>"},
+      {"std::queue", "<queue>"},
+      {"stack", "<stack>"},
+      {"std::stack", "<stack>"},
+      {"priority_queue", "<queue>"},
+      {"std::priority_queue", "<queue>"},
+
+      // Strings
+      {"string", "<string>"},
+      {"std::string", "<string>"},
+      {"wstring", "<string>"},
+      {"std::wstring", "<string>"},
+      {"string_view", "<string_view>"},
+      {"std::string_view", "<string_view>"},
+
+      // I/O
+      {"cout", "<iostream>"},
+      {"std::cout", "<iostream>"},
+      {"cin", "<iostream>"},
+      {"std::cin", "<iostream>"},
+      {"cerr", "<iostream>"},
+      {"std::cerr", "<iostream>"},
+      {"endl", "<iostream>"},
+      {"std::endl", "<iostream>"},
+      {"ifstream", "<fstream>"},
+      {"std::ifstream", "<fstream>"},
+      {"ofstream", "<fstream>"},
+      {"std::ofstream", "<fstream>"},
+      {"fstream", "<fstream>"},
+      {"std::fstream", "<fstream>"},
+      {"stringstream", "<sstream>"},
+      {"std::stringstream", "<sstream>"},
+      {"ostringstream", "<sstream>"},
+      {"std::ostringstream", "<sstream>"},
+      {"istringstream", "<sstream>"},
+      {"std::istringstream", "<sstream>"},
+      {"iomanip", "<iomanip>"},
+
+      // Memory
+      {"unique_ptr", "<memory>"},
+      {"std::unique_ptr", "<memory>"},
+      {"shared_ptr", "<memory>"},
+      {"std::shared_ptr", "<memory>"},
+      {"weak_ptr", "<memory>"},
+      {"std::weak_ptr", "<memory>"},
+      {"make_unique", "<memory>"},
+      {"std::make_unique", "<memory>"},
+      {"make_shared", "<memory>"},
+      {"std::make_shared", "<memory>"},
+
+      // Utilities
+      {"pair", "<utility>"},
+      {"std::pair", "<utility>"},
+      {"make_pair", "<utility>"},
+      {"std::make_pair", "<utility>"},
+      {"tuple", "<tuple>"},
+      {"std::tuple", "<tuple>"},
+      {"optional", "<optional>"},
+      {"std::optional", "<optional>"},
+      {"variant", "<variant>"},
+      {"std::variant", "<variant>"},
+      {"any", "<any>"},
+      {"std::any", "<any>"},
+      {"function", "<functional>"},
+      {"std::function", "<functional>"},
+      {"bind", "<functional>"},
+      {"std::bind", "<functional>"},
+
+      // Algorithms
+      {"sort", "<algorithm>"},
+      {"std::sort", "<algorithm>"},
+      {"find", "<algorithm>"},
+      {"std::find", "<algorithm>"},
+      {"copy", "<algorithm>"},
+      {"std::copy", "<algorithm>"},
+      {"transform", "<algorithm>"},
+      {"std::transform", "<algorithm>"},
+      {"for_each", "<algorithm>"},
+      {"std::for_each", "<algorithm>"},
+      {"min", "<algorithm>"},
+      {"std::min", "<algorithm>"},
+      {"max", "<algorithm>"},
+      {"std::max", "<algorithm>"},
+      {"accumulate", "<numeric>"},
+      {"std::accumulate", "<numeric>"},
+
+      // Threading
+      {"thread", "<thread>"},
+      {"std::thread", "<thread>"},
+      {"mutex", "<mutex>"},
+      {"std::mutex", "<mutex>"},
+      {"lock_guard", "<mutex>"},
+      {"std::lock_guard", "<mutex>"},
+      {"unique_lock", "<mutex>"},
+      {"std::unique_lock", "<mutex>"},
+      {"condition_variable", "<condition_variable>"},
+      {"std::condition_variable", "<condition_variable>"},
+      {"future", "<future>"},
+      {"std::future", "<future>"},
+      {"promise", "<promise>"},
+      {"std::promise", "<promise>"},
+      {"async", "<future>"},
+      {"std::async", "<future>"},
+      {"atomic", "<atomic>"},
+      {"std::atomic", "<atomic>"},
+
+      // Filesystem
+      {"filesystem", "<filesystem>"},
+      {"std::filesystem", "<filesystem>"},
+      {"path", "<filesystem>"},
+      {"std::filesystem::path", "<filesystem>"},
+
+      // Time
+      {"chrono", "<chrono>"},
+      {"std::chrono", "<chrono>"},
+      {"system_clock", "<chrono>"},
+      {"steady_clock", "<chrono>"},
+      {"high_resolution_clock", "<chrono>"},
+
+      // Regex
+      {"regex", "<regex>"},
+      {"std::regex", "<regex>"},
+      {"smatch", "<regex>"},
+      {"std::smatch", "<regex>"},
+
+      // Random
+      {"random_device", "<random>"},
+      {"std::random_device", "<random>"},
+      {"mt19937", "<random>"},
+      {"std::mt19937", "<random>"},
+      {"uniform_int_distribution", "<random>"},
+      {"uniform_real_distribution", "<random>"},
+
+      // Type traits
+      {"is_same", "<type_traits>"},
+      {"std::is_same", "<type_traits>"},
+      {"enable_if", "<type_traits>"},
+      {"std::enable_if", "<type_traits>"},
+      {"decay", "<type_traits>"},
+      {"std::decay", "<type_traits>"},
+
+      // C library
+      {"size_t", "<cstddef>"},
+      {"std::size_t", "<cstddef>"},
+      {"nullptr_t", "<cstddef>"},
+      {"uint8_t", "<cstdint>"},
+      {"uint16_t", "<cstdint>"},
+      {"uint32_t", "<cstdint>"},
+      {"uint64_t", "<cstdint>"},
+      {"int8_t", "<cstdint>"},
+      {"int16_t", "<cstdint>"},
+      {"int32_t", "<cstdint>"},
+      {"int64_t", "<cstdint>"},
+      {"FILE", "<cstdio>"},
+      {"printf", "<cstdio>"},
+      {"sprintf", "<cstdio>"},
+      {"malloc", "<cstdlib>"},
+      {"free", "<cstdlib>"},
+      {"exit", "<cstdlib>"},
+      {"memcpy", "<cstring>"},
+      {"memset", "<cstring>"},
+      {"strlen", "<cstring>"},
+      {"strcmp", "<cstring>"},
+      {"assert", "<cassert>"},
+  };
+
+  // Try exact match
+  auto it = type_to_header.find(type_name);
+  if (it != type_to_header.end()) {
+    return it->second;
+  }
+
+  // Try without std:: prefix
+  if (type_name.find("std::") == 0) {
+    std::string without_std = type_name.substr(5);
+    it = type_to_header.find(without_std);
+    if (it != type_to_header.end()) {
+      return it->second;
+    }
+  }
+
+  // Try extracting template base (e.g., "vector<int>" -> "vector")
+  size_t template_start = type_name.find('<');
+  if (template_start != std::string::npos) {
+    std::string base_type = type_name.substr(0, template_start);
+    it = type_to_header.find(base_type);
+    if (it != type_to_header.end()) {
+      return it->second;
+    }
+  }
+
+  return "";
+}
+
+// Simple Levenshtein distance for typo detection
+static int levenshtein_distance(const std::string &s1, const std::string &s2) {
+  const size_t m = s1.size();
+  const size_t n = s2.size();
+
+  if (m == 0) return static_cast<int>(n);
+  if (n == 0) return static_cast<int>(m);
+
+  std::vector<std::vector<int>> dp(m + 1, std::vector<int>(n + 1));
+
+  for (size_t i = 0; i <= m; ++i) dp[i][0] = static_cast<int>(i);
+  for (size_t j = 0; j <= n; ++j) dp[0][j] = static_cast<int>(j);
+
+  for (size_t i = 1; i <= m; ++i) {
+    for (size_t j = 1; j <= n; ++j) {
+      int cost = (s1[i - 1] == s2[j - 1]) ? 0 : 1;
+      dp[i][j] = std::min({
+          dp[i - 1][j] + 1,      // deletion
+          dp[i][j - 1] + 1,      // insertion
+          dp[i - 1][j - 1] + cost // substitution
+      });
+    }
+  }
+
+  return dp[m][n];
+}
+
+std::vector<std::string> find_similar_identifiers(
+    const std::string &unknown_identifier,
+    const std::vector<std::string> &available_identifiers,
+    int max_distance) {
+
+  std::vector<std::pair<std::string, int>> matches;
+
+  for (const auto &candidate : available_identifiers) {
+    // Skip if length difference is too large
+    int len_diff = std::abs(static_cast<int>(unknown_identifier.length()) -
+                           static_cast<int>(candidate.length()));
+    if (len_diff > max_distance) continue;
+
+    int distance = levenshtein_distance(unknown_identifier, candidate);
+    if (distance <= max_distance && distance > 0) {
+      matches.push_back({candidate, distance});
+    }
+  }
+
+  // Sort by distance (closest first)
+  std::sort(matches.begin(), matches.end(),
+            [](const auto &a, const auto &b) { return a.second < b.second; });
+
+  // Extract just the identifiers
+  std::vector<std::string> result;
+  for (const auto &match : matches) {
+    result.push_back(match.first);
+    if (result.size() >= 3) break;  // Limit to top 3 suggestions
+  }
+
+  return result;
+}
+
+std::vector<fix_suggestion> generate_fix_suggestions(const diagnostic &diag) {
+  std::vector<fix_suggestion> suggestions;
+
+  std::string msg_lower = diag.message;
+  std::transform(msg_lower.begin(), msg_lower.end(), msg_lower.begin(), ::tolower);
+
+  // ============================================================
+  // Missing semicolon
+  // ============================================================
+  if (msg_lower.find("expected ';'") != std::string::npos ||
+      msg_lower.find("expected ';' ") != std::string::npos ||
+      msg_lower.find("missing ';'") != std::string::npos ||
+      diag.code == "C2143" || diag.code == "C2146") {
+
+    fix_suggestion fix;
+    fix.description = "Add missing semicolon";
+    fix.replacement = ";";
+    fix.is_insertion = true;
+
+    // Try to determine where to insert
+    if (!diag.line_content.empty()) {
+      // Find the end of the statement (before any comment)
+      std::string line = diag.line_content;
+      size_t comment_pos = line.find("//");
+      if (comment_pos != std::string::npos) {
+        line = line.substr(0, comment_pos);
+      }
+
+      // Trim trailing whitespace
+      size_t end = line.find_last_not_of(" \t");
+      if (end != std::string::npos) {
+        fix.start_column = static_cast<int>(end + 2);  // After last non-space char
+      }
+    }
+
+    suggestions.push_back(fix);
+  }
+
+  // ============================================================
+  // Missing closing brace
+  // ============================================================
+  if (msg_lower.find("expected '}'") != std::string::npos ||
+      msg_lower.find("missing '}'") != std::string::npos ||
+      diag.code == "C2059") {
+
+    fix_suggestion fix;
+    fix.description = "Add missing closing brace";
+    fix.replacement = "}";
+    fix.is_insertion = true;
+    suggestions.push_back(fix);
+  }
+
+  // ============================================================
+  // Missing closing parenthesis
+  // ============================================================
+  if (msg_lower.find("expected ')'") != std::string::npos ||
+      msg_lower.find("missing ')'") != std::string::npos) {
+
+    fix_suggestion fix;
+    fix.description = "Add missing closing parenthesis";
+    fix.replacement = ")";
+    fix.is_insertion = true;
+    suggestions.push_back(fix);
+  }
+
+  // ============================================================
+  // Undeclared identifier - suggest include
+  // ============================================================
+  if (msg_lower.find("undeclared") != std::string::npos ||
+      msg_lower.find("not declared") != std::string::npos ||
+      msg_lower.find("unknown type") != std::string::npos ||
+      msg_lower.find("does not name a type") != std::string::npos ||
+      diag.code == "C2065" || diag.code == "C3861") {
+
+    // Extract the identifier from the message
+    std::regex identifier_regex(R"(['"`]([^'"`]+)['"`])");
+    std::smatch match;
+    if (std::regex_search(diag.message, match, identifier_regex)) {
+      std::string identifier = match[1].str();
+
+      // Try to suggest an include
+      std::string header = suggest_include_for_type(identifier);
+      if (!header.empty()) {
+        fix_suggestion fix;
+        fix.description = "Add #include " + header;
+        fix.replacement = "#include " + header + "\n";
+        fix.is_insertion = true;
+        fix.start_line = 1;  // Insert at top of file
+        fix.start_column = 1;
+        suggestions.push_back(fix);
+      }
+    }
+  }
+
+  // ============================================================
+  // Unused variable - suggest [[maybe_unused]] or removal
+  // ============================================================
+  if (msg_lower.find("unused variable") != std::string::npos ||
+      msg_lower.find("unused parameter") != std::string::npos ||
+      diag.code.find("-Wunused") != std::string::npos) {
+
+    // Extract variable name
+    std::regex var_regex(R"(['"`]([^'"`]+)['"`])");
+    std::smatch match;
+    if (std::regex_search(diag.message, match, var_regex)) {
+      std::string var_name = match[1].str();
+
+      // Suggest [[maybe_unused]]
+      fix_suggestion fix1;
+      fix1.description = "Add [[maybe_unused]] attribute";
+      fix1.replacement = "[[maybe_unused]] ";
+      fix1.is_insertion = true;
+      suggestions.push_back(fix1);
+
+      // Suggest casting to void
+      fix_suggestion fix2;
+      fix2.description = "Cast to void to suppress warning";
+      fix2.replacement = "(void)" + var_name + ";";
+      fix2.is_insertion = true;
+      suggestions.push_back(fix2);
+
+      // For parameters, suggest commenting out the name
+      if (msg_lower.find("parameter") != std::string::npos) {
+        fix_suggestion fix3;
+        fix3.description = "Comment out parameter name";
+        fix3.replacement = "/*" + var_name + "*/";
+        suggestions.push_back(fix3);
+      }
+    }
+  }
+
+  // ============================================================
+  // Missing return statement
+  // ============================================================
+  if (msg_lower.find("no return statement") != std::string::npos ||
+      msg_lower.find("missing return") != std::string::npos ||
+      msg_lower.find("control reaches end") != std::string::npos ||
+      msg_lower.find("not all control paths return") != std::string::npos ||
+      diag.code == "C4715" || diag.code == "C4716") {
+
+    fix_suggestion fix;
+    fix.description = "Add return statement";
+    fix.replacement = "return {};  // TODO: Add proper return value";
+    fix.is_insertion = true;
+    suggestions.push_back(fix);
+  }
+
+  // ============================================================
+  // Comparison between signed and unsigned
+  // ============================================================
+  if (msg_lower.find("signed and unsigned") != std::string::npos ||
+      msg_lower.find("comparison between signed") != std::string::npos ||
+      diag.code.find("-Wsign-compare") != std::string::npos) {
+
+    fix_suggestion fix;
+    fix.description = "Use static_cast to match types";
+    fix.replacement = "static_cast<size_t>(...)";  // Generic suggestion
+    suggestions.push_back(fix);
+  }
+
+  // ============================================================
+  // Implicit conversion / narrowing
+  // ============================================================
+  if (msg_lower.find("implicit conversion") != std::string::npos ||
+      msg_lower.find("narrowing conversion") != std::string::npos ||
+      msg_lower.find("possible loss of data") != std::string::npos ||
+      diag.code == "C4244" || diag.code == "C4267") {
+
+    fix_suggestion fix;
+    fix.description = "Add explicit cast to acknowledge conversion";
+    fix.replacement = "static_cast<TargetType>(value)";
+    suggestions.push_back(fix);
+  }
+
+  // ============================================================
+  // Missing default in switch
+  // ============================================================
+  if (msg_lower.find("default label") != std::string::npos ||
+      msg_lower.find("not handled in switch") != std::string::npos ||
+      diag.code.find("-Wswitch") != std::string::npos) {
+
+    fix_suggestion fix;
+    fix.description = "Add default case to switch";
+    fix.replacement = "default:\n    break;";
+    fix.is_insertion = true;
+    suggestions.push_back(fix);
+  }
+
+  // ============================================================
+  // Use of = instead of ==
+  // ============================================================
+  if (msg_lower.find("suggest parentheses") != std::string::npos ||
+      msg_lower.find("assignment in conditional") != std::string::npos ||
+      msg_lower.find("using the result of an assignment") != std::string::npos) {
+
+    fix_suggestion fix1;
+    fix1.description = "Change = to == for comparison";
+    fix1.replacement = "==";
+    suggestions.push_back(fix1);
+
+    fix_suggestion fix2;
+    fix2.description = "Add parentheses if assignment is intentional";
+    fix2.replacement = "((assignment))";
+    suggestions.push_back(fix2);
+  }
+
+  // ============================================================
+  // Null pointer dereference potential
+  // ============================================================
+  if (msg_lower.find("null pointer") != std::string::npos ||
+      msg_lower.find("nullptr") != std::string::npos ||
+      msg_lower.find("may be null") != std::string::npos) {
+
+    fix_suggestion fix;
+    fix.description = "Add null check before use";
+    fix.replacement = "if (ptr != nullptr) { /* use ptr */ }";
+    suggestions.push_back(fix);
+  }
+
+  // ============================================================
+  // Typo suggestions from compiler (MSVC style: "did you mean")
+  // ============================================================
+  std::regex did_you_mean_regex(R"(did you mean ['"`]([^'"`]+)['"`])");
+  std::smatch did_you_mean_match;
+  if (std::regex_search(diag.message, did_you_mean_match, did_you_mean_regex)) {
+    fix_suggestion fix;
+    fix.description = "Change to '" + did_you_mean_match[1].str() + "'";
+    fix.replacement = did_you_mean_match[1].str();
+    suggestions.push_back(fix);
+  }
+
+  // ============================================================
+  // GCC/Clang note about similar names
+  // ============================================================
+  for (const auto &note : diag.notes) {
+    std::string note_lower = note;
+    std::transform(note_lower.begin(), note_lower.end(), note_lower.begin(), ::tolower);
+
+    if (note_lower.find("similar") != std::string::npos ||
+        note_lower.find("did you mean") != std::string::npos) {
+      std::regex suggestion_regex(R"(['"`]([^'"`]+)['"`])");
+      std::smatch suggestion_match;
+      if (std::regex_search(note, suggestion_match, suggestion_regex)) {
+        fix_suggestion fix;
+        fix.description = "Change to '" + suggestion_match[1].str() + "'";
+        fix.replacement = suggestion_match[1].str();
+        suggestions.push_back(fix);
+      }
+    }
+  }
+
+  return suggestions;
 }
 
 } // namespace cforge

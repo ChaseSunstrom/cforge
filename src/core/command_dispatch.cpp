@@ -120,6 +120,26 @@ extern "C" cforge_int_t cforge_dispatch_command(const cforge_context_t *ctx) {
     return cforge_cmd_package(ctx);
   } else if (strcmp(ctx->args.command, "lock") == 0) {
     return cforge_cmd_lock(ctx);
+  } else if (strcmp(ctx->args.command, "fmt") == 0 ||
+             strcmp(ctx->args.command, "format") == 0) {
+    return cforge_cmd_fmt(ctx);
+  } else if (strcmp(ctx->args.command, "lint") == 0 ||
+             strcmp(ctx->args.command, "check") == 0) {
+    return cforge_cmd_lint(ctx);
+  } else if (strcmp(ctx->args.command, "watch") == 0) {
+    return cforge_cmd_watch(ctx);
+  } else if (strcmp(ctx->args.command, "completions") == 0) {
+    return cforge_cmd_completions(ctx);
+  } else if (strcmp(ctx->args.command, "doc") == 0 ||
+             strcmp(ctx->args.command, "docs") == 0) {
+    return cforge_cmd_doc(ctx);
+  } else if (strcmp(ctx->args.command, "tree") == 0) {
+    return cforge_cmd_tree(ctx);
+  } else if (strcmp(ctx->args.command, "new") == 0) {
+    return cforge_cmd_new(ctx);
+  } else if (strcmp(ctx->args.command, "bench") == 0 ||
+             strcmp(ctx->args.command, "benchmark") == 0) {
+    return cforge_cmd_bench(ctx);
   } else if (strcmp(ctx->args.command, "help") == 0 ||
              strcmp(ctx->args.command, "--help") == 0 ||
              strcmp(ctx->args.command, "-h") == 0) {

@@ -159,3 +159,67 @@ cforge_int_t cforge_cmd_package(const cforge_context_t *ctx);
  * @return cforge_int_t Exit code (0 for success)
  */
 cforge_int_t cforge_cmd_lock(const cforge_context_t *ctx);
+
+/**
+ * @brief Handle the 'fmt' command to format source code with clang-format
+ *
+ * @param ctx Context containing parsed arguments
+ * @return cforge_int_t Exit code (0 for success)
+ */
+cforge_int_t cforge_cmd_fmt(const cforge_context_t *ctx);
+
+/**
+ * @brief Handle the 'lint' command to run clang-tidy static analysis
+ *
+ * @param ctx Context containing parsed arguments
+ * @return cforge_int_t Exit code (0 for success)
+ */
+cforge_int_t cforge_cmd_lint(const cforge_context_t *ctx);
+
+/**
+ * @brief Handle the 'watch' command for auto-rebuild on file changes
+ *
+ * @param ctx Context containing parsed arguments
+ * @return cforge_int_t Exit code (0 for success)
+ */
+cforge_int_t cforge_cmd_watch(const cforge_context_t *ctx);
+
+/**
+ * @brief Handle the 'completions' command to generate shell completions
+ *
+ * @param ctx Context containing parsed arguments
+ * @return cforge_int_t Exit code (0 for success)
+ */
+cforge_int_t cforge_cmd_completions(const cforge_context_t *ctx);
+
+/**
+ * @brief Handle the 'doc' command to generate documentation with Doxygen
+ *
+ * @param ctx Context containing parsed arguments
+ * @return cforge_int_t Exit code (0 for success)
+ */
+cforge_int_t cforge_cmd_doc(const cforge_context_t *ctx);
+
+/**
+ * @brief Handle the 'tree' command to visualize dependencies
+ *
+ * @param ctx Context containing parsed arguments
+ * @return cforge_int_t Exit code (0 for success)
+ */
+cforge_int_t cforge_cmd_tree(const cforge_context_t *ctx);
+
+/**
+ * @brief Handle the 'new' command to create files from templates
+ *
+ * @param ctx Context containing parsed arguments
+ * @return cforge_int_t Exit code (0 for success)
+ */
+cforge_int_t cforge_cmd_new(const cforge_context_t *ctx);
+
+/**
+ * @brief Handle the 'bench' command to run benchmarks
+ *
+ * @param ctx Context containing parsed arguments
+ * @return cforge_int_t Exit code (0 for success)
+ */
+cforge_int_t cforge_cmd_bench(const cforge_context_t *ctx);

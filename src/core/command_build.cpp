@@ -20,6 +20,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <ctime>
 #include <filesystem>
 #include <fmt/color.h>
@@ -480,6 +481,9 @@ static bool build_project(const std::filesystem::path &project_dir,
                           bool verbose, const std::string &target = "",
                           std::set<std::string> *built_projects = nullptr,
                           bool skip_deps = false) {
+  // Start project build timer
+  auto project_build_start = std::chrono::steady_clock::now();
+
   // Get project name from directory
   std::string project_name = project_dir.filename().string();
 
@@ -892,7 +896,12 @@ static bool build_project(const std::filesystem::path &project_dir,
   }
 
   if (build_result) {
-    logger::finished(build_config);
+    // Calculate build duration
+    auto project_build_end = std::chrono::steady_clock::now();
+    auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        project_build_end - project_build_start).count();
+    std::string duration_str = fmt::format("{:.2f}s", duration_ms / 1000.0);
+    logger::finished(build_config, duration_str);
 
     // If we're tracking built projects, add this one
     if (built_projects) {
@@ -1003,6 +1012,9 @@ static bool build_workspace_project(const std::filesystem::path &workspace_dir,
  * @return cforge_int_t Exit code (0 for success)
  */
 cforge_int_t cforge_cmd_build(const cforge_context_t *ctx) {
+  // Start build timer
+  auto build_start_time = std::chrono::steady_clock::now();
+
   // Check if we're in a workspace
   std::filesystem::path current_dir = std::filesystem::path(ctx->working_dir);
   auto [is_workspace, workspace_dir] = is_in_workspace(current_dir);
@@ -1208,7 +1220,12 @@ cforge_int_t cforge_cmd_build(const cforge_context_t *ctx) {
       logger::print_error("Build failed");
       return 1;
     }
-    logger::finished(config_name);
+    // Calculate workspace build duration
+    auto build_end_time = std::chrono::steady_clock::now();
+    auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        build_end_time - build_start_time).count();
+    std::string duration_str = fmt::format("{:.2f}s", duration_ms / 1000.0);
+    logger::finished(config_name, duration_str);
     // Clean up empty config directories under workspace build root
     {
       std::filesystem::path build_root = workspace_dir / DEFAULT_BUILD_DIR;

@@ -22,6 +22,19 @@ namespace cforge {
 enum class diagnostic_level { ERROR, WARNING, NOTE, HELP };
 
 /**
+ * @brief Structure representing a suggested code fix
+ */
+struct fix_suggestion {
+  std::string description;      // Human-readable description of the fix
+  std::string replacement;      // The suggested replacement text
+  int start_line = 0;           // Line where fix starts (0 = same as error)
+  int start_column = 0;         // Column where fix starts
+  int end_line = 0;             // Line where fix ends
+  int end_column = 0;           // Column where fix ends
+  bool is_insertion = false;    // True if this is an insertion, not a replacement
+};
+
+/**
  * @brief Structure representing a code diagnostic
  */
 struct diagnostic {
@@ -35,6 +48,22 @@ struct diagnostic {
   std::string help_text;  // Legacy help text field
   std::vector<std::string> notes;  // Additional notes/context
   std::string help;  // New help message field
+  int occurrence_count = 1;  // For deduplication - how many times this error occurred
+  std::vector<fix_suggestion> fixes;  // Suggested fixes for this error
+};
+
+/**
+ * @brief Structure for error/warning summary statistics
+ */
+struct error_summary {
+  int total_errors = 0;
+  int total_warnings = 0;
+  int total_notes = 0;
+  int compiler_errors = 0;
+  int linker_errors = 0;
+  int cmake_errors = 0;
+  int template_errors = 0;
+  std::vector<std::pair<std::string, int>> error_categories;  // (category, count)
 };
 
 /**
@@ -123,5 +152,103 @@ std::vector<diagnostic> parse_cpack_errors(const std::string &error_output);
  * @return Vector of extracted diagnostics
  */
 std::vector<diagnostic> parse_compiler_errors(const std::string &error_output);
+
+/**
+ * @brief Parse C++ template instantiation errors
+ *
+ * Template errors are notoriously verbose - this parser extracts
+ * the key information and presents it in a readable format.
+ *
+ * @param error_output Raw error output
+ * @return Vector of extracted diagnostics
+ */
+std::vector<diagnostic> parse_template_errors(const std::string &error_output);
+
+/**
+ * @brief Deduplicate diagnostics by grouping similar errors
+ *
+ * Groups errors with the same code and similar messages, incrementing
+ * the occurrence_count field. Useful for linker errors where the same
+ * undefined symbol may appear many times.
+ *
+ * @param diagnostics Vector of diagnostics to deduplicate
+ * @return Deduplicated vector with occurrence counts
+ */
+std::vector<diagnostic> deduplicate_diagnostics(std::vector<diagnostic> diagnostics);
+
+/**
+ * @brief Calculate summary statistics from diagnostics
+ *
+ * @param diagnostics Vector of diagnostics to summarize
+ * @return Summary statistics
+ */
+error_summary calculate_error_summary(const std::vector<diagnostic> &diagnostics);
+
+/**
+ * @brief Format error summary as a string (Cargo-style)
+ *
+ * Example output:
+ *   error: build failed
+ *      3 compiler errors
+ *      2 linker errors
+ *      5 warnings
+ *
+ * @param summary The error summary to format
+ * @return Formatted summary string
+ */
+std::string format_error_summary(const error_summary &summary);
+
+/**
+ * @brief Suggest libraries for common undefined symbols
+ *
+ * Maps common Windows API functions to their required .lib files
+ * and common Unix symbols to their libraries.
+ *
+ * @param symbol The undefined symbol name
+ * @return Suggested library name, or empty string if unknown
+ */
+std::string suggest_library_for_symbol(const std::string &symbol);
+
+/**
+ * @brief Generate fix suggestions for a diagnostic
+ *
+ * Analyzes the error message and code context to suggest potential fixes.
+ * Supports common errors like:
+ * - Missing semicolons
+ * - Missing closing braces/parentheses
+ * - Missing includes for standard types
+ * - Typos in identifiers
+ * - Unused variable fixes
+ * - Missing return statements
+ *
+ * @param diag The diagnostic to analyze
+ * @return Vector of suggested fixes
+ */
+std::vector<fix_suggestion> generate_fix_suggestions(const diagnostic &diag);
+
+/**
+ * @brief Suggest include for a missing type
+ *
+ * Maps common C++ standard library types to their headers.
+ *
+ * @param type_name The missing type name
+ * @return The header to include, or empty string if unknown
+ */
+std::string suggest_include_for_type(const std::string &type_name);
+
+/**
+ * @brief Find similar identifiers for typo correction
+ *
+ * Uses edit distance to find identifiers similar to the unknown one.
+ *
+ * @param unknown_identifier The identifier that wasn't found
+ * @param available_identifiers List of known identifiers to compare against
+ * @param max_distance Maximum edit distance to consider (default 2)
+ * @return Vector of similar identifiers, sorted by similarity
+ */
+std::vector<std::string> find_similar_identifiers(
+    const std::string &unknown_identifier,
+    const std::vector<std::string> &available_identifiers,
+    int max_distance = 2);
 
 } // namespace cforge

@@ -34,16 +34,17 @@ CForge is a modern build system designed to simplify C/C++ project management. I
 5. [Project Configuration](#-project-configuration)
 6. [Working with Dependencies](#-working-with-dependencies)
 7. [Workspaces](#-workspaces)
-8. [Cross-Compilation](#-cross-compilation)
-9. [IDE Integration](#-ide-integration)
-10. [Scripts & Hooks](#-scripts--hooks)
-11. [Testing](#-testing)
-12. [Advanced Topics](#-advanced-topics)
-13. [Examples](#-examples)
-14. [Troubleshooting](#-troubleshooting)
-15. [Goals & Roadmap](#-goals--roadmap)
-16. [Contributing](#-contributing)
-17. [License](#-license)
+8. [Developer Tools](#-developer-tools)
+9. [Cross-Compilation](#-cross-compilation)
+10. [IDE Integration](#-ide-integration)
+11. [Scripts & Hooks](#-scripts--hooks)
+12. [Testing & Benchmarking](#-testing--benchmarking)
+13. [Advanced Topics](#-advanced-topics)
+14. [Examples](#-examples)
+15. [Troubleshooting](#-troubleshooting)
+16. [Goals & Roadmap](#-goals--roadmap)
+17. [Contributing](#-contributing)
+18. [License](#-license)
 
 ---
 
@@ -55,11 +56,14 @@ CForge is a modern build system designed to simplify C/C++ project management. I
 - **Workspaces**: Manage multiple projects together with dependency resolution
 - **Cross-compilation**: Support for Android, iOS, Raspberry Pi, WebAssembly
 - **IDE Integration**: VS Code, CLion, Xcode, Visual Studio
-- **Testing**: Integrated with CTest
+- **Testing & Benchmarking**: Integrated test runner and benchmark support
 - **Custom Scripts & Hooks**: Run project-specific tasks at various stages
 - **Automatic Tool Setup**: Installs missing tools automatically
-- **Enhanced Diagnostics**: Clear, informative compiler errors
-- **Build Variants**: Easily switch between different build configurations
+- **Enhanced Diagnostics**: Cargo-style colored error output with fix suggestions
+- **Build Timing**: See exactly how long builds take
+- **Developer Tools**: Code formatting, linting, file templates, watch mode
+- **Shell Completions**: Tab completion for bash, zsh, PowerShell, fish
+- **Documentation Generation**: Integrated Doxygen support
 - **Package Management**: Create distributable packages for your software
 
 ---
@@ -105,7 +109,7 @@ cforge init
 
 # Create a specific project type
 cforge init --template static-lib     # Create a static library project
-cforge init --template header-only  # Create a header-only library
+cforge init --template header-only    # Create a header-only library
 
 # Build the project
 cforge build
@@ -142,94 +146,269 @@ int main(int argc, char* argv[]) {
 
 ### Build and Run
 
-```bash
+CForge provides beautiful, Cargo-style colored output with build timing:
+
+```
 $ cforge build
-┌───────────────────────────────────────────────────┐
-│ cforge - C/C++ Build System beta-v2.0.0           │
-└───────────────────────────────────────────────────┘
 
-→ Using build configuration: Debug
-→ Building project: hi2 [Debug]
-→ Configuring with CMake...
-→ Running CMake Configure...
-→ Command: cmake -S C:\hi2 -B C:\hi2\build -DCMAKE_BUILD_TYPE=Debug -DDEBUG=1 -DENABLE_LOGGING=1 -DENABLE_TESTS=ON -G "Ninja Multi-Config"
-✓ CMake Configure completed successfully
-→ Building with CMake...
-✓ Built project: hi2 [Debug]
-✓ Command completed successfully
+cforge - C/C++ Build System beta-v2.2.0
+    Building myproject [Debug]
+  Setting up Git dependencies
+    Fetching 2 Git dependencies
+    Finished all Git dependencies are set up
+ Configuring project with CMake
+ Configuring CMake
+    Finished CMake configuration
+   Compiling myproject
+    Finished Debug target(s) in 3.67s
+    Finished Command completed successfully
+```
 
+```
 $ cforge run
-┌───────────────────────────────────────────────────┐
-│ cforge - C/C++ Build System beta-v2.0.0           │
-└───────────────────────────────────────────────────┘
 
-→ Running in single project context
-→ Project: hi2
-→ Configuration: Debug
-→ Configuring project...
-→ Building project...
-✓ Project built successfully
-→ Running executable: C:\hi2\build\bin\Debug\hi2.exe
-→ Program Output
+cforge - C/C++ Build System beta-v2.2.0
+    Building myproject [Debug]
+    Finished Debug target(s) in 0.42s
+     Running myproject
 
-Hello from hi2!
+Hello, cforge!
 
-✓ Program exited with code 0
-✓ Command completed successfully
+    Finished Program exited with code 0
 ```
 
 ---
 
 ## 🛠️ Command Reference
 
+### Core Commands
+
 | Command      | Description                         | Example                            |
 |--------------|-------------------------------------|------------------------------------|
-| `init`       | Create a new project or workspace (supports `--template`, `--workspace`, `--projects`) | `cforge init --template lib`       |
-| `build`      | Build the project (supports cross-compilation with `--target`) | `cforge build --config Release --target android-arm64` |
+| `init`       | Create a new project or workspace   | `cforge init --template lib`       |
+| `build`      | Build the project                   | `cforge build --config Release`    |
 | `clean`      | Clean build artifacts               | `cforge clean`                     |
 | `run`        | Run built executable                | `cforge run -- arg1 arg2`          |
-| `test`       | Build and run unit tests (supports config, category & test filters) | `cforge test -c Release Math Add` |
+| `test`       | Build and run unit tests            | `cforge test -c Release Math`      |
+| `bench`      | Run benchmarks                      | `cforge bench --filter BM_Sort`    |
+
+### Dependency Management
+
+| Command      | Description                         | Example                            |
+|--------------|-------------------------------------|------------------------------------|
+| `deps`       | Manage Git dependencies             | `cforge deps fetch`                |
+| `vcpkg`      | Manage vcpkg dependencies           | `cforge vcpkg install fmt`         |
+| `add`        | Add a dependency                    | `cforge add fmt --git`             |
+| `remove`     | Remove a dependency                 | `cforge remove fmt`                |
+| `tree`       | Visualize dependency tree           | `cforge tree`                      |
+| `lock`       | Manage dependency lock file         | `cforge lock --verify`             |
+
+### Developer Tools
+
+| Command      | Description                         | Example                            |
+|--------------|-------------------------------------|------------------------------------|
+| `fmt`        | Format code with clang-format       | `cforge fmt --check`               |
+| `lint`       | Run clang-tidy static analysis      | `cforge lint --fix`                |
+| `watch`      | Auto-rebuild on file changes        | `cforge watch --run`               |
+| `new`        | Create files from templates         | `cforge new class MyClass`         |
+| `doc`        | Generate documentation              | `cforge doc --open`                |
+
+### Project Management
+
+| Command      | Description                         | Example                            |
+|--------------|-------------------------------------|------------------------------------|
 | `install`    | Install project binaries            | `cforge install --prefix /usr/local`|
-| `deps`       | Manage dependencies                 | `cforge deps --update`             |
-| `script`     | Execute custom scripts              | `cforge script format`             |
-| `startup`    | Manage workspace startup project    | `cforge startup my_app`            |
+| `package`    | Create distributable packages       | `cforge package --type zip`        |
 | `ide`        | Generate IDE project files          | `cforge ide vscode`                |
-| `package`    | Package project binaries            | `cforge package --type zip`        |
-| `list`       | List configurations, projects, or build-order | `cforge list build-order`             |
+| `list`       | List projects, dependencies, etc.   | `cforge list build-order`          |
+| `completions`| Generate shell completions          | `cforge completions bash`          |
+
+### Utility Commands
+
+| Command      | Description                         | Example                            |
+|--------------|-------------------------------------|------------------------------------|
+| `version`    | Show version information            | `cforge version`                   |
+| `help`       | Show help for a command             | `cforge help build`                |
+| `update`     | Update cforge itself                | `cforge update`                    |
 
 ### Command Options
 
 All commands accept the following global options:
-- `-v/--verbose`: Set verbosity level
+- `-v/--verbose`: Enable verbose output
+- `-q/--quiet`: Suppress non-essential output
 
 Many commands support these options:
-- `--config`: Build/run with specific configuration (e.g., `Debug`, `Release`)
+- `-c/--config`: Build/run with specific configuration (e.g., `Debug`, `Release`)
 
-## 🧪 Testing
+---
 
-CForge includes a built-in test runner (no external CTest calls needed). By default your tests live in the directory specified by `test.directory` in `cforge.toml` (defaults to `tests`). To build and run tests:
+## 🔧 Developer Tools
+
+CForge includes powerful developer tools to improve your workflow.
+
+### Code Formatting (`cforge fmt`)
+
+Format your code using clang-format:
 
 ```bash
-# Run all tests in Debug (default)
-cforge test
+# Format all source files
+cforge fmt
 
-# Run only the 'Math' category in Debug
-cforge test Math
+# Check formatting without modifying files
+cforge fmt --check
 
-# Run specific tests in Release
-cforge test -c Release Math Add Divide
+# Show diff of what would change
+cforge fmt --diff
 
-# Explicitly separate CForge flags from filters
-cforge test -c Release -- Math Add Divide
+# Use a specific style
+cforge fmt --style=google
 ```
 
-Options:
-- `-c, --config <config>`: Build configuration (Debug, Release, etc.)
-- `-v, --verbose`: Show verbose build & test output
+Output:
+```
+cforge - C/C++ Build System beta-v2.2.0
+ Formatting 15 source files with clang-format
+  Formatted src/main.cpp
+  Formatted src/utils.cpp
+    Finished Formatted 15 files
+```
 
-Positional arguments (after flags, or after `--`):
-- `<category>`: Optional test category to run
-- `<test_name> ...`: Optional list of test names under the category
+### Static Analysis (`cforge lint`)
+
+Run clang-tidy static analysis:
+
+```bash
+# Run all checks
+cforge lint
+
+# Apply automatic fixes
+cforge lint --fix
+
+# Run specific checks
+cforge lint --checks='modernize-*,bugprone-*'
+```
+
+### Watch Mode (`cforge watch`)
+
+Automatically rebuild when files change:
+
+```bash
+# Watch and rebuild
+cforge watch
+
+# Watch, rebuild, and run
+cforge watch --run
+
+# Watch with Release configuration
+cforge watch -c Release
+```
+
+Output:
+```
+cforge - C/C++ Build System beta-v2.2.0
+     Watching for changes...
+     Tracking 47 files
+     Press Ctrl+C to stop
+
+    Building myproject [Debug]
+    Finished Debug target(s) in 1.23s
+
+     Changes detected:
+    Modified main.cpp
+
+    Building myproject [Debug]
+    Finished Debug target(s) in 0.89s
+```
+
+### File Templates (`cforge new`)
+
+Create files from templates:
+
+```bash
+# Create a class with header and source
+cforge new class MyClass
+
+# Create with namespace
+cforge new class MyClass -n myproject
+
+# Create a header-only file
+cforge new header utils
+
+# Create a struct
+cforge new struct Config
+
+# Create an interface (abstract class)
+cforge new interface IService
+
+# Create a test file
+cforge new test MyClass
+
+# Create main.cpp
+cforge new main
+```
+
+Output:
+```
+cforge - C/C++ Build System beta-v2.2.0
+    Created include/my_class.hpp
+    Created src/my_class.cpp
+```
+
+### Dependency Tree (`cforge tree`)
+
+Visualize your project dependencies:
+
+```bash
+cforge tree
+```
+
+Output (with colors):
+```
+cforge v2.2.0
+|-- fmt @ 11.1.4 (git)
+`-- tomlplusplus @ v3.4.0 (git)
+
+Dependencies: 2 git
+```
+
+Dependencies are color-coded by type:
+- **Cyan**: Git dependencies
+- **Magenta**: vcpkg dependencies
+- **Yellow**: System dependencies
+- **Green**: Project dependencies (workspace)
+
+### Documentation (`cforge doc`)
+
+Generate documentation with Doxygen:
+
+```bash
+# Generate documentation
+cforge doc
+
+# Create Doxyfile for customization
+cforge doc --init
+
+# Generate and open in browser
+cforge doc --open
+```
+
+### Shell Completions (`cforge completions`)
+
+Enable tab completion in your shell:
+
+```bash
+# Bash
+cforge completions bash >> ~/.bashrc
+
+# Zsh
+cforge completions zsh >> ~/.zshrc
+
+# PowerShell
+cforge completions powershell >> $PROFILE
+
+# Fish
+cforge completions fish > ~/.config/fish/completions/cforge.fish
+```
 
 ---
 
@@ -241,15 +420,13 @@ The `cforge.toml` file is the heart of your project configuration:
 
 ```toml
 [project]
-name = "cforge"
-version = "2.0.0"
-description = "A C/C++ build tool with dependency management"
+name = "myproject"
+version = "1.0.0"
+description = "My awesome C++ project"
 cpp_standard = "17"
 c_standard = "11"
 binary_type = "executable" # executable, shared_library, static_library, header_only
-authors = ["Chase Sunstrom <casunstrom@gmail.com>"]
-homepage = "https://github.com/ChaseSunstrom/cforge"
-repository = "https://github.com/ChaseSunstrom/cforge.git"
+authors = ["Your Name <you@example.com>"]
 license = "MIT"
 
 [build]
@@ -259,21 +436,26 @@ source_dirs = ["src"]
 include_dirs = ["include"]
 
 [build.config.debug]
-defines = ["DEBUG=1", "FMT_HEADER_ONLY=ON"]
-flags      = ["DEBUG_INFO", "NO_OPT"]
+defines = ["DEBUG=1"]
+flags = ["DEBUG_INFO", "NO_OPT"]
 
 [build.config.release]
-defines    = ["NDEBUG=1"]
-flags      = ["OPTIMIZE"]
+defines = ["NDEBUG=1"]
+flags = ["OPTIMIZE"]
 
 [test]
-enabled = false
+enabled = true
+directory = "tests"
+framework = "catch2"  # or "gtest"
+
+[benchmark]
+directory = "bench"
+target = "benchmarks"
 
 [package]
 enabled = true
-generators = []
-vendor = "Chase Sunstrom"
-contact = "Chase Sunstrom <casunstrom@gmail.com>"
+generators = ["ZIP", "TGZ"]
+vendor = "Your Name"
 ```
 
 ### CMake Overrides
@@ -286,8 +468,6 @@ platform     = "x64"                    # CMake platform for Visual Studio
 toolset      = "ClangCl"                # CMake toolset (Visual Studio or Ninja)
 c_compiler   = "/usr/bin/gcc-10"        # C compiler
 cxx_compiler = "/usr/bin/g++-10"        # C++ compiler
-c_standard   = "11"                      # C standard for C projects (e.g., 11, 17, 23)
-cxx_standard = "17"                      # C++ standard override (e.g., 11, 14, 17, 20)
 ```
 
 ### Platform-specific Configuration
@@ -317,71 +497,26 @@ CForge supports multiple dependency management systems:
 ```toml
 [dependencies.vcpkg]
 enabled = true
-path = "~/.vcpkg"          # Optional: directory of vcpkg installation (defaults to VCPKG_ROOT or ./vcpkg)
+path = "~/.vcpkg"          # Optional: directory of vcpkg installation
 triplet = "x64-windows"    # Optional: specify vcpkg target triplet
 packages = ["fmt", "boost", "nlohmann-json"]
-```
-
-Optional: override the imported CMake target name per package
-e.g. for a package that uses a non-standard target
-
-```toml
-[dependencies.vcpkg.fmt]
-target_name = "fmt"       # links using 'fmt' instead of 'fmt::fmt'
 ```
 
 ### Git Dependencies
 
 ```toml
-[[dependencies.git]]
-name = "nlohmann_json"
+[dependencies.git.fmt]
+url = "https://github.com/fmtlib/fmt.git"
+tag = "11.1.4"
+
+[dependencies.git.nlohmann_json]
 url = "https://github.com/nlohmann/json.git"
 tag = "v3.11.3"
-# Optional settings
-# shallow = true  # Faster clone with reduced history
-# update = false  # Whether to update the repo on builds
 
-[[dependencies.git]]
-name = "fmt"
-url = "https://github.com/fmtlib/fmt.git"
-tag = "9.1.0"
-cmake_options = ["-DFMT_TEST=OFF", "-DFMT_DOC=OFF"]  # Pass CMake options when building
-
-[[dependencies.git]]
-name = "imgui"
+[dependencies.git.imgui]
 url = "https://github.com/ocornut/imgui.git"
-branch = "master"  # Use a specific branch instead of tag
+branch = "master"
 shallow = true
-target_name = "imgui" # Target name to link against in cmake
-
-[[dependencies.git]]
-name = "custom_repo"
-url = "https://example.com/repo.git"
-commit = "abc123def456"  # Use a specific commit hash
-```
-
-Git dependencies are automatically cloned into a deps directory. The libraries can be included in your project by adding their include paths to your target configuration:
-
-```toml
-[targets.default]
-include_dirs = ["include", "deps/nlohmann_json/single_include", "deps/fmt/include"]
-defines = ["FMT_HEADER_ONLY"]  # Optionally add defines for your dependencies
-```
-
-You can also use the libraries in your code immediately:
-
-```cpp
-#include <nlohmann/json.hpp>
-#include <fmt/core.h>
-
-int main() {
-    // Using nlohmann/json
-    nlohmann::json obj = {{"name", "cforge"}, {"version", "1.4.0"}};
-    
-    // Using fmt
-    fmt::print("Project: {}\n", obj["name"].get<std::string>());
-    return 0;
-}
 ```
 
 ### System Dependencies
@@ -391,86 +526,133 @@ int main() {
 system = ["X11", "pthread", "dl"]
 ```
 
-### 🗂️ Project-to-Project Dependencies (Workspaces)
+### Dependency Lock File
 
-In a workspace, you can declare dependencies on other projects in the same workspace:
+Ensure reproducible builds with lock files:
 
-```toml
-[dependencies.project.MyLib]
-include_dirs = ["include"]   # Relative to MyLib directory
-link = true                    # Link the MyLib target
-link_type = "PRIVATE"        # PUBLIC, PRIVATE, or INTERFACE
-target_name = "MyLib"        # Optional CMake target name (defaults to project name)
+```bash
+# Generate/update lock file
+cforge lock
+
+# Verify dependencies match lock file
+cforge lock --verify
+
+# Force regeneration
+cforge lock --force
 ```
-
-cforge will automatically add the appropriate `include_directories` and
-`target_link_libraries` entries when generating each project's CMakeLists.txt.
-
-Run `cforge list graph` to visualize project dependencies in your workspace.
 
 ---
 
 ## 🗂️ Workspaces
 
-Workspaces allow you to manage multiple related CForge projects together. You can initialize a new workspace and specify which project directories it should include.
+Workspaces allow you to manage multiple related CForge projects together.
 
 ```bash
-# Initialize a workspace named "my_workspace" managing two project folders
-cforge init --workspace my_workspace --projects projects/core projects/gui
+# Initialize a workspace
+cforge init --workspace my_workspace --projects core gui
 ```
 
-This generates a `cforge-workspace.toml` file at the workspace root with contents like:
+This generates a `cforge-workspace.toml`:
 
 ```toml
 [workspace]
 name = "my_workspace"
-projects = ["projects/core", "projects/gui"]
-default_startup_project = "projects/core"
+projects = ["core", "gui"]
+default_startup_project = "core"
 ```
 
-To build all projects in the workspace:
+### Workspace Commands
 
 ```bash
+# Build all projects
 cforge build
+
+# Build specific project
+cforge build -p gui
+
+# List workspace projects
+cforge list projects
+
+# Show build order
+cforge list build-order
+
+# Visualize dependencies
+cforge tree
 ```
 
-To build or run a specific project, pass its directory name:
+### Project Dependencies
+
+```toml
+[dependencies.project.core]
+include_dirs = ["include"]
+link = true
+link_type = "PRIVATE"
+```
+
+---
+
+## 🧪 Testing & Benchmarking
+
+### Running Tests
 
 ```bash
-cforge build projects/gui
-cforge run projects/gui
+# Run all tests
+cforge test
+
+# Run specific category
+cforge test Math
+
+# Run specific tests in Release
+cforge test -c Release Math Add Divide
+
+# Verbose output
+cforge test -v
 ```
 
-+```bash
-+# List workspace projects
-+cforge list projects
-+
-+# Show workspace build order
-+cforge list build-order
-+```
+### Running Benchmarks
+
+```bash
+# Run all benchmarks (builds in Release by default)
+cforge bench
+
+# Run specific benchmark
+cforge bench --filter 'BM_Sort'
+
+# Skip build
+cforge bench --no-build
+
+# Output formats
+cforge bench --json > results.json
+cforge bench --csv > results.csv
+```
+
+Configure benchmarks in `cforge.toml`:
+```toml
+[benchmark]
+directory = "bench"
+target = "my_benchmarks"
+```
 
 ---
 
 ## 🌐 Cross-Compilation
 
-CForge supports cross-compilation by specifying toolchain and system settings in `cforge.toml` under `[build.cross]`:
+CForge supports cross-compilation:
 
 ```toml
 [build.cross]
-toolchain_file = "/path/to/toolchain.cmake"      # CMake toolchain file
-system_name = "Android"                          # CMAKE_SYSTEM_NAME
-system_processor = "arm64"                       # CMAKE_SYSTEM_PROCESSOR
-c_compiler = "aarch64-linux-android21-clang"     # CMAKE_C_COMPILER
-cxx_compiler = "aarch64-linux-android21-clang++" # CMAKE_CXX_COMPILER
+toolchain_file = "/path/to/toolchain.cmake"
+system_name = "Android"
+system_processor = "arm64"
+c_compiler = "aarch64-linux-android21-clang"
+cxx_compiler = "aarch64-linux-android21-clang++"
 ```
-
-You can invoke cross compilation via the `--target` option to the `build` command:
 
 ```bash
 cforge build --target android-arm64
 ```
 
-Currently supported platforms include Android, iOS, Raspberry Pi, and WebAssembly.
+Supported platforms: Android, iOS, Raspberry Pi, WebAssembly.
 
 ---
 
@@ -479,155 +661,126 @@ Currently supported platforms include Android, iOS, Raspberry Pi, and WebAssembl
 Generate IDE-specific project files:
 
 ```bash
-# VS Code
-cforge ide vscode
-
-# CLion
-cforge ide clion
-
-# Xcode (macOS only)
-cforge ide xcode
-
-# Visual Studio (Windows only)
-cforge ide vs2022
-cforge ide vs:x64  # With architecture specification
+cforge ide vscode    # VS Code
+cforge ide clion     # CLion
+cforge ide xcode     # Xcode (macOS)
+cforge ide vs2022    # Visual Studio 2022
 ```
+
+---
 
 ## 📜 Scripts & Hooks
 
-You can run custom Python scripts at different stages of the build by adding a `[scripts]` table in your `cforge.toml` (or `cforge.workspace.toml` for workspaces).
+Run custom scripts at build stages:
 
-Example in `cforge.toml`:
 ```toml
 [scripts]
 pre_build  = ["scripts/setup_env.py", "scripts/gen_code.py"]
 post_build = ["scripts/deploy.py"]
 ```
 
-CForge will automatically execute any scripts listed under `pre_build` before starting the build and those under `post_build` after the build completes. Scripts are run from the project (or workspace) root directory.
-
-Example project layout:
-```
-myproject/
-├── cforge.toml
-├── scripts/
-│   ├── setup_env.py
-│   └── deploy.py
-└── src/
-```
-
-Run the following to verify and build:
-```bash
-# List configured scripts
-cforge list scripts
-
-# Build (runs pre_build and post_build scripts automatically)
-cforge build
-```
+---
 
 ## 🔧 Troubleshooting
 
-### Common Issues
+### Enhanced Error Diagnostics
 
-- **CMake not found**: Ensure it's installed and in PATH.
-- **Dependency failures**: Run `cforge deps --update`.
-- **Cross-compilation**: Check environment variables (e.g., `$ANDROID_NDK`).
-- **Compiler errors**: Use `cforge build --verbosity verbose`.
-
-CForge provides enhanced error diagnostics:
+CForge provides Cargo-style error output with helpful suggestions:
 
 ```
-Build error details:
-ERROR[E0001]: undefined reference to 'math_lib::divide(int, int)'
- --> src/main.cpp:12:5
-  12| math_lib::divide(10, 0);
-     ^~~~~~~~~~~~~~~~
+error: undefined reference to `math_lib::divide(int, int)'
+  --> src/main.cpp:12:5
+   |
+12 |     math_lib::divide(10, 0);
+   |     ^~~~~~~~~~~~~~~~~~~~~~~
+   |
+   = help: The function 'divide' is declared but not defined
+   = hint: Check if the library containing this symbol is linked
 
-help: The function 'divide' is used but not defined. Check if the library is properly linked.
+error: no member named 'vetor' in namespace 'std'
+  --> src/utils.cpp:8:10
+   |
+ 8 |     std::vetor<int> nums;
+   |          ^~~~~
+   |
+   = help: Did you mean 'vector'?
+
+error: 'string' was not declared in this scope
+  --> src/parser.cpp:15:5
+   |
+15 |     string name;
+   |     ^~~~~~
+   |
+   = help: Add '#include <string>' and use 'std::string'
+
+error[summary]: Build failed with 3 errors and 2 warnings
+```
+
+### Linker Error Improvements
+
+CForge provides helpful suggestions for common linker errors:
+
+```
+error: LNK2019: unresolved external symbol "void __cdecl foo()"
+  = help: Common causes:
+    - Missing library in target_link_libraries
+    - Function declared but not defined
+    - Mismatched calling conventions
+  = hint: For 'WinMain': Link with kernel32.lib or check /SUBSYSTEM setting
 ```
 
 ### Useful Commands
 
 ```bash
-# List available configurations
+# Verbose build output
+cforge build -v
+
+# Check formatting issues
+cforge fmt --check
+
+# Verify lock file
+cforge lock --verify
+
+# List configurations
 cforge list configs
-
-# List available build variants
-cforge list variants
-
-# List cross-compilation targets
-cforge list targets
-
-# List custom scripts
-cforge list scripts
 ```
 
 ---
 
 ## 🚀 Goals & Roadmap
 
-CForge is continuously evolving to simplify C/C++ project management while providing powerful features. Here's what we've accomplished and where we're headed next:
-
 ### ✅ Completed Features
 
 - **Simple TOML Configuration**: Easy project setup without complex CMake syntax
 - **Multi-platform Support**: Windows, macOS, Linux compatibility
-- **Core Dependency Management**: Integrated vcpkg and git dependencies
-- **Workspace Support**: Basic multi-project management
-- **IDE Integration**: VS Code, CLion support
-- **Testing**: Test integration
+- **Dependency Management**: vcpkg, Git, and system dependencies
+- **Workspace Support**: Multi-project management with dependency resolution
+- **IDE Integration**: VS Code, CLion, Visual Studio, Xcode
+- **Testing**: Integrated test runner with category/filter support
+- **Benchmarking**: Google Benchmark integration
 - **Build Variants**: Multiple configuration support
-- **Package Generation**: Create distributable packages
-
-### 🚧 In Progress
-
-- **Enhanced Workspace Dependencies**: Improving library detection and linking
-- **Precompiled Header Optimization**: Better build performance
-- **Diagnostic Improvements**: Clearer error messages and suggestions
-- **Documentation Expansion**: More examples and quick-start guides
+- **Package Generation**: ZIP, TGZ, DEB, NSIS packages
+- **Code Formatting**: clang-format integration
+- **Static Analysis**: clang-tidy integration
+- **Watch Mode**: Auto-rebuild on file changes
+- **File Templates**: Create classes, headers, tests from templates
+- **Documentation**: Doxygen integration
+- **Shell Completions**: bash, zsh, PowerShell, fish
+- **Dependency Visualization**: Tree view of dependencies
+- **Enhanced Diagnostics**: Cargo-style colored errors with suggestions
+- **Build Timing**: Duration tracking for builds
+- **Lock Files**: Reproducible builds with dependency locking
 
 ### 📝 Planned Features
 
-- **Enhanced IDE Support**
-  - Better Visual Studio project generation
-  - QtCreator integration
-  - Eclipse CDT support
-  - Xcode project improvements
+- **Plugin System**: Custom build steps via plugins
+- **Code Coverage**: Coverage report generation
+- **Sanitizer Integration**: ASan, TSan, UBSan support
+- **CI/CD Templates**: GitHub Actions, GitLab CI
+- **Remote Builds**: Cloud/container-based builds
+- **Conan 2.0 Support**: Additional package manager
 
-- **Plugin System**
-  - Custom build steps via plugins
-  - Language server integration
-  - Code generation tools
-
-- **Documentation Features**
-  - Automatic API documentation generation
-  - Doxygen integration
-
-- **Advanced Testing**
-  - Code coverage reports
-  - Benchmark framework integration
-  - Sanitizer integrations
-
-- **CI/CD Pipeline Integration**
-  - GitHub Actions templates
-  - GitLab CI templates
-  - Azure DevOps integration
-
-- **Mobile Development**
-  - Improved Android/iOS workflows
-  - Mobile-specific templates
-
-- **Cloud Development**
-  - Remote build capabilities
-  - Container-based builds
-  - Package registry integration
-
-- **Package Manager Enhancements**
-  - Complete Conan 2.0 support
-  - Lock file management
-  - Recipe generation
-
-We welcome contributions to help achieve these goals! If you're interested in working on a specific feature or have suggestions, please open an issue or submit a pull request.
+---
 
 ## 🤝 Contributing
 

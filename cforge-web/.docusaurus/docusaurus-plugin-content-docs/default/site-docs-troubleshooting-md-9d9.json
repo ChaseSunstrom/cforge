@@ -1,0 +1,27 @@
+{
+  "id": "troubleshooting",
+  "title": "Troubleshooting",
+  "description": "Common issues and their solutions.",
+  "source": "@site/docs/troubleshooting.md",
+  "sourceDirName": ".",
+  "slug": "/troubleshooting",
+  "permalink": "/cforge/docs/troubleshooting",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/chasesunstrom/cforge/edit/main/docs/docs/troubleshooting.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "troubleshooting",
+    "title": "Troubleshooting"
+  },
+  "sidebar": "sidebar",
+  "previous": {
+    "title": "Examples",
+    "permalink": "/cforge/docs/examples"
+  },
+  "next": {
+    "title": "Contributing",
+    "permalink": "/cforge/docs/contributing"
+  }
+}

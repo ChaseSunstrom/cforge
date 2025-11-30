@@ -8,6 +8,7 @@ cforge/
 # CMake build files
 CMakeFiles/
 cmake_install.cmake
+node_modules/
 CMakeCache.txt
 *.cmake
 !CMakeLists.txt
