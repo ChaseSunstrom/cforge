@@ -125,12 +125,22 @@ function Test-Dependencies {
     }
 
     # Check CMake version
-    $cmakeVersion = (cmake --version | Select-Object -First 1) -replace "cmake version ", ""
-    if ([version]$cmakeVersion -lt [version]"3.15.0") {
-        Write-Err "CMake >= 3.15.0 required (found $cmakeVersion)"
-        exit 1
+    $cmakeVersionRaw = (cmake --version | Select-Object -First 1) -replace "cmake version ", ""
+    # Extract just the version number (X.Y.Z) and strip suffixes like -rc1, -alpha, etc.
+    if ($cmakeVersionRaw -match "^(\d+\.\d+\.?\d*)") {
+        $cmakeVersion = $matches[1]
+    } else {
+        $cmakeVersion = $cmakeVersionRaw -replace "-.*$", ""
     }
-    Write-Ok "cmake $cmakeVersion found"
+    try {
+        if ([version]$cmakeVersion -lt [version]"3.15.0") {
+            Write-Err "CMake >= 3.15.0 required (found $cmakeVersionRaw)"
+            exit 1
+        }
+    } catch {
+        Write-Warn "Could not parse CMake version '$cmakeVersionRaw', continuing anyway..."
+    }
+    Write-Ok "cmake $cmakeVersionRaw found"
 
     # Visual Studio / Build Tools
     $vsWhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
