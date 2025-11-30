@@ -278,10 +278,14 @@ function Build-Cforge {
             $cmakeArgs += @("-G", "Ninja Multi-Config")
         }
 
+        # Temporarily allow cmake warnings (stderr) without treating as errors
+        $prevErrorAction = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
+
         if ($VerboseOutput) {
             & cmake @cmakeArgs
         } else {
-            & cmake @cmakeArgs 2>&1 | Out-Null
+            & cmake @cmakeArgs *> $null
         }
 
         Write-Info "Building cforge..."
@@ -289,8 +293,10 @@ function Build-Cforge {
         if ($VerboseOutput) {
             cmake --build build --config Release -j $jobs
         } else {
-            cmake --build build --config Release -j $jobs 2>&1 | Out-Null
+            cmake --build build --config Release -j $jobs *> $null
         }
+
+        $ErrorActionPreference = $prevErrorAction
 
         Write-Ok "Build completed"
         return "$TempDir\cforge\build"
