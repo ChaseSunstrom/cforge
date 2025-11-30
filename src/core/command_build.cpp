@@ -900,9 +900,11 @@ static bool build_project(const std::filesystem::path &project_dir,
                           outdir_str);
   }
 
-  // Run the build
+  // Run the build with longer timeout for CI environments
+  // Release builds especially on Windows CI can take several minutes
+  int build_timeout = 600; // 10 minutes
   bool build_result =
-      execute_tool("cmake", build_args, "", "CMake Build", verbose);
+      execute_tool("cmake", build_args, "", "CMake Build", verbose, build_timeout);
 
   // Clean up empty config directories under the build root
   for (const auto &cfg : {"Debug", "Release", "RelWithDebInfo"}) {
@@ -1262,7 +1264,9 @@ cforge_int_t cforge_cmd_build(const cforge_context_t *ctx) {
       std::filesystem::current_path(workspace_dir);
     }
 
-    bool result = execute_tool("cmake", build_args, "", "CMake Build", verbose);
+    // Use longer timeout for workspace builds in CI environments
+    int build_timeout = 600; // 10 minutes
+    bool result = execute_tool("cmake", build_args, "", "CMake Build", verbose, build_timeout);
     // Restore original directory
     std::filesystem::current_path(original_cwd);
     if (!result) {
