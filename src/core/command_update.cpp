@@ -274,8 +274,9 @@ cforge_int_t cforge_cmd_update(const cforge_context_t *ctx) {
   }
 
   if (!project_present) {
-    // Self-update: clone or pull from GitHub
+    // Self-update: clone, build, and install from GitHub
     logger::print_header("Updating cforge itself");
+
     // Determine install location
     if (install_path.empty()) {
       // Check env variable CFORGE_INSTALL_PATH
@@ -298,32 +299,159 @@ cforge_int_t cforge_cmd_update(const cforge_context_t *ctx) {
     // Clone repository
     const std::string repo_url = "https://github.com/ChaseSunstrom/cforge.git";
     logger::print_action("Cloning", "cforge from GitHub: " + repo_url);
-    if (!execute_tool(
-            "git", {"clone", "--branch", "master", repo_url, temp_dir.string()},
-            "", "Git Clone", add_to_path)) {
+    bool verbose = logger::get_verbosity() == log_verbosity::VERBOSITY_VERBOSE;
+    if (!execute_tool("git",
+                      {"clone", "--branch", "master", repo_url, temp_dir.string()},
+                      "", "Git Clone", verbose)) {
       logger::print_error("Failed to clone cforge repository");
       return 1;
     }
 
-    // Change to temp_dir and install
-    auto orig = std::filesystem::current_path();
-    std::filesystem::current_path(temp_dir);
-    bool ok = installer_instance.install(install_path, add_to_path);
-    std::filesystem::current_path(orig);
+    // Fetch dependencies
+    logger::print_action("Fetching", "dependencies");
+    std::filesystem::path vendor_dir = temp_dir / "vendor";
+    std::filesystem::create_directories(vendor_dir);
 
-    // Clean up temporary clone
+    if (!execute_tool("git",
+                      {"clone", "https://github.com/fmtlib/fmt.git",
+                       (vendor_dir / "fmt").string()},
+                      "", "Clone fmt", verbose)) {
+      logger::print_error("Failed to clone fmt dependency");
+      return 1;
+    }
+    // Checkout fmt version
+    execute_tool("git", {"checkout", "11.1.4"}, (vendor_dir / "fmt").string(),
+                 "Checkout fmt", verbose);
+
+    if (!execute_tool("git",
+                      {"clone", "https://github.com/marzer/tomlplusplus.git",
+                       (vendor_dir / "tomlplusplus").string()},
+                      "", "Clone tomlplusplus", verbose)) {
+      logger::print_error("Failed to clone tomlplusplus dependency");
+      return 1;
+    }
+    // Checkout tomlplusplus version
+    execute_tool("git", {"checkout", "v3.4.0"},
+                 (vendor_dir / "tomlplusplus").string(), "Checkout tomlplusplus",
+                 verbose);
+
+    // Configure with CMake
+    logger::print_action("Configuring", "build with CMake");
+    std::filesystem::path build_dir = temp_dir / "build";
+    std::filesystem::create_directories(build_dir);
+
+    std::vector<std::string> cmake_args = {
+        "-S", temp_dir.string(), "-B", build_dir.string(),
+        "-DCMAKE_BUILD_TYPE=Release", "-DFMT_HEADER_ONLY=ON",
+        "-DBUILD_SHARED_LIBS=OFF"};
+
+#ifdef _WIN32
+    // Use Ninja if available on Windows
+    if (is_command_available("ninja")) {
+      cmake_args.push_back("-G");
+      cmake_args.push_back("Ninja");
+    }
+#endif
+
+    if (!execute_tool("cmake", cmake_args, "", "CMake Configure", verbose, 180)) {
+      logger::print_error("CMake configuration failed");
+      std::filesystem::remove_all(temp_dir);
+      return 1;
+    }
+
+    // Build
+    logger::print_action("Building", "cforge");
+    std::vector<std::string> build_args = {"--build", build_dir.string(),
+                                           "--config", "Release"};
+
+    if (!execute_tool("cmake", build_args, "", "CMake Build", verbose, 600)) {
+      logger::print_error("Build failed");
+      std::filesystem::remove_all(temp_dir);
+      return 1;
+    }
+
+    // Find the built binary
+    std::filesystem::path built_exe;
+    std::vector<std::filesystem::path> possible_paths = {
+        build_dir / "bin" / "Release" / "cforge.exe",
+        build_dir / "bin" / "Release" / "cforge",
+        build_dir / "bin" / "cforge.exe",
+        build_dir / "bin" / "cforge",
+        build_dir / "Release" / "cforge.exe",
+        build_dir / "Release" / "cforge",
+        build_dir / "cforge.exe",
+        build_dir / "cforge"};
+
+    for (const auto &path : possible_paths) {
+      if (std::filesystem::exists(path)) {
+        built_exe = path;
+        break;
+      }
+    }
+
+    if (built_exe.empty()) {
+      logger::print_error("Could not find built cforge executable");
+      std::filesystem::remove_all(temp_dir);
+      return 1;
+    }
+
+    logger::print_verbose("Found built executable: " + built_exe.string());
+
+    // Install the binary to the same location as `cforge install`
+    // This is: <platform_path>/installed/cforge/bin/
+    std::filesystem::path install_bin_dir =
+        std::filesystem::path(install_path) / "installed" / "cforge" / "bin";
+    std::filesystem::create_directories(install_bin_dir);
+
+#ifdef _WIN32
+    std::filesystem::path target_exe = install_bin_dir / "cforge.exe";
+#else
+    std::filesystem::path target_exe = install_bin_dir / "cforge";
+#endif
+
+    try {
+      // Remove old binary if it exists (might need to rename first on Windows)
+      if (std::filesystem::exists(target_exe)) {
+        std::filesystem::path backup = target_exe;
+        backup += ".old";
+        if (std::filesystem::exists(backup)) {
+          std::filesystem::remove(backup);
+        }
+        std::filesystem::rename(target_exe, backup);
+      }
+
+      std::filesystem::copy_file(
+          built_exe, target_exe,
+          std::filesystem::copy_options::overwrite_existing);
+      logger::print_action("Installed", target_exe.string());
+
+      // Remove backup
+      std::filesystem::path backup = target_exe;
+      backup += ".old";
+      if (std::filesystem::exists(backup)) {
+        std::filesystem::remove(backup);
+      }
+    } catch (const std::exception &e) {
+      logger::print_error("Failed to install binary: " + std::string(e.what()));
+      std::filesystem::remove_all(temp_dir);
+      return 1;
+    }
+
+    // Update PATH if requested
+    if (add_to_path) {
+      installer_instance.update_path_env(install_bin_dir);
+      logger::print_action("Updated", "PATH environment variable");
+    }
+
+    // Clean up temporary directory
     try {
       std::filesystem::remove_all(temp_dir);
     } catch (...) {
     }
 
-    if (ok) {
-      logger::finished("cforge updated successfully to path: " + install_path);
-      return 0;
-    } else {
-      logger::print_error("cforge update failed");
-      return 1;
-    }
+    logger::finished("cforge updated successfully!");
+    logger::print_action("Location", target_exe.string());
+    return 0;
   }
 
   // Otherwise, update project dependencies as before

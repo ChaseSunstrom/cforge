@@ -93,6 +93,13 @@ public:
   bool update_env_var(const std::string &var_name,
                       const std::filesystem::path &value) const;
 
+  /**
+   * @brief Update PATH environment variable if needed
+   * @param bin_path Path to add to PATH
+   * @return True if PATH was updated successfully
+   */
+  bool update_path_env(const std::filesystem::path &bin_path) const;
+
 private:
   /**
    * @brief Copy files from source to destination
@@ -124,13 +131,6 @@ private:
    * @return True if links were created successfully
    */
   bool create_executable_links(const std::filesystem::path &bin_path) const;
-
-  /**
-   * @brief Update PATH environment variable if needed
-   * @param bin_path Path to add to PATH
-   * @return True if PATH was updated successfully
-   */
-  bool update_path_env(const std::filesystem::path &bin_path) const;
 
   /**
    * @brief Read project configuration from TOML file

@@ -28,13 +28,35 @@
 #>
 
 param(
-    [string]$Prefix = "$env:LOCALAPPDATA\cforge",
+    [string]$Prefix,
     [switch]$NoPath,
     [switch]$VerboseOutput,
     [switch]$Help
 )
 
 $ErrorActionPreference = "Stop"
+
+# Detect existing installation or use default
+if (-not $Prefix) {
+    # Check common installation locations (using the installed/cforge/bin structure)
+    $existingPaths = @(
+        "$env:ProgramFiles\cforge",
+        "$env:LOCALAPPDATA\cforge",
+        "C:\cforge"
+    )
+
+    foreach ($path in $existingPaths) {
+        if (Test-Path "$path\installed\cforge\bin\cforge.exe") {
+            $Prefix = $path
+            break
+        }
+    }
+
+    # Default to ProgramFiles if no existing installation found
+    if (-not $Prefix) {
+        $Prefix = "$env:ProgramFiles\cforge"
+    }
+}
 
 # Colors
 function Write-Info { Write-Host "[INFO] " -ForegroundColor Blue -NoNewline; Write-Host $args }
@@ -325,8 +347,10 @@ function Install-Cforge {
 
     Write-Info "Installing to $Prefix..."
 
-    # Create directories
-    New-Item -ItemType Directory -Force -Path "$Prefix\bin" | Out-Null
+    # Create directories - use same structure as `cforge install`
+    # This is: <prefix>/installed/cforge/bin/
+    $installBinDir = "$Prefix\installed\cforge\bin"
+    New-Item -ItemType Directory -Force -Path $installBinDir | Out-Null
 
     # Find the built binary
     $binaryPaths = @(
@@ -350,14 +374,14 @@ function Install-Cforge {
         exit 1
     }
 
-    Copy-Item $binary "$Prefix\bin\cforge.exe" -Force
-    Write-Ok "Installed cforge to $Prefix\bin\cforge.exe"
+    Copy-Item $binary "$installBinDir\cforge.exe" -Force
+    Write-Ok "Installed cforge to $installBinDir\cforge.exe"
 }
 
 function Add-ToPath {
     if ($NoPath) { return }
 
-    $binDir = "$Prefix\bin"
+    $binDir = "$Prefix\installed\cforge\bin"
     $currentPath = [Environment]::GetEnvironmentVariable("Path", "User")
 
     if ($currentPath -like "*$binDir*") {
@@ -380,7 +404,7 @@ function Add-ToPath {
 function Test-Installation {
     Write-Info "Verifying installation..."
 
-    $cforge = "$Prefix\bin\cforge.exe"
+    $cforge = "$Prefix\installed\cforge\bin\cforge.exe"
     if (Test-Path $cforge) {
         $version = & $cforge version 2>$null
         if (-not $version) { $version = "unknown" }
