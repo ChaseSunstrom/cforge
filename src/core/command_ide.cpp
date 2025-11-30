@@ -31,7 +31,7 @@ using namespace cforge;
  * @param verbose Verbose output flag
  * @return bool Success flag
  */
-static bool generate_vs_project(const std::filesystem::path &project_dir,
+[[maybe_unused]] static bool generate_vs_project(const std::filesystem::path &project_dir,
                                 const std::filesystem::path &build_dir,
                                 bool verbose) {
   logger::print_action("Generating", "Visual Studio project files");
@@ -208,7 +208,7 @@ static std::string generate_uuid() {
 static bool write_vcxproj(const std::filesystem::path &proj_dir,
                           const toml_reader &cfg,
                           const std::filesystem::path &out_dir,
-                          const std::string &proj_guid, bool verbose) {
+                          const std::string &proj_guid, bool /*verbose*/) {
   std::string name =
       cfg.get_string("project.name", proj_dir.filename().string());
   std::filesystem::path rel_out = out_dir / (name + ".vcxproj");
@@ -590,7 +590,7 @@ static bool write_vcxproj(const std::filesystem::path &proj_dir,
 static bool write_sln(const std::filesystem::path &workspace_dir,
                       const cforge::workspace &ws,
                       const std::map<std::string, std::string> &project_guids,
-                      const std::filesystem::path &out_dir, bool verbose) {
+                      const std::filesystem::path &out_dir, bool /*verbose*/) {
   std::filesystem::path sln_path = out_dir / (ws.get_name() + ".sln");
   std::ofstream sln(sln_path);
   if (!sln) {
@@ -732,7 +732,7 @@ generate_vs_workspace_solution(const std::filesystem::path &workspace_dir,
 // Write a single-project .sln file for a direct project
 static bool write_sln_single(const std::filesystem::path &out_dir,
                              const std::string &name, const std::string &guid,
-                             bool verbose) {
+                             bool /*verbose*/) {
   std::filesystem::path sln_path = out_dir / (name + ".sln");
   std::ofstream sln(sln_path);
   if (!sln) {

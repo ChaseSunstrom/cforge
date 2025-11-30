@@ -73,7 +73,7 @@ static bool is_visual_studio_available() {
  *
  * @return bool True if CMake is available
  */
-static bool is_cmake_available() {
+[[maybe_unused]] static bool is_cmake_available() {
   bool available = is_command_available("cmake");
   if (!available) {
     logger::print_warning("CMake not found in PATH using detection check");
@@ -441,7 +441,6 @@ static bool run_cmake_configure(const std::vector<std::string> &cmake_args,
       formatted_errors = format_build_errors(pr.stdout_output);
     }
     if (!formatted_errors.empty()) {
-      logger::print_error("Error details:");
       std::istringstream iss(formatted_errors);
       std::string line;
       while (std::getline(iss, line)) {
@@ -994,7 +993,7 @@ static bool build_project(const std::filesystem::path &project_dir,
  * @param skip_deps Skip dependencies flag
  * @return bool Success flag
  */
-static bool build_workspace_project(const std::filesystem::path &workspace_dir,
+[[maybe_unused]] static bool build_workspace_project(const std::filesystem::path & /*workspace_dir*/,
                                     const workspace_project &project,
                                     const std::string &build_config,
                                     int num_jobs, bool verbose,
@@ -1058,8 +1057,8 @@ cforge_int_t cforge_cmd_build(const cforge_context_t *ctx) {
   bool verbose = logger::get_verbosity() == log_verbosity::VERBOSITY_VERBOSE;
   std::string target;
   std::string project_name;
-  bool generate_workspace_cmake = false;
-  bool force_regenerate = false;
+  [[maybe_unused]] bool generate_workspace_cmake = false;
+  [[maybe_unused]] bool force_regenerate = false;
   bool skip_deps = false;
 
   // Extract command line arguments
@@ -1335,9 +1334,9 @@ cforge_int_t cforge_cmd_build(const cforge_context_t *ctx) {
  * @param project_config Project configuration from cforge.toml
  * @param cmakelists CMakeLists.txt output stream
  */
-static void configure_project_dependencies_in_cmake(
+[[maybe_unused]] static void configure_project_dependencies_in_cmake(
     const std::filesystem::path &workspace_dir,
-    const std::filesystem::path &project_dir, const toml_reader &project_config,
+    const std::filesystem::path & /*project_dir*/, const toml_reader &project_config,
     std::ofstream &cmakelists) {
   // Check if we have project dependencies
   if (!project_config.has_key("dependencies.project")) {
@@ -1361,7 +1360,7 @@ static void configure_project_dependencies_in_cmake(
     // Get dependency options
     bool include = project_config.get_bool(
         "dependencies.project." + dep + ".include", true);
-    bool link =
+    [[maybe_unused]] bool link =
         project_config.get_bool("dependencies.project." + dep + ".link", true);
     std::string target_name = project_config.get_string(
         "dependencies.project." + dep + ".target_name", "");

@@ -203,6 +203,7 @@ inline std::filesystem::path
 find_project_binary(const std::filesystem::path &build_dir,
                     const std::string &project_name, const std::string &config,
                     const std::string &binary_type = "executable") {
+  (void)binary_type; // Reserved for future use
   std::vector<std::filesystem::path> search_paths;
 
   // Common output locations

@@ -91,7 +91,7 @@ parse_project_list(const std::string &project_list) {
  * @param project_path Path to project directory
  * @return bool Success flag
  */
-static bool create_gitignore(const std::filesystem::path &project_path) {
+[[maybe_unused]] static bool create_gitignore(const std::filesystem::path &project_path) {
   std::filesystem::path gitignore_path = project_path / ".gitignore";
 
   if (std::filesystem::exists(gitignore_path) && !g_force_overwrite) {
@@ -922,7 +922,7 @@ static bool is_git_available() { return is_command_available("git"); }
  * @return bool Success flag (true if successful or git not available/not
  * requested)
  */
-static bool init_git_repository(const std::filesystem::path &project_path,
+[[maybe_unused]] static bool init_git_repository(const std::filesystem::path &project_path,
                                 bool verbose) {
   // If Git initialization wasn't explicitly requested, just return success
   if (!verbose) {
@@ -1105,10 +1105,10 @@ generate_workspace_cmakelists(const std::filesystem::path &workspace_dir,
  */
 static bool create_project(const std::filesystem::path &project_path,
                            const std::string &project_name,
-                           const std::string &cpp_version, bool with_git,
+                           const std::string &cpp_version, bool /*with_git*/,
                            bool with_tests,
-                           const std::string &cmake_preset = "",
-                           const std::string &build_type = "Debug") {
+                           const std::string & /*cmake_preset*/ = "",
+                           const std::string & /*build_type*/ = "Debug") {
   try {
     // Create the project directory if it doesn't exist
     if (!std::filesystem::exists(project_path)) {

@@ -132,7 +132,7 @@ std::string format_diagnostic_to_string(const diagnostic &diag) {
 
   // Determine the level-specific formatting
   std::string level_str;
-  fmt::color level_color;
+  fmt::color level_color = fmt::color::white; // Default initialization
 
   switch (diag.level) {
   case diagnostic_level::ERROR:
@@ -150,6 +150,10 @@ std::string format_diagnostic_to_string(const diagnostic &diag) {
   case diagnostic_level::HELP:
     level_str = "help";
     level_color = fmt::color::green;
+    break;
+  default:
+    level_str = "unknown";
+    level_color = fmt::color::white;
     break;
   }
 
@@ -1695,8 +1699,38 @@ deduplicate_diagnostics(std::vector<diagnostic> diagnostics) {
           R"((?:undefined|unresolved)[^`'\"]*[`'\"]([^`'\"]+)[`'\"])");
       std::smatch match;
       if (std::regex_search(d.message, match, symbol_regex)) {
-        return d.code + "::" + match[1].str();
+        return "LINKER::" + match[1].str();
       }
+    }
+
+    // For undeclared identifier errors, dedupe by the identifier name
+    // This handles both "Undeclared identifier: foo" and "'foo' was not declared"
+    if (d.code.find("UNDECL") != std::string::npos ||
+        d.code.find("UNDECLARED") != std::string::npos ||
+        d.message.find("not declared") != std::string::npos ||
+        d.message.find("undeclared") != std::string::npos) {
+      // Try to extract the identifier name
+      std::regex id_regex1(R"(Undeclared identifier:\s*(\w+))");
+      std::regex id_regex2(R"('(\w+)'\s*was not declared)");
+      std::regex id_regex3(R"('(\w+)':\s*undeclared)");
+      std::smatch match;
+      if (std::regex_search(d.message, match, id_regex1) ||
+          std::regex_search(d.message, match, id_regex2) ||
+          std::regex_search(d.message, match, id_regex3)) {
+        return "UNDECLARED::" + match[1].str();
+      }
+    }
+
+    // For errors with file/line info, dedupe by location + error type
+    if (!d.file_path.empty() && d.line_number > 0) {
+      // Normalize the code to a base type for deduplication
+      std::string base_code = d.code;
+      if (base_code.find("-") != std::string::npos) {
+        // Extract the suffix after the last hyphen as the error type
+        size_t pos = base_code.rfind("-");
+        base_code = base_code.substr(pos + 1);
+      }
+      return d.file_path + ":" + std::to_string(d.line_number) + "::" + base_code;
     }
 
     // For other errors, dedupe by code + message
@@ -1710,21 +1744,40 @@ deduplicate_diagnostics(std::vector<diagnostic> diagnostics) {
 
     auto it = seen_errors.find(key);
     if (it != seen_errors.end()) {
-      // Already seen this error - increment count and merge notes
+      // Already seen this error
       auto &existing = deduplicated[it->second];
-      existing.occurrence_count++;
 
-      // Add file reference as a note if different
-      if (!diag.file_path.empty() && diag.file_path != existing.file_path) {
-        std::string note = "also in: " + diag.file_path;
-        if (diag.line_number > 0) {
-          note += ":" + std::to_string(diag.line_number);
+      // Prefer the diagnostic with more detailed location info
+      bool new_has_better_info = !diag.file_path.empty() && diag.line_number > 0 &&
+                                  (existing.file_path.empty() || existing.line_number == 0);
+
+      if (new_has_better_info) {
+        // Replace with the more detailed diagnostic but keep occurrence count
+        int count = existing.occurrence_count + 1;
+        auto old_notes = std::move(existing.notes);
+        existing = std::move(diag);
+        existing.occurrence_count = count;
+        // Merge notes
+        for (auto &note : old_notes) {
+          if (existing.notes.size() < 5) {
+            existing.notes.push_back(std::move(note));
+          }
         }
-        // Only add if we haven't exceeded note limit
-        if (existing.notes.size() < 5) {
-          existing.notes.push_back(note);
-        } else if (existing.notes.size() == 5) {
-          existing.notes.push_back("... and more");
+      } else {
+        existing.occurrence_count++;
+
+        // Add file reference as a note if different location
+        if (!diag.file_path.empty() && diag.file_path != existing.file_path) {
+          std::string note = "also in: " + diag.file_path;
+          if (diag.line_number > 0) {
+            note += ":" + std::to_string(diag.line_number);
+          }
+          // Only add if we haven't exceeded note limit
+          if (existing.notes.size() < 5) {
+            existing.notes.push_back(note);
+          } else if (existing.notes.size() == 5) {
+            existing.notes.push_back("... and more");
+          }
         }
       }
     } else {

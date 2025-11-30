@@ -89,7 +89,7 @@ void print_tree_branch(const std::string &name, const dependency_info &info,
 /**
  * @brief Collect dependencies from a project
  */
-void collect_dependencies(const fs::path &project_dir,
+[[maybe_unused]] void collect_dependencies(const fs::path & /*project_dir*/,
                           const cforge::toml_reader &config,
                           std::map<std::string, dependency_info> &deps) {
   // Git dependencies
@@ -168,9 +168,9 @@ cforge_int_t cforge_cmd_tree(const cforge_context_t *ctx) {
   fs::path current_dir = ctx->working_dir;
 
   // Parse arguments
-  bool show_all = false;
+  [[maybe_unused]] bool show_all = false;
   int max_depth = 10;
-  bool inverted = false;
+  [[maybe_unused]] bool inverted = false;
 
   for (int i = 0; i < ctx->args.arg_count; i++) {
     std::string arg = ctx->args.args[i];

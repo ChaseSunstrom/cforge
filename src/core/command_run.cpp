@@ -229,7 +229,7 @@ find_project_executable(const std::filesystem::path &project_path,
 /**
  * @brief Get build configuration from various sources
  */
-static std::string get_build_config(const cforge_context_t *ctx,
+[[maybe_unused]] static std::string get_build_config(const cforge_context_t *ctx,
                                     const toml_reader *project_config) {
   // Priority 1: Direct configuration argument
   if (ctx->args.config != nullptr && strlen(ctx->args.config) > 0) {
@@ -480,9 +480,8 @@ cforge_int_t cforge_cmd_run(const cforge_context_t *ctx) {
         // Prepare context for build
         cforge_context_t build_ctx;
         memset(&build_ctx, 0, sizeof(build_ctx));
-        strncpy(build_ctx.working_dir, ctx->working_dir,
-                sizeof(build_ctx.working_dir) - 1);
-        build_ctx.working_dir[sizeof(build_ctx.working_dir) - 1] = '\0';
+        snprintf(build_ctx.working_dir, sizeof(build_ctx.working_dir), "%s",
+                 ctx->working_dir);
         build_ctx.args.command = strdup("build");
         build_ctx.args.config = strdup(config.c_str());
         if (verbose) {

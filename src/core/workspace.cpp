@@ -411,10 +411,10 @@ find_project_executable(const std::filesystem::path &project_path,
  * @param config Build configuration
  * @return std::vector<std::string> CMake options
  */
-static std::vector<std::string>
+[[maybe_unused]] static std::vector<std::string>
 generate_cmake_linking_options(const workspace_project &project,
                                const std::vector<workspace_project> &projects,
-                               const std::string &config) {
+                               const std::string & /*config*/) {
   std::vector<std::string> options;
 
   // Build paths for dependencies
@@ -520,7 +520,7 @@ void configure_git_dependencies_in_cmake(const toml_reader &project_config,
         "dependencies.git." + dep + ".make_available", true);
     bool include =
         project_config.get_bool("dependencies.git." + dep + ".include", true);
-    bool link =
+    [[maybe_unused]] bool link =
         project_config.get_bool("dependencies.git." + dep + ".link", true);
     std::string target_name = project_config.get_string(
         "dependencies.git." + dep + ".target_name", "");

@@ -125,7 +125,7 @@ execute_process(const std::string &command,
   // Non-blocking reads with timeout support
   DWORD stdout_avail = 0, stderr_avail = 0;
   auto start_time = std::chrono::steady_clock::now();
-  bool timed_out = false;
+  [[maybe_unused]] bool timed_out = false;
   auto last_activity_time = start_time;
 
   // Status indicator for long-running commands
@@ -174,7 +174,7 @@ execute_process(const std::string &command,
       result.exit_code = static_cast<int>(exit_code);
     }
 
-    bool had_activity = false;
+    [[maybe_unused]] bool had_activity = false;
 
     // Check for stdout data
     BOOL stdout_success =
@@ -552,12 +552,7 @@ bool execute_tool(const std::string &command,
       // Format with our error formatter to make errors more readable
       std::string formatted_errors = format_build_errors(result.stderr_output);
       if (!formatted_errors.empty()) {
-        if (!found_errors) {
-          // Use fmt::format with color for the error header
-          fmt::print(fg(fmt::color::crimson) | fmt::emphasis::bold,
-                     "→ Error details:\n");
-          found_errors = true;
-        }
+        found_errors = true;
         fmt::print("{}", formatted_errors);
       }
     }
@@ -572,12 +567,7 @@ bool execute_tool(const std::string &command,
       std::string formatted_stdout_errors =
           format_build_errors(result.stdout_output);
       if (!formatted_stdout_errors.empty()) {
-        if (!found_errors) {
-          // Use fmt::format with color for the error header
-          fmt::print(fg(fmt::color::crimson) | fmt::emphasis::bold,
-                     "→ Error details:\n");
-          found_errors = true;
-        }
+        found_errors = true;
         fmt::print("{}", formatted_stdout_errors);
       }
     }

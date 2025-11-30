@@ -211,10 +211,8 @@ static bool build_project(const cforge_context_t *ctx) {
   memset(&build_ctx, 0, sizeof(cforge_context_t));
 
   // Copy only the essential fields - working_dir is a char array
-  strncpy(build_ctx.working_dir, ctx->working_dir,
-          sizeof(build_ctx.working_dir) - 1);
-  build_ctx.working_dir[sizeof(build_ctx.working_dir) - 1] =
-      '\0'; // Ensure null termination
+  snprintf(build_ctx.working_dir, sizeof(build_ctx.working_dir), "%s",
+           ctx->working_dir);
 
   // Copy verbosity - but make it less verbose than the calling context
   // This way, the build output is more compact during packaging
@@ -318,10 +316,10 @@ static bool build_project(const cforge_context_t *ctx) {
  * @param workspace_dir Path to the workspace directory
  * @return bool Success flag
  */
-static bool
+[[maybe_unused]] static bool
 create_workspace_package(const std::string &workspace_name,
                          const std::vector<workspace_project> &projects,
-                         const std::string &build_config, bool verbose,
+                         const std::string &build_config, [[maybe_unused]] bool verbose,
                          const std::filesystem::path &workspace_dir) {
   logger::creating("consolidated workspace package");
 
@@ -926,7 +924,7 @@ find_package_files(const std::filesystem::path &dir, bool recursive = false) {
  * @param path Path to check
  * @return bool True if it's a final distribution package
  */
-static bool is_final_package(const std::filesystem::path &path) {
+[[maybe_unused]] static bool is_final_package(const std::filesystem::path &path) {
   // Only consider files directly in the packages directory (not in
   // subdirectories)
   std::string path_str = path.string();
@@ -968,7 +966,7 @@ display_only_final_packages(const std::vector<std::filesystem::path> &packages,
 
   logger::print_status("Package(s) created");
 
-  int count = 0;
+  size_t count = 0;
   for (const auto &package : packages) {
     // Skip files in _CPack_Packages which are intermediates
     if (package.string().find("_CPack_Packages") != std::string::npos ||
@@ -1873,7 +1871,7 @@ static bool check_generator_tools_installed(const std::string &generator) {
     return true;
   } else if (gen_upper == "DEB") {
     // Check for dpkg tools
-    bool dpkg_found = false;
+    [[maybe_unused]] bool dpkg_found = false;
 
 #ifdef _WIN32
     // DEB generator not well-supported on Windows
@@ -1901,7 +1899,7 @@ static bool check_generator_tools_installed(const std::string &generator) {
     return true;
   } else if (gen_upper == "RPM") {
     // Check for rpm tools
-    bool rpm_found = false;
+    [[maybe_unused]] bool rpm_found = false;
 
 #ifdef _WIN32
     // RPM generator not well-supported on Windows
@@ -2011,7 +2009,7 @@ static int move_files_to_directory(
  * packages to
  * @return bool Success flag
  */
-static bool package_single_project(
+[[maybe_unused]] static bool package_single_project(
     const std::filesystem::path &project_dir, toml_reader &project_config,
     const std::string &build_config, bool skip_build,
     const std::vector<std::string> &generators, bool verbose,
@@ -2455,7 +2453,7 @@ static bool package_single_project(
  * @param exclude_intermediate Whether to exclude intermediate files
  * @return std::vector<std::filesystem::path> List of package files
  */
-static std::vector<std::filesystem::path>
+[[maybe_unused]] static std::vector<std::filesystem::path>
 list_packages(const std::filesystem::path &dir,
               const std::string &project_name = "",
               bool exclude_intermediate = true) {
@@ -2650,9 +2648,8 @@ cforge_int_t cforge_cmd_package(const cforge_context_t *ctx) {
         logger::building("all projects in workspace before packaging");
         cforge_context_t build_ctx;
         memset(&build_ctx, 0, sizeof(build_ctx));
-        strncpy(build_ctx.working_dir, ctx->working_dir,
-                sizeof(build_ctx.working_dir) - 1);
-        build_ctx.working_dir[sizeof(build_ctx.working_dir) - 1] = '\0';
+        snprintf(build_ctx.working_dir, sizeof(build_ctx.working_dir), "%s",
+                 ctx->working_dir);
         build_ctx.args.command = strdup("build");
         build_ctx.args.config = strdup(config_name.c_str());
         if (verbose) {

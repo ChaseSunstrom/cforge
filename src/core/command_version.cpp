@@ -18,7 +18,7 @@ using namespace cforge;
  * @param ctx Context containing parsed arguments
  * @return cforge_int_t Exit code (0 for success)
  */
-cforge_int_t cforge_cmd_version(const cforge_context_t *ctx) {
+cforge_int_t cforge_cmd_version([[maybe_unused]] const cforge_context_t *ctx) {
   logger::print_action("Version",
                        "cforge version " + std::string(CFORGE_VERSION));
   logger::print_action("Info", "C++ Project Management Tool");

@@ -73,7 +73,7 @@ static std::filesystem::path get_vcpkg_path(const toml_reader *project_config) {
  * @param project_dir Directory containing the project
  * @return true if installed, false otherwise
  */
-static bool is_vcpkg_installed(const std::filesystem::path &project_dir) {
+[[maybe_unused]] static bool is_vcpkg_installed(const std::filesystem::path &project_dir) {
   std::filesystem::path vcpkg_dir = project_dir / "vcpkg";
   std::filesystem::path vcpkg_exe;
 
@@ -108,7 +108,7 @@ static bool is_vcpkg_installed(const std::filesystem::path &project_dir) {
  * @param verbose Show verbose output
  * @return true if successful, false otherwise
  */
-static bool clone_vcpkg(const std::filesystem::path &project_dir,
+[[maybe_unused]] static bool clone_vcpkg(const std::filesystem::path &project_dir,
                         bool verbose) {
   std::filesystem::path vcpkg_dir = project_dir / "vcpkg";
 
@@ -187,7 +187,7 @@ static bool clone_vcpkg(const std::filesystem::path &project_dir,
  * @param verbose Show verbose output
  * @return true if successful, false otherwise
  */
-static bool setup_vcpkg_integration(const std::filesystem::path &project_dir,
+[[maybe_unused]] static bool setup_vcpkg_integration(const std::filesystem::path &project_dir,
                                     bool verbose) {
   std::filesystem::path vcpkg_dir = project_dir / "vcpkg";
   std::filesystem::path vcpkg_exe;
@@ -260,8 +260,8 @@ static bool setup_vcpkg_integration(const std::filesystem::path &project_dir,
  * @param verbose Show verbose output
  * @return true if successful, false otherwise
  */
-static bool forward_to_vcpkg(const std::filesystem::path &project_dir,
-                             const cforge_command_args_t &args, bool verbose) {
+[[maybe_unused]] static bool forward_to_vcpkg(const std::filesystem::path &project_dir,
+                             const cforge_command_args_t &args, [[maybe_unused]] bool verbose) {
   std::filesystem::path vcpkg_dir = project_dir / "vcpkg";
   std::filesystem::path vcpkg_exe;
 

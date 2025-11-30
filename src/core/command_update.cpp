@@ -23,7 +23,7 @@ using namespace cforge;
  * @return std::map<std::string, std::string> Map of dependencies (name ->
  * version)
  */
-static std::map<std::string, std::string>
+[[maybe_unused]] static std::map<std::string, std::string>
 get_dependencies_from_config(const std::filesystem::path &config_file) {
   std::map<std::string, std::string> dependencies;
 

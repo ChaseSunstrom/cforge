@@ -47,7 +47,8 @@ cforge_int_t cforge_cmd_install(const cforge_context_t *ctx) {
   std::string install_path;
   std::string project_name_override;
   bool add_to_path = false;
-  bool have_from = false, have_to = false;
+  bool have_from = false;
+  [[maybe_unused]] bool have_to = false;
   std::string build_config;
   std::string env_var;
 
@@ -126,9 +127,8 @@ cforge_int_t cforge_cmd_install(const cforge_context_t *ctx) {
     cforge_context_t build_ctx;
     memset(&build_ctx, 0, sizeof(build_ctx));
     // Use same working dir and config
-    strncpy(build_ctx.working_dir, ctx->working_dir,
-            sizeof(build_ctx.working_dir) - 1);
-    build_ctx.working_dir[sizeof(build_ctx.working_dir) - 1] = '\0';
+    snprintf(build_ctx.working_dir, sizeof(build_ctx.working_dir), "%s",
+             ctx->working_dir);
     build_ctx.args.command = strdup("build");
     if (!build_config.empty()) {
       build_ctx.args.config = strdup(build_config.c_str());

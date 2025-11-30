@@ -93,7 +93,7 @@ std::vector<fs::path> find_benchmark_executables(const fs::path &build_dir,
 /**
  * @brief Parse Google Benchmark output
  */
-std::vector<benchmark_result>
+[[maybe_unused]] std::vector<benchmark_result>
 parse_google_benchmark_output(const std::string &output) {
   std::vector<benchmark_result> results;
 
@@ -144,7 +144,7 @@ std::string format_duration(double ns) {
 /**
  * @brief Run a simple benchmark on a function
  */
-void run_simple_benchmark(const std::string &name, std::function<void()> func,
+[[maybe_unused]] void run_simple_benchmark(const std::string &name, std::function<void()> func,
                           int iterations = 1000) {
   using namespace cforge;
 

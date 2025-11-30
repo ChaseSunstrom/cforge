@@ -28,7 +28,7 @@ using namespace cforge;
  * @param verbose Show verbose output
  * @return true if successful, false otherwise
  */
-static bool
+[[maybe_unused]] static bool
 remove_dependency_from_config(const std::filesystem::path &config_file,
                               const std::string &package_name, bool verbose) {
   // Read existing config file
@@ -291,7 +291,7 @@ remove_dependency_from_section(const std::filesystem::path &config_file,
     lines.erase(lines.begin() + line_to_remove);
 
     // Clean up empty lines around the removed dependency
-    if (line_to_remove < lines.size() && lines[line_to_remove].empty() &&
+    if (static_cast<size_t>(line_to_remove) < lines.size() && lines[line_to_remove].empty() &&
         (line_to_remove == 0 || lines[line_to_remove - 1].empty())) {
       lines.erase(lines.begin() + line_to_remove);
     }
@@ -329,7 +329,7 @@ remove_dependency_from_section(const std::filesystem::path &config_file,
   return true;
 }
 
-static bool
+[[maybe_unused]] static bool
 remove_vcpkg_dependency_from_config(const std::filesystem::path &config_file,
                                     const std::string &package_name,
                                     bool verbose) {
@@ -337,7 +337,7 @@ remove_vcpkg_dependency_from_config(const std::filesystem::path &config_file,
                                         package_name, verbose);
 }
 
-static bool
+[[maybe_unused]] static bool
 remove_git_dependency_from_config(const std::filesystem::path &config_file,
                                   const std::string &package_name,
                                   bool verbose) {

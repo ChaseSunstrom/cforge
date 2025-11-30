@@ -89,8 +89,8 @@ extern "C" cforge_int_t cforge_main(cforge_int_t argc, cforge_string_t argv[]) {
 
 // Win32 entry point
 #ifdef _WIN32
-cforge_int_t WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
-                            LPSTR lpCmdLine, cforge_int_t nCmdShow) {
+cforge_int_t WINAPI WinMain([[maybe_unused]] HINSTANCE hInstance, [[maybe_unused]] HINSTANCE hPrevInstance,
+                            [[maybe_unused]] LPSTR lpCmdLine, [[maybe_unused]] cforge_int_t nCmdShow) {
   // Get command line arguments using Windows API
   cforge_int_t argc;
   LPWSTR *argvW = CommandLineToArgvW(GetCommandLineW(), &argc);

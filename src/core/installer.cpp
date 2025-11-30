@@ -173,10 +173,10 @@ bool installer::update() {
 
 bool installer::install_project(const std::string &project_path,
                                 const std::string &install_path,
-                                bool add_to_path,
+                                [[maybe_unused]] bool add_to_path,
                                 const std::string &project_name_override,
                                 const std::string &build_config,
-                                const std::string &env_var) {
+                                [[maybe_unused]] const std::string &env_var) {
   // Report project source in verbose mode to avoid duplication
   print_verbose("Installing project from: " + project_path);
 

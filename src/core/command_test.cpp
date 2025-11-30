@@ -27,7 +27,7 @@ using namespace cforge;
 /**
  * @brief Find the test executable in the build directory
  */
-static std::filesystem::path
+[[maybe_unused]] static std::filesystem::path
 find_test_executable(const std::filesystem::path &build_dir,
                      const std::string &project_name, const std::string &config,
                      const std::string &test_executable_name = "") {
@@ -128,7 +128,7 @@ find_test_executable(const std::filesystem::path &build_dir,
 /**
  * @brief Run CTest in the build directory
  */
-static bool run_ctest(const std::filesystem::path &build_dir, bool verbose,
+[[maybe_unused]] static bool run_ctest(const std::filesystem::path &build_dir, bool verbose,
                       int jobs) {
   std::string command = "ctest";
   std::vector<std::string> args;

@@ -204,13 +204,15 @@ inline git_result git_pull(const std::filesystem::path &repo_dir,
  */
 inline std::string git_get_head_commit(const std::filesystem::path &repo_dir,
                                        bool short_hash = false) {
-  std::vector<std::string> args = {"rev-parse"};
+  std::vector<std::string> args;
+  args.reserve(3);
+  args.emplace_back("rev-parse");
 
   if (short_hash) {
-    args.push_back("--short");
+    args.emplace_back("--short");
   }
 
-  args.push_back("HEAD");
+  args.emplace_back("HEAD");
 
   git_result result = git_execute(args, repo_dir.string());
 

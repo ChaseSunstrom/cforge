@@ -31,11 +31,10 @@ using namespace cforge;
  * @param verbose Show verbose output
  * @return true if successful, false otherwise
  */
-static bool add_dependency_to_config(const std::filesystem::path &project_dir,
-                                     const std::filesystem::path &config_file,
-                                     const std::string &package_name,
-                                     const std::string &package_version,
-                                     bool verbose) {
+[[maybe_unused]] static bool add_dependency_to_config(
+    const std::filesystem::path & /*project_dir*/,
+    const std::filesystem::path &config_file, const std::string &package_name,
+    const std::string &package_version, bool verbose) {
   // Read existing config file
   std::string content;
   std::ifstream file(config_file);
@@ -380,7 +379,7 @@ static bool add_dependency_to_section(const std::filesystem::path &config_file,
 }
 
 static bool add_vcpkg_dependency_to_config(
-    const std::filesystem::path &project_dir,
+    const std::filesystem::path & /*project_dir*/,
     const std::filesystem::path &config_file, const std::string &package_name,
     const std::string &package_version, bool verbose) {
   // For vcpkg, we need to specify a version or use empty string for latest
@@ -396,7 +395,7 @@ static bool add_vcpkg_dependency_to_config(
 }
 
 static bool add_git_dependency_to_config(
-    const std::filesystem::path &project_dir,
+    const std::filesystem::path & /*project_dir*/,
     const std::filesystem::path &config_file, const std::string &package_name,
     const std::string &package_url, const std::string &tag, bool verbose) {
   // For git dependencies, we need both name and URL

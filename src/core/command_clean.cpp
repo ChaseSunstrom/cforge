@@ -56,7 +56,7 @@ find_all_build_dirs(const std::string &base_dir) {
  * @return bool Success flag
  */
 static bool clean_build_directory(const std::filesystem::path &build_dir,
-                                  bool verbose) {
+                                  bool /*verbose*/) {
   if (!std::filesystem::exists(build_dir)) {
     logger::print_status("Build directory does not exist, nothing to clean: " +
                          build_dir.string());
@@ -167,7 +167,8 @@ static bool clean_cmake_files(bool verbose) {
  */
 static bool regenerate_cmake_files(const std::filesystem::path &project_dir,
                                    const std::filesystem::path &build_dir,
-                                   const std::string &config, bool verbose) {
+                                   [[maybe_unused]] const std::string &config,
+                                   bool verbose) {
   // Check if build directory exists, create if not
   if (!std::filesystem::exists(build_dir)) {
     try {
@@ -243,7 +244,7 @@ cforge_int_t cforge_cmd_clean(const cforge_context_t *ctx) {
     bool clean_all = false;
     bool clean_cmake = true;
     bool regenerate = false;
-    bool deep = false;
+    // bool deep = false; // Reserved for future deep clean functionality
     std::string config_name;
     bool verbose = logger::get_verbosity() == log_verbosity::VERBOSITY_VERBOSE;
     for (int i = 0; i < ctx->args.arg_count; ++i) {
@@ -254,8 +255,7 @@ cforge_int_t cforge_cmd_clean(const cforge_context_t *ctx) {
         clean_cmake = false;
       else if (arg == "--regenerate")
         regenerate = true;
-      else if (arg == "--deep")
-        deep = true;
+      // --deep flag reserved for future use
       else if ((arg == "--config" || arg == "-c") &&
                i + 1 < ctx->args.arg_count) {
         config_name = ctx->args.args[++i];
