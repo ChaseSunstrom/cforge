@@ -129,11 +129,11 @@ jobs:
         exe="$(pwd)/build/bin/Release/cforge"
         chmod +x "$exe"
 
-        # Create TGZ package
-        "$exe" pack -c Release -t TGZ || echo "TGZ packaging failed"
+        # Create TGZ package (--no-build because exe is already built)
+        "$exe" pack -c Release -t TGZ --no-build || echo "TGZ packaging failed"
 
         # Create DEB package
-        "$exe" pack -c Release -t DEB || echo "DEB packaging failed"
+        "$exe" pack -c Release -t DEB --no-build || echo "DEB packaging failed"
 
         # Also copy the raw executable
         cp "$exe" packages/cforge-linux-x64 || true
@@ -149,8 +149,8 @@ jobs:
         exe="$(pwd)/build/bin/Release/cforge"
         chmod +x "$exe"
 
-        # Create TGZ package
-        "$exe" pack -c Release -t TGZ || echo "TGZ packaging failed"
+        # Create TGZ package (--no-build because exe is already built)
+        "$exe" pack -c Release -t TGZ --no-build || echo "TGZ packaging failed"
 
         # Also copy the raw executable
         arch=$(uname -m)
@@ -166,8 +166,8 @@ jobs:
       run: |
         $exe = Join-Path $PWD 'build\bin\Release\cforge.exe'
 
-        # Create ZIP package
-        & $exe pack -c Release -t ZIP
+        # Create ZIP package (--no-build because exe is already built and currently running)
+        & $exe pack -c Release -t ZIP --no-build
         if ($LASTEXITCODE -ne 0) {
           Write-Host "ZIP packaging failed"
         }
