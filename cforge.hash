@@ -1,0 +1,18 @@
+# cforge.hash - Build cache file
+# This file is auto-generated to track dependency state for incremental builds.
+# Do not commit to version control.
+
+[metadata]
+generated = "2025-11-30T05:56:51Z"
+
+[config]
+hash = "4e238430c5a1e4fc"
+
+[dependency.fmt]
+hash = "ae106efc340d4de2"
+version = "11.1.4"
+
+[dependency.tomlplusplus]
+hash = "9ff9c15464c00e66"
+version = "v3.4.0"
+

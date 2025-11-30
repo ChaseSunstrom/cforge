@@ -1,3 +1,8 @@
+/**
+ * @file dependency_hash.cpp
+ * @brief Implementation of dependency hashing for incremental builds
+ */
+
 #include "core/dependency_hash.hpp"
 #include <algorithm>
 #include <filesystem>
@@ -22,18 +27,57 @@ bool dependency_hash::load(const std::filesystem::path &project_dir) {
 
   hashes.clear();
   versions.clear();
-  std::string line;
-  while (std::getline(file, line)) {
-    auto sep = line.find('=');
-    if (sep != std::string::npos) {
-      std::string name = line.substr(0, sep);
-      std::string value = line.substr(sep + 1);
 
-      // Version entries are prefixed with "version:"
-      if (name.substr(0, 8) == "version:") {
-        versions[name.substr(8)] = value;
+  std::string line;
+  std::string current_section;
+  std::string current_dep;
+
+  while (std::getline(file, line)) {
+    // Skip empty lines and comments
+    line = trim(line);
+    if (line.empty() || line[0] == '#') {
+      continue;
+    }
+
+    // Check for section header [section] or [dependency.name]
+    if (line[0] == '[' && line.back() == ']') {
+      current_section = line.substr(1, line.length() - 2);
+
+      // Check if it's a dependency section
+      if (current_section.find("dependency.") == 0) {
+        current_dep = current_section.substr(11); // Remove "dependency."
       } else {
-        hashes[name] = value;
+        current_dep.clear();
+      }
+      continue;
+    }
+
+    // Parse key = "value" pairs
+    size_t eq_pos = line.find('=');
+    if (eq_pos != std::string::npos) {
+      std::string key = trim(line.substr(0, eq_pos));
+      std::string value = trim(line.substr(eq_pos + 1));
+
+      // Remove quotes if present
+      if (value.length() >= 2 && value.front() == '"' && value.back() == '"') {
+        value = value.substr(1, value.length() - 2);
+      }
+
+      // Handle config section (for cforge.toml hash, etc.)
+      if (current_section == "config") {
+        if (key == "hash") {
+          hashes["cforge.toml"] = value;
+        } else if (key == "workspace_hash") {
+          hashes["cforge.workspace.toml"] = value;
+        }
+      }
+      // Handle dependency sections
+      else if (!current_dep.empty()) {
+        if (key == "hash") {
+          hashes[current_dep] = value;
+        } else if (key == "version") {
+          versions[current_dep] = value;
+        }
       }
     }
   }
@@ -48,14 +92,52 @@ bool dependency_hash::save(const std::filesystem::path &project_dir) const {
     return false;
   }
 
-  // Save hashes
+  // Write header
+  file << "# cforge.hash - Build cache file\n";
+  file << "# This file is auto-generated to track dependency state for "
+          "incremental builds.\n";
+  file << "# Do not commit to version control.\n\n";
+
+  // Write metadata
+  file << "[metadata]\n";
+  file << "generated = \"" << get_timestamp() << "\"\n\n";
+
+  // Write config hashes (cforge.toml, workspace config, etc.)
+  bool has_config = false;
   for (const auto &[name, hash] : hashes) {
-    file << name << "=" << hash << "\n";
+    if (name == "cforge.toml" || name == "cforge.workspace.toml") {
+      if (!has_config) {
+        file << "[config]\n";
+        has_config = true;
+      }
+      if (name == "cforge.toml") {
+        file << "hash = \"" << hash << "\"\n";
+      } else if (name == "cforge.workspace.toml") {
+        file << "workspace_hash = \"" << hash << "\"\n";
+      }
+    }
+  }
+  if (has_config) {
+    file << "\n";
   }
 
-  // Save versions with "version:" prefix
-  for (const auto &[name, version] : versions) {
-    file << "version:" << name << "=" << version << "\n";
+  // Write dependency hashes
+  for (const auto &[name, hash] : hashes) {
+    // Skip config entries (already written above)
+    if (name == "cforge.toml" || name == "cforge.workspace.toml") {
+      continue;
+    }
+
+    file << "[dependency." << name << "]\n";
+    file << "hash = \"" << hash << "\"\n";
+
+    // Include version if available
+    auto version_it = versions.find(name);
+    if (version_it != versions.end() && !version_it->second.empty()) {
+      file << "version = \"" << version_it->second << "\"\n";
+    }
+
+    file << "\n";
   }
 
   return true;

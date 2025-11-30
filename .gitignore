@@ -3,6 +3,7 @@ build/
 
 # Vendor dependencies (fetched by CMake FetchContent)
 vendor/
+
 out/
 build-debug/
 build-release/
