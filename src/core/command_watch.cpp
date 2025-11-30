@@ -3,6 +3,11 @@
  * @brief Implementation of the watch command for auto-rebuild on file changes
  */
 
+// Prevent Windows min/max macros from conflicting with std::min/max
+#ifdef _WIN32
+#define NOMINMAX
+#endif
+
 #include "cforge/log.hpp"
 #include "core/commands.hpp"
 #include "core/process_utils.hpp"

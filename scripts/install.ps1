@@ -285,7 +285,14 @@ function Build-Cforge {
         if ($VerboseOutput) {
             & cmake @cmakeArgs
         } else {
-            & cmake @cmakeArgs *> $null
+            $configOutput = & cmake @cmakeArgs 2>&1
+        }
+
+        if ($LASTEXITCODE -ne 0) {
+            $ErrorActionPreference = $prevErrorAction
+            Write-Err "CMake configuration failed!"
+            if ($configOutput) { Write-Host $configOutput }
+            exit 1
         }
 
         Write-Info "Building cforge..."
@@ -293,7 +300,14 @@ function Build-Cforge {
         if ($VerboseOutput) {
             cmake --build build --config Release -j $jobs
         } else {
-            cmake --build build --config Release -j $jobs *> $null
+            $buildOutput = cmake --build build --config Release -j $jobs 2>&1
+        }
+
+        if ($LASTEXITCODE -ne 0) {
+            $ErrorActionPreference = $prevErrorAction
+            Write-Err "Build failed!"
+            if ($buildOutput) { Write-Host $buildOutput }
+            exit 1
         }
 
         $ErrorActionPreference = $prevErrorAction
