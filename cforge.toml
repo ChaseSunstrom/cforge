@@ -1,6 +1,6 @@
 [project]
 name = "cforge"
-version = "2.2.0"
+version = "2.2.1"
 description = "A C/C++ build tool with dependency management"
 cpp_standard = "17"
 binary_type = "executable"
