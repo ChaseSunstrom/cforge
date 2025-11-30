@@ -4,7 +4,7 @@
  */
 
 #include "test_framework.h"
-#include "../include/core/version.hpp"
+#include "core/version.hpp"
 
 using namespace cforge;
 

@@ -5,6 +5,7 @@
 
 #include "test_framework.h"
 #include "core/lockfile.hpp"
+#include "cforge/log.cpp" // prevent errors
 
 #include <filesystem>
 #include <fstream>

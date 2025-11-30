@@ -19,6 +19,8 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include <filesystem>
+#include "core/process_utils.hpp"
 
 namespace cforge {
 

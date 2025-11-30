@@ -1,15 +1,23 @@
 #include "test_framework.h"
-#include <algorithm>
 #include <stdio.h>
 #include <string>
 #include <vector>
+#include <algorithm>
 
-// Basic math tests (from test_test.cpp)
+int Lockfile_LoadMissing();
+int Lockfile_LoadValid();
+int Lockfile_SaveAndReload();
+int Lockfile_RemoveDependency();
+int Lockfile_Clear();
+int Lockfile_Exists();
+int Lockfile_QuotedValues();
+int Lockfile_SkipsComments();
+int Lockfile_MultipleDependencies();
+int Lockfile_GetNonexistent();
+int Lockfile_VcpkgWithTriplet();
 int Math_Add();
 int Math_Subtract();
 int Divide();
-
-// Version tests (from test_version.cpp)
 int Version_ParseSimple();
 int Version_ParseWithV();
 int Version_ParseWithPrerelease();
@@ -37,70 +45,48 @@ int Version_FindBest();
 int Version_FindBestRange();
 int Version_FindBestNone();
 
-// Lockfile tests (from test_lockfile.cpp)
-int Lockfile_LoadMissing();
-int Lockfile_LoadValid();
-int Lockfile_SaveAndReload();
-int Lockfile_RemoveDependency();
-int Lockfile_Clear();
-int Lockfile_Exists();
-int Lockfile_QuotedValues();
-int Lockfile_SkipsComments();
-int Lockfile_MultipleDependencies();
-int Lockfile_GetNonexistent();
-int Lockfile_VcpkgWithTriplet();
-
-struct test_entry {
-  const char *full;
-  int (*fn)();
-};
+struct test_entry { const char* full; int (*fn)(); };
 static test_entry tests[] = {
-    // Basic math tests
-    {"Math.Add", Math_Add},
-    {"Math.Subtract", Math_Subtract},
-    {"Divide", Divide},
-    // Version parsing tests
-    {"Version.ParseSimple", Version_ParseSimple},
-    {"Version.ParseWithV", Version_ParseWithV},
-    {"Version.ParseWithPrerelease", Version_ParseWithPrerelease},
-    {"Version.ParseWithBuild", Version_ParseWithBuild},
-    {"Version.ParseFull", Version_ParseFull},
-    {"Version.ParseTwoParts", Version_ParseTwoParts},
-    {"Version.ParseOnePart", Version_ParseOnePart},
-    {"Version.ParseInvalid", Version_ParseInvalid},
-    // Version comparison tests
-    {"Version.CompareMajor", Version_CompareMajor},
-    {"Version.CompareMinor", Version_CompareMinor},
-    {"Version.ComparePatch", Version_ComparePatch},
-    {"Version.CompareEqual", Version_CompareEqual},
-    {"Version.ComparePrerelease", Version_ComparePrerelease},
-    // Constraint tests
-    {"Constraint.Exact", Constraint_Exact},
-    {"Constraint.GreaterThan", Constraint_GreaterThan},
-    {"Constraint.GreaterThanOrEqual", Constraint_GreaterThanOrEqual},
-    {"Constraint.LessThan", Constraint_LessThan},
-    {"Constraint.LessThanOrEqual", Constraint_LessThanOrEqual},
-    {"Constraint.Range", Constraint_Range},
-    {"Constraint.Caret", Constraint_Caret},
-    {"Constraint.CaretZero", Constraint_CaretZero},
-    {"Constraint.Tilde", Constraint_Tilde},
-    {"Constraint.Any", Constraint_Any},
-    // Find best version tests
-    {"Version.FindBest", Version_FindBest},
-    {"Version.FindBestRange", Version_FindBestRange},
-    {"Version.FindBestNone", Version_FindBestNone},
-    // Lockfile tests
-    {"Lockfile.LoadMissing", Lockfile_LoadMissing},
-    {"Lockfile.LoadValid", Lockfile_LoadValid},
-    {"Lockfile.SaveAndReload", Lockfile_SaveAndReload},
-    {"Lockfile.RemoveDependency", Lockfile_RemoveDependency},
-    {"Lockfile.Clear", Lockfile_Clear},
-    {"Lockfile.Exists", Lockfile_Exists},
-    {"Lockfile.QuotedValues", Lockfile_QuotedValues},
-    {"Lockfile.SkipsComments", Lockfile_SkipsComments},
-    {"Lockfile.MultipleDependencies", Lockfile_MultipleDependencies},
-    {"Lockfile.GetNonexistent", Lockfile_GetNonexistent},
-    {"Lockfile.VcpkgWithTriplet", Lockfile_VcpkgWithTriplet},
+  {"Lockfile.LoadMissing", Lockfile_LoadMissing},
+  {"Lockfile.LoadValid", Lockfile_LoadValid},
+  {"Lockfile.SaveAndReload", Lockfile_SaveAndReload},
+  {"Lockfile.RemoveDependency", Lockfile_RemoveDependency},
+  {"Lockfile.Clear", Lockfile_Clear},
+  {"Lockfile.Exists", Lockfile_Exists},
+  {"Lockfile.QuotedValues", Lockfile_QuotedValues},
+  {"Lockfile.SkipsComments", Lockfile_SkipsComments},
+  {"Lockfile.MultipleDependencies", Lockfile_MultipleDependencies},
+  {"Lockfile.GetNonexistent", Lockfile_GetNonexistent},
+  {"Lockfile.VcpkgWithTriplet", Lockfile_VcpkgWithTriplet},
+  {"Math.Add", Math_Add},
+  {"Math.Subtract", Math_Subtract},
+  {"Divide", Divide},
+  {"Version.ParseSimple", Version_ParseSimple},
+  {"Version.ParseWithV", Version_ParseWithV},
+  {"Version.ParseWithPrerelease", Version_ParseWithPrerelease},
+  {"Version.ParseWithBuild", Version_ParseWithBuild},
+  {"Version.ParseFull", Version_ParseFull},
+  {"Version.ParseTwoParts", Version_ParseTwoParts},
+  {"Version.ParseOnePart", Version_ParseOnePart},
+  {"Version.ParseInvalid", Version_ParseInvalid},
+  {"Version.CompareMajor", Version_CompareMajor},
+  {"Version.CompareMinor", Version_CompareMinor},
+  {"Version.ComparePatch", Version_ComparePatch},
+  {"Version.CompareEqual", Version_CompareEqual},
+  {"Version.ComparePrerelease", Version_ComparePrerelease},
+  {"Constraint.Exact", Constraint_Exact},
+  {"Constraint.GreaterThan", Constraint_GreaterThan},
+  {"Constraint.GreaterThanOrEqual", Constraint_GreaterThanOrEqual},
+  {"Constraint.LessThan", Constraint_LessThan},
+  {"Constraint.LessThanOrEqual", Constraint_LessThanOrEqual},
+  {"Constraint.Range", Constraint_Range},
+  {"Constraint.Caret", Constraint_Caret},
+  {"Constraint.CaretZero", Constraint_CaretZero},
+  {"Constraint.Tilde", Constraint_Tilde},
+  {"Constraint.Any", Constraint_Any},
+  {"Version.FindBest", Version_FindBest},
+  {"Version.FindBestRange", Version_FindBestRange},
+  {"Version.FindBestNone", Version_FindBestNone},
 };
 
 int main(int argc, char** argv) {
