@@ -14,13 +14,16 @@ int divide(int a, int b) {
 
 TEST(Math, Add) {
     cf_assert(add(2, 2) == 4);
+    return 0;
 }
 
 
 TEST(Math, Subtract) {
     cf_assert(subtract(2, 2) == 0);
+    return 0;
 }
 
 TEST(Divide) {
     cf_assert(divide(2, 2) == 1);
+    return 0;
 }

@@ -200,15 +200,17 @@ static bool update_dependencies_with_vcpkg(
 }
 
 // Add function to update Git dependencies based on [dependencies.git] table
-static bool update_dependencies_with_git(const std::filesystem::path &project_dir,
-                                        const toml_reader &config,
-                                        bool verbose) {
+static bool
+update_dependencies_with_git(const std::filesystem::path &project_dir,
+                             const toml_reader &config, bool verbose) {
   std::filesystem::path deps_dir = project_dir / "deps";
   bool all_success = true;
   for (const auto &name : config.get_table_keys("dependencies.git")) {
-    std::string url = config.get_string("dependencies.git." + name + ".url", "");
+    std::string url =
+        config.get_string("dependencies.git." + name + ".url", "");
     if (url.empty()) {
-      if (verbose) logger::print_warning("No URL specified for git dependency: " + name);
+      if (verbose)
+        logger::print_warning("No URL specified for git dependency: " + name);
       continue;
     }
     std::filesystem::path repo_path = deps_dir / name;
@@ -216,7 +218,10 @@ static bool update_dependencies_with_git(const std::filesystem::path &project_di
       logger::updating(name);
       auto result = execute_process(
           "git", {"pull"}, repo_path.string(),
-          [verbose](const std::string &line) { if (verbose) logger::print_verbose(line); },
+          [verbose](const std::string &line) {
+            if (verbose)
+              logger::print_verbose(line);
+          },
           [](const std::string &line) { logger::print_error(line); });
       if (!result.success) {
         logger::print_error("Failed to update git dependency: " + name);
@@ -226,7 +231,10 @@ static bool update_dependencies_with_git(const std::filesystem::path &project_di
       logger::print_action("Cloning", name);
       auto result = execute_process(
           "git", {"clone", url, repo_path.string()}, "",
-          [verbose](const std::string &line) { if (verbose) logger::print_verbose(line); },
+          [verbose](const std::string &line) {
+            if (verbose)
+              logger::print_verbose(line);
+          },
           [](const std::string &line) { logger::print_error(line); });
       if (!result.success) {
         logger::print_error("Failed to clone git dependency: " + name);
@@ -310,8 +318,7 @@ cforge_int_t cforge_cmd_update(const cforge_context_t *ctx) {
     }
 
     if (ok) {
-      logger::finished("cforge updated successfully to path: " +
-                            install_path);
+      logger::finished("cforge updated successfully to path: " + install_path);
       return 0;
     } else {
       logger::print_error("cforge update failed");
@@ -333,13 +340,15 @@ cforge_int_t cforge_cmd_update(const cforge_context_t *ctx) {
   // Load project configuration
   toml_reader config;
   if (!config.load(config_file.string())) {
-    logger::print_error("Failed to parse configuration file: " + config_file.string());
+    logger::print_error("Failed to parse configuration file: " +
+                        config_file.string());
     return 1;
   }
   // Update vcpkg-managed dependencies from [dependencies.vcpkg]
   std::map<std::string, std::string> vcpkg_deps;
   for (const auto &key : config.get_table_keys("dependencies.vcpkg")) {
-    vcpkg_deps[key] = config.get_string(std::string("dependencies.vcpkg.") + key, "*");
+    vcpkg_deps[key] =
+        config.get_string(std::string("dependencies.vcpkg.") + key, "*");
   }
   bool deps_updated = update_dependencies_with_vcpkg(cwd, vcpkg_deps, verbose);
   if (!deps_updated) {

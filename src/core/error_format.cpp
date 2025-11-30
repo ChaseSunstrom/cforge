@@ -76,14 +76,17 @@ std::string format_build_errors(const std::string &error_output) {
   }
 
   // Deduplicate similar errors (especially linker errors)
-  filtered_diagnostics = deduplicate_diagnostics(std::move(filtered_diagnostics));
+  filtered_diagnostics =
+      deduplicate_diagnostics(std::move(filtered_diagnostics));
 
-  // Add library suggestions to linker errors and generate fix suggestions for all
+  // Add library suggestions to linker errors and generate fix suggestions for
+  // all
   for (auto &diag : filtered_diagnostics) {
     if (diag.code.find("LNK") != std::string::npos ||
         diag.code.find("UNDEFINED") != std::string::npos) {
       // Try to extract symbol and suggest library
-      std::regex symbol_regex(R"((?:undefined|unresolved)[^`'\"]*[`'\"]([^`'\"]+)[`'\"])");
+      std::regex symbol_regex(
+          R"((?:undefined|unresolved)[^`'\"]*[`'\"]([^`'\"]+)[`'\"])");
       std::smatch match;
       if (std::regex_search(diag.message, match, symbol_regex)) {
         std::string suggested_lib = suggest_library_for_symbol(match[1].str());
@@ -104,7 +107,9 @@ std::string format_build_errors(const std::string &error_output) {
     // Add occurrence count to message if > 1
     if (diag.occurrence_count > 1) {
       diagnostic diag_copy = diag;
-      diag_copy.message = diag.message + " (" + std::to_string(diag.occurrence_count) + " occurrences)";
+      diag_copy.message = diag.message + " (" +
+                          std::to_string(diag.occurrence_count) +
+                          " occurrences)";
       ss << format_diagnostic_to_string(diag_copy);
     } else {
       ss << format_diagnostic_to_string(diag);
@@ -153,7 +158,8 @@ std::string format_diagnostic_to_string(const diagnostic &diag) {
   if (!diag.code.empty()) {
     ss << fmt::format(fg(level_color) | fmt::emphasis::bold, "[{}]", diag.code);
   }
-  ss << fmt::format(fg(fmt::color::white) | fmt::emphasis::bold, ": {}\n", diag.message);
+  ss << fmt::format(fg(fmt::color::white) | fmt::emphasis::bold, ": {}\n",
+                    diag.message);
 
   // File location: " --> src/main.cpp:10:5"
   if (!diag.file_path.empty()) {
@@ -172,13 +178,15 @@ std::string format_diagnostic_to_string(const diagnostic &diag) {
   if (!diag.line_content.empty() && diag.line_number > 0) {
     // Calculate gutter width based on line number
     int gutter_width = std::to_string(diag.line_number).length();
-    if (gutter_width < 2) gutter_width = 2;
+    if (gutter_width < 2)
+      gutter_width = 2;
 
     // Empty line before code
     ss << fmt::format(fg(fmt::color::cyan), "{:>{}} |\n", "", gutter_width);
 
     // The actual code line
-    ss << fmt::format(fg(fmt::color::cyan), "{:>{}} | ", diag.line_number, gutter_width);
+    ss << fmt::format(fg(fmt::color::cyan), "{:>{}} | ", diag.line_number,
+                      gutter_width);
     ss << diag.line_content << "\n";
 
     // The error pointer line
@@ -190,23 +198,27 @@ std::string format_diagnostic_to_string(const diagnostic &diag) {
 
       // Try to find the token length
       if (col < diag.line_content.length()) {
-        if (std::isalnum(diag.line_content[col]) || diag.line_content[col] == '_') {
+        if (std::isalnum(diag.line_content[col]) ||
+            diag.line_content[col] == '_') {
           size_t start = col;
           size_t end = col;
 
           // Find token boundaries
           while (end < diag.line_content.length() &&
-                 (std::isalnum(diag.line_content[end]) || diag.line_content[end] == '_')) {
+                 (std::isalnum(diag.line_content[end]) ||
+                  diag.line_content[end] == '_')) {
             end++;
           }
           token_length = end - start;
-          if (token_length == 0) token_length = 1;
+          if (token_length == 0)
+            token_length = 1;
         }
       }
 
       // Print spaces then carets
       ss << std::string(col, ' ');
-      ss << fmt::format(fg(level_color) | fmt::emphasis::bold, "{}\n", std::string(token_length, '^'));
+      ss << fmt::format(fg(level_color) | fmt::emphasis::bold, "{}\n",
+                        std::string(token_length, '^'));
     } else {
       ss << fmt::format(fg(level_color) | fmt::emphasis::bold, "^\n");
     }
@@ -214,22 +226,26 @@ std::string format_diagnostic_to_string(const diagnostic &diag) {
 
   // Notes
   for (const auto &note : diag.notes) {
-    ss << fmt::format(fg(fmt::color::cyan) | fmt::emphasis::bold, "   = note: ");
+    ss << fmt::format(fg(fmt::color::cyan) | fmt::emphasis::bold,
+                      "   = note: ");
     ss << note << "\n";
   }
 
   // Help text
   std::string help = diag.help.empty() ? diag.help_text : diag.help;
   if (!help.empty()) {
-    ss << fmt::format(fg(fmt::color::green) | fmt::emphasis::bold, "   = help: ");
+    ss << fmt::format(fg(fmt::color::green) | fmt::emphasis::bold,
+                      "   = help: ");
     ss << help << "\n";
   }
 
   // Fix suggestions
   if (!diag.fixes.empty()) {
-    for (size_t i = 0; i < diag.fixes.size() && i < 3; ++i) {  // Limit to 3 suggestions
+    for (size_t i = 0; i < diag.fixes.size() && i < 3;
+         ++i) { // Limit to 3 suggestions
       const auto &fix = diag.fixes[i];
-      ss << fmt::format(fg(fmt::color::magenta) | fmt::emphasis::bold, "   = fix: ");
+      ss << fmt::format(fg(fmt::color::magenta) | fmt::emphasis::bold,
+                        "   = fix: ");
       ss << fix.description;
       if (!fix.replacement.empty() && fix.replacement.length() < 40) {
         ss << fmt::format(fg(fmt::color::gray), " -> ");
@@ -238,7 +254,8 @@ std::string format_diagnostic_to_string(const diagnostic &diag) {
       ss << "\n";
     }
     if (diag.fixes.size() > 3) {
-      ss << fmt::format(fg(fmt::color::gray), "   = ... and {} more suggestion(s)\n",
+      ss << fmt::format(fg(fmt::color::gray),
+                        "   = ... and {} more suggestion(s)\n",
                         diag.fixes.size() - 3);
     }
   }
@@ -258,29 +275,37 @@ std::vector<diagnostic> extract_diagnostics(const std::string &error_output) {
 
   // Try parsing with each error parser
   auto compiler_diags = parse_compiler_errors(error_output);
-  all_diagnostics.insert(all_diagnostics.end(), compiler_diags.begin(), compiler_diags.end());
+  all_diagnostics.insert(all_diagnostics.end(), compiler_diags.begin(),
+                         compiler_diags.end());
 
   auto gcc_clang_diags = parse_gcc_clang_errors(error_output);
-  all_diagnostics.insert(all_diagnostics.end(), gcc_clang_diags.begin(), gcc_clang_diags.end());
+  all_diagnostics.insert(all_diagnostics.end(), gcc_clang_diags.begin(),
+                         gcc_clang_diags.end());
 
   auto msvc_diags = parse_msvc_errors(error_output);
-  all_diagnostics.insert(all_diagnostics.end(), msvc_diags.begin(), msvc_diags.end());
+  all_diagnostics.insert(all_diagnostics.end(), msvc_diags.begin(),
+                         msvc_diags.end());
 
   auto cmake_diags = parse_cmake_errors(error_output);
-  all_diagnostics.insert(all_diagnostics.end(), cmake_diags.begin(), cmake_diags.end());
+  all_diagnostics.insert(all_diagnostics.end(), cmake_diags.begin(),
+                         cmake_diags.end());
 
   auto ninja_diags = parse_ninja_errors(error_output);
-  all_diagnostics.insert(all_diagnostics.end(), ninja_diags.begin(), ninja_diags.end());
+  all_diagnostics.insert(all_diagnostics.end(), ninja_diags.begin(),
+                         ninja_diags.end());
 
   auto linker_diags = parse_linker_errors(error_output);
-  all_diagnostics.insert(all_diagnostics.end(), linker_diags.begin(), linker_diags.end());
+  all_diagnostics.insert(all_diagnostics.end(), linker_diags.begin(),
+                         linker_diags.end());
 
   auto cpack_diags = parse_cpack_errors(error_output);
-  all_diagnostics.insert(all_diagnostics.end(), cpack_diags.begin(), cpack_diags.end());
+  all_diagnostics.insert(all_diagnostics.end(), cpack_diags.begin(),
+                         cpack_diags.end());
 
   // Parse template errors (these are often missed by standard parsers)
   auto template_diags = parse_template_errors(error_output);
-  all_diagnostics.insert(all_diagnostics.end(), template_diags.begin(), template_diags.end());
+  all_diagnostics.insert(all_diagnostics.end(), template_diags.begin(),
+                         template_diags.end());
 
   return all_diagnostics;
 }
@@ -289,13 +314,17 @@ std::vector<diagnostic> parse_compiler_errors(const std::string &error_output) {
   std::vector<diagnostic> diagnostics;
 
   // Regular expressions for common compiler error patterns
-  std::regex missing_header_regex(R"(fatal error: ([^:]+): No such file or directory)");
-  std::regex include_error_regex(R"(fatal error: ([^:]+): Cannot open include file)");
+  std::regex missing_header_regex(
+      R"(fatal error: ([^:]+): No such file or directory)");
+  std::regex include_error_regex(
+      R"(fatal error: ([^:]+): Cannot open include file)");
   std::regex syntax_error_regex(R"(error: expected ([^:]+) before ([^:]+))");
   std::regex undefined_reference_regex(R"(undefined reference to `([^']+)')");
   std::regex redefinition_regex(R"(redefinition of '([^']+)')");
-  std::regex type_mismatch_regex(R"(error: cannot convert '([^']+)' to '([^']+)')");
-  std::regex undeclared_identifier_regex(R"(error: '([^']+)' was not declared in this scope)");
+  std::regex type_mismatch_regex(
+      R"(error: cannot convert '([^']+)' to '([^']+)')");
+  std::regex undeclared_identifier_regex(
+      R"(error: '([^']+)' was not declared in this scope)");
 
   std::string line;
   std::istringstream stream(error_output);
@@ -309,8 +338,10 @@ std::vector<diagnostic> parse_compiler_errors(const std::string &error_output) {
       diag.level = diagnostic_level::ERROR;
       diag.code = "COMPILER-MISSING-HEADER";
       diag.message = "Missing header file: " + matches[1].str();
-      diag.help_text = "Make sure the header file exists and is in the include path. "
-                      "You may need to add the directory to your include paths in cforge.toml.";
+      diag.help_text =
+          "Make sure the header file exists and is in the include path. "
+          "You may need to add the directory to your include paths in "
+          "cforge.toml.";
       diagnostics.push_back(diag);
       continue;
     }
@@ -320,8 +351,9 @@ std::vector<diagnostic> parse_compiler_errors(const std::string &error_output) {
       diag.level = diagnostic_level::ERROR;
       diag.code = "COMPILER-INCLUDE-ERROR";
       diag.message = "Cannot open include file: " + matches[1].str();
-      diag.help_text = "Check that the include file exists and is accessible. "
-                      "Verify include paths in your cforge.toml configuration.";
+      diag.help_text =
+          "Check that the include file exists and is accessible. "
+          "Verify include paths in your cforge.toml configuration.";
       diagnostics.push_back(diag);
       continue;
     }
@@ -330,8 +362,10 @@ std::vector<diagnostic> parse_compiler_errors(const std::string &error_output) {
     if (std::regex_search(line, matches, syntax_error_regex)) {
       diag.level = diagnostic_level::ERROR;
       diag.code = "COMPILER-SYNTAX-ERROR";
-      diag.message = "Expected " + matches[1].str() + " before " + matches[2].str();
-      diag.help_text = "Check your syntax and make sure all brackets, parentheses, and semicolons are properly matched.";
+      diag.message =
+          "Expected " + matches[1].str() + " before " + matches[2].str();
+      diag.help_text = "Check your syntax and make sure all brackets, "
+                       "parentheses, and semicolons are properly matched.";
       diagnostics.push_back(diag);
       continue;
     }
@@ -341,8 +375,9 @@ std::vector<diagnostic> parse_compiler_errors(const std::string &error_output) {
       diag.level = diagnostic_level::ERROR;
       diag.code = "COMPILER-UNDEFINED-REFERENCE";
       diag.message = "Undefined reference to: " + matches[1].str();
-      diag.help_text = "Make sure the function or variable is defined and linked properly. "
-                      "Check that all required libraries are linked in your cforge.toml.";
+      diag.help_text =
+          "Make sure the function or variable is defined and linked properly. "
+          "Check that all required libraries are linked in your cforge.toml.";
       diagnostics.push_back(diag);
       continue;
     }
@@ -352,8 +387,9 @@ std::vector<diagnostic> parse_compiler_errors(const std::string &error_output) {
       diag.level = diagnostic_level::ERROR;
       diag.code = "COMPILER-REDEFINITION";
       diag.message = "Redefinition of: " + matches[1].str();
-      diag.help_text = "The symbol is defined more than once. Check for duplicate definitions "
-                      "or missing include guards in header files.";
+      diag.help_text = "The symbol is defined more than once. Check for "
+                       "duplicate definitions "
+                       "or missing include guards in header files.";
       diagnostics.push_back(diag);
       continue;
     }
@@ -362,9 +398,11 @@ std::vector<diagnostic> parse_compiler_errors(const std::string &error_output) {
     if (std::regex_search(line, matches, type_mismatch_regex)) {
       diag.level = diagnostic_level::ERROR;
       diag.code = "COMPILER-TYPE-MISMATCH";
-      diag.message = "Cannot convert from " + matches[1].str() + " to " + matches[2].str();
-      diag.help_text = "Check that the types match in your assignment or function call. "
-                      "You may need to add an explicit cast or use the correct type.";
+      diag.message =
+          "Cannot convert from " + matches[1].str() + " to " + matches[2].str();
+      diag.help_text =
+          "Check that the types match in your assignment or function call. "
+          "You may need to add an explicit cast or use the correct type.";
       diagnostics.push_back(diag);
       continue;
     }
@@ -375,7 +413,7 @@ std::vector<diagnostic> parse_compiler_errors(const std::string &error_output) {
       diag.code = "COMPILER-UNDECLARED";
       diag.message = "Undeclared identifier: " + matches[1].str();
       diag.help_text = "Make sure the identifier is declared before use. "
-                      "Check for missing includes, typos, or scope issues.";
+                       "Check for missing includes, typos, or scope issues.";
       diagnostics.push_back(diag);
       continue;
     }
@@ -384,7 +422,8 @@ std::vector<diagnostic> parse_compiler_errors(const std::string &error_output) {
   return diagnostics;
 }
 
-std::vector<diagnostic> parse_gcc_clang_errors(const std::string &error_output) {
+std::vector<diagnostic>
+parse_gcc_clang_errors(const std::string &error_output) {
   std::vector<diagnostic> diagnostics;
 
   // Regular expression to match GCC/Clang error format
@@ -945,8 +984,10 @@ std::vector<diagnostic> parse_linker_errors(const std::string &error_output) {
   // LLD-style linker error: "lld-link: error: undefined symbol: ..."
   std::regex lld_error_regex(R"(lld-link:\s*error:\s*(.*))");
 
-  // ld-style linker error: "ld: undefined symbol: ..." or "/usr/bin/ld: error: ..."
-  std::regex ld_error_regex(R"((?:/[^\s:]+/)?ld(?:\.\S+)?:\s*(?:error:\s*)?(.*))");
+  // ld-style linker error: "ld: undefined symbol: ..." or "/usr/bin/ld: error:
+  // ..."
+  std::regex ld_error_regex(
+      R"((?:/[^\s:]+/)?ld(?:\.\S+)?:\s*(?:error:\s*)?(.*))");
 
   // MSVC linker error from LINK.exe: "LINK : fatal error LNK1181: ..."
   std::regex msvc_link_error_regex(
@@ -957,15 +998,18 @@ std::vector<diagnostic> parse_linker_errors(const std::string &error_output) {
   std::regex msvc_obj_error_regex(
       R"(([^\s:]+\.obj)\s*:\s*(?:fatal\s*)?error\s*(LNK\d+):\s*(.*))");
 
-  // MSVC linker error with function context: "file.obj : error LNK2019: ... in function ..."
+  // MSVC linker error with function context: "file.obj : error LNK2019: ... in
+  // function ..."
   std::regex msvc_function_context_regex(
       R"(function\s+[\"']?([^\"'\s]+)[\"']?)");
 
-  // GCC/Clang undefined reference: "file.o:(.text+0x...): undefined reference to `symbol'"
+  // GCC/Clang undefined reference: "file.o:(.text+0x...): undefined reference
+  // to `symbol'"
   std::regex gcc_undefined_ref_regex(
       R"(([^\s:]+\.o(?:bj)?)\s*:\s*(?:\([^)]+\)\s*:\s*)?undefined reference to [`']([^'`]+)[`'])");
 
-  // GCC/Clang undefined reference (simpler format): "undefined reference to `symbol'"
+  // GCC/Clang undefined reference (simpler format): "undefined reference to
+  // `symbol'"
   std::regex simple_undefined_ref_regex(
       R"(undefined reference to [`']([^'`]+)[`'])");
 
@@ -973,13 +1017,17 @@ std::vector<diagnostic> parse_linker_errors(const std::string &error_output) {
   std::regex collect2_error_regex(R"(collect2:\s*error:\s*(.*))");
 
   // Clang linker error: "clang: error: linker command failed..."
-  std::regex clang_linker_error_regex(R"(clang(?:\+\+)?:\s*error:\s*(linker.*))");
+  std::regex clang_linker_error_regex(
+      R"(clang(?:\+\+)?:\s*error:\s*(linker.*))");
 
-  // Generic reference pattern: ">>> referenced by file.obj" or "referenced by file.cpp:123"
-  std::regex reference_regex(R"((?:>>>)?\s*referenced by\s*([^:\n]+)(?::(\d+))?)");
+  // Generic reference pattern: ">>> referenced by file.obj" or "referenced by
+  // file.cpp:123"
+  std::regex reference_regex(
+      R"((?:>>>)?\s*referenced by\s*([^:\n]+)(?::(\d+))?)");
 
   // Symbol extraction for help text
-  std::regex symbol_extract_regex(R"((?:unresolved external symbol|undefined symbol|undefined reference to)\s*[\"'`]?([^\"'`\s\(]+))");
+  std::regex symbol_extract_regex(
+      R"((?:unresolved external symbol|undefined symbol|undefined reference to)\s*[\"'`]?([^\"'`\s\(]+))");
 
   std::string line;
   std::istringstream stream(error_output);
@@ -993,37 +1041,48 @@ std::vector<diagnostic> parse_linker_errors(const std::string &error_output) {
         int code_num = std::stoi(error_code.substr(3));
         switch (code_num) {
         case 1104:
-          diag.help_text = "The file name specified could not be found. Check that the library path is correct.";
+          diag.help_text = "The file name specified could not be found. Check "
+                           "that the library path is correct.";
           break;
         case 1120:
-          diag.help_text = "One or more external symbols are unresolved. Make sure all required libraries are linked.";
+          diag.help_text = "One or more external symbols are unresolved. Make "
+                           "sure all required libraries are linked.";
           break;
         case 1181:
-          diag.help_text = "Cannot open the specified input file. Verify the file exists and the path is correct.";
+          diag.help_text = "Cannot open the specified input file. Verify the "
+                           "file exists and the path is correct.";
           break;
         case 2001:
-          diag.help_text = "Unresolved external symbol. The symbol is declared but not defined. Check:\n"
-                           "   - Is the library containing this symbol linked?\n"
-                           "   - Is the symbol exported from a DLL correctly?\n"
-                           "   - Are you missing a lib file in your link dependencies?";
+          diag.help_text =
+              "Unresolved external symbol. The symbol is declared but not "
+              "defined. Check:\n"
+              "   - Is the library containing this symbol linked?\n"
+              "   - Is the symbol exported from a DLL correctly?\n"
+              "   - Are you missing a lib file in your link dependencies?";
           break;
         case 2005:
-          diag.help_text = "Symbol is already defined in another object. Check for:\n"
-                           "   - Duplicate definitions in multiple source files\n"
-                           "   - Missing 'inline' on header-defined functions\n"
-                           "   - Missing include guards";
+          diag.help_text =
+              "Symbol is already defined in another object. Check for:\n"
+              "   - Duplicate definitions in multiple source files\n"
+              "   - Missing 'inline' on header-defined functions\n"
+              "   - Missing include guards";
           break;
         case 2019:
-          diag.help_text = "Unresolved external symbol referenced in function. The function calls something that isn't defined. Check:\n"
-                           "   - Is the required library linked in cforge.toml?\n"
-                           "   - For Windows API, add the appropriate .lib (e.g., user32.lib, kernel32.lib)\n"
-                           "   - For third-party libs, verify include and library paths";
+          diag.help_text =
+              "Unresolved external symbol referenced in function. The function "
+              "calls something that isn't defined. Check:\n"
+              "   - Is the required library linked in cforge.toml?\n"
+              "   - For Windows API, add the appropriate .lib (e.g., "
+              "user32.lib, kernel32.lib)\n"
+              "   - For third-party libs, verify include and library paths";
           break;
         case 2038:
-          diag.help_text = "Runtime library mismatch detected. All modules must use the same runtime library variant.";
+          diag.help_text = "Runtime library mismatch detected. All modules "
+                           "must use the same runtime library variant.";
           break;
         default:
-          diag.help_text = "Check that all required libraries are linked and symbols are correctly exported.";
+          diag.help_text = "Check that all required libraries are linked and "
+                           "symbols are correctly exported.";
           break;
         }
       } catch (...) {
@@ -1033,24 +1092,28 @@ std::vector<diagnostic> parse_linker_errors(const std::string &error_output) {
       // Generic linker help
       if (diag.message.find("undefined") != std::string::npos ||
           diag.message.find("unresolved") != std::string::npos) {
-        diag.help_text = "Symbol not found during linking. Ensure:\n"
-                         "   - All required libraries are linked in cforge.toml\n"
-                         "   - Library paths are correct\n"
-                         "   - The symbol is actually defined (not just declared)";
-      } else if (diag.message.find("multiple definition") != std::string::npos ||
+        diag.help_text =
+            "Symbol not found during linking. Ensure:\n"
+            "   - All required libraries are linked in cforge.toml\n"
+            "   - Library paths are correct\n"
+            "   - The symbol is actually defined (not just declared)";
+      } else if (diag.message.find("multiple definition") !=
+                     std::string::npos ||
                  diag.message.find("duplicate") != std::string::npos) {
         diag.help_text = "Symbol defined multiple times. Check for:\n"
                          "   - Duplicate definitions in source files\n"
                          "   - Functions in headers missing 'inline' keyword\n"
                          "   - Missing include guards in headers";
       } else {
-        diag.help_text = "Check your linker configuration and library dependencies.";
+        diag.help_text =
+            "Check your linker configuration and library dependencies.";
       }
     }
   };
 
   // Helper to extract symbol name from error message for display
-  auto extract_symbol_name = [&symbol_extract_regex](const std::string &msg) -> std::string {
+  auto extract_symbol_name =
+      [&symbol_extract_regex](const std::string &msg) -> std::string {
     std::smatch match;
     if (std::regex_search(msg, match, symbol_extract_regex)) {
       return match[1].str();
@@ -1062,7 +1125,8 @@ std::vector<diagnostic> parse_linker_errors(const std::string &error_output) {
     std::smatch matches;
 
     // Skip empty lines
-    if (line.empty() || line.find_first_not_of(" \t\r\n") == std::string::npos) {
+    if (line.empty() ||
+        line.find_first_not_of(" \t\r\n") == std::string::npos) {
       continue;
     }
 
@@ -1086,7 +1150,8 @@ std::vector<diagnostic> parse_linker_errors(const std::string &error_output) {
 
       // Check for function context in the message
       std::smatch func_match;
-      if (std::regex_search(diag.message, func_match, msvc_function_context_regex)) {
+      if (std::regex_search(diag.message, func_match,
+                            msvc_function_context_regex)) {
         diag.notes.push_back("Referenced in function: " + func_match[1].str());
       }
 
@@ -1213,7 +1278,8 @@ std::vector<diagnostic> parse_linker_errors(const std::string &error_output) {
       diag.line_number = 0;
       diag.column_number = 0;
 
-      diag.help_text = "The linker failed. Check the errors above for details about missing symbols or libraries.";
+      diag.help_text = "The linker failed. Check the errors above for details "
+                       "about missing symbols or libraries.";
       diagnostics.push_back(diag);
       current_diag = &diagnostics.back();
       continue;
@@ -1234,7 +1300,8 @@ std::vector<diagnostic> parse_linker_errors(const std::string &error_output) {
         diag.line_number = 0;
         diag.column_number = 0;
 
-        diag.help_text = "The linker failed. Check for undefined references or missing libraries above.";
+        diag.help_text = "The linker failed. Check for undefined references or "
+                         "missing libraries above.";
         diagnostics.push_back(diag);
         current_diag = &diagnostics.back();
       }
@@ -1408,7 +1475,8 @@ std::vector<diagnostic> parse_template_errors(const std::string &error_output) {
   std::vector<diagnostic> diagnostics;
 
   // MSVC template errors
-  // Example: error C2784: 'bool std::operator <(const std::vector<_Ty,_Alloc> &,const std::vector<_Ty,_Alloc> &)': could not deduce template argument
+  // Example: error C2784: 'bool std::operator <(const std::vector<_Ty,_Alloc>
+  // &,const std::vector<_Ty,_Alloc> &)': could not deduce template argument
   std::regex msvc_template_regex(
       R"(([^(]+)\((\d+)(?:,(\d+))?\):\s*error\s+(C2\d{3}):\s*(.+template.+))");
 
@@ -1461,7 +1529,7 @@ std::vector<diagnostic> parse_template_errors(const std::string &error_output) {
   std::istringstream stream(error_output);
   diagnostic *current_template_error = nullptr;
   int instantiation_depth = 0;
-  const int MAX_INSTANTIATION_DEPTH = 3;  // Only show top 3 levels
+  const int MAX_INSTANTIATION_DEPTH = 3; // Only show top 3 levels
 
   while (std::getline(stream, line)) {
     std::smatch matches;
@@ -1480,25 +1548,31 @@ std::vector<diagnostic> parse_template_errors(const std::string &error_output) {
       int code_num = std::stoi(diag.code.substr(1));
       switch (code_num) {
       case 2782:
-        diag.help_text = "Template argument deduction failed. Try specifying template arguments explicitly.";
+        diag.help_text = "Template argument deduction failed. Try specifying "
+                         "template arguments explicitly.";
         break;
       case 2783:
-        diag.help_text = "Could not deduce template argument. Check that the argument types match the template parameters.";
+        diag.help_text = "Could not deduce template argument. Check that the "
+                         "argument types match the template parameters.";
         break;
       case 2784:
-        diag.help_text = "Template argument deduction failed for a function template. Ensure argument types are compatible.";
+        diag.help_text = "Template argument deduction failed for a function "
+                         "template. Ensure argument types are compatible.";
         break;
       case 2893:
-        diag.help_text = "Failed to specialize function template. Check template parameter constraints.";
+        diag.help_text = "Failed to specialize function template. Check "
+                         "template parameter constraints.";
         break;
       case 2913:
-        diag.help_text = "Template instantiation is ambiguous. Try using explicit template arguments.";
+        diag.help_text = "Template instantiation is ambiguous. Try using "
+                         "explicit template arguments.";
         break;
       case 2977:
         diag.help_text = "Too many template arguments provided.";
         break;
       default:
-        diag.help_text = "Template error. Check template parameters and argument types.";
+        diag.help_text =
+            "Template error. Check template parameters and argument types.";
         break;
       }
 
@@ -1520,7 +1594,8 @@ std::vector<diagnostic> parse_template_errors(const std::string &error_output) {
 
       // Categorize the error
       std::string msg_lower = diag.message;
-      std::transform(msg_lower.begin(), msg_lower.end(), msg_lower.begin(), ::tolower);
+      std::transform(msg_lower.begin(), msg_lower.end(), msg_lower.begin(),
+                     ::tolower);
 
       if (msg_lower.find("no matching") != std::string::npos) {
         diag.code = "TEMPLATE-NOMATCH";
@@ -1530,16 +1605,20 @@ std::vector<diagnostic> parse_template_errors(const std::string &error_output) {
                          "   - Template arguments are correct";
       } else if (msg_lower.find("ambiguous") != std::string::npos) {
         diag.code = "TEMPLATE-AMBIGUOUS";
-        diag.help_text = "Multiple templates match. Use explicit template arguments to disambiguate.";
+        diag.help_text = "Multiple templates match. Use explicit template "
+                         "arguments to disambiguate.";
       } else if (msg_lower.find("incomplete type") != std::string::npos) {
         diag.code = "TEMPLATE-INCOMPLETE";
-        diag.help_text = "Type is incomplete (forward declared only). Include the full definition.";
+        diag.help_text = "Type is incomplete (forward declared only). Include "
+                         "the full definition.";
       } else if (msg_lower.find("deduced") != std::string::npos ||
                  msg_lower.find("deduce") != std::string::npos) {
         diag.code = "TEMPLATE-DEDUCTION";
-        diag.help_text = "Template argument deduction failed. Specify template arguments explicitly.";
+        diag.help_text = "Template argument deduction failed. Specify template "
+                         "arguments explicitly.";
       } else {
-        diag.help_text = "Template instantiation error. Review template parameters and argument types.";
+        diag.help_text = "Template instantiation error. Review template "
+                         "parameters and argument types.";
       }
 
       diagnostics.push_back(diag);
@@ -1549,7 +1628,8 @@ std::vector<diagnostic> parse_template_errors(const std::string &error_output) {
     }
 
     // Check for instantiation context (limit depth to avoid noise)
-    if (current_template_error != nullptr && instantiation_depth < MAX_INSTANTIATION_DEPTH) {
+    if (current_template_error != nullptr &&
+        instantiation_depth < MAX_INSTANTIATION_DEPTH) {
       if (std::regex_search(line, matches, gcc_instantiation_regex) ||
           std::regex_search(line, matches, msvc_instantiation_regex)) {
         std::string context = matches[matches.size() > 4 ? 4 : 0].str();
@@ -1564,8 +1644,8 @@ std::vector<diagnostic> parse_template_errors(const std::string &error_output) {
             file = file.substr(last_slash + 1);
           }
 
-          current_template_error->notes.push_back(
-              "instantiated from " + file + ":" + line_num);
+          current_template_error->notes.push_back("instantiated from " + file +
+                                                  ":" + line_num);
           instantiation_depth++;
         }
         continue;
@@ -1583,7 +1663,8 @@ std::vector<diagnostic> parse_template_errors(const std::string &error_output) {
     }
 
     // Reset context on empty lines or unrelated content
-    if (line.empty() || line.find_first_not_of(" \t\r\n") == std::string::npos) {
+    if (line.empty() ||
+        line.find_first_not_of(" \t\r\n") == std::string::npos) {
       current_template_error = nullptr;
       instantiation_depth = 0;
     }
@@ -1596,7 +1677,8 @@ std::vector<diagnostic> parse_template_errors(const std::string &error_output) {
 // Error Deduplication
 // ============================================================
 
-std::vector<diagnostic> deduplicate_diagnostics(std::vector<diagnostic> diagnostics) {
+std::vector<diagnostic>
+deduplicate_diagnostics(std::vector<diagnostic> diagnostics) {
   if (diagnostics.empty()) {
     return diagnostics;
   }
@@ -1609,7 +1691,8 @@ std::vector<diagnostic> deduplicate_diagnostics(std::vector<diagnostic> diagnost
     if (d.code.find("LNK") != std::string::npos ||
         d.code.find("UNDEFINED") != std::string::npos) {
       // Extract symbol name from message
-      std::regex symbol_regex(R"((?:undefined|unresolved)[^`'\"]*[`'\"]([^`'\"]+)[`'\"])");
+      std::regex symbol_regex(
+          R"((?:undefined|unresolved)[^`'\"]*[`'\"]([^`'\"]+)[`'\"])");
       std::smatch match;
       if (std::regex_search(d.message, match, symbol_regex)) {
         return d.code + "::" + match[1].str();
@@ -1620,7 +1703,7 @@ std::vector<diagnostic> deduplicate_diagnostics(std::vector<diagnostic> diagnost
     return d.code + "::" + d.message;
   };
 
-  std::map<std::string, size_t> seen_errors;  // key -> index in deduplicated
+  std::map<std::string, size_t> seen_errors; // key -> index in deduplicated
 
   for (auto &diag : diagnostics) {
     std::string key = get_dedup_key(diag);
@@ -1658,7 +1741,8 @@ std::vector<diagnostic> deduplicate_diagnostics(std::vector<diagnostic> diagnost
 // Error Summary
 // ============================================================
 
-error_summary calculate_error_summary(const std::vector<diagnostic> &diagnostics) {
+error_summary
+calculate_error_summary(const std::vector<diagnostic> &diagnostics) {
   error_summary summary;
   std::map<std::string, int> category_counts;
 
@@ -1734,7 +1818,8 @@ std::string format_error_summary(const error_summary &summary) {
   // Main summary line
   if (summary.total_errors > 0) {
     ss << fmt::format(fg(fmt::color::red) | fmt::emphasis::bold, "error");
-    ss << fmt::format(fg(fmt::color::white) | fmt::emphasis::bold, ": build failed\n");
+    ss << fmt::format(fg(fmt::color::white) | fmt::emphasis::bold,
+                      ": build failed\n");
   }
 
   // Breakdown by source
@@ -2186,20 +2271,24 @@ static int levenshtein_distance(const std::string &s1, const std::string &s2) {
   const size_t m = s1.size();
   const size_t n = s2.size();
 
-  if (m == 0) return static_cast<int>(n);
-  if (n == 0) return static_cast<int>(m);
+  if (m == 0)
+    return static_cast<int>(n);
+  if (n == 0)
+    return static_cast<int>(m);
 
   std::vector<std::vector<int>> dp(m + 1, std::vector<int>(n + 1));
 
-  for (size_t i = 0; i <= m; ++i) dp[i][0] = static_cast<int>(i);
-  for (size_t j = 0; j <= n; ++j) dp[0][j] = static_cast<int>(j);
+  for (size_t i = 0; i <= m; ++i)
+    dp[i][0] = static_cast<int>(i);
+  for (size_t j = 0; j <= n; ++j)
+    dp[0][j] = static_cast<int>(j);
 
   for (size_t i = 1; i <= m; ++i) {
     for (size_t j = 1; j <= n; ++j) {
       int cost = (s1[i - 1] == s2[j - 1]) ? 0 : 1;
       dp[i][j] = std::min({
-          dp[i - 1][j] + 1,      // deletion
-          dp[i][j - 1] + 1,      // insertion
+          dp[i - 1][j] + 1,       // deletion
+          dp[i][j - 1] + 1,       // insertion
           dp[i - 1][j - 1] + cost // substitution
       });
     }
@@ -2208,18 +2297,19 @@ static int levenshtein_distance(const std::string &s1, const std::string &s2) {
   return dp[m][n];
 }
 
-std::vector<std::string> find_similar_identifiers(
-    const std::string &unknown_identifier,
-    const std::vector<std::string> &available_identifiers,
-    int max_distance) {
+std::vector<std::string>
+find_similar_identifiers(const std::string &unknown_identifier,
+                         const std::vector<std::string> &available_identifiers,
+                         int max_distance) {
 
   std::vector<std::pair<std::string, int>> matches;
 
   for (const auto &candidate : available_identifiers) {
     // Skip if length difference is too large
     int len_diff = std::abs(static_cast<int>(unknown_identifier.length()) -
-                           static_cast<int>(candidate.length()));
-    if (len_diff > max_distance) continue;
+                            static_cast<int>(candidate.length()));
+    if (len_diff > max_distance)
+      continue;
 
     int distance = levenshtein_distance(unknown_identifier, candidate);
     if (distance <= max_distance && distance > 0) {
@@ -2235,7 +2325,8 @@ std::vector<std::string> find_similar_identifiers(
   std::vector<std::string> result;
   for (const auto &match : matches) {
     result.push_back(match.first);
-    if (result.size() >= 3) break;  // Limit to top 3 suggestions
+    if (result.size() >= 3)
+      break; // Limit to top 3 suggestions
   }
 
   return result;
@@ -2245,7 +2336,8 @@ std::vector<fix_suggestion> generate_fix_suggestions(const diagnostic &diag) {
   std::vector<fix_suggestion> suggestions;
 
   std::string msg_lower = diag.message;
-  std::transform(msg_lower.begin(), msg_lower.end(), msg_lower.begin(), ::tolower);
+  std::transform(msg_lower.begin(), msg_lower.end(), msg_lower.begin(),
+                 ::tolower);
 
   // ============================================================
   // Missing semicolon
@@ -2272,7 +2364,8 @@ std::vector<fix_suggestion> generate_fix_suggestions(const diagnostic &diag) {
       // Trim trailing whitespace
       size_t end = line.find_last_not_of(" \t");
       if (end != std::string::npos) {
-        fix.start_column = static_cast<int>(end + 2);  // After last non-space char
+        fix.start_column =
+            static_cast<int>(end + 2); // After last non-space char
       }
     }
 
@@ -2328,7 +2421,7 @@ std::vector<fix_suggestion> generate_fix_suggestions(const diagnostic &diag) {
         fix.description = "Add #include " + header;
         fix.replacement = "#include " + header + "\n";
         fix.is_insertion = true;
-        fix.start_line = 1;  // Insert at top of file
+        fix.start_line = 1; // Insert at top of file
         fix.start_column = 1;
         suggestions.push_back(fix);
       }
@@ -2397,7 +2490,7 @@ std::vector<fix_suggestion> generate_fix_suggestions(const diagnostic &diag) {
 
     fix_suggestion fix;
     fix.description = "Use static_cast to match types";
-    fix.replacement = "static_cast<size_t>(...)";  // Generic suggestion
+    fix.replacement = "static_cast<size_t>(...)"; // Generic suggestion
     suggestions.push_back(fix);
   }
 
@@ -2434,7 +2527,8 @@ std::vector<fix_suggestion> generate_fix_suggestions(const diagnostic &diag) {
   // ============================================================
   if (msg_lower.find("suggest parentheses") != std::string::npos ||
       msg_lower.find("assignment in conditional") != std::string::npos ||
-      msg_lower.find("using the result of an assignment") != std::string::npos) {
+      msg_lower.find("using the result of an assignment") !=
+          std::string::npos) {
 
     fix_suggestion fix1;
     fix1.description = "Change = to == for comparison";
@@ -2477,7 +2571,8 @@ std::vector<fix_suggestion> generate_fix_suggestions(const diagnostic &diag) {
   // ============================================================
   for (const auto &note : diag.notes) {
     std::string note_lower = note;
-    std::transform(note_lower.begin(), note_lower.end(), note_lower.begin(), ::tolower);
+    std::transform(note_lower.begin(), note_lower.end(), note_lower.begin(),
+                   ::tolower);
 
     if (note_lower.find("similar") != std::string::npos ||
         note_lower.find("did you mean") != std::string::npos) {

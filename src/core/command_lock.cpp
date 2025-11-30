@@ -3,8 +3,8 @@
  * @brief Implementation of the 'lock' command for dependency locking
  *
  * Commands:
- *   cforge lock          - Generate/update cforge.lock from current dependencies
- *   cforge lock --verify - Verify dependencies match lock file
+ *   cforge lock          - Generate/update cforge.lock from current
+ * dependencies cforge lock --verify - Verify dependencies match lock file
  *   cforge lock --clean  - Remove lock file
  */
 
@@ -47,16 +47,21 @@ cforge_int_t cforge_cmd_lock(const cforge_context_t *ctx) {
     } else if (arg == "--help" || arg == "-h") {
       logger::print_plain("Usage: cforge lock [options]");
       logger::print_plain("");
-      logger::print_plain("Generate or verify dependency lock file (cforge.lock)");
+      logger::print_plain(
+          "Generate or verify dependency lock file (cforge.lock)");
       logger::print_plain("");
       logger::print_plain("Options:");
-      logger::print_plain("  --verify, -v   Verify dependencies match lock file");
+      logger::print_plain(
+          "  --verify, -v   Verify dependencies match lock file");
       logger::print_plain("  --clean, -c    Remove the lock file");
-      logger::print_plain("  --force, -f    Force regeneration even if lock exists");
+      logger::print_plain(
+          "  --force, -f    Force regeneration even if lock exists");
       logger::print_plain("  --help, -h     Show this help message");
       logger::print_plain("");
-      logger::print_plain("The lock file ensures reproducible builds by tracking");
-      logger::print_plain("exact versions (commit hashes) of all dependencies.");
+      logger::print_plain(
+          "The lock file ensures reproducible builds by tracking");
+      logger::print_plain(
+          "exact versions (commit hashes) of all dependencies.");
       return 0;
     }
   }
@@ -85,7 +90,8 @@ cforge_int_t cforge_cmd_lock(const cforge_context_t *ctx) {
         std::filesystem::remove(lock_path);
         logger::removing(std::string(LOCK_FILE));
       } catch (const std::exception &e) {
-        logger::print_error("Failed to remove lock file: " + std::string(e.what()));
+        logger::print_error("Failed to remove lock file: " +
+                            std::string(e.what()));
         return 1;
       }
     } else {
@@ -97,12 +103,14 @@ cforge_int_t cforge_cmd_lock(const cforge_context_t *ctx) {
   // Load project configuration
   toml_reader config;
   if (!config.load(config_path.string())) {
-    logger::print_error("Failed to load configuration: " + config_path.string());
+    logger::print_error("Failed to load configuration: " +
+                        config_path.string());
     return 1;
   }
 
   // Get dependencies directory
-  std::string deps_dir_str = config.get_string("dependencies.directory", "vendor");
+  std::string deps_dir_str =
+      config.get_string("dependencies.directory", "vendor");
   std::filesystem::path deps_dir = current_dir / deps_dir_str;
 
   // Handle --verify option
@@ -110,7 +118,8 @@ cforge_int_t cforge_cmd_lock(const cforge_context_t *ctx) {
     logger::print_action("Verifying", "dependencies against lock file");
 
     if (!lockfile::exists(current_dir)) {
-      logger::print_warning("No lock file found. Run 'cforge lock' to create one");
+      logger::print_warning(
+          "No lock file found. Run 'cforge lock' to create one");
       return 1;
     }
 
@@ -119,21 +128,24 @@ cforge_int_t cforge_cmd_lock(const cforge_context_t *ctx) {
       return 0;
     } else {
       logger::print_error("Dependencies do not match lock file");
-      logger::print_action("Help", "run 'cforge lock' to update, or 'cforge deps' to restore");
+      logger::print_action(
+          "Help", "run 'cforge lock' to update, or 'cforge deps' to restore");
       return 1;
     }
   }
 
   // Check if lock file already exists
   if (lockfile::exists(current_dir) && !force_update) {
-    logger::print_action("Checking", "lock file already exists. Use --force to regenerate");
+    logger::print_action("Checking",
+                         "lock file already exists. Use --force to regenerate");
 
     // Still verify it
     if (verify_lockfile(current_dir, deps_dir, verbose)) {
       logger::print_action("Verified", "dependencies match lock file");
       return 0;
     } else {
-      logger::print_warning("Dependencies have changed. Use --force to update lock file");
+      logger::print_warning(
+          "Dependencies have changed. Use --force to update lock file");
       return 1;
     }
   }
@@ -142,14 +154,17 @@ cforge_int_t cforge_cmd_lock(const cforge_context_t *ctx) {
   logger::print_action("Generating", "lock file");
 
   if (!std::filesystem::exists(deps_dir)) {
-    logger::print_warning("Dependencies directory not found: " + deps_dir.string());
-    logger::print_action("Help", "run 'cforge build' first to fetch dependencies");
+    logger::print_warning("Dependencies directory not found: " +
+                          deps_dir.string());
+    logger::print_action("Help",
+                         "run 'cforge build' first to fetch dependencies");
     return 1;
   }
 
   if (update_lockfile(current_dir, deps_dir, verbose)) {
     logger::generated(std::string(LOCK_FILE));
-    logger::print_action("Note", "commit this file to version control for reproducible builds");
+    logger::print_action(
+        "Note", "commit this file to version control for reproducible builds");
     return 0;
   } else {
     logger::print_error("Failed to create lock file");

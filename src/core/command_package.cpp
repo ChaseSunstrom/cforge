@@ -10,9 +10,9 @@
 #include "core/error_format.hpp"
 #include "core/file_system.h"
 #include "core/process_utils.hpp"
-#include "core/workspace_utils.hpp"
 #include "core/toml_reader.hpp"
 #include "core/workspace.hpp"
+#include "core/workspace_utils.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -347,14 +347,18 @@ create_workspace_package(const std::string &workspace_name,
 
   // Determine workspace-level build directory
   std::string config_lower_ws = build_config;
-  std::transform(config_lower_ws.begin(), config_lower_ws.end(), config_lower_ws.begin(), ::tolower);
-  std::filesystem::path ws_build_dir = get_build_dir_for_config("build", build_config);
+  std::transform(config_lower_ws.begin(), config_lower_ws.end(),
+                 config_lower_ws.begin(), ::tolower);
+  std::filesystem::path ws_build_dir =
+      get_build_dir_for_config("build", build_config);
   if (ws_build_dir.is_relative()) {
     ws_build_dir = workspace_dir / ws_build_dir;
   }
-  logger::print_verbose("Using workspace build directory: " + ws_build_dir.string());
+  logger::print_verbose("Using workspace build directory: " +
+                        ws_build_dir.string());
   if (!std::filesystem::exists(ws_build_dir)) {
-    logger::print_error("Workspace build directory not found: " + ws_build_dir.string());
+    logger::print_error("Workspace build directory not found: " +
+                        ws_build_dir.string());
     return false;
   }
 
@@ -375,7 +379,8 @@ create_workspace_package(const std::string &workspace_name,
 
     // Use workspace-level build directory for outputs
     std::filesystem::path build_dir = ws_build_dir;
-    logger::print_verbose("Using workspace build directory for project " + project.name + ": " + build_dir.string());
+    logger::print_verbose("Using workspace build directory for project " +
+                          project.name + ": " + build_dir.string());
 
     // Collect binaries - look in common locations
     std::vector<std::filesystem::path> binary_locations = {
@@ -407,8 +412,7 @@ create_workspace_package(const std::string &workspace_name,
           // Check if it's an executable or DLL
           std::string ext = entry.path().extension().string();
           if (ext == ".exe" || ext == ".dll" || ext == ".so" ||
-              ext == ".dylib" ||
-              (ext.empty() && entry.file_size() > 1000)) {
+              ext == ".dylib" || (ext.empty() && entry.file_size() > 1000)) {
             // Copy to project staging dir
             std::filesystem::path dest_path =
                 project_staging_dir / entry.path().filename();
@@ -416,8 +420,7 @@ create_workspace_package(const std::string &workspace_name,
               std::filesystem::copy_file(
                   entry.path(), dest_path,
                   std::filesystem::copy_options::overwrite_existing);
-              logger::print_verbose("Copied binary: " +
-                                    entry.path().string());
+              logger::print_verbose("Copied binary: " + entry.path().string());
               found_binaries = true;
               copied_files++;
             } catch (const std::exception &ex) {
@@ -459,8 +462,7 @@ create_workspace_package(const std::string &workspace_name,
               std::filesystem::copy_file(
                   entry.path(), dest_path,
                   std::filesystem::copy_options::overwrite_existing);
-              logger::print_verbose("Copied binary: " +
-                                    entry.path().string());
+              logger::print_verbose("Copied binary: " + entry.path().string());
               found_binaries = true;
               copied_files++;
             } catch (const std::exception &ex) {
@@ -558,7 +560,8 @@ create_workspace_package(const std::string &workspace_name,
   cmd_args.push_back(safe_ps_cmd);
 
   // Print command for debugging
-  logger::print_verbose("Executing ZIP command: " + zip_cmd + " " + safe_ps_cmd);
+  logger::print_verbose("Executing ZIP command: " + zip_cmd + " " +
+                        safe_ps_cmd);
 
   // Execute the command with explicit capture of output
   process_result result =
@@ -717,16 +720,15 @@ static std::vector<std::string> get_default_generators() {
       is_command_available("dnf")) {
     generators.push_back("RPM");
   }
-  logger::print_verbose(
-      std::string("Using default Linux generators: TGZ") +
-          (std::find(generators.begin(), generators.end(),
-                     "DEB") != generators.end()
-                   ? ", DEB"
-                   : "") +
-          (std::find(generators.begin(), generators.end(),
-                     "RPM") != generators.end()
-                   ? ", RPM"
-                   : ""));
+  logger::print_verbose(std::string("Using default Linux generators: TGZ") +
+                        (std::find(generators.begin(), generators.end(),
+                                   "DEB") != generators.end()
+                             ? ", DEB"
+                             : "") +
+                        (std::find(generators.begin(), generators.end(),
+                                   "RPM") != generators.end()
+                             ? ", RPM"
+                             : ""));
 #endif
 
   return generators;
@@ -1064,12 +1066,17 @@ static bool run_cpack(const std::filesystem::path &build_dir,
     logger::configuring("CMake for packaging (empty install prefix)");
     auto reconfig = execute_process(
         "cmake",
-        std::vector<std::string>{"-S", project_dir.string(), "-B", build_dir.string(), "-DCMAKE_INSTALL_PREFIX="},
+        std::vector<std::string>{"-S", project_dir.string(), "-B",
+                                 build_dir.string(), "-DCMAKE_INSTALL_PREFIX="},
         "",
-        [&](const std::string &line) { if (verbose) logger::print_verbose(line); },
+        [&](const std::string &line) {
+          if (verbose)
+            logger::print_verbose(line);
+        },
         [](const std::string &line) { logger::print_error(line); });
     if (!reconfig.success) {
-      logger::print_error("CMake reconfigure failed (exit code " + std::to_string(reconfig.exit_code) + ")");
+      logger::print_error("CMake reconfigure failed (exit code " +
+                          std::to_string(reconfig.exit_code) + ")");
       return false;
     }
   }
@@ -1311,15 +1318,16 @@ static bool run_cpack(const std::filesystem::path &build_dir,
       pkg_version = "1.0.0";
     }
 
-    // Direct file name pattern instead of using placeholders (use dynamic system name)
+    // Direct file name pattern instead of using placeholders (use dynamic
+    // system name)
     std::string system_name;
-    #ifdef _WIN32
-        system_name = "win64";
-    #elif defined(__APPLE__)
-        system_name = "macos";
-    #else
-        system_name = "linux";
-    #endif
+#ifdef _WIN32
+    system_name = "win64";
+#elif defined(__APPLE__)
+    system_name = "macos";
+#else
+    system_name = "linux";
+#endif
     std::string package_file_name =
         pkg_name + "-" + pkg_version + "-" + system_name + "-" + config_lower;
     logger::print_verbose("Package file name: " + package_file_name);
@@ -1382,7 +1390,8 @@ static bool run_cpack(const std::filesystem::path &build_dir,
 
   // Avoid creating an extra subdirectory
   cpack_args.push_back("-D");
-  cpack_args.push_back("CPACK_PACKAGE_INSTALL_DIRECTORY=" + package_dir.string());
+  cpack_args.push_back("CPACK_PACKAGE_INSTALL_DIRECTORY=" +
+                       package_dir.string());
 
   // Clear the CPack temporary directory - this is important to prevent "exists"
   // errors
@@ -2170,8 +2179,9 @@ static bool package_single_project(
                 // Check if this has CMake files
                 if (std::filesystem::exists(entry.path() / "CMakeCache.txt")) {
                   build_dir = entry.path();
-                  logger::print_verbose("Found build directory by inspection: " +
-                                       build_dir.string());
+                  logger::print_verbose(
+                      "Found build directory by inspection: " +
+                      build_dir.string());
                   found_build_dir = true;
                   break;
                 }
@@ -2231,7 +2241,7 @@ static bool package_single_project(
               entry.path().filename() == "CMakeCache.txt") {
             build_dir = entry.path().parent_path();
             logger::print_verbose("Found CMake build directory: " +
-                                 build_dir.string());
+                                  build_dir.string());
             found_build_dir = true;
             break;
           }
@@ -2247,7 +2257,7 @@ static bool package_single_project(
           // Go up two levels to get the build directory
           build_dir = bin_dir.parent_path().parent_path();
           logger::print_verbose("Found build directory via bin folder: " +
-                               build_dir.string());
+                                build_dir.string());
           found_build_dir = true;
         }
       }
@@ -2388,15 +2398,18 @@ static bool package_single_project(
       if (check_generator_tools_installed(gen)) {
         valid_gens.push_back(gen);
       } else {
-        logger::print_warning("Skipping generator '" + gen + "' due to missing tools");
+        logger::print_warning("Skipping generator '" + gen +
+                              "' due to missing tools");
       }
     }
     if (valid_gens.empty()) {
-      logger::print_error("No valid package generators available. Aborting packaging.");
+      logger::print_error(
+          "No valid package generators available. Aborting packaging.");
       return 1;
     }
     available_generators = valid_gens;
-    logger::print_verbose("Using valid package generators: " + join_strings(available_generators, ", "));
+    logger::print_verbose("Using valid package generators: " +
+                          join_strings(available_generators, ", "));
   }
 
   // Package the project using the project_name and project_version already
@@ -2603,65 +2616,71 @@ cforge_int_t cforge_cmd_package(const cforge_context_t *ctx) {
 
   try {
     if (is_workspace) {
-        // Consolidated workspace packaging
-        logger::print_verbose("Packaging in workspace context: " + current_dir.string());
+      // Consolidated workspace packaging
+      logger::print_verbose("Packaging in workspace context: " +
+                            current_dir.string());
 
-        // Load workspace configuration
-        toml::table workspace_table;
-        try {
-            workspace_table = toml::parse_file(workspace_file.string());
-        } catch (const toml::parse_error &e) {
-            logger::print_error("Failed to parse workspace configuration: " + std::string(e.what()));
-            return 1;
-        }
-        toml_reader workspace_config(workspace_table);
+      // Load workspace configuration
+      toml::table workspace_table;
+      try {
+        workspace_table = toml::parse_file(workspace_file.string());
+      } catch (const toml::parse_error &e) {
+        logger::print_error("Failed to parse workspace configuration: " +
+                            std::string(e.what()));
+        return 1;
+      }
+      toml_reader workspace_config(workspace_table);
 
-        // Determine build configuration and generators from workspace config
-        if (config_name.empty()) {
-            config_name = workspace_config.get_string("workspace.build_type", "Debug");
+      // Determine build configuration and generators from workspace config
+      if (config_name.empty()) {
+        config_name =
+            workspace_config.get_string("workspace.build_type", "Debug");
+      }
+      if (generators.empty()) {
+        auto ws_gens = workspace_config.get_string_array("package.generators");
+        if (!ws_gens.empty()) {
+          generators = uppercase_generators(ws_gens);
+        } else {
+          generators = get_default_generators();
         }
-        if (generators.empty()) {
-            auto ws_gens = workspace_config.get_string_array("package.generators");
-            if (!ws_gens.empty()) {
-                generators = uppercase_generators(ws_gens);
-            } else {
-                generators = get_default_generators();
-            }
-        }
+      }
 
-        // Build all projects if needed
-        if (!skip_build) {
-            logger::building("all projects in workspace before packaging");
-            cforge_context_t build_ctx;
-            memset(&build_ctx, 0, sizeof(build_ctx));
-            strncpy(build_ctx.working_dir, ctx->working_dir, sizeof(build_ctx.working_dir) - 1);
-            build_ctx.working_dir[sizeof(build_ctx.working_dir) - 1] = '\0';
-            build_ctx.args.command = strdup("build");
-            build_ctx.args.config = strdup(config_name.c_str());
-            if (verbose) {
-                build_ctx.args.verbosity = strdup("verbose");
-            }
-            int res = cforge_cmd_build(&build_ctx);
-            free(build_ctx.args.command);
-            free(build_ctx.args.config);
-            if (build_ctx.args.verbosity) free(build_ctx.args.verbosity);
-            if (res != 0) {
-                logger::print_error("Workspace build failed");
-                return 1;
-            }
+      // Build all projects if needed
+      if (!skip_build) {
+        logger::building("all projects in workspace before packaging");
+        cforge_context_t build_ctx;
+        memset(&build_ctx, 0, sizeof(build_ctx));
+        strncpy(build_ctx.working_dir, ctx->working_dir,
+                sizeof(build_ctx.working_dir) - 1);
+        build_ctx.working_dir[sizeof(build_ctx.working_dir) - 1] = '\0';
+        build_ctx.args.command = strdup("build");
+        build_ctx.args.config = strdup(config_name.c_str());
+        if (verbose) {
+          build_ctx.args.verbosity = strdup("verbose");
         }
-
-        // Load workspace and get projects
-        workspace ws;
-        if (!ws.load(current_dir)) {
-            logger::print_error("Failed to load workspace for packaging");
-            return 1;
+        int res = cforge_cmd_build(&build_ctx);
+        free(build_ctx.args.command);
+        free(build_ctx.args.config);
+        if (build_ctx.args.verbosity)
+          free(build_ctx.args.verbosity);
+        if (res != 0) {
+          logger::print_error("Workspace build failed");
+          return 1;
         }
-        auto projects = ws.get_projects();
+      }
 
-        // Create consolidated workspace package
-        bool success = create_workspace_package(ws.get_name(), projects, config_name, verbose, current_dir);
-        return success ? 0 : 1;
+      // Load workspace and get projects
+      workspace ws;
+      if (!ws.load(current_dir)) {
+        logger::print_error("Failed to load workspace for packaging");
+        return 1;
+      }
+      auto projects = ws.get_projects();
+
+      // Create consolidated workspace package
+      bool success = create_workspace_package(
+          ws.get_name(), projects, config_name, verbose, current_dir);
+      return success ? 0 : 1;
     } else {
       // Handle single project packaging
       logger::print_verbose("Packaging in single project context");
@@ -2738,7 +2757,7 @@ cforge_int_t cforge_cmd_package(const cforge_context_t *ctx) {
       }
 
       logger::print_verbose("Using package generators: " +
-                           join_strings(generators, ", "));
+                            join_strings(generators, ", "));
 
       // Filter out unsupported package generators for this platform
       {
@@ -2747,16 +2766,19 @@ cforge_int_t cforge_cmd_package(const cforge_context_t *ctx) {
           if (check_generator_tools_installed(gen)) {
             filtered.push_back(gen);
           } else {
-            logger::print_warning("Skipping generator '" + gen + "' as unsupported on this platform");
+            logger::print_warning("Skipping generator '" + gen +
+                                  "' as unsupported on this platform");
           }
         }
         if (filtered.empty()) {
-          logger::print_error("No valid package generators available for this platform. Aborting packaging.");
+          logger::print_error("No valid package generators available for this "
+                              "platform. Aborting packaging.");
           return 1;
         }
         if (filtered.size() != generators.size()) {
           generators = filtered;
-          logger::print_verbose("Proceeding with filtered generators: " + join_strings(generators, ", "));
+          logger::print_verbose("Proceeding with filtered generators: " +
+                                join_strings(generators, ", "));
         }
       }
 

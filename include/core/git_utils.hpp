@@ -5,8 +5,8 @@
 
 #pragma once
 
-#include "core/process_utils.hpp"
 #include "cforge/log.hpp"
+#include "core/process_utils.hpp"
 
 #include <filesystem>
 #include <optional>
@@ -30,21 +30,19 @@ struct git_result {
  */
 struct git_clone_options {
   std::string url;
-  std::string tag;       // Tag to checkout (optional)
-  std::string branch;    // Branch to checkout (optional)
-  std::string commit;    // Commit to checkout (optional)
-  bool shallow = false;  // Use shallow clone (--depth 1)
-  bool quiet = true;     // Suppress Git output
-  int timeout = 120;     // Timeout in seconds
+  std::string tag;      // Tag to checkout (optional)
+  std::string branch;   // Branch to checkout (optional)
+  std::string commit;   // Commit to checkout (optional)
+  bool shallow = false; // Use shallow clone (--depth 1)
+  bool quiet = true;    // Suppress Git output
+  int timeout = 120;    // Timeout in seconds
 };
 
 /**
  * @brief Check if Git is available
  * @return true if git command is available
  */
-inline bool is_git_available() {
-  return is_command_available("git", 5);
-}
+inline bool is_git_available() { return is_command_available("git", 5); }
 
 /**
  * @brief Check if a directory is a Git repository
@@ -68,8 +66,8 @@ inline git_result git_execute(const std::vector<std::string> &args,
                               int timeout = 60) {
   git_result result;
 
-  process_result pr = execute_process("git", args, working_dir, nullptr,
-                                      nullptr, timeout);
+  process_result pr =
+      execute_process("git", args, working_dir, nullptr, nullptr, timeout);
 
   result.success = pr.success && pr.exit_code == 0;
   result.output = pr.stdout_output;
@@ -232,9 +230,10 @@ inline std::string git_get_head_commit(const std::filesystem::path &repo_dir,
  * @param repo_dir Repository directory
  * @return Branch name or empty string if detached HEAD
  */
-inline std::string git_get_current_branch(const std::filesystem::path &repo_dir) {
-  git_result result = git_execute(
-      {"rev-parse", "--abbrev-ref", "HEAD"}, repo_dir.string());
+inline std::string
+git_get_current_branch(const std::filesystem::path &repo_dir) {
+  git_result result =
+      git_execute({"rev-parse", "--abbrev-ref", "HEAD"}, repo_dir.string());
 
   if (result.success) {
     std::string branch = result.output;
@@ -284,8 +283,10 @@ inline bool clone_or_update_dependency(const std::string &url,
                                        bool verbose = false) {
   // Determine what ref to checkout
   std::string ref = options.commit;
-  if (ref.empty()) ref = options.tag;
-  if (ref.empty()) ref = options.branch;
+  if (ref.empty())
+    ref = options.tag;
+  if (ref.empty())
+    ref = options.branch;
 
   if (std::filesystem::exists(dest) && is_git_repository(dest)) {
     // Repository exists - fetch and checkout
@@ -302,7 +303,8 @@ inline bool clone_or_update_dependency(const std::string &url,
     if (!ref.empty()) {
       git_result checkout_result = git_checkout(dest, ref, !verbose);
       if (!checkout_result.success) {
-        logger::print_error("Failed to checkout " + ref + " in " + dest.string());
+        logger::print_error("Failed to checkout " + ref + " in " +
+                            dest.string());
         return false;
       }
     }
@@ -320,7 +322,8 @@ inline bool clone_or_update_dependency(const std::string &url,
     try {
       std::filesystem::create_directories(dest.parent_path());
     } catch (const std::exception &e) {
-      logger::print_error("Failed to create directory: " + std::string(e.what()));
+      logger::print_error("Failed to create directory: " +
+                          std::string(e.what()));
       return false;
     }
   }

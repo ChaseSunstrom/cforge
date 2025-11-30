@@ -6,11 +6,11 @@
 #pragma once
 
 #include "core/toml_reader.hpp"
+#include <algorithm>
 #include <filesystem>
 #include <memory>
 #include <string>
 #include <vector>
-#include <algorithm>
 
 namespace cforge {
 
@@ -45,8 +45,6 @@ split_project_list(const std::string &project_list) {
   return result;
 }
 
-
-
 /**
  * @brief Represents a project within a workspace
  */
@@ -54,8 +52,10 @@ struct workspace_project {
   std::string name;
   std::filesystem::path path;
   std::vector<std::string> dependencies;
-  bool is_startup = false;          ///< Runtime flag: true if this is the active startup project
-  bool is_startup_project = false;  ///< Config flag: true if marked as startup in workspace config
+  bool is_startup =
+      false; ///< Runtime flag: true if this is the active startup project
+  bool is_startup_project =
+      false; ///< Config flag: true if marked as startup in workspace config
 };
 
 /**
@@ -233,7 +233,6 @@ private:
   std::string startup_project_;
 };
 
-
 /**
  * @brief Generate a CMakeLists.txt file from cforge.toml configuration
  *
@@ -243,11 +242,12 @@ private:
  * @return bool Success flag
  */
 bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
-                                    const toml_reader &project_config,
-                                    bool verbose);
+                                   const toml_reader &project_config,
+                                   bool verbose);
 
 /**
- * @brief Generate a workspace-level CMakeLists.txt file from workspace configuration
+ * @brief Generate a workspace-level CMakeLists.txt file from workspace
+ * configuration
  *
  * @param workspace_dir Workspace directory
  * @param workspace_config Workspace configuration from cforge.workspace.toml
@@ -258,15 +258,15 @@ bool generate_workspace_cmakelists(const std::filesystem::path &workspace_dir,
                                    const toml_reader &workspace_config,
                                    bool verbose);
 
-
-                                  /**
+/**
  * @brief Check if the current directory is within a workspace
  *
  * @param path Directory to check
  * @return std::pair<bool, std::filesystem::path> Pair of (is_workspace,
  * workspace_directory)
  */
-std::pair<bool, std::filesystem::path> is_in_workspace(const std::filesystem::path &path);
+std::pair<bool, std::filesystem::path>
+is_in_workspace(const std::filesystem::path &path);
 
 /**
  * @brief Add Git dependencies configuration to CMakeLists.txt
@@ -276,9 +276,8 @@ std::pair<bool, std::filesystem::path> is_in_workspace(const std::filesystem::pa
  * @param deps_dir Dependencies directory
  * @param cmakelists CMakeLists.txt output stream
  */
-void
-configure_git_dependencies_in_cmake(const toml_reader &project_config,
-                                    const std::string &deps_dir,
-                                    std::ofstream &cmakelists);
+void configure_git_dependencies_in_cmake(const toml_reader &project_config,
+                                         const std::string &deps_dir,
+                                         std::ofstream &cmakelists);
 
 } // namespace cforge

@@ -34,47 +34,48 @@ struct benchmark_result {
 /**
  * @brief Find benchmark executables in build directory
  */
-std::vector<fs::path> find_benchmark_executables(const fs::path& build_dir,
-                                                  const std::string& config) {
+std::vector<fs::path> find_benchmark_executables(const fs::path &build_dir,
+                                                 const std::string &config) {
   std::vector<fs::path> executables;
 
   // Common benchmark naming patterns
-  std::vector<std::string> patterns = {
-    "bench", "benchmark", "benchmarks", "_bench", "_benchmark"
-  };
+  std::vector<std::string> patterns = {"bench", "benchmark", "benchmarks",
+                                       "_bench", "_benchmark"};
 
   // Search directories
-  std::vector<fs::path> search_dirs = {
-    build_dir / "bin" / config,
-    build_dir / config,
-    build_dir / "bin",
-    build_dir
-  };
+  std::vector<fs::path> search_dirs = {build_dir / "bin" / config,
+                                       build_dir / config, build_dir / "bin",
+                                       build_dir};
 
-  for (const auto& dir : search_dirs) {
-    if (!fs::exists(dir)) continue;
+  for (const auto &dir : search_dirs) {
+    if (!fs::exists(dir))
+      continue;
 
     try {
-      for (const auto& entry : fs::directory_iterator(dir)) {
-        if (!entry.is_regular_file()) continue;
+      for (const auto &entry : fs::directory_iterator(dir)) {
+        if (!entry.is_regular_file())
+          continue;
 
         std::string filename = entry.path().stem().string();
         std::string ext = entry.path().extension().string();
 
         // Check if it's an executable
 #ifdef _WIN32
-        if (ext != ".exe") continue;
+        if (ext != ".exe")
+          continue;
 #else
         // On Unix, check if executable bit is set
         auto perms = fs::status(entry.path()).permissions();
-        if ((perms & fs::perms::owner_exec) == fs::perms::none) continue;
+        if ((perms & fs::perms::owner_exec) == fs::perms::none)
+          continue;
 #endif
 
         // Check if name matches benchmark pattern
         std::string lower_name = filename;
-        std::transform(lower_name.begin(), lower_name.end(), lower_name.begin(), ::tolower);
+        std::transform(lower_name.begin(), lower_name.end(), lower_name.begin(),
+                       ::tolower);
 
-        for (const auto& pattern : patterns) {
+        for (const auto &pattern : patterns) {
           if (lower_name.find(pattern) != std::string::npos) {
             executables.push_back(entry.path());
             break;
@@ -92,11 +93,13 @@ std::vector<fs::path> find_benchmark_executables(const fs::path& build_dir,
 /**
  * @brief Parse Google Benchmark output
  */
-std::vector<benchmark_result> parse_google_benchmark_output(const std::string& output) {
+std::vector<benchmark_result>
+parse_google_benchmark_output(const std::string &output) {
   std::vector<benchmark_result> results;
 
-  // Google Benchmark format: BM_Name/iterations    time ns    cpu ns    iterations
-  std::regex bench_regex(R"(^(BM_\w+(?:/\d+)?)\s+(\d+(?:\.\d+)?)\s+(ns|us|ms|s))");
+  // Google Benchmark format: BM_Name/iterations    time ns    cpu ns iterations
+  std::regex bench_regex(
+      R"(^(BM_\w+(?:/\d+)?)\s+(\d+(?:\.\d+)?)\s+(ns|us|ms|s))");
 
   std::istringstream iss(output);
   std::string line;
@@ -109,9 +112,12 @@ std::vector<benchmark_result> parse_google_benchmark_output(const std::string& o
       result.unit = match[3].str();
 
       // Convert to nanoseconds
-      if (result.unit == "us") result.time_ns *= 1000;
-      else if (result.unit == "ms") result.time_ns *= 1000000;
-      else if (result.unit == "s") result.time_ns *= 1000000000;
+      if (result.unit == "us")
+        result.time_ns *= 1000;
+      else if (result.unit == "ms")
+        result.time_ns *= 1000000;
+      else if (result.unit == "s")
+        result.time_ns *= 1000000000;
 
       results.push_back(result);
     }
@@ -138,8 +144,7 @@ std::string format_duration(double ns) {
 /**
  * @brief Run a simple benchmark on a function
  */
-void run_simple_benchmark(const std::string& name,
-                          std::function<void()> func,
+void run_simple_benchmark(const std::string &name, std::function<void()> func,
                           int iterations = 1000) {
   using namespace cforge;
 
@@ -155,11 +160,12 @@ void run_simple_benchmark(const std::string& name,
   }
   auto end = std::chrono::high_resolution_clock::now();
 
-  auto duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
+  auto duration =
+      std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
   double ns_per_op = static_cast<double>(duration.count()) / iterations;
 
-  fmt::print("  {:<40} {:>15} ({} iterations)\n",
-             name, format_duration(ns_per_op), iterations);
+  fmt::print("  {:<40} {:>15} ({} iterations)\n", name,
+             format_duration(ns_per_op), iterations);
 }
 
 } // anonymous namespace
@@ -173,14 +179,14 @@ cforge_int_t cforge_cmd_bench(const cforge_context_t *ctx) {
   fs::path project_dir = ctx->working_dir;
 
   // Parse arguments
-  std::string config = "Release";  // Benchmarks should run in Release by default
+  std::string config = "Release"; // Benchmarks should run in Release by default
   bool verbose = false;
   bool build_first = true;
   std::string filter;
   std::string output_format;
   std::string specific_bench;
 
-  for (int i = 1; i < ctx->args.arg_count; i++) {
+  for (int i = 0; i < ctx->args.arg_count; i++) {
     std::string arg = ctx->args.args[i];
     if (arg == "-c" || arg == "--config") {
       if (i + 1 < ctx->args.arg_count) {
@@ -218,7 +224,8 @@ cforge_int_t cforge_cmd_bench(const cforge_context_t *ctx) {
 
   // Build first if needed
   if (build_first) {
-    logger::print_action("Building", "project in " + config + " mode for benchmarks");
+    logger::print_action("Building",
+                         "project in " + config + " mode for benchmarks");
 
     // Create a context for build
     cforge_context_t build_ctx = *ctx;
@@ -248,9 +255,9 @@ cforge_int_t cforge_cmd_bench(const cforge_context_t *ctx) {
   // If specific bench target is configured, filter to only that
   if (!bench_target.empty()) {
     auto it = std::find_if(bench_executables.begin(), bench_executables.end(),
-      [&bench_target](const fs::path& p) {
-        return p.stem().string() == bench_target;
-      });
+                           [&bench_target](const fs::path &p) {
+                             return p.stem().string() == bench_target;
+                           });
     if (it != bench_executables.end()) {
       bench_executables = {*it};
     }
@@ -259,13 +266,15 @@ cforge_int_t cforge_cmd_bench(const cforge_context_t *ctx) {
   // If specific bench is specified on command line, filter to it
   if (!specific_bench.empty()) {
     auto it = std::find_if(bench_executables.begin(), bench_executables.end(),
-      [&specific_bench](const fs::path& p) {
-        return p.stem().string().find(specific_bench) != std::string::npos;
-      });
+                           [&specific_bench](const fs::path &p) {
+                             return p.stem().string().find(specific_bench) !=
+                                    std::string::npos;
+                           });
     if (it != bench_executables.end()) {
       bench_executables = {*it};
     } else {
-      logger::print_error("No benchmark matching '" + specific_bench + "' found");
+      logger::print_error("No benchmark matching '" + specific_bench +
+                          "' found");
       return 1;
     }
   }
@@ -274,8 +283,10 @@ cforge_int_t cforge_cmd_bench(const cforge_context_t *ctx) {
     logger::print_warning("No benchmark executables found");
     logger::print_plain("");
     logger::print_plain("To add benchmarks:");
-    logger::print_plain("  1. Create a bench/ directory with benchmark source files");
-    logger::print_plain("  2. Name the target with 'bench' or 'benchmark' in the name");
+    logger::print_plain(
+        "  1. Create a bench/ directory with benchmark source files");
+    logger::print_plain(
+        "  2. Name the target with 'bench' or 'benchmark' in the name");
     logger::print_plain("  3. Or configure in cforge.toml:");
     logger::print_plain("     [benchmark]");
     logger::print_plain("     target = \"my_benchmarks\"");
@@ -290,7 +301,7 @@ cforge_int_t cforge_cmd_bench(const cforge_context_t *ctx) {
   int total_benchmarks = 0;
   std::vector<benchmark_result> all_results;
 
-  for (const auto& bench_exe : bench_executables) {
+  for (const auto &bench_exe : bench_executables) {
     logger::print_action("Running", bench_exe.filename().string());
 
     std::vector<std::string> args;
@@ -303,23 +314,25 @@ cforge_int_t cforge_cmd_bench(const cforge_context_t *ctx) {
       args.push_back("--benchmark_format=csv");
     }
 
-    auto result = execute_process(bench_exe.string(), args, project_dir.string(),
-      [&verbose, &all_results, &total_benchmarks](const std::string& line) {
-        fmt::print("{}\n", line);
+    auto result = execute_process(
+        bench_exe.string(), args, project_dir.string(),
+        [&verbose, &all_results, &total_benchmarks](const std::string &line) {
+          fmt::print("{}\n", line);
 
-        // Try to parse benchmark results
-        if (line.find("BM_") != std::string::npos ||
-            line.find("Benchmark") != std::string::npos) {
-          total_benchmarks++;
-        }
-      },
-      [](const std::string& line) {
-        fmt::print(fg(fmt::color::red), "{}\n", line);
-      });
+          // Try to parse benchmark results
+          if (line.find("BM_") != std::string::npos ||
+              line.find("Benchmark") != std::string::npos) {
+            total_benchmarks++;
+          }
+        },
+        [](const std::string &line) {
+          fmt::print(fg(fmt::color::red), "{}\n", line);
+        });
 
     if (result.exit_code != 0) {
       logger::print_warning("Benchmark " + bench_exe.filename().string() +
-                           " exited with code " + std::to_string(result.exit_code));
+                            " exited with code " +
+                            std::to_string(result.exit_code));
     }
 
     fmt::print("\n");

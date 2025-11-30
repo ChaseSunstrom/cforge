@@ -7,9 +7,8 @@
 
 #include "core/command.h" // Include for cforge_context_t
 #include "core/types.h"
-#include <string>
 #include <cstdint>
-
+#include <string>
 
 /**
  * @brief Initialize command handlers

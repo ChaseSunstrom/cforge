@@ -1,9 +1,9 @@
 #include "cforge/log.hpp"
 #include "core/command.h"
 #include "core/commands.hpp"
+#include <filesystem>
 #include <iostream>
 #include <string>
-#include <filesystem>
 #include <vector>
 
 using namespace cforge;
@@ -22,8 +22,7 @@ bool parse_command_line(int argc, char *argv[], cforge_context_t *ctx) {
 
   // Get current working directory
   std::filesystem::path cwd = std::filesystem::current_path();
-  strncpy(ctx->working_dir, cwd.string().c_str(),
-          sizeof(ctx->working_dir) - 1);
+  strncpy(ctx->working_dir, cwd.string().c_str(), sizeof(ctx->working_dir) - 1);
 
   // Temporary vector to store args while we process them
   std::vector<std::string> remaining_args;

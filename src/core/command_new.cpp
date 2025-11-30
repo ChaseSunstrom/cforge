@@ -19,7 +19,7 @@ namespace {
 /**
  * @brief Convert string to PascalCase
  */
-std::string to_pascal_case(const std::string& input) {
+std::string to_pascal_case(const std::string &input) {
   std::string result;
   bool capitalize_next = true;
 
@@ -39,12 +39,12 @@ std::string to_pascal_case(const std::string& input) {
 /**
  * @brief Convert string to snake_case
  */
-std::string to_snake_case(const std::string& input) {
+std::string to_snake_case(const std::string &input) {
   std::string result;
   for (size_t i = 0; i < input.length(); i++) {
     char c = input[i];
     if (std::isupper(c)) {
-      if (i > 0 && !std::isupper(input[i-1])) {
+      if (i > 0 && !std::isupper(input[i - 1])) {
         result += '_';
       }
       result += std::tolower(c);
@@ -60,7 +60,7 @@ std::string to_snake_case(const std::string& input) {
 /**
  * @brief Convert string to UPPER_CASE
  */
-std::string to_upper_case(const std::string& input) {
+std::string to_upper_case(const std::string &input) {
   std::string snake = to_snake_case(input);
   std::transform(snake.begin(), snake.end(), snake.begin(), ::toupper);
   return snake;
@@ -69,10 +69,11 @@ std::string to_upper_case(const std::string& input) {
 /**
  * @brief Generate a C++ class header file
  */
-bool generate_class_header(const fs::path& path, const std::string& class_name,
-                           const std::string& namespace_name) {
+bool generate_class_header(const fs::path &path, const std::string &class_name,
+                           const std::string &namespace_name) {
   std::ofstream file(path);
-  if (!file) return false;
+  if (!file)
+    return false;
 
   std::string guard = to_upper_case(class_name) + "_HPP";
   std::string pascal_name = to_pascal_case(class_name);
@@ -99,11 +100,15 @@ bool generate_class_header(const fs::path& path, const std::string& class_name,
   file << "     */\n";
   file << "    ~" << pascal_name << "() = default;\n\n";
   file << "    // Copy operations\n";
-  file << "    " << pascal_name << "(const " << pascal_name << "&) = default;\n";
-  file << "    " << pascal_name << "& operator=(const " << pascal_name << "&) = default;\n\n";
+  file << "    " << pascal_name << "(const " << pascal_name
+       << "&) = default;\n";
+  file << "    " << pascal_name << "& operator=(const " << pascal_name
+       << "&) = default;\n\n";
   file << "    // Move operations\n";
-  file << "    " << pascal_name << "(" << pascal_name << "&&) noexcept = default;\n";
-  file << "    " << pascal_name << "& operator=(" << pascal_name << "&&) noexcept = default;\n\n";
+  file << "    " << pascal_name << "(" << pascal_name
+       << "&&) noexcept = default;\n";
+  file << "    " << pascal_name << "& operator=(" << pascal_name
+       << "&&) noexcept = default;\n\n";
   file << "private:\n";
   file << "    // Member variables\n";
   file << "};\n";
@@ -120,10 +125,12 @@ bool generate_class_header(const fs::path& path, const std::string& class_name,
 /**
  * @brief Generate a C++ class implementation file
  */
-bool generate_class_source(const fs::path& path, const std::string& class_name,
-                           const std::string& header_name, const std::string& namespace_name) {
+bool generate_class_source(const fs::path &path, const std::string &class_name,
+                           const std::string &header_name,
+                           const std::string &namespace_name) {
   std::ofstream file(path);
-  if (!file) return false;
+  if (!file)
+    return false;
 
   std::string pascal_name = to_pascal_case(class_name);
 
@@ -145,10 +152,11 @@ bool generate_class_source(const fs::path& path, const std::string& class_name,
 /**
  * @brief Generate a header-only file
  */
-bool generate_header(const fs::path& path, const std::string& name,
-                     const std::string& namespace_name) {
+bool generate_header(const fs::path &path, const std::string &name,
+                     const std::string &namespace_name) {
   std::ofstream file(path);
-  if (!file) return false;
+  if (!file)
+    return false;
 
   std::string guard = to_upper_case(name) + "_HPP";
 
@@ -174,16 +182,18 @@ bool generate_header(const fs::path& path, const std::string& name,
 /**
  * @brief Generate a test file
  */
-bool generate_test(const fs::path& path, const std::string& test_name,
-                   const std::string& test_framework) {
+bool generate_test(const fs::path &path, const std::string &test_name,
+                   const std::string &test_framework) {
   std::ofstream file(path);
-  if (!file) return false;
+  if (!file)
+    return false;
 
   std::string pascal_name = to_pascal_case(test_name);
 
   if (test_framework == "catch2") {
     file << "#include <catch2/catch_test_macros.hpp>\n\n";
-    file << "TEST_CASE(\"" << pascal_name << " tests\", \"[" << test_name << "]\") {\n";
+    file << "TEST_CASE(\"" << pascal_name << " tests\", \"[" << test_name
+         << "]\") {\n";
     file << "    SECTION(\"basic test\") {\n";
     file << "        REQUIRE(true);\n";
     file << "    }\n";
@@ -209,7 +219,8 @@ bool generate_test(const fs::path& path, const std::string& test_name,
     file << "void test_" << to_snake_case(test_name) << "() {\n";
     file << "    // TODO: Add test code here\n";
     file << "    assert(true);\n";
-    file << "    std::cout << \"" << pascal_name << " tests passed!\" << std::endl;\n";
+    file << "    std::cout << \"" << pascal_name
+         << " tests passed!\" << std::endl;\n";
     file << "}\n\n";
     file << "int main() {\n";
     file << "    test_" << to_snake_case(test_name) << "();\n";
@@ -223,9 +234,10 @@ bool generate_test(const fs::path& path, const std::string& test_name,
 /**
  * @brief Generate a main file
  */
-bool generate_main(const fs::path& path) {
+bool generate_main(const fs::path &path) {
   std::ofstream file(path);
-  if (!file) return false;
+  if (!file)
+    return false;
 
   file << "#include <iostream>\n\n";
   file << "int main(int argc, char* argv[]) {\n";
@@ -239,10 +251,11 @@ bool generate_main(const fs::path& path) {
 /**
  * @brief Generate a struct header
  */
-bool generate_struct(const fs::path& path, const std::string& struct_name,
-                     const std::string& namespace_name) {
+bool generate_struct(const fs::path &path, const std::string &struct_name,
+                     const std::string &namespace_name) {
   std::ofstream file(path);
-  if (!file) return false;
+  if (!file)
+    return false;
 
   std::string guard = to_upper_case(struct_name) + "_HPP";
   std::string pascal_name = to_pascal_case(struct_name);
@@ -274,10 +287,11 @@ bool generate_struct(const fs::path& path, const std::string& struct_name,
 /**
  * @brief Generate an interface (abstract class) header
  */
-bool generate_interface(const fs::path& path, const std::string& interface_name,
-                        const std::string& namespace_name) {
+bool generate_interface(const fs::path &path, const std::string &interface_name,
+                        const std::string &namespace_name) {
   std::ofstream file(path);
-  if (!file) return false;
+  if (!file)
+    return false;
 
   std::string guard = to_upper_case(interface_name) + "_HPP";
   std::string pascal_name = to_pascal_case(interface_name);
@@ -301,8 +315,10 @@ bool generate_interface(const fs::path& path, const std::string& interface_name,
   file << "\n";
   file << "protected:\n";
   file << "    " << pascal_name << "() = default;\n";
-  file << "    " << pascal_name << "(const " << pascal_name << "&) = default;\n";
-  file << "    " << pascal_name << "& operator=(const " << pascal_name << "&) = default;\n";
+  file << "    " << pascal_name << "(const " << pascal_name
+       << "&) = default;\n";
+  file << "    " << pascal_name << "& operator=(const " << pascal_name
+       << "&) = default;\n";
   file << "};\n";
 
   if (!namespace_name.empty()) {
@@ -331,7 +347,7 @@ cforge_int_t cforge_cmd_new(const cforge_context_t *ctx) {
   std::string output_dir;
   bool force = false;
 
-  for (int i = 1; i < ctx->args.arg_count; i++) {
+  for (int i = 0; i < ctx->args.arg_count; i++) {
     std::string arg = ctx->args.args[i];
     if (arg == "-n" || arg == "--namespace") {
       if (i + 1 < ctx->args.arg_count) {
@@ -356,7 +372,8 @@ cforge_int_t cforge_cmd_new(const cforge_context_t *ctx) {
     logger::print_plain("Usage: cforge new <template> <name> [options]");
     logger::print_plain("");
     logger::print_plain("Templates:");
-    logger::print_plain("  class      Create a class with header and source files");
+    logger::print_plain(
+        "  class      Create a class with header and source files");
     logger::print_plain("  header     Create a header-only file");
     logger::print_plain("  struct     Create a struct header file");
     logger::print_plain("  interface  Create an interface (abstract class)");
@@ -426,7 +443,8 @@ cforge_int_t cforge_cmd_new(const cforge_context_t *ctx) {
     logger::print_action("Created", header_path.string());
 
     std::string header_include = snake_name + ".hpp";
-    if (!generate_class_source(source_path, name, header_include, namespace_name)) {
+    if (!generate_class_source(source_path, name, header_include,
+                               namespace_name)) {
       logger::print_error("Failed to create " + source_path.string());
       return 1;
     }
@@ -518,7 +536,8 @@ cforge_int_t cforge_cmd_new(const cforge_context_t *ctx) {
 
   } else {
     logger::print_error("Unknown template: " + template_type);
-    logger::print_plain("Available templates: class, header, struct, interface, test, main");
+    logger::print_plain(
+        "Available templates: class, header, struct, interface, test, main");
     return 1;
   }
 

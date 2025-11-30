@@ -250,8 +250,7 @@ private:
    */
   static void print_status_line(const std::string &status,
                                 const std::string &message,
-                                fmt::color status_color,
-                                bool is_bold = true,
+                                fmt::color status_color, bool is_bold = true,
                                 FILE *stream = stdout);
 };
 

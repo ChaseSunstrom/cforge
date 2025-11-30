@@ -13,14 +13,14 @@
 
 #pragma once
 
+#include "core/process_utils.hpp"
 #include <algorithm>
+#include <filesystem>
 #include <optional>
 #include <regex>
 #include <sstream>
 #include <string>
 #include <vector>
-#include <filesystem>
-#include "core/process_utils.hpp"
 
 namespace cforge {
 
@@ -100,9 +100,8 @@ struct semver {
    * @brief Convert version to string
    */
   std::string to_string() const {
-    std::string result =
-        std::to_string(major) + "." + std::to_string(minor) + "." +
-        std::to_string(patch);
+    std::string result = std::to_string(major) + "." + std::to_string(minor) +
+                         "." + std::to_string(patch);
 
     if (!prerelease.empty()) {
       result += "-" + prerelease;
@@ -151,12 +150,12 @@ struct semver {
  */
 struct version_constraint {
   enum class op_type {
-    EQ,  // =, exact match
-    NE,  // !=
-    LT,  // <
-    LE,  // <=
-    GT,  // >
-    GE,  // >=
+    EQ,    // =, exact match
+    NE,    // !=
+    LT,    // <
+    LE,    // <=
+    GT,    // >
+    GE,    // >=
     CARET, // ^, compatible (same major)
     TILDE  // ~, approximately (same major.minor)
   };

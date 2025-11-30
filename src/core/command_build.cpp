@@ -80,13 +80,14 @@ static bool is_cmake_available() {
     logger::print_verbose(
         "Please install CMake from https://cmake.org/download/ and make sure "
         "it's in your PATH");
-    logger::print_verbose("We'll still attempt to run the cmake command in case "
-                         "this is a false negative");
+    logger::print_verbose(
+        "We'll still attempt to run the cmake command in case "
+        "this is a false negative");
 
     // Suggest alternative build methods
     if (is_visual_studio_available()) {
       logger::print_verbose("Visual Studio is available. You can open the "
-                           "project in Visual Studio and build it there");
+                            "project in Visual Studio and build it there");
       logger::print_verbose("1. Open Visual Studio");
       logger::print_verbose("2. Select 'Open a local folder'");
       logger::print_verbose("3. Navigate to your project folder and select it");
@@ -107,7 +108,8 @@ static bool is_cmake_available() {
  * @return bool Success flag
  */
 bool clone_git_dependencies(const std::filesystem::path &project_dir,
-                            const toml_reader &project_config, bool verbose, bool skip_deps) {
+                            const toml_reader &project_config, bool verbose,
+                            bool skip_deps) {
   // Check if we should skip dependency updates
   if (skip_deps) {
     logger::print_verbose("Skipping Git dependency updates (--skip-deps flag)");
@@ -147,20 +149,21 @@ bool clone_git_dependencies(const std::filesystem::path &project_dir,
   std::filesystem::path toml_file = project_dir / "cforge.toml";
   std::string toml_hash;
   {
-      std::ifstream toml_stream(toml_file);
-      if (toml_stream) {
-          std::ostringstream ss;
-          ss << toml_stream.rdbuf();
-          toml_hash = dep_hashes.calculate_file_content_hash(ss.str());
-      } else {
-          toml_hash.clear();
-      }
+    std::ifstream toml_stream(toml_file);
+    if (toml_stream) {
+      std::ostringstream ss;
+      ss << toml_stream.rdbuf();
+      toml_hash = dep_hashes.calculate_file_content_hash(ss.str());
+    } else {
+      toml_hash.clear();
+    }
   }
   std::string stored_toml_hash = dep_hashes.get_hash("cforge.toml");
 
   // Get all Git dependencies
   auto git_deps = project_config.get_table_keys("dependencies.git");
-  logger::print_action("Fetching", std::to_string(git_deps.size()) + " Git dependencies");
+  logger::print_action("Fetching",
+                       std::to_string(git_deps.size()) + " Git dependencies");
 
   bool all_success = true;
 
@@ -188,10 +191,10 @@ bool clone_git_dependencies(const std::filesystem::path &project_dir,
       ref = commit;
 
     // Get custom directory if specified
-    std::string custom_dir = project_config.get_string("dependencies.git." + dep + ".directory", "");
-    std::filesystem::path dep_path = custom_dir.empty() ? 
-                                    deps_path / dep : 
-                                    project_dir / custom_dir / dep;
+    std::string custom_dir =
+        project_config.get_string("dependencies.git." + dep + ".directory", "");
+    std::filesystem::path dep_path =
+        custom_dir.empty() ? deps_path / dep : project_dir / custom_dir / dep;
 
     // Check if version has changed
     std::string stored_version = dep_hashes.get_version(dep);
@@ -200,24 +203,29 @@ bool clone_git_dependencies(const std::filesystem::path &project_dir,
     if (std::filesystem::exists(dep_path)) {
       // If version changed, remove the directory and reclone
       if (version_changed) {
-        logger::print_action("Updating", "version changed for '" + dep + "', removing existing directory");
+        logger::print_action("Updating", "version changed for '" + dep +
+                                             "', removing existing directory");
         try {
           std::filesystem::remove_all(dep_path);
-        } catch (const std::exception& e) {
-          logger::print_error("Failed to remove directory for '" + dep + "': " + e.what());
+        } catch (const std::exception &e) {
+          logger::print_error("Failed to remove directory for '" + dep +
+                              "': " + e.what());
           all_success = false;
           continue;
         }
       } else {
         // Check if update is needed based on directory hash
-        std::string current_hash = dependency_hash::calculate_directory_hash(dep_path);
+        std::string current_hash =
+            dependency_hash::calculate_directory_hash(dep_path);
         std::string stored_hash = dep_hashes.get_hash(dep);
 
-        bool needs_update = current_hash != stored_hash || stored_toml_hash != toml_hash;
-        
+        bool needs_update =
+            current_hash != stored_hash || stored_toml_hash != toml_hash;
+
         if (!needs_update) {
           // Inform that dependency is up to date and no update is needed
-          logger::print_verbose("Dependency '" + dep + "' is up to date, skipping update");
+          logger::print_verbose("Dependency '" + dep +
+                                "' is up to date, skipping update");
           continue;
         }
 
@@ -226,7 +234,8 @@ bool clone_git_dependencies(const std::filesystem::path &project_dir,
             "' directory exists but needs update at: " + dep_path.string());
 
         // Update the repository
-        logger::print_action("Updating", "dependency '" + dep + "' from remote");
+        logger::print_action("Updating",
+                             "dependency '" + dep + "' from remote");
 
         // Run git fetch to update
         std::vector<std::string> fetch_args = {"fetch", "--quiet", "--depth=1"};
@@ -247,7 +256,8 @@ bool clone_git_dependencies(const std::filesystem::path &project_dir,
 
         // Checkout specific ref if provided
         if (!ref.empty()) {
-          logger::print_action("Checking out", ref + " for dependency '" + dep + "'");
+          logger::print_action("Checking out",
+                               ref + " for dependency '" + dep + "'");
 
           std::vector<std::string> checkout_args = {"checkout", ref, "--quiet"};
           if (verbose) {
@@ -282,8 +292,9 @@ bool clone_git_dependencies(const std::filesystem::path &project_dir,
     // Clone the repository
     logger::fetching(dep + " from " + url);
 
-    std::vector<std::string> clone_args = {"clone", "--depth=1", url, dep_path.string()};
-    
+    std::vector<std::string> clone_args = {"clone", "--depth=1", url,
+                                           dep_path.string()};
+
     // Add specific ref if provided
     if (!ref.empty()) {
       clone_args.push_back("--branch");
@@ -294,8 +305,8 @@ bool clone_git_dependencies(const std::filesystem::path &project_dir,
       clone_args.push_back("--quiet");
     }
 
-    bool clone_result =
-        execute_tool("git", clone_args, "", "Git Clone for " + dep, verbose, 600);
+    bool clone_result = execute_tool("git", clone_args, "",
+                                     "Git Clone for " + dep, verbose, 600);
 
     if (!clone_result) {
       logger::print_error("Failed to clone dependency '" + dep + "' from " +
@@ -304,9 +315,11 @@ bool clone_git_dependencies(const std::filesystem::path &project_dir,
       continue;
     }
 
-    // Checkout specific commit if provided (since --branch doesn't work with commit hashes)
+    // Checkout specific commit if provided (since --branch doesn't work with
+    // commit hashes)
     if (!commit.empty()) {
-      logger::print_action("Checking out", "commit " + commit + " for dependency '" + dep + "'");
+      logger::print_action("Checking out", "commit " + commit +
+                                               " for dependency '" + dep + "'");
 
       std::vector<std::string> checkout_args = {"checkout", commit, "--quiet"};
       if (verbose) {
@@ -326,7 +339,8 @@ bool clone_git_dependencies(const std::filesystem::path &project_dir,
     }
 
     // Store hash and version for newly cloned dependency
-    std::string current_hash = dependency_hash::calculate_directory_hash(dep_path);
+    std::string current_hash =
+        dependency_hash::calculate_directory_hash(dep_path);
     dep_hashes.set_hash(dep, current_hash);
     if (!ref.empty()) {
       dep_hashes.set_version(dep, ref);
@@ -349,7 +363,6 @@ bool clone_git_dependencies(const std::filesystem::path &project_dir,
   return all_success;
 }
 
-
 /**
  * @brief Run CMake configure step
  *
@@ -370,8 +383,7 @@ static bool run_cmake_configure(const std::vector<std::string> &cmake_args,
 
   logger::configuring("CMake");
 
-  if (verbose)
-  {
+  if (verbose) {
     std::string cmd = "cmake";
     for (const auto &arg : cmake_args) {
       // Quote arguments that contain spaces
@@ -525,9 +537,11 @@ static bool build_project(const std::filesystem::path &project_dir,
     use_workspace_build = true;
   }
   // Determine build and source directories
-  std::filesystem::path build_base_dir = use_workspace_build ?
-      workspace_dir / DEFAULT_BUILD_DIR : project_dir / DEFAULT_BUILD_DIR;
-  std::filesystem::path source_dir = use_workspace_build ? workspace_dir : project_dir;
+  std::filesystem::path build_base_dir = use_workspace_build
+                                             ? workspace_dir / DEFAULT_BUILD_DIR
+                                             : project_dir / DEFAULT_BUILD_DIR;
+  std::filesystem::path source_dir =
+      use_workspace_build ? workspace_dir : project_dir;
 
   // Get the config-specific build directory
   std::filesystem::path build_dir =
@@ -546,7 +560,8 @@ static bool build_project(const std::filesystem::path &project_dir,
     }
   }
 
-  // Handle project-level dependencies and CMakeLists generation (skip in workspace build)
+  // Handle project-level dependencies and CMakeLists generation (skip in
+  // workspace build)
   if (!use_workspace_build && has_project_config) {
     // Clone Git dependencies before generating CMakeLists.txt
     if (project_config.has_key("dependencies.git")) {
@@ -555,12 +570,14 @@ static bool build_project(const std::filesystem::path &project_dir,
         // Make sure we're in the project directory for relative paths to work
         std::filesystem::current_path(project_dir);
 
-        if (!clone_git_dependencies(project_dir, project_config, verbose, skip_deps)) {
+        if (!clone_git_dependencies(project_dir, project_config, verbose,
+                                    skip_deps)) {
           logger::print_error("Failed to clone Git dependencies");
           return false;
         }
 
-        logger::print_action("Finished", "Git dependencies successfully set up");
+        logger::print_action("Finished",
+                             "Git dependencies successfully set up");
       } catch (const std::exception &ex) {
         logger::print_error("Exception while setting up Git dependencies: " +
                             std::string(ex.what()));
@@ -573,8 +590,10 @@ static bool build_project(const std::filesystem::path &project_dir,
         build_dir / ".cforge_cmakefile_timestamp";
 
     // Generate new CMakeLists.txt in the build directory
-    if (!::generate_cmakelists_from_toml(project_dir, project_config, verbose)) {
-      logger::print_error("Failed to generate CMakeLists.txt in project directory");
+    if (!::generate_cmakelists_from_toml(project_dir, project_config,
+                                         verbose)) {
+      logger::print_error(
+          "Failed to generate CMakeLists.txt in project directory");
       return false;
     }
 
@@ -584,15 +603,12 @@ static bool build_project(const std::filesystem::path &project_dir,
       timestamp << "Generated: " << std::time(nullptr) << std::endl;
       timestamp.close();
     }
-
   }
 
   // Prepare CMake arguments
-  std::vector<std::string> cmake_args = {
-      "-S", source_dir.string(),
-      "-B", build_dir.string(),
-      "-DCMAKE_BUILD_TYPE=" + build_config
-  };
+  std::vector<std::string> cmake_args = {"-S", source_dir.string(), "-B",
+                                         build_dir.string(),
+                                         "-DCMAKE_BUILD_TYPE=" + build_config};
 
   // Inject top-level build.defines into CMake args
   if (has_project_config && project_config.has_key("build.defines")) {
@@ -608,7 +624,8 @@ static bool build_project(const std::filesystem::path &project_dir,
   }
   // Inject config-specific defines: build.config.<config>.defines
   {
-    std::string defs_key = "build.config." + string_to_lower(build_config) + ".defines";
+    std::string defs_key =
+        "build.config." + string_to_lower(build_config) + ".defines";
     if (has_project_config && project_config.has_key(defs_key)) {
       auto cfg_defs = project_config.get_string_array(defs_key);
       for (const auto &d : cfg_defs) {
@@ -634,23 +651,29 @@ static bool build_project(const std::filesystem::path &project_dir,
     }
   }
 
-  // Cross-compilation settings: inject toolchain file, system name, and processors
-  if (has_project_config && project_config.has_key("build.cross.toolchain_file")) {
-    std::string tc_file = project_config.get_string("build.cross.toolchain_file", "");
+  // Cross-compilation settings: inject toolchain file, system name, and
+  // processors
+  if (has_project_config &&
+      project_config.has_key("build.cross.toolchain_file")) {
+    std::string tc_file =
+        project_config.get_string("build.cross.toolchain_file", "");
     if (!tc_file.empty()) {
       cmake_args.push_back("-DCMAKE_TOOLCHAIN_FILE=" + tc_file);
       logger::print_verbose("Using CMake toolchain file: " + tc_file);
     }
   }
   if (has_project_config && project_config.has_key("build.cross.system_name")) {
-    std::string sys_name = project_config.get_string("build.cross.system_name", "");
+    std::string sys_name =
+        project_config.get_string("build.cross.system_name", "");
     if (!sys_name.empty()) {
       cmake_args.push_back("-DCMAKE_SYSTEM_NAME=" + sys_name);
       logger::print_verbose("Using CMake system name: " + sys_name);
     }
   }
-  if (has_project_config && project_config.has_key("build.cross.system_processor")) {
-    std::string sys_proc = project_config.get_string("build.cross.system_processor", "");
+  if (has_project_config &&
+      project_config.has_key("build.cross.system_processor")) {
+    std::string sys_proc =
+        project_config.get_string("build.cross.system_processor", "");
     if (!sys_proc.empty()) {
       cmake_args.push_back("-DCMAKE_SYSTEM_PROCESSOR=" + sys_proc);
       logger::print_verbose("Using CMake system processor: " + sys_proc);
@@ -663,7 +686,8 @@ static bool build_project(const std::filesystem::path &project_dir,
       logger::print_verbose("Using CMake C compiler: " + cc);
     }
   }
-  if (has_project_config && project_config.has_key("build.cross.cxx_compiler")) {
+  if (has_project_config &&
+      project_config.has_key("build.cross.cxx_compiler")) {
     std::string cxx = project_config.get_string("build.cross.cxx_compiler", "");
     if (!cxx.empty()) {
       cmake_args.push_back("-DCMAKE_CXX_COMPILER=" + cxx);
@@ -701,7 +725,8 @@ static bool build_project(const std::filesystem::path &project_dir,
     }
   }
 
-  // Determine CMake generator: use override in cforge.toml if present, otherwise pick default
+  // Determine CMake generator: use override in cforge.toml if present,
+  // otherwise pick default
   std::string generator;
   if (has_project_config && project_config.has_key("cmake.generator")) {
     generator = project_config.get_string("cmake.generator", "");
@@ -709,7 +734,8 @@ static bool build_project(const std::filesystem::path &project_dir,
       logger::print_verbose("Using CMake generator from config: " + generator);
     } else {
       generator = get_cmake_generator();
-      logger::print_verbose("No CMake generator in config, using default: " + generator);
+      logger::print_verbose("No CMake generator in config, using default: " +
+                            generator);
     }
   } else {
     generator = get_cmake_generator();
@@ -722,23 +748,26 @@ static bool build_project(const std::filesystem::path &project_dir,
     std::string vcpkg_root;
     if (project_config.has_key("dependencies.vcpkg.path")) {
       vcpkg_root = project_config.get_string("dependencies.vcpkg.path", "");
-    } else if (const char* env = std::getenv("VCPKG_ROOT")) {
+    } else if (const char *env = std::getenv("VCPKG_ROOT")) {
       vcpkg_root = env;
     } else {
       vcpkg_root = (source_dir / "vcpkg").string();
     }
     // Compute toolchain file path
-    std::string toolchain_path = vcpkg_root + "/scripts/buildsystems/vcpkg.cmake";
+    std::string toolchain_path =
+        vcpkg_root + "/scripts/buildsystems/vcpkg.cmake";
     std::replace(toolchain_path.begin(), toolchain_path.end(), '\\', '/');
     if (std::filesystem::exists(toolchain_path)) {
       cmake_args.push_back("-DCMAKE_TOOLCHAIN_FILE=" + toolchain_path);
       logger::print_verbose("Using vcpkg toolchain: " + toolchain_path);
     } else {
-      logger::print_warning("vcpkg toolchain file not found: " + toolchain_path);
+      logger::print_warning("vcpkg toolchain file not found: " +
+                            toolchain_path);
     }
     // Add triplet if specified
     if (project_config.has_key("dependencies.vcpkg.triplet")) {
-      std::string triplet = project_config.get_string("dependencies.vcpkg.triplet", "");
+      std::string triplet =
+          project_config.get_string("dependencies.vcpkg.triplet", "");
       if (!triplet.empty()) {
         cmake_args.push_back("-DVCPKG_TARGET_TRIPLET=" + triplet);
         logger::print_verbose("Using vcpkg triplet: " + triplet);
@@ -747,8 +776,8 @@ static bool build_project(const std::filesystem::path &project_dir,
   }
 
   // If using Ninja and a toolset is specified, force C/C++ compilers
-  if (generator.find("Ninja") != std::string::npos &&
-      has_project_config && project_config.has_key("cmake.toolset")) {
+  if (generator.find("Ninja") != std::string::npos && has_project_config &&
+      project_config.has_key("cmake.toolset")) {
     std::string toolset = project_config.get_string("cmake.toolset", "");
     if (!toolset.empty()) {
       cmake_args.push_back("-DCMAKE_C_COMPILER=" + toolset);
@@ -759,7 +788,8 @@ static bool build_project(const std::filesystem::path &project_dir,
 
   // Validate generator: if invalid, fallback and warn
   if (!is_generator_valid(generator)) {
-    logger::print_warning("CMake does not support generator: " + generator + ", falling back to default generator");
+    logger::print_warning("CMake does not support generator: " + generator +
+                          ", falling back to default generator");
     generator = get_cmake_generator();
     logger::print_verbose("Using fallback CMake generator: " + generator);
   }
@@ -867,7 +897,8 @@ static bool build_project(const std::filesystem::path &project_dir,
     // Normalize separator for MSBuild
     std::string outdir_str = outdir.string();
     build_args.push_back(std::string("/p:OutDir=") + outdir_str + "\\");
-    logger::print_verbose(std::string("Overriding MSBuild OutDir to: ") + outdir_str);
+    logger::print_verbose(std::string("Overriding MSBuild OutDir to: ") +
+                          outdir_str);
   }
 
   // Run the build
@@ -877,10 +908,12 @@ static bool build_project(const std::filesystem::path &project_dir,
   // Clean up empty config directories under the build root
   for (const auto &cfg : {"Debug", "Release", "RelWithDebInfo"}) {
     std::filesystem::path cfg_dir = build_dir / cfg;
-    if (std::filesystem::exists(cfg_dir) && std::filesystem::is_directory(cfg_dir) &&
+    if (std::filesystem::exists(cfg_dir) &&
+        std::filesystem::is_directory(cfg_dir) &&
         std::filesystem::is_empty(cfg_dir)) {
       std::filesystem::remove(cfg_dir);
-      logger::print_verbose("Removed empty config directory: " + cfg_dir.string());
+      logger::print_verbose("Removed empty config directory: " +
+                            cfg_dir.string());
     }
   }
 
@@ -899,7 +932,8 @@ static bool build_project(const std::filesystem::path &project_dir,
     // Calculate build duration
     auto project_build_end = std::chrono::steady_clock::now();
     auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-        project_build_end - project_build_start).count();
+                           project_build_end - project_build_start)
+                           .count();
     std::string duration_str = fmt::format("{:.2f}s", duration_ms / 1000.0);
     logger::finished(build_config, duration_str);
 
@@ -933,7 +967,7 @@ static bool build_project(const std::filesystem::path &project_dir,
             }
             logger::print_error("CMake Error Log:\n" + error_content);
             logger::print_verbose("Full error log available at: " +
-                                 cmake_error_log.string());
+                                  cmake_error_log.string());
           }
         }
       } catch (const std::exception &ex) {
@@ -943,7 +977,7 @@ static bool build_project(const std::filesystem::path &project_dir,
     }
 
     logger::print_verbose("For more detailed build information, try running "
-                         "with -v/--verbose flag");
+                          "with -v/--verbose flag");
     return false;
   }
 }
@@ -993,8 +1027,8 @@ static bool build_workspace_project(const std::filesystem::path &workspace_dir,
       get_build_dir_for_config(base_build_dir, build_config);
 
   // Build the project
-  bool success =
-      build_project(project.path, build_config, num_jobs, verbose, target, nullptr, skip_deps);
+  bool success = build_project(project.path, build_config, num_jobs, verbose,
+                               target, nullptr, skip_deps);
 
   if (!success) {
     logger::print_error("Failed to build project '" + project.name + "'");
@@ -1003,7 +1037,6 @@ static bool build_workspace_project(const std::filesystem::path &workspace_dir,
 
   return true;
 }
-
 
 /**
  * @brief Handle the 'build' command
@@ -1088,7 +1121,7 @@ cforge_int_t cforge_cmd_build(const cforge_context_t *ctx) {
         if (!config_table.contains("build")) {
           config_table.insert("build", toml::table{});
         }
-        auto& build_table = *config_table.get_as<toml::table>("build");
+        auto &build_table = *config_table.get_as<toml::table>("build");
         build_table.insert_or_assign("skip_deps", true);
       } catch (...) {
         // Ignore errors modifying the config
@@ -1124,7 +1157,8 @@ cforge_int_t cforge_cmd_build(const cforge_context_t *ctx) {
   logger::print_verbose("Using build configuration: " + config_name);
 
   // Pre-build script support using shared script_runner
-  if (!run_pre_build_scripts(is_workspace ? workspace_dir : current_dir, is_workspace, verbose)) {
+  if (!run_pre_build_scripts(is_workspace ? workspace_dir : current_dir,
+                             is_workspace, verbose)) {
     return 1;
   }
 
@@ -1145,13 +1179,15 @@ cforge_int_t cforge_cmd_build(const cforge_context_t *ctx) {
         if (std::filesystem::exists(proj_toml)) {
           toml_reader pcfg(toml::parse_file(proj_toml.string()));
           if (!generate_cmakelists_from_toml(proj.path, pcfg, verbose)) {
-            logger::print_error("Failed to generate CMakeLists.txt for project: " + proj.name);
+            logger::print_error(
+                "Failed to generate CMakeLists.txt for project: " + proj.name);
             return 1;
           }
         }
       }
     }
-    logger::print_verbose("Building in workspace context: " + workspace_dir.string());
+    logger::print_verbose("Building in workspace context: " +
+                          workspace_dir.string());
     // Save current directory and switch to workspace root
     auto original_cwd = std::filesystem::current_path();
     std::filesystem::current_path(workspace_dir);
@@ -1159,24 +1195,33 @@ cforge_int_t cforge_cmd_build(const cforge_context_t *ctx) {
     std::filesystem::path build_dir = workspace_dir / DEFAULT_BUILD_DIR;
     // Ensure build directory exists
     if (!std::filesystem::exists(build_dir)) {
-      try { std::filesystem::create_directories(build_dir); } catch(...) {}
+      try {
+        std::filesystem::create_directories(build_dir);
+      } catch (...) {
+      }
     }
     // Configure workspace CMake
-    std::vector<std::string> cmake_args = { "-S", workspace_dir.string(), "-B", build_dir.string(), "-DCMAKE_BUILD_TYPE=" + config_name };
-    if (verbose) cmake_args.push_back("--debug-output");
-    if (!run_cmake_configure(cmake_args, build_dir.string(), workspace_dir.string(), verbose)) {
+    std::vector<std::string> cmake_args = {"-S", workspace_dir.string(), "-B",
+                                           build_dir.string(),
+                                           "-DCMAKE_BUILD_TYPE=" + config_name};
+    if (verbose)
+      cmake_args.push_back("--debug-output");
+    if (!run_cmake_configure(cmake_args, build_dir.string(),
+                             workspace_dir.string(), verbose)) {
       logger::print_error("Workspace CMake configuration failed");
       // Restore original directory before exit
       std::filesystem::current_path(original_cwd);
       return 1;
     }
     // Build single target or entire workspace
-    std::vector<std::string> build_args = {"--build", build_dir.string(), "--config", config_name};
+    std::vector<std::string> build_args = {"--build", build_dir.string(),
+                                           "--config", config_name};
     if (num_jobs > 0) {
       build_args.push_back("--parallel");
       build_args.push_back(std::to_string(num_jobs));
     }
-    if (verbose) build_args.push_back("--verbose");
+    if (verbose)
+      build_args.push_back("--verbose");
     if (!project_name.empty()) {
       // Build only the specified workspace target
       build_args.push_back("--target");
@@ -1193,17 +1238,22 @@ cforge_int_t cforge_cmd_build(const cforge_context_t *ctx) {
         if (std::filesystem::exists(proj_toml)) {
           toml_reader pcfg(toml::parse_file(proj_toml.string()));
           if (pcfg.has_key("dependencies.git")) {
-            logger::print_action("Setting up", "Git dependencies for project: " + proj.name);
+            logger::print_action("Setting up",
+                                 "Git dependencies for project: " + proj.name);
             try {
               std::filesystem::current_path(proj.path);
-              if (!clone_git_dependencies(proj.path, pcfg, verbose, skip_deps)) {
-                logger::print_error("Failed to clone Git dependencies for project: " + proj.name);
+              if (!clone_git_dependencies(proj.path, pcfg, verbose,
+                                          skip_deps)) {
+                logger::print_error(
+                    "Failed to clone Git dependencies for project: " +
+                    proj.name);
                 std::filesystem::current_path(original_cwd);
                 return 1;
               }
             } catch (const std::exception &ex) {
-              logger::print_error("Exception while setting up Git dependencies for project " + 
-                                proj.name + ": " + std::string(ex.what()));
+              logger::print_error(
+                  "Exception while setting up Git dependencies for project " +
+                  proj.name + ": " + std::string(ex.what()));
               std::filesystem::current_path(original_cwd);
               return 1;
             }
@@ -1223,7 +1273,8 @@ cforge_int_t cforge_cmd_build(const cforge_context_t *ctx) {
     // Calculate workspace build duration
     auto build_end_time = std::chrono::steady_clock::now();
     auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-        build_end_time - build_start_time).count();
+                           build_end_time - build_start_time)
+                           .count();
     std::string duration_str = fmt::format("{:.2f}s", duration_ms / 1000.0);
     logger::finished(config_name, duration_str);
     // Clean up empty config directories under workspace build root
@@ -1231,15 +1282,17 @@ cforge_int_t cforge_cmd_build(const cforge_context_t *ctx) {
       std::filesystem::path build_root = workspace_dir / DEFAULT_BUILD_DIR;
       for (const auto &cfg : {"Debug", "Release", "RelWithDebInfo"}) {
         std::filesystem::path cfg_dir = build_root / cfg;
-        if (std::filesystem::exists(cfg_dir) && std::filesystem::is_directory(cfg_dir) &&
+        if (std::filesystem::exists(cfg_dir) &&
+            std::filesystem::is_directory(cfg_dir) &&
             std::filesystem::is_empty(cfg_dir)) {
           std::filesystem::remove(cfg_dir);
-          logger::print_verbose("Removed empty workspace config directory: " + cfg_dir.string());
+          logger::print_verbose("Removed empty workspace config directory: " +
+                                cfg_dir.string());
         }
       }
     }
 
-// Post-build script support (workspace)
+    // Post-build script support (workspace)
     if (!run_post_build_scripts(workspace_dir, true, verbose)) {
       return 1;
     }
@@ -1250,11 +1303,13 @@ cforge_int_t cforge_cmd_build(const cforge_context_t *ctx) {
     // Ensure project CMakeLists.txt exists before building
     std::filesystem::path cmake_file = current_dir / "CMakeLists.txt";
     std::filesystem::path toml_file = current_dir / CFORGE_FILE;
-    if (!std::filesystem::exists(cmake_file) && std::filesystem::exists(toml_file)) {
+    if (!std::filesystem::exists(cmake_file) &&
+        std::filesystem::exists(toml_file)) {
       logger::print_verbose("Generating project CMakeLists.txt for build");
       toml_reader proj_cfg(toml::parse_file(toml_file.string()));
       if (!generate_cmakelists_from_toml(current_dir, proj_cfg, verbose)) {
-        logger::print_error("Failed to generate CMakeLists.txt for project build");
+        logger::print_error(
+            "Failed to generate CMakeLists.txt for project build");
         return 1;
       }
     }
@@ -1264,7 +1319,7 @@ cforge_int_t cforge_cmd_build(const cforge_context_t *ctx) {
       return 1;
     }
 
-// Post-build script support (single project)
+    // Post-build script support (single project)
     if (!run_post_build_scripts(current_dir, false, verbose)) {
       return 1;
     }

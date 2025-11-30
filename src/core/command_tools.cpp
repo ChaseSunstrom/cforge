@@ -8,11 +8,11 @@
 #include "core/process_utils.hpp"
 #include "core/toml_reader.hpp"
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <vector>
-#include <algorithm>
 
 namespace fs = std::filesystem;
 
@@ -41,7 +41,8 @@ std::vector<fs::path> find_source_files(const fs::path &dir,
   }
 
   for (const auto &entry : fs::recursive_directory_iterator(dir)) {
-    if (!entry.is_regular_file()) continue;
+    if (!entry.is_regular_file())
+      continue;
 
     std::string ext = entry.path().extension().string();
     std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
@@ -74,14 +75,9 @@ bool tool_exists(const std::string &tool) {
  */
 std::string find_clang_format() {
   // Try common names
-  std::vector<std::string> names = {
-    "clang-format",
-    "clang-format-18",
-    "clang-format-17",
-    "clang-format-16",
-    "clang-format-15",
-    "clang-format-14"
-  };
+  std::vector<std::string> names = {"clang-format",    "clang-format-18",
+                                    "clang-format-17", "clang-format-16",
+                                    "clang-format-15", "clang-format-14"};
 
   for (const auto &name : names) {
     if (tool_exists(name)) {
@@ -96,14 +92,9 @@ std::string find_clang_format() {
  * @brief Find clang-tidy executable
  */
 std::string find_clang_tidy() {
-  std::vector<std::string> names = {
-    "clang-tidy",
-    "clang-tidy-18",
-    "clang-tidy-17",
-    "clang-tidy-16",
-    "clang-tidy-15",
-    "clang-tidy-14"
-  };
+  std::vector<std::string> names = {"clang-tidy",    "clang-tidy-18",
+                                    "clang-tidy-17", "clang-tidy-16",
+                                    "clang-tidy-15", "clang-tidy-14"};
 
   for (const auto &name : names) {
     if (tool_exists(name)) {
@@ -406,9 +397,9 @@ cforge_int_t cforge_cmd_fmt(const cforge_context_t *ctx) {
   // Parse arguments
   bool check_only = false;
   bool dry_run = false;
-  std::string style = "file";  // Default: use .clang-format file
+  std::string style = "file"; // Default: use .clang-format file
 
-  for (int i = 1; i < ctx->args.arg_count; i++) {
+  for (int i = 0; i < ctx->args.arg_count; i++) {
     std::string arg = ctx->args.args[i];
     if (arg == "--check") {
       check_only = true;
@@ -459,7 +450,7 @@ cforge_int_t cforge_cmd_fmt(const cforge_context_t *ctx) {
     } else if (dry_run) {
       args.push_back("--dry-run");
     } else {
-      args.push_back("-i");  // In-place
+      args.push_back("-i"); // In-place
     }
 
     args.push_back(file.string());
@@ -483,16 +474,19 @@ cforge_int_t cforge_cmd_fmt(const cforge_context_t *ctx) {
 
   if (check_only) {
     if (failed_count > 0) {
-      logger::print_error(std::to_string(failed_count) + " file(s) need formatting");
+      logger::print_error(std::to_string(failed_count) +
+                          " file(s) need formatting");
       logger::print_status("Run 'cforge fmt' to format them");
       return 1;
     } else {
       logger::print_success("All files are properly formatted");
     }
   } else if (dry_run) {
-    logger::print_status("Would format " + std::to_string(formatted_count) + " file(s)");
+    logger::print_status("Would format " + std::to_string(formatted_count) +
+                         " file(s)");
   } else {
-    logger::finished("formatted " + std::to_string(formatted_count) + " file(s)", "");
+    logger::finished(
+        "formatted " + std::to_string(formatted_count) + " file(s)", "");
   }
 
   return 0;
@@ -511,7 +505,7 @@ cforge_int_t cforge_cmd_lint(const cforge_context_t *ctx) {
   bool fix = false;
   std::string checks = "";
 
-  for (int i = 1; i < ctx->args.arg_count; i++) {
+  for (int i = 0; i < ctx->args.arg_count; i++) {
     std::string arg = ctx->args.args[i];
     if (arg == "--fix") {
       fix = true;
@@ -534,19 +528,19 @@ cforge_int_t cforge_cmd_lint(const cforge_context_t *ctx) {
   fs::path compile_commands = build_dir / "compile_commands.json";
   if (!fs::exists(compile_commands)) {
     logger::print_warning("compile_commands.json not found");
-    logger::print_status("Building project first to generate compilation database...");
+    logger::print_status(
+        "Building project first to generate compilation database...");
 
     // Try to generate compile_commands.json
     std::vector<std::string> cmake_args = {
-      "-B", build_dir.string(),
-      "-S", project_dir.string(),
-      "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON"
-    };
+        "-B", build_dir.string(), "-S", project_dir.string(),
+        "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON"};
 
     auto result = execute_process("cmake", cmake_args, project_dir.string());
     if (result.exit_code != 0 || !fs::exists(compile_commands)) {
       logger::print_error("Could not generate compile_commands.json");
-      logger::print_status("Run 'cforge build' first, or create compile_commands.json manually");
+      logger::print_status(
+          "Run 'cforge build' first, or create compile_commands.json manually");
       return 1;
     }
   }
@@ -555,7 +549,7 @@ cforge_int_t cforge_cmd_lint(const cforge_context_t *ctx) {
   std::vector<fs::path> files;
   for (const auto &dir : {"src", "source", "lib"}) {
     fs::path dir_path = project_dir / dir;
-    auto dir_files = find_source_files(dir_path, false);  // No headers
+    auto dir_files = find_source_files(dir_path, false); // No headers
     files.insert(files.end(), dir_files.begin(), dir_files.end());
   }
 
@@ -564,7 +558,8 @@ cforge_int_t cforge_cmd_lint(const cforge_context_t *ctx) {
     return 0;
   }
 
-  logger::print_status("Analyzing " + std::to_string(files.size()) + " file(s)...");
+  logger::print_status("Analyzing " + std::to_string(files.size()) +
+                       " file(s)...");
 
   int warnings = 0;
   int errors = 0;
@@ -586,19 +581,19 @@ cforge_int_t cforge_cmd_lint(const cforge_context_t *ctx) {
 
     logger::print_verbose("Checking: " + file.filename().string());
 
-    auto result = execute_process(clang_tidy, args, project_dir.string(),
-      [&](const std::string &line) {
-        // Parse clang-tidy output
-        if (line.find("warning:") != std::string::npos) {
-          warnings++;
-          fmt::print(fg(fmt::color::yellow), "{}\n", line);
-        } else if (line.find("error:") != std::string::npos) {
-          errors++;
-          fmt::print(fg(fmt::color::red), "{}\n", line);
-        } else if (!line.empty()) {
-          fmt::print("{}\n", line);
-        }
-      });
+    auto result = execute_process(
+        clang_tidy, args, project_dir.string(), [&](const std::string &line) {
+          // Parse clang-tidy output
+          if (line.find("warning:") != std::string::npos) {
+            warnings++;
+            fmt::print(fg(fmt::color::yellow), "{}\n", line);
+          } else if (line.find("error:") != std::string::npos) {
+            errors++;
+            fmt::print(fg(fmt::color::red), "{}\n", line);
+          } else if (!line.empty()) {
+            fmt::print("{}\n", line);
+          }
+        });
   }
 
   // Summary
@@ -614,7 +609,8 @@ cforge_int_t cforge_cmd_lint(const cforge_context_t *ctx) {
     if (fix) {
       logger::print_status("Some issues may have been automatically fixed");
     } else {
-      logger::print_status("Run 'cforge lint --fix' to automatically fix some issues");
+      logger::print_status(
+          "Run 'cforge lint --fix' to automatically fix some issues");
     }
     return errors > 0 ? 1 : 0;
   } else {
@@ -629,15 +625,16 @@ cforge_int_t cforge_cmd_lint(const cforge_context_t *ctx) {
 cforge_int_t cforge_cmd_completions(const cforge_context_t *ctx) {
   using namespace cforge;
 
-  std::string shell = "bash";  // Default
+  std::string shell = "bash"; // Default
 
   // Parse shell argument
-  for (int i = 1; i < ctx->args.arg_count; i++) {
+  for (int i = 0; i < ctx->args.arg_count; i++) {
     std::string arg = ctx->args.args[i];
-    if (arg == "bash" || arg == "zsh" || arg == "powershell" ||
-        arg == "fish" || arg == "ps" || arg == "ps1") {
+    if (arg == "bash" || arg == "zsh" || arg == "powershell" || arg == "fish" ||
+        arg == "ps" || arg == "ps1") {
       shell = arg;
-      if (shell == "ps" || shell == "ps1") shell = "powershell";
+      if (shell == "ps" || shell == "ps1")
+        shell = "powershell";
     }
   }
 
@@ -649,7 +646,8 @@ cforge_int_t cforge_cmd_completions(const cforge_context_t *ctx) {
     install_hint = "Add to ~/.bashrc or save to /etc/bash_completion.d/cforge";
   } else if (shell == "zsh") {
     script = generate_zsh_completions();
-    install_hint = "Save to a file in your fpath (e.g., ~/.zsh/completions/_cforge)";
+    install_hint =
+        "Save to a file in your fpath (e.g., ~/.zsh/completions/_cforge)";
   } else if (shell == "powershell") {
     script = generate_powershell_completions();
     install_hint = "Add to your $PROFILE";

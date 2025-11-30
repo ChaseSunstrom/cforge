@@ -48,7 +48,8 @@ cforge_int_t cforge_cmd_help(const cforge_context_t *ctx) {
     logger::print_plain("  update    Update cforge");
     logger::print_plain("  ide       Generate IDE project files");
     logger::print_plain("  list      List dependencies or projects");
-    logger::print_plain("  lock      Manage dependency lock file for reproducible builds");
+    logger::print_plain(
+        "  lock      Manage dependency lock file for reproducible builds");
     logger::print_plain("  fmt       Format source code with clang-format");
     logger::print_plain("  lint      Run static analysis with clang-tidy");
     logger::print_plain("  watch     Watch for changes and auto-rebuild");
@@ -63,7 +64,7 @@ cforge_int_t cforge_cmd_help(const cforge_context_t *ctx) {
     logger::print_plain("Usage: cforge <command> [options]");
     logger::print_plain("");
     logger::print_plain("For more information on a specific command, run "
-                         "'cforge help <command>'");
+                        "'cforge help <command>'");
   } else if (specific_command == "init") {
     logger::print_plain("cforge init - Initialize a new C++ project");
     logger::print_plain("");
@@ -75,17 +76,17 @@ cforge_int_t cforge_cmd_help(const cforge_context_t *ctx) {
     logger::print_plain("");
     logger::print_plain("Options:");
     logger::print_plain("  --std=c++XX                   Set C++ standard "
-                         "(11, 14, 17, 20) (default: 17)");
+                        "(11, 14, 17, 20) (default: 17)");
     logger::print_plain("  --git                         Initialize git "
-                         "repository (disabled by default)");
+                        "repository (disabled by default)");
     logger::print_plain("  --workspace [name]            Create a new "
-                         "workspace with the given name");
+                        "workspace with the given name");
     logger::print_plain(
         "  --projects [name1] [name2]... Create multiple projects");
     logger::print_plain("  --template [name]             Use specific project "
-                         "template (app, lib, header-only)");
+                        "template (app, lib, header-only)");
     logger::print_plain("  --with-tests                  Add test "
-                         "infrastructure to the project");
+                        "infrastructure to the project");
     logger::print_plain(
         "  --with-git                    Initialize git repository");
     logger::print_plain(
@@ -95,34 +96,35 @@ cforge_int_t cforge_cmd_help(const cforge_context_t *ctx) {
     logger::print_plain("");
     logger::print_plain("Configuration:");
     logger::print_plain("  Projects are initialized with a cforge.toml file "
-                         "containing project settings:");
+                        "containing project settings:");
     logger::print_plain("  - Project metadata (name, version, C++ standard)");
-    logger::print_plain("  - Build configuration (build type, source directories)");
+    logger::print_plain(
+        "  - Build configuration (build type, source directories)");
     logger::print_plain("  - Packaging settings");
     logger::print_plain("  - Dependency management");
     logger::print_plain("  - Test configuration");
     logger::print_plain("");
     logger::print_plain("  Run 'cforge help config' for detailed "
-                         "configuration format information");
+                        "configuration format information");
     logger::print_plain("");
     logger::print_plain("Examples:");
     logger::print_plain("  cforge init                   Initialize project "
-                         "in current directory");
+                        "in current directory");
     logger::print_plain("  cforge init my_project        Create new project "
-                         "in a new directory");
+                        "in a new directory");
     logger::print_plain(
         "  cforge init --type=shared_lib Create a shared library project");
     logger::print_plain(
         "  cforge init --projects a b c  Create multiple standalone projects");
     logger::print_plain("  cforge init --workspace myws  Create a workspace");
     logger::print_plain("  cforge init --workspace myws --projects app lib  "
-                         "Create workspace with projects");
+                        "Create workspace with projects");
     logger::print_plain("");
     logger::print_plain("Notes:");
     logger::print_plain(
         "  - Hyphens in project names are replaced with underscores in code");
     logger::print_plain("  - If no name is provided, the current directory "
-                         "name is used as the project name");
+                        "name is used as the project name");
   } else if (specific_command == "build") {
     logger::print_plain("cforge build - Build the project");
     logger::print_plain("");
@@ -130,7 +132,7 @@ cforge_int_t cforge_cmd_help(const cforge_context_t *ctx) {
     logger::print_plain("");
     logger::print_plain("Options:");
     logger::print_plain("  -c, --config <config>    Set build configuration "
-                         "(Debug, Release, etc.)");
+                        "(Debug, Release, etc.)");
     logger::print_plain(
         "  -j, --jobs <n>           Set number of parallel build jobs");
     logger::print_plain("  -v, --verbose            Enable verbose output");
@@ -140,8 +142,9 @@ cforge_int_t cforge_cmd_help(const cforge_context_t *ctx) {
     logger::print_plain(
         "  --gen-workspace-cmake    Generate a workspace-level CMakeLists.txt");
     logger::print_plain("  --force-regenerate       Force regeneration of "
-                         "CMakeLists.txt and clean build");
-    logger::print_plain("  --skip-deps, --no-deps   Skip updating Git dependencies");
+                        "CMakeLists.txt and clean build");
+    logger::print_plain(
+        "  --skip-deps, --no-deps   Skip updating Git dependencies");
     logger::print_plain("");
     logger::print_plain("Examples:");
     logger::print_plain(
@@ -153,10 +156,11 @@ cforge_int_t cforge_cmd_help(const cforge_context_t *ctx) {
     logger::print_plain(
         "  cforge build -p mylib    Build only 'mylib' project in workspace");
     logger::print_plain("  cforge build --gen-workspace-cmake  Generate a "
-                         "workspace CMakeLists.txt without building");
+                        "workspace CMakeLists.txt without building");
     logger::print_plain("  cforge build --force-regenerate     Rebuild with "
-                         "fresh configuration");
-    logger::print_plain("  cforge build --skip-deps           Build without updating Git dependencies");
+                        "fresh configuration");
+    logger::print_plain("  cforge build --skip-deps           Build without "
+                        "updating Git dependencies");
   } else if (specific_command == "clean") {
     logger::print_plain("cforge clean - Clean build artifacts");
     logger::print_plain("");
@@ -201,15 +205,20 @@ cforge_int_t cforge_cmd_help(const cforge_context_t *ctx) {
   } else if (specific_command == "test") {
     logger::print_plain("cforge test - Build and run unit tests");
     logger::print_plain("");
-    logger::print_plain("Usage: cforge test [options] [<category> [<test1> <test2> ...]] [--]");
+    logger::print_plain(
+        "Usage: cforge test [options] [<category> [<test1> <test2> ...]] [--]");
     logger::print_plain("");
     logger::print_plain("Options:");
-    logger::print_plain("  -c, --config <config>    Build configuration (Debug, Release, etc.)");
-    logger::print_plain("  -v, --verbose            Show verbose build & test output");
+    logger::print_plain("  -c, --config <config>    Build configuration "
+                        "(Debug, Release, etc.)");
+    logger::print_plain(
+        "  -v, --verbose            Show verbose build & test output");
     logger::print_plain("");
     logger::print_plain("Positional arguments:");
-    logger::print_plain("  <category>               Optional test category to run");
-    logger::print_plain("  <test_name> ...          Optional test names under the category");
+    logger::print_plain(
+        "  <category>               Optional test category to run");
+    logger::print_plain(
+        "  <test_name> ...          Optional test names under the category");
     logger::print_plain("");
     logger::print_plain("Examples:");
     logger::print_plain("  cforge test");
@@ -217,7 +226,8 @@ cforge_int_t cforge_cmd_help(const cforge_context_t *ctx) {
     logger::print_plain("  cforge test -c Release Math Add");
     logger::print_plain("  cforge test -c Release -- Math Add");
     logger::print_plain("");
-    logger::print_plain("Use `--` to explicitly separate CForge flags from test filters");
+    logger::print_plain(
+        "Use `--` to explicitly separate CForge flags from test filters");
   } else if (specific_command == "package") {
     logger::print_plain("cforge package - Create distributable packages");
     logger::print_plain("");
@@ -225,34 +235,34 @@ cforge_int_t cforge_cmd_help(const cforge_context_t *ctx) {
     logger::print_plain("");
     logger::print_plain("Options:");
     logger::print_plain("  -c, --config <name>      Specify the build "
-                         "configuration (Debug/Release)");
+                        "configuration (Debug/Release)");
     logger::print_plain("  -p, --project <name>     In a workspace, specify "
-                         "which project to package");
+                        "which project to package");
     logger::print_plain(
         "  -t, --type <generator>   Specify the package generator to use");
     logger::print_plain("  --no-build               Skip building the project "
-                         "before packaging");
+                        "before packaging");
     logger::print_plain("  -v, --verbose            Enable verbose output");
     logger::print_plain("");
     logger::print_plain("Examples:");
     logger::print_plain("  cforge package                  Package the "
-                         "current project with default settings");
+                        "current project with default settings");
     logger::print_plain("  cforge package -c Release       Package using the "
-                         "Release configuration");
+                        "Release configuration");
     logger::print_plain("  cforge package --no-build       Skip building and "
-                         "package with existing binaries");
+                        "package with existing binaries");
     logger::print_plain("  cforge package -t ZIP           Package using the "
-                         "ZIP generator only");
+                        "ZIP generator only");
     logger::print_plain("  cforge package -p mylib         In a workspace, "
-                         "package the 'mylib' project");
+                        "package the 'mylib' project");
     logger::print_plain("");
     logger::print_plain("Notes:");
     logger::print_plain("  - When run in a workspace:");
     logger::print_plain("    - By default, packages the main project "
-                         "specified in workspace.toml");
+                        "specified in workspace.toml");
     logger::print_plain("    - Use -p to package a specific project");
     logger::print_plain("    - Set package.all_projects=true in "
-                         "workspace.toml to package all projects");
+                        "workspace.toml to package all projects");
     logger::print_plain("");
     logger::print_plain(
         "  - Package settings can be configured in cforge.toml:");
@@ -267,7 +277,7 @@ cforge_int_t cforge_cmd_help(const cforge_context_t *ctx) {
     logger::print_plain(
         "    all_projects = false          # Whether to package all projects");
     logger::print_plain("    generators = [\"ZIP\"]          # Default "
-                         "generators for all projects");
+                        "generators for all projects");
   } else if (specific_command == "add") {
     logger::print_plain("cforge add - Add a dependency");
     logger::print_plain("");
@@ -315,31 +325,43 @@ cforge_int_t cforge_cmd_help(const cforge_context_t *ctx) {
     logger::print_plain("Arguments:");
     logger::print_plain("  command          Command to show help for");
   } else if (specific_command == "install") {
-    logger::print_plain("cforge install - Install a cforge project to the system");
+    logger::print_plain(
+        "cforge install - Install a cforge project to the system");
     logger::print_plain("");
     logger::print_plain("Usage: cforge install [options]");
     logger::print_plain("");
     logger::print_plain("Options:");
-    logger::print_plain("  -c, --config <config>       Build configuration to install (Debug, Release)");
-    logger::print_plain("  --from <path|URL>           Source directory or Git URL to install from");
-    logger::print_plain("  --to <path>                 Target install directory");
-    logger::print_plain("  --add-to-path               Add the install/bin directory to PATH");
-    logger::print_plain("  -n, --name <name>           Override project name for installation");
-    logger::print_plain("  --env <VAR>                 Environment variable to set to install path");
+    logger::print_plain("  -c, --config <config>       Build configuration to "
+                        "install (Debug, Release)");
+    logger::print_plain("  --from <path|URL>           Source directory or Git "
+                        "URL to install from");
+    logger::print_plain(
+        "  --to <path>                 Target install directory");
+    logger::print_plain(
+        "  --add-to-path               Add the install/bin directory to PATH");
+    logger::print_plain(
+        "  -n, --name <name>           Override project name for installation");
+    logger::print_plain("  --env <VAR>                 Environment variable to "
+                        "set to install path");
     logger::print_plain("  -v, --verbose               Show verbose output");
     logger::print_plain("");
     logger::print_plain("Examples:");
-    logger::print_plain("  cforge install                   Install current project to default location");
-    logger::print_plain("  cforge install --to C:/Apps/Proj   Install to a custom path");
-    logger::print_plain("  cforge install --from https://github.com/org/repo.git");
-    logger::print_plain("  cforge install --add-to-path      Add install to PATH");
+    logger::print_plain("  cforge install                   Install current "
+                        "project to default location");
+    logger::print_plain(
+        "  cforge install --to C:/Apps/Proj   Install to a custom path");
+    logger::print_plain(
+        "  cforge install --from https://github.com/org/repo.git");
+    logger::print_plain(
+        "  cforge install --add-to-path      Add install to PATH");
   } else if (specific_command == "ide") {
     logger::print_plain("cforge ide - Generate IDE project files");
     logger::print_plain("");
     logger::print_plain("Usage: cforge ide [options]");
     logger::print_plain("");
     logger::print_plain("Options:");
-    logger::print_plain("  -p, --project <name>        Generate files for specified project in workspace");
+    logger::print_plain("  -p, --project <name>        Generate files for "
+                        "specified project in workspace");
     logger::print_plain("  -v, --verbose               Show verbose output");
     logger::print_plain("");
   } else if (specific_command == "list") {
@@ -348,7 +370,8 @@ cforge_int_t cforge_cmd_help(const cforge_context_t *ctx) {
     logger::print_plain("Usage: cforge list [options]");
     logger::print_plain("");
     logger::print_plain("Options:");
-    logger::print_plain("  -p, --project <name>        List dependencies for a specific project");
+    logger::print_plain("  -p, --project <name>        List dependencies for a "
+                        "specific project");
     logger::print_plain("  -v, --verbose               Show verbose output");
     logger::print_plain("");
   } else if (specific_command == "deps") {
@@ -358,7 +381,8 @@ cforge_int_t cforge_cmd_help(const cforge_context_t *ctx) {
     logger::print_plain("");
     logger::print_plain("Commands:");
     logger::print_plain("  fetch     Fetch updates for all Git dependencies");
-    logger::print_plain("  checkout  Checkout each dependency to its configured ref");
+    logger::print_plain(
+        "  checkout  Checkout each dependency to its configured ref");
     logger::print_plain("  list      Show configured Git dependencies");
     logger::print_plain("");
     logger::print_plain("Options:");
@@ -378,87 +402,113 @@ cforge_int_t cforge_cmd_help(const cforge_context_t *ctx) {
     logger::print_plain("Options:");
     logger::print_plain("  --verify, -v   Verify dependencies match lock file");
     logger::print_plain("  --clean, -c    Remove the lock file");
-    logger::print_plain("  --force, -f    Force regeneration even if lock exists");
+    logger::print_plain(
+        "  --force, -f    Force regeneration even if lock exists");
     logger::print_plain("  --help, -h     Show this help message");
     logger::print_plain("");
-    logger::print_plain("The lock file (cforge.lock) ensures reproducible builds by");
-    logger::print_plain("tracking exact versions (commit hashes) of all dependencies.");
+    logger::print_plain(
+        "The lock file (cforge.lock) ensures reproducible builds by");
+    logger::print_plain(
+        "tracking exact versions (commit hashes) of all dependencies.");
     logger::print_plain("");
     logger::print_plain("Examples:");
     logger::print_plain("  cforge lock              Generate/update lock file");
-    logger::print_plain("  cforge lock --verify     Check if deps match lock file");
+    logger::print_plain(
+        "  cforge lock --verify     Check if deps match lock file");
     logger::print_plain("  cforge lock --force      Regenerate lock file");
     logger::print_plain("  cforge lock --clean      Remove lock file");
     logger::print_plain("");
     logger::print_plain("Best practices:");
     logger::print_plain("  1. Commit cforge.lock to version control");
     logger::print_plain("  2. Run 'cforge lock --verify' in CI pipelines");
-    logger::print_plain("  3. Run 'cforge lock' after adding/updating dependencies");
+    logger::print_plain(
+        "  3. Run 'cforge lock' after adding/updating dependencies");
   } else if (specific_command == "fmt" || specific_command == "format") {
     logger::print_plain("cforge fmt - Format source code with clang-format");
     logger::print_plain("");
     logger::print_plain("Usage: cforge fmt [options]");
     logger::print_plain("");
     logger::print_plain("Options:");
-    logger::print_plain("  --check          Check formatting without modifying files");
+    logger::print_plain(
+        "  --check          Check formatting without modifying files");
     logger::print_plain("  --diff           Show diff of formatting changes");
-    logger::print_plain("  --style <style>  Use specific style (llvm, google, chromium, mozilla, webkit)");
+    logger::print_plain("  --style <style>  Use specific style (llvm, google, "
+                        "chromium, mozilla, webkit)");
     logger::print_plain("  -v, --verbose    Show verbose output");
     logger::print_plain("");
     logger::print_plain("Examples:");
-    logger::print_plain("  cforge fmt               Format all source files in place");
-    logger::print_plain("  cforge fmt --check       Check if files need formatting");
+    logger::print_plain(
+        "  cforge fmt               Format all source files in place");
+    logger::print_plain(
+        "  cforge fmt --check       Check if files need formatting");
     logger::print_plain("  cforge fmt --diff        Show what would change");
     logger::print_plain("  cforge fmt --style=google  Use Google C++ style");
     logger::print_plain("");
     logger::print_plain("Notes:");
     logger::print_plain("  - Requires clang-format to be installed");
-    logger::print_plain("  - Uses .clang-format file if present, otherwise uses --style");
-    logger::print_plain("  - Formats .cpp, .cc, .cxx, .c, .hpp, .hxx, .h files");
+    logger::print_plain(
+        "  - Uses .clang-format file if present, otherwise uses --style");
+    logger::print_plain(
+        "  - Formats .cpp, .cc, .cxx, .c, .hpp, .hxx, .h files");
   } else if (specific_command == "lint" || specific_command == "check") {
     logger::print_plain("cforge lint - Run static analysis with clang-tidy");
     logger::print_plain("");
     logger::print_plain("Usage: cforge lint [options]");
     logger::print_plain("");
     logger::print_plain("Options:");
-    logger::print_plain("  --fix            Apply suggested fixes automatically");
-    logger::print_plain("  --checks <list>  Specify checks to run (e.g., 'modernize-*,bugprone-*')");
-    logger::print_plain("  -c, --config <cfg>  Build configuration for compile_commands.json");
+    logger::print_plain(
+        "  --fix            Apply suggested fixes automatically");
+    logger::print_plain("  --checks <list>  Specify checks to run (e.g., "
+                        "'modernize-*,bugprone-*')");
+    logger::print_plain(
+        "  -c, --config <cfg>  Build configuration for compile_commands.json");
     logger::print_plain("  -v, --verbose    Show verbose output");
     logger::print_plain("");
     logger::print_plain("Examples:");
     logger::print_plain("  cforge lint              Run all enabled checks");
-    logger::print_plain("  cforge lint --fix        Run and apply automatic fixes");
-    logger::print_plain("  cforge lint --checks='modernize-*'  Run only modernize checks");
+    logger::print_plain(
+        "  cforge lint --fix        Run and apply automatic fixes");
+    logger::print_plain(
+        "  cforge lint --checks='modernize-*'  Run only modernize checks");
     logger::print_plain("");
     logger::print_plain("Notes:");
     logger::print_plain("  - Requires clang-tidy to be installed");
     logger::print_plain("  - Uses .clang-tidy file if present");
-    logger::print_plain("  - Requires compile_commands.json (generated during build)");
+    logger::print_plain(
+        "  - Requires compile_commands.json (generated during build)");
   } else if (specific_command == "watch") {
     logger::print_plain("cforge watch - Watch for changes and auto-rebuild");
     logger::print_plain("");
     logger::print_plain("Usage: cforge watch [options]");
     logger::print_plain("");
     logger::print_plain("Options:");
-    logger::print_plain("  -c, --config <cfg>   Build configuration (Debug, Release)");
-    logger::print_plain("  --run, -r            Run the executable after successful build");
-    logger::print_plain("  --interval <ms>      Poll interval in milliseconds (default: 500)");
+    logger::print_plain(
+        "  -c, --config <cfg>   Build configuration (Debug, Release)");
+    logger::print_plain(
+        "  --run, -r            Run the executable after successful build");
+    logger::print_plain(
+        "  --interval <ms>      Poll interval in milliseconds (default: 500)");
     logger::print_plain("  --release            Use Release configuration");
     logger::print_plain("  --debug              Use Debug configuration");
     logger::print_plain("  -v, --verbose        Show verbose output");
     logger::print_plain("");
     logger::print_plain("Examples:");
-    logger::print_plain("  cforge watch             Watch and rebuild on changes");
-    logger::print_plain("  cforge watch --run       Watch, rebuild, and run executable");
-    logger::print_plain("  cforge watch -c Release  Watch with Release configuration");
+    logger::print_plain(
+        "  cforge watch             Watch and rebuild on changes");
+    logger::print_plain(
+        "  cforge watch --run       Watch, rebuild, and run executable");
+    logger::print_plain(
+        "  cforge watch -c Release  Watch with Release configuration");
     logger::print_plain("");
     logger::print_plain("Notes:");
-    logger::print_plain("  - Watches .cpp, .cc, .cxx, .c, .hpp, .hxx, .h, .toml files");
-    logger::print_plain("  - Ignores build/, .git/, deps/, vendor/ directories");
+    logger::print_plain(
+        "  - Watches .cpp, .cc, .cxx, .c, .hpp, .hxx, .h, .toml files");
+    logger::print_plain(
+        "  - Ignores build/, .git/, deps/, vendor/ directories");
     logger::print_plain("  - Press Ctrl+C to stop watching");
   } else if (specific_command == "completions") {
-    logger::print_plain("cforge completions - Generate shell completion scripts");
+    logger::print_plain(
+        "cforge completions - Generate shell completion scripts");
     logger::print_plain("");
     logger::print_plain("Usage: cforge completions <shell>");
     logger::print_plain("");
@@ -472,42 +522,51 @@ cforge_int_t cforge_cmd_help(const cforge_context_t *ctx) {
     logger::print_plain("  cforge completions bash >> ~/.bashrc");
     logger::print_plain("  cforge completions zsh >> ~/.zshrc");
     logger::print_plain("  cforge completions powershell >> $PROFILE");
-    logger::print_plain("  cforge completions fish > ~/.config/fish/completions/cforge.fish");
+    logger::print_plain(
+        "  cforge completions fish > ~/.config/fish/completions/cforge.fish");
   } else if (specific_command == "doc" || specific_command == "docs") {
     logger::print_plain("cforge doc - Generate documentation with Doxygen");
     logger::print_plain("");
     logger::print_plain("Usage: cforge doc [options]");
     logger::print_plain("");
     logger::print_plain("Options:");
-    logger::print_plain("  --init           Generate Doxyfile without building docs");
+    logger::print_plain(
+        "  --init           Generate Doxyfile without building docs");
     logger::print_plain("  --open           Open generated docs in browser");
     logger::print_plain("  -o, --output     Output directory (default: docs)");
     logger::print_plain("  -v, --verbose    Show verbose output");
     logger::print_plain("");
     logger::print_plain("Examples:");
     logger::print_plain("  cforge doc               Generate documentation");
-    logger::print_plain("  cforge doc --init        Create Doxyfile for customization");
-    logger::print_plain("  cforge doc --open        Generate and open in browser");
-    logger::print_plain("  cforge doc -o api-docs   Output to api-docs/ directory");
+    logger::print_plain(
+        "  cforge doc --init        Create Doxyfile for customization");
+    logger::print_plain(
+        "  cforge doc --open        Generate and open in browser");
+    logger::print_plain(
+        "  cforge doc -o api-docs   Output to api-docs/ directory");
     logger::print_plain("");
     logger::print_plain("Notes:");
     logger::print_plain("  - Requires Doxygen to be installed");
     logger::print_plain("  - Creates Doxyfile if not present");
-    logger::print_plain("  - Edit Doxyfile to customize documentation settings");
+    logger::print_plain(
+        "  - Edit Doxyfile to customize documentation settings");
   } else if (specific_command == "tree") {
     logger::print_plain("cforge tree - Visualize dependency tree");
     logger::print_plain("");
     logger::print_plain("Usage: cforge tree [options]");
     logger::print_plain("");
     logger::print_plain("Options:");
-    logger::print_plain("  -a, --all        Show all dependencies including transitive");
-    logger::print_plain("  -d, --depth <n>  Maximum depth to display (default: 10)");
+    logger::print_plain(
+        "  -a, --all        Show all dependencies including transitive");
+    logger::print_plain(
+        "  -d, --depth <n>  Maximum depth to display (default: 10)");
     logger::print_plain("  -i, --inverted   Show inverted tree (dependents)");
     logger::print_plain("");
     logger::print_plain("Examples:");
     logger::print_plain("  cforge tree              Show dependency tree");
     logger::print_plain("  cforge tree -d 2         Limit to 2 levels deep");
-    logger::print_plain("  cforge tree --all        Show all transitive dependencies");
+    logger::print_plain(
+        "  cforge tree --all        Show all transitive dependencies");
     logger::print_plain("");
     logger::print_plain("Output:");
     logger::print_plain("  Dependencies are color-coded by type:");
@@ -521,7 +580,8 @@ cforge_int_t cforge_cmd_help(const cforge_context_t *ctx) {
     logger::print_plain("Usage: cforge new <template> <name> [options]");
     logger::print_plain("");
     logger::print_plain("Templates:");
-    logger::print_plain("  class       Create a class with header and source files");
+    logger::print_plain(
+        "  class       Create a class with header and source files");
     logger::print_plain("  header      Create a header-only file");
     logger::print_plain("  struct      Create a struct header file");
     logger::print_plain("  interface   Create an interface (abstract class)");
@@ -534,11 +594,16 @@ cforge_int_t cforge_cmd_help(const cforge_context_t *ctx) {
     logger::print_plain("  -f, --force              Overwrite existing files");
     logger::print_plain("");
     logger::print_plain("Examples:");
-    logger::print_plain("  cforge new class MyClass             Create MyClass.hpp and MyClass.cpp");
-    logger::print_plain("  cforge new class MyClass -n myproj   With namespace 'myproj'");
-    logger::print_plain("  cforge new header utils              Create utils.hpp");
-    logger::print_plain("  cforge new interface IService        Create IService interface");
-    logger::print_plain("  cforge new test MyClass              Create test_my_class.cpp");
+    logger::print_plain("  cforge new class MyClass             Create "
+                        "MyClass.hpp and MyClass.cpp");
+    logger::print_plain(
+        "  cforge new class MyClass -n myproj   With namespace 'myproj'");
+    logger::print_plain(
+        "  cforge new header utils              Create utils.hpp");
+    logger::print_plain(
+        "  cforge new interface IService        Create IService interface");
+    logger::print_plain(
+        "  cforge new test MyClass              Create test_my_class.cpp");
     logger::print_plain("");
     logger::print_plain("Notes:");
     logger::print_plain("  - Headers go to include/, sources go to src/");
@@ -550,28 +615,36 @@ cforge_int_t cforge_cmd_help(const cforge_context_t *ctx) {
     logger::print_plain("Usage: cforge bench [options] [benchmark-name]");
     logger::print_plain("");
     logger::print_plain("Options:");
-    logger::print_plain("  -c, --config <cfg>   Build configuration (default: Release)");
+    logger::print_plain(
+        "  -c, --config <cfg>   Build configuration (default: Release)");
     logger::print_plain("  --no-build           Skip building before running");
-    logger::print_plain("  --filter <pattern>   Run only benchmarks matching pattern");
+    logger::print_plain(
+        "  --filter <pattern>   Run only benchmarks matching pattern");
     logger::print_plain("  --json               Output in JSON format");
     logger::print_plain("  --csv                Output in CSV format");
     logger::print_plain("  -v, --verbose        Show verbose output");
     logger::print_plain("");
     logger::print_plain("Examples:");
-    logger::print_plain("  cforge bench                      Run all benchmarks");
-    logger::print_plain("  cforge bench --filter 'BM_Sort'   Run only Sort benchmarks");
-    logger::print_plain("  cforge bench --no-build           Run without rebuilding");
+    logger::print_plain(
+        "  cforge bench                      Run all benchmarks");
+    logger::print_plain(
+        "  cforge bench --filter 'BM_Sort'   Run only Sort benchmarks");
+    logger::print_plain(
+        "  cforge bench --no-build           Run without rebuilding");
     logger::print_plain("  cforge bench --json > results.json");
     logger::print_plain("");
     logger::print_plain("Configuration (cforge.toml):");
     logger::print_plain("  [benchmark]");
-    logger::print_plain("  directory = \"bench\"       # Benchmark source directory");
-    logger::print_plain("  target = \"my_benchmarks\"  # Specific target to run");
+    logger::print_plain(
+        "  directory = \"bench\"       # Benchmark source directory");
+    logger::print_plain(
+        "  target = \"my_benchmarks\"  # Specific target to run");
     logger::print_plain("");
     logger::print_plain("Notes:");
     logger::print_plain("  - Benchmarks run in Release mode by default");
     logger::print_plain("  - Supports Google Benchmark output format");
-    logger::print_plain("  - Look for executables with 'bench' or 'benchmark' in name");
+    logger::print_plain(
+        "  - Look for executables with 'bench' or 'benchmark' in name");
   } else {
     logger::print_error("Unknown command: " + specific_command);
     logger::print_plain("Run 'cforge help' for a list of available commands");

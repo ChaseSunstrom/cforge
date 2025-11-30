@@ -8,10 +8,10 @@
 
 #pragma once
 
+#include "cforge/log.hpp"
 #include "core/constants.h"
 #include "core/git_utils.hpp"
 #include "core/toml_reader.hpp"
-#include "cforge/log.hpp"
 
 #include <chrono>
 #include <filesystem>
@@ -148,7 +148,8 @@ public:
 
     // Write header
     file << "# cforge.lock - DO NOT EDIT MANUALLY\n";
-    file << "# This file is auto-generated and tracks exact dependency versions\n";
+    file << "# This file is auto-generated and tracks exact dependency "
+            "versions\n";
     file << "# for reproducible builds.\n";
     file << "#\n";
     file << "# To update dependencies, run: cforge deps update\n";
@@ -257,9 +258,7 @@ public:
    *
    * @param name Dependency name
    */
-  void remove_dependency(const std::string &name) {
-    dependencies_.erase(name);
-  }
+  void remove_dependency(const std::string &name) { dependencies_.erase(name); }
 
   /**
    * @brief Clear all locked dependencies

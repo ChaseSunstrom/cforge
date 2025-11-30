@@ -36,7 +36,8 @@ static std::filesystem::path get_vcpkg_path(const toml_reader *project_config) {
 
   // First check project config
   if (project_config) {
-    std::string config_path = project_config->get_string("dependencies.vcpkg.path", "");
+    std::string config_path =
+        project_config->get_string("dependencies.vcpkg.path", "");
     if (!config_path.empty()) {
       vcpkg_path = config_path;
       return vcpkg_path;
@@ -87,7 +88,8 @@ static bool is_vcpkg_installed(const std::filesystem::path &project_dir) {
 #ifndef _WIN32
     {
       auto file_perms = std::filesystem::status(vcpkg_exe).permissions();
-      if ((file_perms & std::filesystem::perms::owner_exec) == std::filesystem::perms::none) {
+      if ((file_perms & std::filesystem::perms::owner_exec) ==
+          std::filesystem::perms::none) {
         return false;
       }
     }
@@ -358,7 +360,9 @@ cforge_int_t cforge_cmd_vcpkg(const cforge_context_t *ctx) {
       // Clone vcpkg
       logger::fetching("vcpkg");
       std::string git_cmd = "git";
-      std::vector<std::string> git_args = {"clone", "https://github.com/Microsoft/vcpkg.git", vcpkg_path.string()};
+      std::vector<std::string> git_args = {
+          "clone", "https://github.com/Microsoft/vcpkg.git",
+          vcpkg_path.string()};
 
       auto result = execute_process(
           git_cmd, git_args,
@@ -380,8 +384,7 @@ cforge_int_t cforge_cmd_vcpkg(const cforge_context_t *ctx) {
 #endif
 
       auto bootstrap_result = execute_process(
-          bootstrap_cmd, {},
-          vcpkg_path.string(),
+          bootstrap_cmd, {}, vcpkg_path.string(),
           [](const std::string &line) { logger::print_verbose(line); },
           [](const std::string &line) { logger::print_error(line); });
 
@@ -396,7 +399,8 @@ cforge_int_t cforge_cmd_vcpkg(const cforge_context_t *ctx) {
 #ifdef _WIN32
     std::string cmd = "setx VCPKG_ROOT \"" + vcpkg_root + "\"";
 #else
-    std::string cmd = "echo 'export VCPKG_ROOT=\"" + vcpkg_root + "\"' >> ~/.bashrc";
+    std::string cmd =
+        "echo 'export VCPKG_ROOT=\"" + vcpkg_root + "\"' >> ~/.bashrc";
 #endif
 
     auto env_result = execute_process(
@@ -426,8 +430,7 @@ cforge_int_t cforge_cmd_vcpkg(const cforge_context_t *ctx) {
     std::vector<std::string> git_args = {"pull"};
 
     auto result = execute_process(
-        git_cmd, git_args,
-        vcpkg_path.string(),
+        git_cmd, git_args, vcpkg_path.string(),
         [](const std::string &line) { logger::print_verbose(line); },
         [](const std::string &line) { logger::print_error(line); });
 

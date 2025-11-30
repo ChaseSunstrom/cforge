@@ -8,12 +8,12 @@
 #include "core/process_utils.hpp"
 #include "core/toml_reader.hpp"
 
+#include <atomic>
 #include <chrono>
+#include <csignal>
 #include <filesystem>
 #include <map>
 #include <thread>
-#include <atomic>
-#include <csignal>
 
 namespace fs = std::filesystem;
 
@@ -31,9 +31,7 @@ BOOL WINAPI console_handler(DWORD signal) {
   return FALSE;
 }
 #else
-void signal_handler(int) {
-  g_should_exit = true;
-}
+void signal_handler(int) { g_should_exit = true; }
 #endif
 
 /**
@@ -125,16 +123,16 @@ public:
   size_t file_count() const { return m_files.size(); }
 
 private:
-  void scan_files() {
-    scan_directory(m_root);
-  }
+  void scan_files() { scan_directory(m_root); }
 
   void scan_directory(const fs::path &dir) {
-    if (!fs::exists(dir)) return;
+    if (!fs::exists(dir))
+      return;
 
     try {
       for (const auto &entry : fs::recursive_directory_iterator(dir)) {
-        if (!entry.is_regular_file()) continue;
+        if (!entry.is_regular_file())
+          continue;
 
         // Skip build directories
         std::string path_str = entry.path().string();
@@ -163,7 +161,8 @@ private:
   void scan_for_new_files() {
     try {
       for (const auto &entry : fs::recursive_directory_iterator(m_root)) {
-        if (!entry.is_regular_file()) continue;
+        if (!entry.is_regular_file())
+          continue;
 
         std::string path_str = entry.path().string();
         if (path_str.find("build") != std::string::npos ||
@@ -217,26 +216,29 @@ bool run_build(const fs::path &project_dir, const std::string &config,
 
   auto start = std::chrono::steady_clock::now();
 
-  auto result = execute_process("cmake", args, project_dir.string(),
-    [verbose](const std::string &line) {
-      if (verbose || line.find("error") != std::string::npos ||
-          line.find("warning") != std::string::npos) {
-        fmt::print("{}\n", line);
-      }
-    },
-    [](const std::string &line) {
-      if (line.find("error") != std::string::npos) {
-        fmt::print(fg(fmt::color::red), "{}\n", line);
-      } else if (line.find("warning") != std::string::npos) {
-        fmt::print(fg(fmt::color::yellow), "{}\n", line);
-      }
-    });
+  auto result = execute_process(
+      "cmake", args, project_dir.string(),
+      [verbose](const std::string &line) {
+        if (verbose || line.find("error") != std::string::npos ||
+            line.find("warning") != std::string::npos) {
+          fmt::print("{}\n", line);
+        }
+      },
+      [](const std::string &line) {
+        if (line.find("error") != std::string::npos) {
+          fmt::print(fg(fmt::color::red), "{}\n", line);
+        } else if (line.find("warning") != std::string::npos) {
+          fmt::print(fg(fmt::color::yellow), "{}\n", line);
+        }
+      });
 
   auto end = std::chrono::steady_clock::now();
-  auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+  auto duration =
+      std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
 
   if (result.exit_code == 0) {
-    logger::finished("build", fmt::format("{:.2f}s", duration.count() / 1000.0));
+    logger::finished("build",
+                     fmt::format("{:.2f}s", duration.count() / 1000.0));
     return true;
   } else {
     logger::print_error("Build failed");
@@ -258,9 +260,9 @@ cforge_int_t cforge_cmd_watch(const cforge_context_t *ctx) {
   std::string config = "";
   bool verbose = false;
   bool run_after_build = false;
-  int poll_interval_ms = 500;  // Default: check every 500ms
+  int poll_interval_ms = 500; // Default: check every 500ms
 
-  for (int i = 1; i < ctx->args.arg_count; i++) {
+  for (int i = 0; i < ctx->args.arg_count; i++) {
     std::string arg = ctx->args.args[i];
     if ((arg == "-c" || arg == "--config") && i + 1 < ctx->args.arg_count) {
       config = ctx->args.args[++i];
@@ -294,15 +296,15 @@ cforge_int_t cforge_cmd_watch(const cforge_context_t *ctx) {
 
   // Set up file watcher
   std::vector<std::string> extensions = {
-    ".cpp", ".cc", ".cxx", ".c",
-    ".hpp", ".hxx", ".h",
-    ".toml"  // Also watch config changes
+      ".cpp", ".cc", ".cxx", ".c", ".hpp", ".hxx", ".h",
+      ".toml" // Also watch config changes
   };
 
   FileWatcher watcher(project_dir, extensions);
 
   logger::print_header("Watching for changes...");
-  logger::print_status("Tracking " + std::to_string(watcher.file_count()) + " files");
+  logger::print_status("Tracking " + std::to_string(watcher.file_count()) +
+                       " files");
   logger::print_status("Press Ctrl+C to stop");
   fmt::print("\n");
 
@@ -356,7 +358,8 @@ cforge_int_t cforge_cmd_watch(const cforge_context_t *ctx) {
 #ifdef _WIN32
           exe_path = project_dir / "build" / config / (project_name + ".exe");
           if (!fs::exists(exe_path)) {
-            exe_path = project_dir / "build" / "bin" / config / (project_name + ".exe");
+            exe_path = project_dir / "build" / "bin" / config /
+                       (project_name + ".exe");
           }
           if (!fs::exists(exe_path)) {
             exe_path = project_dir / "build" / (project_name + ".exe");
@@ -373,13 +376,17 @@ cforge_int_t cforge_cmd_watch(const cforge_context_t *ctx) {
             logger::running(exe_path.filename().string());
             fmt::print("{}\n", std::string(40, '-'));
 
-            auto run_result = execute_process(exe_path.string(), {}, project_dir.string(),
-              [](const std::string &line) { fmt::print("{}\n", line); },
-              [](const std::string &line) { fmt::print(stderr, "{}\n", line); });
+            auto run_result = execute_process(
+                exe_path.string(), {}, project_dir.string(),
+                [](const std::string &line) { fmt::print("{}\n", line); },
+                [](const std::string &line) {
+                  fmt::print(stderr, "{}\n", line);
+                });
 
             fmt::print("{}\n", std::string(40, '-'));
             if (run_result.exit_code != 0) {
-              logger::print_warning("Process exited with code " + std::to_string(run_result.exit_code));
+              logger::print_warning("Process exited with code " +
+                                    std::to_string(run_result.exit_code));
             }
           }
         }

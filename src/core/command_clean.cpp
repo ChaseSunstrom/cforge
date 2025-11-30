@@ -140,8 +140,8 @@ static bool clean_cmake_files(bool verbose) {
   }
 
   if (count > 0) {
-    logger::print_action("Cleaned", std::to_string(count) +
-                          " CMake files/directories");
+    logger::print_action("Cleaned",
+                         std::to_string(count) + " CMake files/directories");
 
     // Check if CMakeLists.txt was removed and cforge.toml exists
     if (std::filesystem::exists(std::filesystem::current_path() /
@@ -248,11 +248,16 @@ cforge_int_t cforge_cmd_clean(const cforge_context_t *ctx) {
     bool verbose = logger::get_verbosity() == log_verbosity::VERBOSITY_VERBOSE;
     for (int i = 0; i < ctx->args.arg_count; ++i) {
       std::string arg = ctx->args.args[i];
-      if (arg == "--all") clean_all = true;
-      else if (arg == "--no-cmake") clean_cmake = false;
-      else if (arg == "--regenerate") regenerate = true;
-      else if (arg == "--deep") deep = true;
-      else if ((arg == "--config" || arg == "-c") && i+1 < ctx->args.arg_count) {
+      if (arg == "--all")
+        clean_all = true;
+      else if (arg == "--no-cmake")
+        clean_cmake = false;
+      else if (arg == "--regenerate")
+        regenerate = true;
+      else if (arg == "--deep")
+        deep = true;
+      else if ((arg == "--config" || arg == "-c") &&
+               i + 1 < ctx->args.arg_count) {
         config_name = ctx->args.args[++i];
       }
     }
@@ -283,7 +288,8 @@ cforge_int_t cforge_cmd_clean(const cforge_context_t *ctx) {
           std::filesystem::remove(ws_cmake);
           logger::print_action("Removed", "workspace CMakeLists.txt");
         } catch (const std::exception &e) {
-          logger::print_error("Failed to remove workspace CMakeLists.txt: " + std::string(e.what()));
+          logger::print_error("Failed to remove workspace CMakeLists.txt: " +
+                              std::string(e.what()));
         }
       }
 
@@ -337,7 +343,7 @@ cforge_int_t cforge_cmd_clean(const cforge_context_t *ctx) {
   bool clean_cmake =
       true; // Clean CMake files by default since we regenerate CMakeLists.txt
   bool regenerate = false; // Regenerate CMake files after cleaning
-  bool deep = false; // Deep clean: remove dependencies directory
+  bool deep = false;       // Deep clean: remove dependencies directory
 
   bool verbose = logger::get_verbosity() == log_verbosity::VERBOSITY_VERBOSE;
 
@@ -353,7 +359,8 @@ cforge_int_t cforge_cmd_clean(const cforge_context_t *ctx) {
       regenerate = true;
     } else if (arg == "--deep") {
       deep = true;
-    } else if ((arg == "--config" || arg == "-c") && (i + 1) < ctx->args.arg_count) {
+    } else if ((arg == "--config" || arg == "-c") &&
+               (i + 1) < ctx->args.arg_count) {
       config_name = ctx->args.args[++i];
     }
   }
@@ -371,7 +378,7 @@ cforge_int_t cforge_cmd_clean(const cforge_context_t *ctx) {
     build_dirs = find_all_build_dirs(base_build_dir);
   } else {
     logger::cleaning("build configuration: " +
-                         (config_name.empty() ? "Default" : config_name));
+                     (config_name.empty() ? "Default" : config_name));
     build_dirs.push_back(get_build_dir_for_config(base_build_dir, config_name));
   }
 
@@ -398,11 +405,14 @@ cforge_int_t cforge_cmd_clean(const cforge_context_t *ctx) {
         std::filesystem::remove_all(deps_path);
         logger::print_action("Removed", deps_path.string());
       } catch (const std::exception &e) {
-        logger::print_error("Failed to remove dependencies directory: " + std::string(e.what()));
+        logger::print_error("Failed to remove dependencies directory: " +
+                            std::string(e.what()));
         all_cleaned = false;
       }
     } else {
-      logger::print_status("Dependencies directory does not exist, nothing to clean: " + deps_path.string());
+      logger::print_status(
+          "Dependencies directory does not exist, nothing to clean: " +
+          deps_path.string());
     }
   }
 

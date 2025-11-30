@@ -86,7 +86,7 @@ find_test_executable(const std::filesystem::path &build_dir,
       std::filesystem::path alt_path = base_path / alt_name;
       if (std::filesystem::exists(alt_path)) {
         logger::print_action("Found", "alternative test executable: " +
-                             alt_path.string());
+                                          alt_path.string());
         return alt_path;
       }
     }
@@ -110,10 +110,12 @@ find_test_executable(const std::filesystem::path &build_dir,
 #ifdef _WIN32
         if (entry.path().extension() == ".exe") {
 #else
-        if ((entry.status().permissions() & std::filesystem::perms::owner_exec) != std::filesystem::perms::none) {
+        if ((entry.status().permissions() &
+             std::filesystem::perms::owner_exec) !=
+            std::filesystem::perms::none) {
 #endif
-          logger::print_action("Found", "test executable: " +
-                               entry.path().string());
+          logger::print_action("Found",
+                               "test executable: " + entry.path().string());
           return entry.path();
         }
       }
@@ -180,7 +182,7 @@ cforge_int_t cforge_cmd_test(const cforge_context_t *ctx) {
   }
   // Get project name
   std::string project_name = cfg.get_string("project.name", "");
-    if (project_name.empty()) {
+  if (project_name.empty()) {
     logger::print_error("project.name must be set in " CFORGE_FILE);
     return 1;
   }
@@ -194,7 +196,8 @@ cforge_int_t cforge_cmd_test(const cforge_context_t *ctx) {
     try {
       fs::create_directories(tests_src);
     } catch (const std::exception &e) {
-      logger::print_error("Failed to create test directory: " + std::string(e.what()));
+      logger::print_error("Failed to create test directory: " +
+                          std::string(e.what()));
       return 1;
     }
   }
@@ -202,7 +205,8 @@ cforge_int_t cforge_cmd_test(const cforge_context_t *ctx) {
   // Generate unified C/C++ test framework header
   fs::path header_src = tests_src / "test_framework.h";
   if (!fs::exists(header_src)) {
-    logger::print_action("Generating", "test framework header: " + header_src.string());
+    logger::print_action("Generating",
+                         "test framework header: " + header_src.string());
     std::ofstream header_file(header_src);
     header_file << R"TFH(
 #ifndef TEST_FRAMEWORK_H
@@ -254,7 +258,8 @@ extern "C" {
   // Generate test_main.cpp by scanning TEST(Category,Name)
   fs::path main_src = tests_src / "test_main.cpp";
   // Always regenerate test_main.cpp
-  logger::print_action("Generating", "test_main.cpp via scan: " + main_src.string());
+  logger::print_action("Generating",
+                       "test_main.cpp via scan: " + main_src.string());
   std::ofstream main_file(main_src);
   // Includes for test runner
   main_file << "#include \"test_framework.h\"\n";
@@ -264,13 +269,17 @@ extern "C" {
   main_file << "#include <algorithm>\n\n";
   // ANSI color codes for test output
   // Collect tests
-  std::vector<std::pair<std::string,std::string>> tests_list;
+  std::vector<std::pair<std::string, std::string>> tests_list;
   // Match TEST(name) or TEST(Category, name)
-  std::regex re(R"REG(^\s*TEST\(\s*([A-Za-z_]\w*)(?:\s*,\s*([A-Za-z_]\w*))?\s*\))REG");
-  for (auto& p : std::filesystem::recursive_directory_iterator(tests_src)) {
-    if (!p.is_regular_file()) continue;
+  std::regex re(
+      R"REG(^\s*TEST\(\s*([A-Za-z_]\w*)(?:\s*,\s*([A-Za-z_]\w*))?\s*\))REG");
+  for (auto &p : std::filesystem::recursive_directory_iterator(tests_src)) {
+    if (!p.is_regular_file())
+      continue;
     auto ext = p.path().extension().string();
-    if (ext != ".cpp" && ext != ".c" && ext != ".h" && ext != ".hpp" && ext != ".hxx" && ext != ".cxx" && ext != ".c++" && ext != ".cc") continue;
+    if (ext != ".cpp" && ext != ".c" && ext != ".h" && ext != ".hpp" &&
+        ext != ".hxx" && ext != ".cxx" && ext != ".c++" && ext != ".cc")
+      continue;
     std::ifstream f(p.path());
     std::string line;
     while (std::getline(f, line)) {
@@ -289,13 +298,13 @@ extern "C" {
     }
   }
   // Extern declarations
-  for (auto& t : tests_list) {
+  for (auto &t : tests_list) {
     std::string fn = t.first.empty() ? t.second : t.first + "_" + t.second;
     main_file << "int " << fn << "();\n";
   }
   main_file << "\nstruct test_entry { const char* full; int (*fn)(); };\n";
   main_file << "static test_entry tests[] = {\n";
-  for (auto& t : tests_list) {
+  for (auto &t : tests_list) {
     std::string full = t.first.empty() ? t.second : t.first + "." + t.second;
     std::string fn = t.first.empty() ? t.second : t.first + "_" + t.second;
     main_file << "  {\"" << full << "\", " << fn << "},\n";
@@ -305,24 +314,33 @@ extern "C" {
   main_file << "int main(int argc, char** argv) {\n";
   main_file << "  std::string category;\n";
   main_file << "  std::vector<std::string> test_filters;\n";
-  main_file << "  // Positional args: first is category (optional), rest are test names\n";
+  main_file << "  // Positional args: first is category (optional), rest are "
+               "test names\n";
   main_file << "  for (int i = 1; i < argc; ++i) {\n";
-  main_file << "    if (i == 1) category = argv[i]; else test_filters.push_back(argv[i]);\n";
+  main_file << "    if (i == 1) category = argv[i]; else "
+               "test_filters.push_back(argv[i]);\n";
   main_file << "  }\n";
   main_file << "  int failures = 0;\n";
   main_file << "  size_t run_count = 0;\n";
   main_file << "  for (auto& tc : tests) {\n";
   main_file << "    std::string full(tc.full);\n";
   main_file << "    std::string cat, name; auto pos = full.find('.');\n";
-  main_file << "    if (pos == std::string::npos) { name = full; } else { cat = full.substr(0,pos); name = full.substr(pos+1); }\n";
+  main_file << "    if (pos == std::string::npos) { name = full; } else { cat "
+               "= full.substr(0,pos); name = full.substr(pos+1); }\n";
   main_file << "    if (!category.empty() && cat != category) continue;\n";
-  main_file << "    if (!test_filters.empty() && std::find(test_filters.begin(), test_filters.end(), name) == test_filters.end()) continue;\n";
+  main_file
+      << "    if (!test_filters.empty() && std::find(test_filters.begin(), "
+         "test_filters.end(), name) == test_filters.end()) continue;\n";
   main_file << "    ++run_count;\n";
-  main_file << "    printf(COLOR_CYAN \"[RUN] %s\" COLOR_RESET \"\\n\", tc.full);\n";
+  main_file
+      << "    printf(COLOR_CYAN \"[RUN] %s\" COLOR_RESET \"\\n\", tc.full);\n";
   main_file << "    int res = tc.fn();\n";
-  main_file << "    if (res) { printf(COLOR_RED \"[FAIL] %s\" COLOR_RESET \"\\n\", tc.full); ++failures; } else { printf(COLOR_GREEN \"[PASS] %s\" COLOR_RESET \"\\n\", tc.full); }\n";
+  main_file << "    if (res) { printf(COLOR_RED \"[FAIL] %s\" COLOR_RESET "
+               "\"\\n\", tc.full); ++failures; } else { printf(COLOR_GREEN "
+               "\"[PASS] %s\" COLOR_RESET \"\\n\", tc.full); }\n";
   main_file << "  }\n";
-  main_file << "  printf(\"Ran %zu tests: %d failures\\n\", run_count, failures);\n";
+  main_file
+      << "  printf(\"Ran %zu tests: %d failures\\n\", run_count, failures);\n";
   main_file << "  return failures;\n";
   main_file << "}\n";
   main_file.close();
@@ -335,62 +353,72 @@ extern "C" {
   // Write CMakeLists.txt for tests
   fs::path cmake_tests = tests_src / "CMakeLists.txt";
   if (!fs::exists(cmake_tests)) {
-  logger::print_action("Generating", "CMakeLists.txt for tests: " + cmake_tests.string());
-  std::ofstream cmake_file(cmake_tests);
-  cmake_file << "cmake_minimum_required(VERSION 3.15)\n";
-  cmake_file << "project(" << project_name << "_tests C CXX)\n";
-  cmake_file << "set(CMAKE_CXX_STANDARD 17)\n";
-  cmake_file << "set(CMAKE_CXX_STANDARD_REQUIRED ON)\n";
-  cmake_file << "set(CMAKE_RUNTIME_OUTPUT_DIRECTORY \"${CMAKE_BINARY_DIR}\")\n";
-  cmake_file << "file(GLOB_RECURSE TEST_SRCS\n";
-  cmake_file << "    \"${CMAKE_CURRENT_SOURCE_DIR}/*.c\"\n";
-  cmake_file << "    \"${CMAKE_CURRENT_SOURCE_DIR}/*.cpp\"\n";
-  cmake_file << ")\n";
-  cmake_file << "add_executable(${PROJECT_NAME} ${TEST_SRCS})\n";
-  cmake_file << "target_include_directories(${PROJECT_NAME} PUBLIC \"${CMAKE_CURRENT_SOURCE_DIR}\")\n";
-  
-  // Propagate workspace project include and link dependencies
-  {
-    auto proj_deps = cfg.get_table_keys("dependencies.project");
-    for (const auto &dep : proj_deps) {
-      cmake_file << "target_include_directories(${PROJECT_NAME} PUBLIC \"${CMAKE_CURRENT_SOURCE_DIR}/../" << dep << "/include\")\n";
-      cmake_file << "target_link_libraries(${PROJECT_NAME} PUBLIC " << dep << ")\n";
+    logger::print_action("Generating",
+                         "CMakeLists.txt for tests: " + cmake_tests.string());
+    std::ofstream cmake_file(cmake_tests);
+    cmake_file << "cmake_minimum_required(VERSION 3.15)\n";
+    cmake_file << "project(" << project_name << "_tests C CXX)\n";
+    cmake_file << "set(CMAKE_CXX_STANDARD 17)\n";
+    cmake_file << "set(CMAKE_CXX_STANDARD_REQUIRED ON)\n";
+    cmake_file
+        << "set(CMAKE_RUNTIME_OUTPUT_DIRECTORY \"${CMAKE_BINARY_DIR}\")\n";
+    cmake_file << "file(GLOB_RECURSE TEST_SRCS\n";
+    cmake_file << "    \"${CMAKE_CURRENT_SOURCE_DIR}/*.c\"\n";
+    cmake_file << "    \"${CMAKE_CURRENT_SOURCE_DIR}/*.cpp\"\n";
+    cmake_file << ")\n";
+    cmake_file << "add_executable(${PROJECT_NAME} ${TEST_SRCS})\n";
+    cmake_file << "target_include_directories(${PROJECT_NAME} PUBLIC "
+                  "\"${CMAKE_CURRENT_SOURCE_DIR}\")\n";
+
+    // Propagate workspace project include and link dependencies
+    {
+      auto proj_deps = cfg.get_table_keys("dependencies.project");
+      for (const auto &dep : proj_deps) {
+        cmake_file << "target_include_directories(${PROJECT_NAME} PUBLIC "
+                      "\"${CMAKE_CURRENT_SOURCE_DIR}/../"
+                   << dep << "/include\")\n";
+        cmake_file << "target_link_libraries(${PROJECT_NAME} PUBLIC " << dep
+                   << ")\n";
+      }
     }
-  }
-  // Propagate vcpkg dependencies
-  {
-    auto vcpkg_deps = cfg.get_table_keys("dependencies.vcpkg");
-    for (const auto &dep : vcpkg_deps) {
-      cmake_file << "find_package(" << dep << " CONFIG REQUIRED)\n";
-      cmake_file << "target_link_libraries(${PROJECT_NAME} PUBLIC " << dep << "::" << dep << ")\n";
+    // Propagate vcpkg dependencies
+    {
+      auto vcpkg_deps = cfg.get_table_keys("dependencies.vcpkg");
+      for (const auto &dep : vcpkg_deps) {
+        cmake_file << "find_package(" << dep << " CONFIG REQUIRED)\n";
+        cmake_file << "target_link_libraries(${PROJECT_NAME} PUBLIC " << dep
+                   << "::" << dep << ")\n";
+      }
     }
-  }
-  // Propagate Git dependencies via FetchContent
-  {
-    auto git_deps = cfg.get_table_keys("dependencies.git");
-    std::string deps_dir = cfg.get_string("dependencies.directory", "deps");
-    if (!git_deps.empty()) {
-      cmake_file << "include(FetchContent)\n";
-      cmake_file << "set(FETCHCONTENT_GIT_PROTOCOL \"https\")\n";
-      for (const auto &dep : git_deps) {
-        std::string url = cfg.get_string("dependencies.git." + dep + ".url", "");
-        if (!url.empty()) {
-          cmake_file << "FetchContent_Declare(" << dep << "\n";
-          cmake_file << "    GIT_REPOSITORY " << url << "\n";
-          cmake_file << "    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../" << deps_dir << "/" << dep << "\n";
-          cmake_file << ")\n";
-          cmake_file << "FetchContent_MakeAvailable(" << dep << ")\n";
+    // Propagate Git dependencies via FetchContent
+    {
+      auto git_deps = cfg.get_table_keys("dependencies.git");
+      std::string deps_dir = cfg.get_string("dependencies.directory", "deps");
+      if (!git_deps.empty()) {
+        cmake_file << "include(FetchContent)\n";
+        cmake_file << "set(FETCHCONTENT_GIT_PROTOCOL \"https\")\n";
+        for (const auto &dep : git_deps) {
+          std::string url =
+              cfg.get_string("dependencies.git." + dep + ".url", "");
+          if (!url.empty()) {
+            cmake_file << "FetchContent_Declare(" << dep << "\n";
+            cmake_file << "    GIT_REPOSITORY " << url << "\n";
+            cmake_file << "    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../"
+                       << deps_dir << "/" << dep << "\n";
+            cmake_file << ")\n";
+            cmake_file << "FetchContent_MakeAvailable(" << dep << ")\n";
+          }
         }
       }
     }
-  }
-  cmake_file.close();
+    cmake_file.close();
   }
 
   // Configure tests via CMake to place binaries in output_tests
   bool verbose = logger::get_verbosity() == log_verbosity::VERBOSITY_VERBOSE;
   logger::print_action("Configuring", "tests with CMake");
-  std::vector<std::string> cmake_args = {"-S", tests_src.string(), "-B", output_tests.string()};
+  std::vector<std::string> cmake_args = {"-S", tests_src.string(), "-B",
+                                         output_tests.string()};
   // Determine build configuration (allow -c/--config)
   std::string build_config;
   if (ctx->args.config && std::strlen(ctx->args.config) > 0) {
@@ -406,7 +434,8 @@ extern "C" {
   }
   logger::building("tests");
   // Build tests via CMake with specific configuration
-  std::vector<std::string> build_args = {"--build", output_tests.string(), "--config", build_config};
+  std::vector<std::string> build_args = {"--build", output_tests.string(),
+                                         "--config", build_config};
   if (!execute_tool("cmake", build_args, "", "CTest Build", verbose)) {
     logger::print_error("Failed to build tests");
     return 1;
@@ -423,35 +452,43 @@ extern "C" {
   fs::path config_exec = output_tests / build_config / exe_name;
   if (fs::exists(config_exec)) {
     test_exec = config_exec;
-    logger::print_action("Found", "test executable for config '" + build_config + "': " + test_exec.string());
+    logger::print_action("Found", "test executable for config '" +
+                                      build_config +
+                                      "': " + test_exec.string());
   } else {
     // 2) try top-level
     fs::path direct_exec = output_tests / exe_name;
     if (fs::exists(direct_exec)) {
       test_exec = direct_exec;
-      logger::print_action("Found", "test executable at top-level: " + test_exec.string());
+      logger::print_action("Found", "test executable at top-level: " +
+                                        test_exec.string());
     } else {
       // 3) recursive fallback
-      logger::print_action("Searching", "recursively for test executable under " + output_tests.string());
+      logger::print_action("Searching",
+                           "recursively for test executable under " +
+                               output_tests.string());
       for (auto &entry : fs::recursive_directory_iterator(output_tests)) {
-        if (!entry.is_regular_file()) continue;
+        if (!entry.is_regular_file())
+          continue;
         if (entry.path().filename() == exe_name) {
           test_exec = entry.path();
-          logger::print_action("Found", "test executable: " + test_exec.string());
+          logger::print_action("Found",
+                               "test executable: " + test_exec.string());
           break;
         }
       }
     }
   }
   if (test_exec.empty() || !fs::exists(test_exec)) {
-    logger::print_error("Test executable not found for config '" + build_config + "'");
+    logger::print_error("Test executable not found for config '" +
+                        build_config + "'");
     return 1;
   }
   logger::running(test_exec.string());
   // Collect test executable arguments: skip CForge flags and split at `--`
   std::vector<std::string> test_args;
   bool found_dd = false;
-  for (int i = 1; i < ctx->args.arg_count; /*incremented in loop*/) {
+  for (int i = 0; i < ctx->args.arg_count; /*incremented in loop*/) {
     std::string arg = ctx->args.args[i];
     if (arg == "--") {
       found_dd = true;
@@ -464,7 +501,8 @@ extern "C" {
         i += 2;
         continue;
       }
-      if (arg == "-v" || arg == "--verbose" || arg == "-q" || arg == "--quiet") {
+      if (arg == "-v" || arg == "--verbose" || arg == "-q" ||
+          arg == "--quiet") {
         ++i;
         continue;
       }
@@ -480,10 +518,12 @@ extern "C" {
   if (!test_args.empty()) {
     std::ostringstream oss;
     for (size_t idx = 0; idx < test_args.size(); ++idx) {
-      if (idx > 0) oss << ' ';
+      if (idx > 0)
+        oss << ' ';
       oss << test_args[idx];
     }
-    logger::print_action("Passing", "arguments to test executable: " + oss.str());
+    logger::print_action("Passing",
+                         "arguments to test executable: " + oss.str());
   }
   // Always show test program output
   if (!run_test_executable(test_exec, test_args, true)) {

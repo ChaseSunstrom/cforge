@@ -1,6 +1,7 @@
 /**
  * @file command_doc.cpp
- * @brief Implementation of the doc command for generating documentation with Doxygen
+ * @brief Implementation of the doc command for generating documentation with
+ * Doxygen
  */
 
 #include "cforge/log.hpp"
@@ -30,19 +31,14 @@ std::string find_doxygen() {
   // Try common locations
 #ifdef _WIN32
   std::vector<std::string> paths = {
-    "doxygen",
-    "C:\\Program Files\\doxygen\\bin\\doxygen.exe",
-    "C:\\Program Files (x86)\\doxygen\\bin\\doxygen.exe"
-  };
+      "doxygen", "C:\\Program Files\\doxygen\\bin\\doxygen.exe",
+      "C:\\Program Files (x86)\\doxygen\\bin\\doxygen.exe"};
 #else
-  std::vector<std::string> paths = {
-    "doxygen",
-    "/usr/bin/doxygen",
-    "/usr/local/bin/doxygen"
-  };
+  std::vector<std::string> paths = {"doxygen", "/usr/bin/doxygen",
+                                    "/usr/local/bin/doxygen"};
 #endif
 
-  for (const auto& path : paths) {
+  for (const auto &path : paths) {
     if (fs::exists(path) || cforge::is_command_available(path, 5)) {
       return path;
     }
@@ -53,8 +49,10 @@ std::string find_doxygen() {
 /**
  * @brief Generate a default Doxyfile
  */
-bool generate_doxyfile(const fs::path& project_dir, const std::string& project_name,
-                       const std::string& version, const std::string& output_dir) {
+bool generate_doxyfile(const fs::path &project_dir,
+                       const std::string &project_name,
+                       const std::string &version,
+                       const std::string &output_dir) {
   fs::path doxyfile_path = project_dir / "Doxyfile";
 
   std::ofstream doxyfile(doxyfile_path);
@@ -118,7 +116,7 @@ cforge_int_t cforge_cmd_doc(const cforge_context_t *ctx) {
   bool generate_doxyfile_only = false;
   std::string output_dir = "docs";
 
-  for (int i = 1; i < ctx->args.arg_count; i++) {
+  for (int i = 0; i < ctx->args.arg_count; i++) {
     std::string arg = ctx->args.args[i];
     if (arg == "-v" || arg == "--verbose") {
       verbose = true;
@@ -126,7 +124,8 @@ cforge_int_t cforge_cmd_doc(const cforge_context_t *ctx) {
       open_docs = true;
     } else if (arg == "--init") {
       generate_doxyfile_only = true;
-    } else if ((arg == "-o" || arg == "--output") && i + 1 < ctx->args.arg_count) {
+    } else if ((arg == "-o" || arg == "--output") &&
+               i + 1 < ctx->args.arg_count) {
       output_dir = ctx->args.args[++i];
     }
   }
@@ -157,7 +156,8 @@ cforge_int_t cforge_cmd_doc(const cforge_context_t *ctx) {
     logger::print_action("Created", "Doxyfile");
 
     if (generate_doxyfile_only) {
-      logger::print_status("Doxyfile generated. Edit it to customize documentation settings.");
+      logger::print_status(
+          "Doxyfile generated. Edit it to customize documentation settings.");
       return 0;
     }
   }
@@ -183,28 +183,31 @@ cforge_int_t cforge_cmd_doc(const cforge_context_t *ctx) {
   std::string doxygen_cmd = find_doxygen();
   std::vector<std::string> args = {doxyfile_path.string()};
 
-  auto result = execute_process(doxygen_cmd, args, project_dir.string(),
-    [verbose](const std::string& line) {
-      if (verbose) {
-        fmt::print("{}\n", line);
-      }
-    },
-    [](const std::string& line) {
-      if (line.find("warning") != std::string::npos) {
-        logger::print_warning(line);
-      } else if (line.find("error") != std::string::npos) {
-        logger::print_error(line);
-      }
-    });
+  auto result = execute_process(
+      doxygen_cmd, args, project_dir.string(),
+      [verbose](const std::string &line) {
+        if (verbose) {
+          fmt::print("{}\n", line);
+        }
+      },
+      [](const std::string &line) {
+        if (line.find("warning") != std::string::npos) {
+          logger::print_warning(line);
+        } else if (line.find("error") != std::string::npos) {
+          logger::print_error(line);
+        }
+      });
 
   if (result.exit_code != 0) {
-    logger::print_error("Doxygen failed with exit code " + std::to_string(result.exit_code));
+    logger::print_error("Doxygen failed with exit code " +
+                        std::to_string(result.exit_code));
     return 1;
   }
 
   fs::path html_index = docs_path / "html" / "index.html";
   if (fs::exists(html_index)) {
-    logger::print_action("Generated", "documentation at " + html_index.string());
+    logger::print_action("Generated",
+                         "documentation at " + html_index.string());
 
     // Open in browser if requested
     if (open_docs) {

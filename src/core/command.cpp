@@ -85,7 +85,8 @@ void cforge_parse_args(cforge_int_t argc, cforge_string_t argv[],
     }
   }
 
-  // Null-terminate the args array to avoid crashes when no arguments are present
+  // Null-terminate the args array to avoid crashes when no arguments are
+  // present
   if (args->args) {
     args->args[args->arg_count] = NULL;
   }

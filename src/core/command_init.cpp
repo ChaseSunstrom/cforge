@@ -21,7 +21,8 @@
 
 using namespace cforge;
 
-// Global init template name (executable, static-lib, shared-library, header-only)
+// Global init template name (executable, static-lib, shared-library,
+// header-only)
 static std::string g_template_name = "executable";
 // Add a flag to force overwrite existing files
 static bool g_force_overwrite = false;
@@ -324,15 +325,18 @@ static bool create_cmakelists(const std::filesystem::path &project_path,
   cmakelists << "set(TARGET_NAME ${PROJECT_NAME})\n\n";
 
   // Project type based on init template
-  if (g_template_name == "executable" || g_template_name == "app" || g_template_name == "application") {
+  if (g_template_name == "executable" || g_template_name == "app" ||
+      g_template_name == "application") {
     cmakelists << "# This is an executable project\n";
     cmakelists << "add_executable(${TARGET_NAME} ${SOURCES})\n";
     cmakelists << "set(PROJECT_TYPE \"executable\")\n\n";
-  } else if (g_template_name == "shared-library" || g_template_name == "shared_library") {
+  } else if (g_template_name == "shared-library" ||
+             g_template_name == "shared_library") {
     cmakelists << "# This is a shared library project\n";
     cmakelists << "add_library(${TARGET_NAME} SHARED ${SOURCES})\n";
     cmakelists << "set(PROJECT_TYPE \"shared_library\")\n\n";
-  } else if (g_template_name == "header-only" || g_template_name == "header_only") {
+  } else if (g_template_name == "header-only" ||
+             g_template_name == "header_only") {
     cmakelists << "# This is a header-only interface library project\n";
     cmakelists << "add_library(${TARGET_NAME} INTERFACE)\n";
     cmakelists << "set(PROJECT_TYPE \"interface\")\n\n";
@@ -361,7 +365,8 @@ static bool create_cmakelists(const std::filesystem::path &project_path,
   cmakelists << "if(MSVC)\n";
   cmakelists << "    target_compile_options(${TARGET_NAME} PRIVATE /W4 /MP)\n";
   cmakelists << "else()\n";
-  cmakelists << "    target_compile_options(${TARGET_NAME} PRIVATE -Wall -Wextra -Wpedantic)\n";
+  cmakelists << "    target_compile_options(${TARGET_NAME} PRIVATE -Wall "
+                "-Wextra -Wpedantic)\n";
   cmakelists << "endif()\n\n";
 
   // Installation
@@ -445,13 +450,16 @@ static bool create_cforge_toml(const std::filesystem::path &project_path,
   config << "cpp_standard = \"" << cpp_version << "\"\n";
   config << "c_standard = \"11\"\n";
 
-  if (g_template_name == "executable" || g_template_name == "app" || g_template_name == "application") {
+  if (g_template_name == "executable" || g_template_name == "app" ||
+      g_template_name == "application") {
     config << "binary_type = \"executable\"  # executable, shared_lib, "
               "static_lib, or header_only\n";
-  } else if (g_template_name == "shared-library" || g_template_name == "shared_library") {
+  } else if (g_template_name == "shared-library" ||
+             g_template_name == "shared_library") {
     config << "binary_type = \"shared_lib\"  # executable, shared_lib, "
               "static_lib, or header_only\n";
-  } else if (g_template_name == "header-only" || g_template_name == "header_only") {
+  } else if (g_template_name == "header-only" ||
+             g_template_name == "header_only") {
     config << "binary_type = \"header_only\"  # executable, shared_lib, "
               "static_lib, or header_only\n";
   } else {
@@ -626,7 +634,8 @@ static bool create_include_files(const std::filesystem::path &project_path,
   if (std::filesystem::exists(example_header_path) && !g_force_overwrite) {
     logger::print_warning("example.hpp already exists, skipping");
     return true;
-  } else if (std::filesystem::exists(example_header_path) && g_force_overwrite) {
+  } else if (std::filesystem::exists(example_header_path) &&
+             g_force_overwrite) {
     logger::print_action("Overwriting", "example.hpp");
   }
 
@@ -734,7 +743,8 @@ static bool create_test_files(const std::filesystem::path &project_path,
     tests_cmake << "include(FetchContent)\n";
     tests_cmake << "FetchContent_Declare(\n";
     tests_cmake << "  googletest\n";
-    tests_cmake << "  GIT_REPOSITORY https://github.com/google/googletest.git\n";
+    tests_cmake
+        << "  GIT_REPOSITORY https://github.com/google/googletest.git\n";
     tests_cmake << "  GIT_TAG release-1.12.1\n";
     tests_cmake << ")\n\n";
     tests_cmake << "# For Windows: Prevent overriding the parent project's "
@@ -747,14 +757,16 @@ static bool create_test_files(const std::filesystem::path &project_path,
     tests_cmake << "include(GoogleTest)\n\n";
     tests_cmake << "# Create test executable\n";
     tests_cmake << "# Convert build type to lowercase for naming\n";
-    tests_cmake << "string(TOLOWER \"${CMAKE_BUILD_TYPE}\" build_type_lower)\n\n";
+    tests_cmake
+        << "string(TOLOWER \"${CMAKE_BUILD_TYPE}\" build_type_lower)\n\n";
     tests_cmake << "set(TEST_EXECUTABLE_NAME "
                    "${PROJECT_NAME}_${build_type_lower}_tests)\n\n";
     tests_cmake << "add_executable(${TEST_EXECUTABLE_NAME}\n";
     tests_cmake << "  test_main.cpp\n";
     tests_cmake << "  test_example.cpp\n";
     tests_cmake << ")\n\n";
-    tests_cmake << "target_include_directories(${TEST_EXECUTABLE_NAME} PRIVATE\n";
+    tests_cmake
+        << "target_include_directories(${TEST_EXECUTABLE_NAME} PRIVATE\n";
     tests_cmake << "  ${CMAKE_SOURCE_DIR}/include\n";
     tests_cmake << ")\n\n";
     tests_cmake << "target_link_libraries(${TEST_EXECUTABLE_NAME} PRIVATE\n";
@@ -914,14 +926,14 @@ static bool init_git_repository(const std::filesystem::path &project_path,
                                 bool verbose) {
   // If Git initialization wasn't explicitly requested, just return success
   if (!verbose) {
-    logger::print_action("Skipped", "git initialization (use --git flag to enable)");
+    logger::print_action("Skipped",
+                         "git initialization (use --git flag to enable)");
     return true;
   }
 
   // First check if git is available
   if (!is_git_available()) {
-    logger::print_warning(
-        "Git not found in PATH, skipping git initialization");
+    logger::print_warning("Git not found in PATH, skipping git initialization");
     return true; // Not critical for project creation
   }
 
@@ -1018,7 +1030,8 @@ generate_workspace_cmakelists(const std::filesystem::path &workspace_dir,
   std::filesystem::path cmakelists_path = workspace_dir / "CMakeLists.txt";
 
   if (std::filesystem::exists(cmakelists_path) && !g_force_overwrite) {
-    logger::print_warning("Workspace-level CMakeLists.txt already exists, skipping");
+    logger::print_warning(
+        "Workspace-level CMakeLists.txt already exists, skipping");
     return true;
   } else if (std::filesystem::exists(cmakelists_path) && g_force_overwrite) {
     logger::print_action("Overwriting", "workspace-level CMakeLists.txt");
@@ -1367,7 +1380,8 @@ cforge_int_t cforge_cmd_init(const cforge_context_t *ctx) {
         // Create the project files
         if (!create_project(project_dir, project.name, cpp_standard, with_git,
                             with_tests)) {
-          logger::print_error("Failed to create project '" + project.name + "'");
+          logger::print_error("Failed to create project '" + project.name +
+                              "'");
           continue;
         }
 
@@ -1428,29 +1442,35 @@ cforge_int_t cforge_cmd_init(const cforge_context_t *ctx) {
 
       // Create workspace configuration file directly
       if (std::filesystem::exists(config_path) && !g_force_overwrite) {
-        logger::print_warning("Workspace configuration file '" + config_path.string() + "' already exists. Skipping creation");
+        logger::print_warning("Workspace configuration file '" +
+                              config_path.string() +
+                              "' already exists. Skipping creation");
       } else {
         if (std::filesystem::exists(config_path) && g_force_overwrite) {
           logger::print_action("Overwriting", "workspace configuration");
         }
         std::ofstream config_file(config_path);
         if (!config_file.is_open()) {
-          logger::print_error("Failed to create workspace configuration file: " + config_path.string());
+          logger::print_error(
+              "Failed to create workspace configuration file: " +
+              config_path.string());
           return 1;
         }
         // Write a basic TOML configuration
         config_file << "[workspace]\n";
         config_file << "name = \"" << workspace_name << "\"\n";
-        config_file << "description = \"A C++ workspace created with cforge\"\n\n";
+        config_file
+            << "description = \"A C++ workspace created with cforge\"\n\n";
 
         // Write projects as array-of-tables
         for (size_t i = 0; i < project_names.size(); ++i) {
           const auto &proj_name = project_names[i];
-          bool is_startup = (i == 0);  // first project marked startup
+          bool is_startup = (i == 0); // first project marked startup
           config_file << "[[workspace.project]]\n";
           config_file << "name    = \"" << proj_name << "\"\n";
           config_file << "path    = \"" << proj_name << "\"\n";
-          config_file << "startup = " << (is_startup ? "true" : "false") << "\n\n";
+          config_file << "startup = " << (is_startup ? "true" : "false")
+                      << "\n\n";
         }
         // Optionally record main_project fallback
         if (!project_names.empty()) {

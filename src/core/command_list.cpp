@@ -8,14 +8,14 @@
 #include "core/constants.h"
 #include "core/process_utils.hpp"
 #include "core/toml_reader.hpp"
-#include <filesystem>
 #include "core/workspace.hpp"
+#include <filesystem>
 
+#include <algorithm>
 #include <iostream>
 #include <map>
 #include <string>
 #include <vector>
-#include <algorithm>
 
 using namespace cforge;
 
@@ -147,7 +147,8 @@ cforge_int_t cforge_cmd_list(const cforge_context_t *ctx) {
       std::cout << "Workspace projects:\n";
       for (const auto &proj : ws.get_projects()) {
         std::cout << "  - " << proj.name;
-        if (proj.is_startup_project) std::cout << " (startup)";
+        if (proj.is_startup_project)
+          std::cout << " (startup)";
         std::cout << " (" << proj.path.string() << ")\n";
       }
       std::cout << "\n";
@@ -187,7 +188,8 @@ cforge_int_t cforge_cmd_list(const cforge_context_t *ctx) {
         std::cout << "\n";
       } else {
         // Project-level dependencies from cforge.toml
-        std::filesystem::path toml_path = std::filesystem::path(ctx->working_dir) / CFORGE_FILE;
+        std::filesystem::path toml_path =
+            std::filesystem::path(ctx->working_dir) / CFORGE_FILE;
         toml_reader cfg;
         if (!cfg.load(toml_path.string())) {
           logger::print_error("Failed to load cforge.toml");
@@ -246,18 +248,21 @@ cforge_int_t cforge_cmd_list(const cforge_context_t *ctx) {
       // Include isolated projects
       for (const auto &proj : ws.get_projects()) {
         if (proj.dependencies.empty() &&
-            std::find(all_deps.begin(), all_deps.end(), proj.name) == all_deps.end()) {
+            std::find(all_deps.begin(), all_deps.end(), proj.name) ==
+                all_deps.end()) {
           std::cout << "  " << proj.name << "\n";
         }
       }
       std::cout << "\n";
-    }
-    else if (category == "scripts") {
+    } else if (category == "scripts") {
       // List configured scripts
-      std::filesystem::path toml_path = std::filesystem::path(ctx->working_dir) / (ctx->is_workspace ? WORKSPACE_FILE : CFORGE_FILE);
+      std::filesystem::path toml_path =
+          std::filesystem::path(ctx->working_dir) /
+          (ctx->is_workspace ? WORKSPACE_FILE : CFORGE_FILE);
       toml_reader cfg;
       if (!cfg.load(toml_path.string())) {
-        logger::print_error("Failed to load configuration: " + toml_path.string());
+        logger::print_error("Failed to load configuration: " +
+                            toml_path.string());
         return 1;
       }
       std::cout << "Configured scripts:\n";
@@ -276,10 +281,11 @@ cforge_int_t cforge_cmd_list(const cforge_context_t *ctx) {
         }
       }
       std::cout << "\n";
-    }
-    else {
+    } else {
       logger::print_error("Unknown list category: " + category);
-      std::cout << "Available categories: configs, generators, targets, commands, settings, projects, order, dependencies, graph, scripts\n";
+      std::cout
+          << "Available categories: configs, generators, targets, commands, "
+             "settings, projects, order, dependencies, graph, scripts\n";
       return 1;
     }
   } else {
@@ -294,7 +300,8 @@ cforge_int_t cforge_cmd_list(const cforge_context_t *ctx) {
       if (ws.load(ctx->working_dir)) {
         std::cout << "Workspace projects:\n";
         for (const auto &proj : ws.get_projects()) {
-          std::cout << "  - " << proj.name << " (" << proj.path.string() << ")\n";
+          std::cout << "  - " << proj.name << " (" << proj.path.string()
+                    << ")\n";
         }
         std::cout << "\n";
         std::cout << "Workspace project dependencies:\n";

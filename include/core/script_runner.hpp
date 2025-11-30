@@ -5,10 +5,10 @@
 
 #pragma once
 
+#include "cforge/log.hpp"
 #include "core/constants.h"
 #include "core/process_utils.hpp"
 #include "core/toml_reader.hpp"
-#include "cforge/log.hpp"
 
 #include <filesystem>
 #include <string>
@@ -96,9 +96,11 @@ inline std::string phase_to_name(script_phase phase) {
  * @brief Determine script interpreter based on file extension
  *
  * @param script_path Path to the script
- * @return Interpreter command (python, bash, etc.) or empty for native executables
+ * @return Interpreter command (python, bash, etc.) or empty for native
+ * executables
  */
-inline std::string get_script_interpreter(const std::filesystem::path &script_path) {
+inline std::string
+get_script_interpreter(const std::filesystem::path &script_path) {
   std::string ext = script_path.extension().string();
 
   // Convert to lowercase for comparison
@@ -158,8 +160,8 @@ inline bool execute_script(const std::filesystem::path &script_path,
   }
 
   std::string phase_name = phase_to_name(phase);
-  logger::print_status("Running " + phase_name + " script: " +
-                       script_path.string());
+  logger::print_status("Running " + phase_name +
+                       " script: " + script_path.string());
 
   std::string interpreter = get_script_interpreter(full_path);
   std::string command;
@@ -200,7 +202,8 @@ inline bool execute_script(const std::filesystem::path &script_path,
 /**
  * @brief Run all scripts for a given phase from a config file
  *
- * @param config_path Path to the TOML config file (cforge.toml or cforge.workspace.toml)
+ * @param config_path Path to the TOML config file (cforge.toml or
+ * cforge.workspace.toml)
  * @param working_dir Working directory for script execution
  * @param phase Script phase to run
  * @param verbose Verbose output

@@ -106,7 +106,7 @@ uppercase_generators(const std::vector<std::string> &generators);
  * @return std::string Joined string
  */
 std::string join_strings(const std::vector<std::string> &strings,
-                                const std::string &delimiter);
+                         const std::string &delimiter);
 
 // Global flag to suppress build warnings
 extern bool g_suppress_warnings;

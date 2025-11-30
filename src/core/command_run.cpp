@@ -218,7 +218,9 @@ find_project_executable(const std::filesystem::path &project_path,
   }
 
   if (found_count == 0) {
-    logger::print_action("Info", "no executables found, project might not have been built correctly");
+    logger::print_action(
+        "Info",
+        "no executables found, project might not have been built correctly");
   }
 
   return std::filesystem::path();
@@ -277,17 +279,20 @@ static bool build_project_for_run(const std::filesystem::path &project_dir,
   std::filesystem::path source_dir = project_dir;
   // If no CMakeLists.txt in project root, generate from cforge.toml
   std::filesystem::path project_toml = project_dir / CFORGE_FILE;
-  if (!std::filesystem::exists(project_dir / "CMakeLists.txt") && std::filesystem::exists(project_toml)) {
+  if (!std::filesystem::exists(project_dir / "CMakeLists.txt") &&
+      std::filesystem::exists(project_toml)) {
     toml::table tbl;
     try {
       tbl = toml::parse_file(project_toml.string());
       toml_reader proj_cfg(tbl);
       if (!generate_cmakelists_from_toml(project_dir, proj_cfg, verbose)) {
-        logger::print_error("failed to generate CMakeLists.txt from cforge.toml");
+        logger::print_error(
+            "failed to generate CMakeLists.txt from cforge.toml");
         return false;
       }
     } catch (...) {
-      logger::print_error("error parsing cforge.toml for automatic CMakeLists generation");
+      logger::print_error(
+          "error parsing cforge.toml for automatic CMakeLists generation");
       return false;
     }
   }
@@ -299,7 +304,8 @@ static bool build_project_for_run(const std::filesystem::path &project_dir,
       source_dir = build_dir;
       logger::print_verbose("Using CMakeLists.txt from build directory");
     } else {
-      logger::print_error("CMakeLists.txt not found in project or build directory");
+      logger::print_error(
+          "CMakeLists.txt not found in project or build directory");
       return false;
     }
   }
@@ -316,11 +322,9 @@ static bool build_project_for_run(const std::filesystem::path &project_dir,
 
   // Configure the project
   logger::print_action("Configuring", "project");
-  std::vector<std::string> config_args = {
-      "-S", source_dir.string(),
-      "-B", build_dir.string(),
-      "-DCMAKE_BUILD_TYPE=" + config
-  };
+  std::vector<std::string> config_args = {"-S", source_dir.string(), "-B",
+                                          build_dir.string(),
+                                          "-DCMAKE_BUILD_TYPE=" + config};
 
   bool config_success =
       execute_tool(build_cmd, config_args, "", "CMake Configure", verbose);
@@ -352,7 +356,9 @@ static bool spawn_in_terminal(const std::string &cmd) {
   return std::system(winCmd.c_str()) == 0;
 #elif defined(__APPLE__)
   // Use AppleScript to open a new Terminal window
-  std::string osa = "osascript -e 'tell application \"Terminal\" to do script \"" + cmd + "\"'";
+  std::string osa =
+      "osascript -e 'tell application \"Terminal\" to do script \"" + cmd +
+      "\"'";
   return std::system(osa.c_str()) == 0;
 #else
   // Use x-terminal-emulator for Linux (fallback to GNOME Terminal)
@@ -364,7 +370,8 @@ static bool spawn_in_terminal(const std::string &cmd) {
 cforge_int_t cforge_cmd_run(const cforge_context_t *ctx) {
   try {
     // Determine project directory
-    std::filesystem::path project_dir = std::filesystem::absolute(ctx->working_dir);
+    std::filesystem::path project_dir =
+        std::filesystem::absolute(ctx->working_dir);
 
     // Parse common parameters first
     // Get the build configuration
@@ -434,38 +441,47 @@ cforge_int_t cforge_cmd_run(const cforge_context_t *ctx) {
     // Check if we're in a workspace (may be in a subdirectory)
     auto [is_workspace, workspace_root] = is_in_workspace(project_dir);
 
-    // Handle workspace-run only when at the workspace root; subprojects fall through to single-run
+    // Handle workspace-run only when at the workspace root; subprojects fall
+    // through to single-run
     if (is_workspace && project_dir == workspace_root) {
-      logger::print_action("Running", "in workspace context: " + project_dir.string());
-      
+      logger::print_action("Running",
+                           "in workspace context: " + project_dir.string());
+
       // Ensure workspace CMakeLists.txt exists (generate if needed)
       std::filesystem::path ws_cmake = project_dir / "CMakeLists.txt";
       if (!std::filesystem::exists(ws_cmake)) {
         logger::print_verbose("Generating workspace CMakeLists.txt for run");
-        toml_reader ws_cfg(toml::parse_file((project_dir / WORKSPACE_FILE).string()));
+        toml_reader ws_cfg(
+            toml::parse_file((project_dir / WORKSPACE_FILE).string()));
         if (!generate_workspace_cmakelists(project_dir, ws_cfg, verbose)) {
           logger::print_error("failed to generate workspace CMakeLists.txt");
           return 1;
         }
       }
-      
+
       // Determine workspace-level build directory
       std::filesystem::path ws_build_base = project_dir / DEFAULT_BUILD_DIR;
-      std::filesystem::path ws_build_dir = get_build_dir_for_config(ws_build_base.string(), config);
-      logger::print_verbose("Using workspace build directory: " + ws_build_dir.string());
-      
+      std::filesystem::path ws_build_dir =
+          get_build_dir_for_config(ws_build_base.string(), config);
+      logger::print_verbose("Using workspace build directory: " +
+                            ws_build_dir.string());
+
       // Build workspace if needed
       bool need_build = !skip_build;
       // If user skipped build but config not built, build anyway
-      if (skip_build && !std::filesystem::exists(ws_build_dir / "CMakeCache.txt")) {
+      if (skip_build &&
+          !std::filesystem::exists(ws_build_dir / "CMakeCache.txt")) {
         need_build = true;
-        logger::print_action("Info", "workspace build not found for config '" + config + "', configuring and building workspace");
+        logger::print_action("Info",
+                             "workspace build not found for config '" + config +
+                                 "', configuring and building workspace");
       }
       if (need_build) {
         // Prepare context for build
         cforge_context_t build_ctx;
         memset(&build_ctx, 0, sizeof(build_ctx));
-        strncpy(build_ctx.working_dir, ctx->working_dir, sizeof(build_ctx.working_dir) - 1);
+        strncpy(build_ctx.working_dir, ctx->working_dir,
+                sizeof(build_ctx.working_dir) - 1);
         build_ctx.working_dir[sizeof(build_ctx.working_dir) - 1] = '\0';
         build_ctx.args.command = strdup("build");
         build_ctx.args.config = strdup(config.c_str());
@@ -473,9 +489,10 @@ cforge_int_t cforge_cmd_run(const cforge_context_t *ctx) {
           build_ctx.args.verbosity = strdup("verbose");
         }
         int build_res = cforge_cmd_build(&build_ctx);
-        free((void*)build_ctx.args.command);
-        free((void*)build_ctx.args.config);
-        if (build_ctx.args.verbosity) free((void*)build_ctx.args.verbosity);
+        free((void *)build_ctx.args.command);
+        free((void *)build_ctx.args.config);
+        if (build_ctx.args.verbosity)
+          free((void *)build_ctx.args.verbosity);
         if (build_res != 0) {
           logger::print_error("workspace build failed");
           return build_res;
@@ -524,7 +541,8 @@ cforge_int_t cforge_cmd_run(const cforge_context_t *ctx) {
         toml_reader pconf(toml::parse_file((proj_path / CFORGE_FILE).string()));
         std::string real_name = pconf.get_string("project.name", proj_name);
         // Find executable
-        auto exe = find_project_executable(proj_path, ws_build_dir.string(), config, real_name);
+        auto exe = find_project_executable(proj_path, ws_build_dir.string(),
+                                           config, real_name);
         if (exe.empty()) {
           logger::print_error("executable not found: " + proj_name);
           overall_success = false;

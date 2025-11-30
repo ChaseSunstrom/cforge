@@ -5,10 +5,10 @@
 
 #pragma once
 
+#include "cforge/log.hpp"
 #include "core/constants.h"
 #include "core/process_utils.hpp"
 #include "core/toml_reader.hpp"
-#include "cforge/log.hpp"
 
 #include <filesystem>
 #include <string>
@@ -195,7 +195,8 @@ inline std::string get_build_config(const char *explicit_config, int arg_count,
  * @param build_dir Build directory
  * @param project_name Project name
  * @param config Build configuration
- * @param binary_type Type of binary (executable, shared_library, static_library)
+ * @param binary_type Type of binary (executable, shared_library,
+ * static_library)
  * @return Path to the binary, or empty if not found
  */
 inline std::filesystem::path
@@ -233,10 +234,11 @@ find_project_binary(const std::filesystem::path &build_dir,
  * @param extra_args Additional CMake arguments
  * @return true if configuration succeeded
  */
-inline bool ensure_cmake_configured(
-    const std::filesystem::path &project_dir,
-    const std::filesystem::path &build_dir, const std::string &config,
-    bool verbose, const std::vector<std::string> &extra_args = {}) {
+inline bool
+ensure_cmake_configured(const std::filesystem::path &project_dir,
+                        const std::filesystem::path &build_dir,
+                        const std::string &config, bool verbose,
+                        const std::vector<std::string> &extra_args = {}) {
 
   std::vector<std::string> cmake_args = {"-B", build_dir.string(),
                                          "-S", project_dir.string(),
