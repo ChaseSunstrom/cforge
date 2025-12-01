@@ -1,7 +1,7 @@
 {
   "id": "workspaces",
   "title": "Workspaces",
-  "description": "🗂️ Workspaces",
+  "description": "Workspaces",
   "source": "@site/docs/workspaces.md",
   "sourceDirName": ".",
   "slug": "/workspaces",

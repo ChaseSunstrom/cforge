@@ -41,7 +41,6 @@ void cforge_print_verbose(cforge_cstring_t message);
 #ifdef __cplusplus
 } // extern "C"
 
-#define FMT_HEADER_ONLY
 #include <fmt/color.h>
 #include <fmt/core.h>
 #include <string>

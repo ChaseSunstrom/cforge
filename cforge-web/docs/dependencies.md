@@ -3,116 +3,200 @@ id: dependencies
 title: Working with Dependencies
 ---
 
-## 📦 Working with Dependencies
+## Working with Dependencies
 
-CForge supports multiple dependency management systems:
+CForge supports multiple dependency management systems to make it easy to include external libraries in your projects.
 
 ### vcpkg Integration
+
+[vcpkg](https://vcpkg.io/) is a C/C++ package manager from Microsoft. CForge integrates seamlessly with vcpkg:
 
 ```toml
 [dependencies.vcpkg]
 enabled = true
-path = "~/.vcpkg"  # Optional, defaults to ~/.vcpkg
-packages = ["fmt", "boost", "nlohmann-json"] 
+path = "~/.vcpkg"          # Optional: directory of vcpkg installation
+triplet = "x64-windows"    # Optional: specify vcpkg target triplet
+packages = ["fmt", "boost", "nlohmann-json"]
 ```
 
-Example C++ code using vcpkg dependencies:
-
-```cpp
-#include <fmt/core.h>
-#include <nlohmann/json.hpp>
-
-int main() {
-    // Using fmt library from vcpkg
-    fmt::print("Hello, {}!\n", "world");
-    
-    // Using nlohmann/json library from vcpkg
-    nlohmann::json j = {
-        {"name", "CForge"},
-        {"version", "1.2.0"}
-    };
-    
-    fmt::print("JSON: {}\n", j.dump(2));
-    return 0;
-} 
-```
-
-### Conan Integration
-
-```toml 
-[dependencies.conan]
-enabled = true
-packages = ["fmt/9.1.0", "spdlog/1.10.0"]
-options = { "fmt:shared": "False", "spdlog:shared": "False" }
-generators = ["cmake", "cmake_find_package"] 
-```
+CForge will automatically:
+- Install vcpkg if not found
+- Install the specified packages
+- Configure CMake to use vcpkg's toolchain file
 
 ### Git Dependencies
 
-```toml 
-[[dependencies.git]]
-name = "nlohmann_json"
-url = "https://github.com/nlohmann/json.git"
-tag = "v3.11.3"
-# Optional settings
-shallow = true  # Faster clone with reduced history
-update = false  # Whether to update the repo on builds
-
-[[dependencies.git]]
-name = "fmt"
-url = "https://github.com/fmtlib/fmt.git"
-tag = "9.1.0"
-cmake_options = ["-DFMT_TEST=OFF", "-DFMT_DOC=OFF"]  # Pass CMake options when building
-
-[[dependencies.git]]
-name = "imgui"
-url = "https://github.com/ocornut/imgui.git"
-branch = "master"  # Use a specific branch instead of tag
-shallow = true
-
-[[dependencies.git]]
-name = "custom_repo"
-url = "https://example.com/repo.git"
-commit = "abc123def456"  # Use a specific commit hash 
-```
-
-Git dependencies are automatically cloned into a deps directory. The libraries can be included in your project by adding their include paths to your target configuration:
-
-``` toml
-[targets.default]
-include_dirs = ["include", "deps/nlohmann_json/single_include", "deps/fmt/include"]
-defines = ["FMT_HEADER_ONLY"]  # Optionally add defines for your dependencies 
-```
-
-You can also use the libraries in your code immediately:
-
-```cpp
-#include <nlohmann/json.hpp>
-#include <fmt/core.h>
-
-int main() {
-    // Using nlohmann/json
-    nlohmann::json obj = {{"name", "cforge"}, {"version", "1.4.0"}};
-    
-    // Using fmt
-    fmt::print("Project: {}\n", obj["name"].get<std::string>());
-    return 0;
-} 
-```
-
-### Custom Dependencies
+Clone dependencies directly from Git repositories:
 
 ```toml
-[[dependencies.custom]]
-name = "my_library"
-url = "https://example.com/my_library-1.0.0.zip"
-include_path = "include"
-library_path = "lib" 
+[dependencies.git.fmt]
+url = "https://github.com/fmtlib/fmt.git"
+tag = "11.1.4"
+
+[dependencies.git.nlohmann_json]
+url = "https://github.com/nlohmann/json.git"
+tag = "v3.11.3"
+
+[dependencies.git.imgui]
+url = "https://github.com/ocornut/imgui.git"
+branch = "master"
+shallow = true
 ```
+
+#### Git Dependency Options
+
+| Option | Description |
+|--------|-------------|
+| `url` | Repository URL (required) |
+| `tag` | Git tag to checkout |
+| `branch` | Git branch to checkout |
+| `commit` | Specific commit hash |
+| `shallow` | Use shallow clone (faster) |
+| `directory` | Custom clone directory |
+
+Git dependencies are automatically cloned into the `deps` directory and included as CMake subdirectories.
 
 ### System Dependencies
 
+System dependencies support three methods: `find_package`, `pkg_config`, and `manual`:
+
+#### find_package Method
+
+Use CMake's `find_package` to locate system-installed libraries:
+
 ```toml
-[dependencies]
-system = ["X11", "pthread", "dl"] 
+[dependencies.system.OpenGL]
+method = "find_package"
+required = true
+components = ["GL", "GLU"]
+target = "OpenGL::GL"
+```
+
+#### pkg-config Method
+
+Use pkg-config to locate libraries (common on Linux):
+
+```toml
+[dependencies.system.x11]
+method = "pkg_config"
+package = "x11"
+platforms = ["linux"]  # Only on Linux
+```
+
+#### Manual Method
+
+Manually specify library paths and flags:
+
+```toml
+[dependencies.system.custom_lib]
+method = "manual"
+include_dirs = ["/usr/local/include/custom"]
+library_dirs = ["/usr/local/lib"]
+libraries = ["custom", "custom_util"]
+defines = ["USE_CUSTOM_LIB"]
+platforms = ["linux", "macos"]  # Limit to specific platforms
+```
+
+#### System Dependency Options
+
+| Option | Description |
+|--------|-------------|
+| `method` | Detection method: `find_package`, `pkg_config`, or `manual` |
+| `required` | Whether the dependency is required (default: true) |
+| `components` | CMake components for find_package |
+| `target` | CMake target name to link |
+| `package` | Package name for pkg-config |
+| `include_dirs` | Include directories (manual method) |
+| `library_dirs` | Library directories (manual method) |
+| `libraries` | Library names to link (manual method) |
+| `defines` | Preprocessor definitions |
+| `platforms` | Limit to specific platforms |
+
+### Subdirectory Dependencies
+
+Use existing CMake projects as dependencies:
+
+```toml
+[dependencies.subdirectory.spdlog]
+path = "extern/spdlog"
+target = "spdlog::spdlog"
+options = { SPDLOG_BUILD_TESTS = "OFF" }
+
+[dependencies.subdirectory.glfw]
+path = "extern/glfw"
+target = "glfw"
+options = { GLFW_BUILD_EXAMPLES = "OFF", GLFW_BUILD_TESTS = "OFF" }
+```
+
+#### Subdirectory Options
+
+| Option | Description |
+|--------|-------------|
+| `path` | Path to the CMake project directory |
+| `target` | CMake target to link |
+| `options` | CMake options to set before add_subdirectory |
+
+### Project Dependencies (Workspaces)
+
+In a workspace, depend on other projects:
+
+```toml
+[dependencies.project.core]
+include_dirs = ["include"]
+link = true
+link_type = "PRIVATE"
+```
+
+See [Workspaces](workspaces) for more details.
+
+### Dependency Lock File
+
+Ensure reproducible builds with lock files:
+
+```bash
+# Generate/update lock file
+cforge lock
+
+# Verify dependencies match lock file
+cforge lock --verify
+
+# Force regeneration
+cforge lock --force
+```
+
+The lock file (`cforge.lock`) records the exact versions of all dependencies, ensuring consistent builds across different machines and times.
+
+### Dependency Tree
+
+Visualize your project's dependencies:
+
+```bash
+cforge tree
+```
+
+Output:
+```
+myproject v1.0.0
+|-- fmt @ 11.1.4 (git)
+|-- nlohmann_json @ v3.11.3 (git)
+|-- boost (vcpkg)
+`-- OpenGL (system)
+
+Dependencies: 2 git, 1 vcpkg, 1 system
+```
+
+### Managing Dependencies
+
+```bash
+# Add a git dependency
+cforge add fmt --git https://github.com/fmtlib/fmt.git --tag 11.1.4
+
+# Add a vcpkg dependency
+cforge add boost --vcpkg
+
+# Remove a dependency
+cforge remove fmt
+
+# Update all dependencies
+cforge deps update
 ```

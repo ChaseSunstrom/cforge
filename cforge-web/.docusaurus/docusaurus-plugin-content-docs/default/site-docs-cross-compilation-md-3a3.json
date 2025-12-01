@@ -1,7 +1,7 @@
 {
   "id": "cross-compilation",
   "title": "Cross-Compilation",
-  "description": "🌐 Cross-Compilation",
+  "description": "Cross-Compilation",
   "source": "@site/docs/cross-compilation.md",
   "sourceDirName": ".",
   "slug": "/cross-compilation",

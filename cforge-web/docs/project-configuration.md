@@ -3,7 +3,7 @@ id: project-configuration
 title: Project Configuration
 ---
 
-## 📋 Project Configuration
+## Project Configuration
 
 ### Basic Configuration
 
@@ -11,60 +11,207 @@ The `cforge.toml` file is the heart of your project configuration:
 
 ```toml
 [project]
-name = "my_project"
-version = "0.1.0"
-description = "My C/C++ project"
-type = "executable"  # executable, library, static-library, header-only
-language = "c++"
-standard = "c++17"   # c++11, c++14, c++17, c++20, c++23
+name = "myproject"
+version = "1.0.0"
+description = "My awesome C++ project"
+cpp_standard = "17"
+c_standard = "11"
+binary_type = "executable" # executable, shared_library, static_library, header_only
+authors = ["Your Name <you@example.com>"]
+license = "MIT"
 
 [build]
-build_dir = "build"
-default_config = "Debug"
-generator = "Ninja"  # Ninja, "Visual Studio 17 2022", NMake Makefiles, etc.
-
-[build.configs.Debug]
-defines = ["DEBUG", "_DEBUG"]
-flags = ["NO_OPT", "DEBUG_INFO"]
-
-[build.configs.Release]
-defines = ["NDEBUG"]
-flags = ["OPTIMIZE", "OB2", "DNDEBUG"]
-
-[targets.default]
-sources = ["src/**/*.cpp", "src/**/*.c"]
+build_type = "Debug"
+directory = "build"
+source_dirs = ["src"]
 include_dirs = ["include"]
-links = [] 
+
+[build.config.debug]
+defines = ["DEBUG=1"]
+flags = ["DEBUG_INFO", "NO_OPT"]
+
+[build.config.release]
+defines = ["NDEBUG=1"]
+flags = ["OPTIMIZE"]
+
+[test]
+enabled = true
+directory = "tests"
+framework = "catch2"  # or "gtest"
+
+[benchmark]
+directory = "bench"
+target = "benchmarks"
+
+[package]
+enabled = true
+generators = ["ZIP", "TGZ"]
+vendor = "Your Name"
 ```
 
-### Target Configuration
+### Configuration Options
 
-A project can have multiple targets (executables or libraries):
+| Section | Key | Description |
+|---------|-----|-------------|
+| `[project]` | `name` | Project name |
+| `[project]` | `version` | Project version (semantic versioning) |
+| `[project]` | `description` | Project description |
+| `[project]` | `cpp_standard` | C++ standard (11, 14, 17, 20, 23) |
+| `[project]` | `c_standard` | C standard (99, 11, 17) |
+| `[project]` | `binary_type` | Output type (executable, shared_library, static_library, header_only) |
+| `[project]` | `authors` | List of authors |
+| `[project]` | `license` | License identifier |
+| `[build]` | `build_type` | Default build type (Debug, Release, RelWithDebInfo, MinSizeRel) |
+| `[build]` | `directory` | Build output directory |
+| `[build]` | `source_dirs` | Source file directories |
+| `[build]` | `include_dirs` | Header file directories |
 
-```toml
-[targets.main_app]
-sources = ["src/app/**/*.cpp"]
-include_dirs = ["include"]
-links = ["fmt", "boost_system"]
+### Using Version in Code
 
-[targets.utils_lib]
-sources = ["src/utils/**/*.cpp"]
-include_dirs = ["include/utils"]
-links = [] 
+The version from `cforge.toml` is automatically available as compile definitions:
+
+```cpp
+#include <iostream>
+
+int main() {
+    // Generic version macros (works for any project)
+    std::cout << "Version: " << PROJECT_VERSION << std::endl;
+    std::cout << "Major: " << PROJECT_VERSION_MAJOR << std::endl;
+    std::cout << "Minor: " << PROJECT_VERSION_MINOR << std::endl;
+    std::cout << "Patch: " << PROJECT_VERSION_PATCH << std::endl;
+
+    // Project-specific macros (e.g., for project named "myapp")
+    // std::cout << MYAPP_VERSION << std::endl;
+
+    return 0;
+}
 ```
 
-### Platform-specific Configuration
+Available macros:
+
+| Macro | Description | Example |
+|-------|-------------|---------|
+| `PROJECT_VERSION` | Full version string | `"1.2.3"` |
+| `PROJECT_VERSION_MAJOR` | Major version number | `1` |
+| `PROJECT_VERSION_MINOR` | Minor version number | `2` |
+| `PROJECT_VERSION_PATCH` | Patch version number | `3` |
+| `<PROJECTNAME>_VERSION` | Project-specific version | `"1.2.3"` |
+
+### CMake Integration
+
+Customize CMake behavior with includes, injections, and module paths:
 
 ```toml
-[platforms.windows]
-defines = ["WINDOWS", "WIN32"]
-flags = ["UNICODE"]
+[cmake]
+version = "3.15"                      # Minimum CMake version
+generator = "Ninja"                    # CMake generator
+includes = ["cmake/custom.cmake"]      # Custom CMake files to include
+module_paths = ["cmake/modules"]       # Custom module search paths
 
-[platforms.darwin]
-defines = ["OSX"]
-flags = []
+# Inject custom CMake code
+inject_before_target = """
+# Code inserted before add_executable/add_library
+include(FetchContent)
+"""
 
-[platforms.linux]
+inject_after_target = """
+# Code inserted after add_executable/add_library
+target_precompile_headers(${PROJECT_NAME} PRIVATE <pch.hpp>)
+"""
+
+[cmake.compilers]
+c = "/usr/bin/gcc-12"
+cxx = "/usr/bin/g++-12"
+
+[cmake.visual_studio]
+platform = "x64"
+toolset = "v143"
+```
+
+### Platform-Specific Configuration
+
+Configure settings per platform (windows, linux, macos):
+
+```toml
+[platform.windows]
+defines = ["WIN32", "_WINDOWS"]
+flags = ["/W4"]
+links = ["kernel32", "user32"]
+
+[platform.linux]
 defines = ["LINUX"]
-flags = [] 
+flags = ["-Wall", "-Wextra"]
+links = ["pthread", "dl"]
+
+[platform.macos]
+defines = ["MACOS"]
+flags = ["-Wall"]
+frameworks = ["Cocoa", "IOKit"]  # macOS frameworks
 ```
+
+### Compiler-Specific Configuration
+
+Configure settings per compiler (msvc, gcc, clang, apple_clang, mingw):
+
+```toml
+[compiler.msvc]
+flags = ["/W4", "/WX", "/permissive-"]
+defines = ["_CRT_SECURE_NO_WARNINGS"]
+
+[compiler.gcc]
+flags = ["-Wall", "-Wextra", "-Wpedantic"]
+
+[compiler.clang]
+flags = ["-Wall", "-Wextra", "-Wpedantic"]
+
+[compiler.mingw]
+flags = ["-Wall", "-Wextra"]
+defines = ["MINGW"]
+```
+
+### Platform + Compiler Combinations
+
+Combine platform and compiler for fine-grained control:
+
+```toml
+[platform.windows.compiler.msvc]
+flags = ["/W4"]
+defines = ["_CRT_SECURE_NO_WARNINGS"]
+
+[platform.windows.compiler.mingw]
+defines = ["MINGW_BUILD"]
+links = ["mingw32"]
+
+[platform.linux.compiler.gcc]
+flags = ["-Wall", "-Wextra", "-fPIC"]
+```
+
+### Build Configurations
+
+Define build configurations with specific compiler flags and defines:
+
+```toml
+[build.config.debug]
+defines = ["DEBUG=1", "_DEBUG"]
+flags = ["DEBUG_INFO", "NO_OPT"]
+
+[build.config.release]
+defines = ["NDEBUG=1"]
+flags = ["OPTIMIZE", "LTO"]
+
+[build.config.relwithdebinfo]
+defines = ["NDEBUG=1"]
+flags = ["OPTIMIZE", "DEBUG_INFO"]
+```
+
+### Available Flags
+
+Abstract flags that translate to compiler-specific options:
+
+| Flag | Description | MSVC | GCC/Clang |
+|------|-------------|------|-----------|
+| `DEBUG_INFO` | Debug symbols | `/Zi` | `-g` |
+| `NO_OPT` | Disable optimization | `/Od` | `-O0` |
+| `OPTIMIZE` | Full optimization | `/O2` | `-O3` |
+| `LTO` | Link-time optimization | `/GL` | `-flto` |
+| `UNICODE` | Unicode support | `/DUNICODE` | `-DUNICODE` |

@@ -6,6 +6,7 @@
 #ifndef CFORGE_TOML_READER_H
 #define CFORGE_TOML_READER_H
 
+#include <map>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -98,6 +99,41 @@ public:
    * @return Vector of table names
    */
   std::vector<std::string> get_tables(const std::string &prefix = "") const;
+
+  /**
+   * @brief Get a string map (inline table) from the TOML file
+   * @param key The key to look up (can be dotted for tables)
+   * @return Map of string key-value pairs, or empty map if not found
+   */
+  std::map<std::string, std::string> get_string_map(const std::string &key) const;
+
+  /**
+   * @brief Get a string value with fallback to deprecated key
+   * @param key The preferred key to look up
+   * @param deprecated_key The old deprecated key to try if preferred not found
+   * @param default_value The default value if neither key exists
+   * @param warn If true, emit deprecation warning when using deprecated key
+   * @return The value found, or default_value if neither key exists
+   */
+  std::string get_string_or_deprecated(const std::string &key,
+                                       const std::string &deprecated_key,
+                                       const std::string &default_value = "",
+                                       bool warn = true) const;
+
+  /**
+   * @brief Check if either a key or its deprecated version exists
+   * @param key The preferred key
+   * @param deprecated_key The deprecated key to check as fallback
+   * @return True if either key exists
+   */
+  bool has_key_or_deprecated(const std::string &key,
+                             const std::string &deprecated_key) const;
+
+  /**
+   * @brief Get the underlying toml::table pointer (for advanced usage)
+   * @return Pointer to the toml::table, or nullptr if not loaded
+   */
+  const void* get_table() const { return toml_data; }
 
 private:
   cforge_pointer_t toml_data; // Opaque pointer to the toml::table

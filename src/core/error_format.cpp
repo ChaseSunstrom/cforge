@@ -13,7 +13,6 @@
 #include <sstream>
 
 // Add header-only mode for fmt library
-#define FMT_HEADER_ONLY
 // Use these headers in this specific order
 #include "fmt/color.h"
 #include "fmt/core.h"
@@ -981,9 +980,9 @@ std::vector<diagnostic> parse_ninja_errors(const std::string &error_output) {
 std::vector<diagnostic> parse_linker_errors(const std::string &error_output) {
   std::vector<diagnostic> diagnostics;
 
-  // ============================================================
+  
   // Regular expressions for various linker error formats
-  // ============================================================
+  
 
   // LLD-style linker error: "lld-link: error: undefined symbol: ..."
   std::regex lld_error_regex(R"(lld-link:\s*error:\s*(.*))");
@@ -1134,9 +1133,9 @@ std::vector<diagnostic> parse_linker_errors(const std::string &error_output) {
       continue;
     }
 
-    // ============================================================
+    
     // MSVC object file linker errors (most common on Windows)
-    // ============================================================
+    
     if (std::regex_search(line, matches, msvc_obj_error_regex)) {
       diagnostic diag;
       diag.level = diagnostic_level::ERROR;
@@ -1165,9 +1164,9 @@ std::vector<diagnostic> parse_linker_errors(const std::string &error_output) {
       continue;
     }
 
-    // ============================================================
+    
     // MSVC LINK.exe errors
-    // ============================================================
+    
     if (std::regex_search(line, matches, msvc_link_error_regex)) {
       diagnostic diag;
       diag.level = diagnostic_level::ERROR;
@@ -1183,9 +1182,9 @@ std::vector<diagnostic> parse_linker_errors(const std::string &error_output) {
       continue;
     }
 
-    // ============================================================
+    
     // LLD linker errors
-    // ============================================================
+    
     if (std::regex_search(line, matches, lld_error_regex)) {
       diagnostic diag;
       diag.level = diagnostic_level::ERROR;
@@ -1218,9 +1217,9 @@ std::vector<diagnostic> parse_linker_errors(const std::string &error_output) {
       continue;
     }
 
-    // ============================================================
+    
     // GCC/Clang undefined reference with file context
-    // ============================================================
+    
     if (std::regex_search(line, matches, gcc_undefined_ref_regex)) {
       diagnostic diag;
       diag.level = diagnostic_level::ERROR;
@@ -1238,9 +1237,9 @@ std::vector<diagnostic> parse_linker_errors(const std::string &error_output) {
       continue;
     }
 
-    // ============================================================
+    
     // Simple undefined reference (without file context)
-    // ============================================================
+    
     if (std::regex_search(line, matches, simple_undefined_ref_regex)) {
       // Only create a new diagnostic if we don't already have one for this
       bool already_captured = false;
@@ -1270,9 +1269,9 @@ std::vector<diagnostic> parse_linker_errors(const std::string &error_output) {
       continue;
     }
 
-    // ============================================================
+    
     // Clang linker wrapper errors
-    // ============================================================
+    
     if (std::regex_search(line, matches, clang_linker_error_regex)) {
       diagnostic diag;
       diag.level = diagnostic_level::ERROR;
@@ -1289,9 +1288,9 @@ std::vector<diagnostic> parse_linker_errors(const std::string &error_output) {
       continue;
     }
 
-    // ============================================================
+    
     // collect2 errors (GCC linker wrapper)
-    // ============================================================
+    
     if (std::regex_search(line, matches, collect2_error_regex)) {
       // collect2 is a summary error; we prefer the more specific errors above
       // Only add if we haven't captured any linker errors yet
@@ -1312,9 +1311,9 @@ std::vector<diagnostic> parse_linker_errors(const std::string &error_output) {
       continue;
     }
 
-    // ============================================================
+    
     // ld linker errors
-    // ============================================================
+    
     if (std::regex_search(line, matches, ld_error_regex)) {
       std::string message = matches[1].str();
 
@@ -1351,9 +1350,9 @@ std::vector<diagnostic> parse_linker_errors(const std::string &error_output) {
       continue;
     }
 
-    // ============================================================
+    
     // Reference context lines (add to current diagnostic)
-    // ============================================================
+    
     if (std::regex_search(line, matches, reference_regex)) {
       if (current_diag != nullptr) {
         std::string file_ref = matches[1].str();
@@ -1471,9 +1470,9 @@ std::vector<diagnostic> parse_cpack_errors(const std::string &error_output) {
   return diagnostics;
 }
 
-// ============================================================
+
 // Template Error Parsing
-// ============================================================
+
 
 std::vector<diagnostic> parse_template_errors(const std::string &error_output) {
   std::vector<diagnostic> diagnostics;
@@ -1677,9 +1676,9 @@ std::vector<diagnostic> parse_template_errors(const std::string &error_output) {
   return diagnostics;
 }
 
-// ============================================================
+
 // Error Deduplication
-// ============================================================
+
 
 std::vector<diagnostic>
 deduplicate_diagnostics(std::vector<diagnostic> diagnostics) {
@@ -1790,9 +1789,9 @@ deduplicate_diagnostics(std::vector<diagnostic> diagnostics) {
   return deduplicated;
 }
 
-// ============================================================
+
 // Error Summary
-// ============================================================
+
 
 error_summary
 calculate_error_summary(const std::vector<diagnostic> &diagnostics) {
@@ -1916,9 +1915,9 @@ std::string format_error_summary(const error_summary &summary) {
   return ss.str();
 }
 
-// ============================================================
+
 // Library Suggestions for Common Symbols
-// ============================================================
+
 
 std::string suggest_library_for_symbol(const std::string &symbol) {
   // Windows API function to library mappings
@@ -2101,9 +2100,9 @@ std::string suggest_library_for_symbol(const std::string &symbol) {
   return "";
 }
 
-// ============================================================
+
 // Fix Suggestions
-// ============================================================
+
 
 std::string suggest_include_for_type(const std::string &type_name) {
   // Map of common types to their headers
@@ -2392,9 +2391,9 @@ std::vector<fix_suggestion> generate_fix_suggestions(const diagnostic &diag) {
   std::transform(msg_lower.begin(), msg_lower.end(), msg_lower.begin(),
                  ::tolower);
 
-  // ============================================================
+  
   // Missing semicolon
-  // ============================================================
+  
   if (msg_lower.find("expected ';'") != std::string::npos ||
       msg_lower.find("expected ';' ") != std::string::npos ||
       msg_lower.find("missing ';'") != std::string::npos ||
@@ -2425,9 +2424,9 @@ std::vector<fix_suggestion> generate_fix_suggestions(const diagnostic &diag) {
     suggestions.push_back(fix);
   }
 
-  // ============================================================
+  
   // Missing closing brace
-  // ============================================================
+  
   if (msg_lower.find("expected '}'") != std::string::npos ||
       msg_lower.find("missing '}'") != std::string::npos ||
       diag.code == "C2059") {
@@ -2439,9 +2438,9 @@ std::vector<fix_suggestion> generate_fix_suggestions(const diagnostic &diag) {
     suggestions.push_back(fix);
   }
 
-  // ============================================================
+  
   // Missing closing parenthesis
-  // ============================================================
+  
   if (msg_lower.find("expected ')'") != std::string::npos ||
       msg_lower.find("missing ')'") != std::string::npos) {
 
@@ -2452,9 +2451,9 @@ std::vector<fix_suggestion> generate_fix_suggestions(const diagnostic &diag) {
     suggestions.push_back(fix);
   }
 
-  // ============================================================
+  
   // Undeclared identifier - suggest include
-  // ============================================================
+  
   if (msg_lower.find("undeclared") != std::string::npos ||
       msg_lower.find("not declared") != std::string::npos ||
       msg_lower.find("unknown type") != std::string::npos ||
@@ -2481,9 +2480,9 @@ std::vector<fix_suggestion> generate_fix_suggestions(const diagnostic &diag) {
     }
   }
 
-  // ============================================================
+  
   // Unused variable - suggest [[maybe_unused]] or removal
-  // ============================================================
+  
   if (msg_lower.find("unused variable") != std::string::npos ||
       msg_lower.find("unused parameter") != std::string::npos ||
       diag.code.find("-Wunused") != std::string::npos) {
@@ -2518,9 +2517,9 @@ std::vector<fix_suggestion> generate_fix_suggestions(const diagnostic &diag) {
     }
   }
 
-  // ============================================================
+  
   // Missing return statement
-  // ============================================================
+  
   if (msg_lower.find("no return statement") != std::string::npos ||
       msg_lower.find("missing return") != std::string::npos ||
       msg_lower.find("control reaches end") != std::string::npos ||
@@ -2534,9 +2533,9 @@ std::vector<fix_suggestion> generate_fix_suggestions(const diagnostic &diag) {
     suggestions.push_back(fix);
   }
 
-  // ============================================================
+  
   // Comparison between signed and unsigned
-  // ============================================================
+  
   if (msg_lower.find("signed and unsigned") != std::string::npos ||
       msg_lower.find("comparison between signed") != std::string::npos ||
       diag.code.find("-Wsign-compare") != std::string::npos) {
@@ -2547,9 +2546,9 @@ std::vector<fix_suggestion> generate_fix_suggestions(const diagnostic &diag) {
     suggestions.push_back(fix);
   }
 
-  // ============================================================
+  
   // Implicit conversion / narrowing
-  // ============================================================
+  
   if (msg_lower.find("implicit conversion") != std::string::npos ||
       msg_lower.find("narrowing conversion") != std::string::npos ||
       msg_lower.find("possible loss of data") != std::string::npos ||
@@ -2561,9 +2560,9 @@ std::vector<fix_suggestion> generate_fix_suggestions(const diagnostic &diag) {
     suggestions.push_back(fix);
   }
 
-  // ============================================================
+  
   // Missing default in switch
-  // ============================================================
+  
   if (msg_lower.find("default label") != std::string::npos ||
       msg_lower.find("not handled in switch") != std::string::npos ||
       diag.code.find("-Wswitch") != std::string::npos) {
@@ -2575,9 +2574,9 @@ std::vector<fix_suggestion> generate_fix_suggestions(const diagnostic &diag) {
     suggestions.push_back(fix);
   }
 
-  // ============================================================
+  
   // Use of = instead of ==
-  // ============================================================
+  
   if (msg_lower.find("suggest parentheses") != std::string::npos ||
       msg_lower.find("assignment in conditional") != std::string::npos ||
       msg_lower.find("using the result of an assignment") !=
@@ -2594,9 +2593,9 @@ std::vector<fix_suggestion> generate_fix_suggestions(const diagnostic &diag) {
     suggestions.push_back(fix2);
   }
 
-  // ============================================================
+  
   // Null pointer dereference potential
-  // ============================================================
+  
   if (msg_lower.find("null pointer") != std::string::npos ||
       msg_lower.find("nullptr") != std::string::npos ||
       msg_lower.find("may be null") != std::string::npos) {
@@ -2607,9 +2606,9 @@ std::vector<fix_suggestion> generate_fix_suggestions(const diagnostic &diag) {
     suggestions.push_back(fix);
   }
 
-  // ============================================================
+  
   // Typo suggestions from compiler (MSVC style: "did you mean")
-  // ============================================================
+  
   std::regex did_you_mean_regex(R"(did you mean ['"`]([^'"`]+)['"`])");
   std::smatch did_you_mean_match;
   if (std::regex_search(diag.message, did_you_mean_match, did_you_mean_regex)) {
@@ -2619,9 +2618,9 @@ std::vector<fix_suggestion> generate_fix_suggestions(const diagnostic &diag) {
     suggestions.push_back(fix);
   }
 
-  // ============================================================
+  
   // GCC/Clang note about similar names
-  // ============================================================
+  
   for (const auto &note : diag.notes) {
     std::string note_lower = note;
     std::transform(note_lower.begin(), note_lower.end(), note_lower.begin(),

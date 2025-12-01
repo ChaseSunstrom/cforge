@@ -1,168 +1,211 @@
 {
-  "/cforge/blog-1d1": {
-    "__comp": "a6aa9e1f",
+  "/cforge/__docusaurus/debug-0e4": {
+    "__comp": "__comp---theme-debug-config-23-a-2ff",
     "__context": {
-      "plugin": "36994c47"
+      "plugin": "plugin---cforge-docusaurus-debugb-38-c80"
+    }
+  },
+  "/cforge/__docusaurus/debug/config-e11": {
+    "__comp": "__comp---theme-debug-config-23-a-2ff",
+    "__context": {
+      "plugin": "plugin---cforge-docusaurus-debugb-38-c80"
+    }
+  },
+  "/cforge/__docusaurus/debug/content-c8f": {
+    "__comp": "__comp---theme-debug-contentba-8-ce7",
+    "__context": {
+      "plugin": "plugin---cforge-docusaurus-debugb-38-c80"
     },
-    "sidebar": "814f3328",
+    "__props": "__props---cforge-docusaurus-debug-contentb-7-c-cc8"
+  },
+  "/cforge/__docusaurus/debug/globalData-ef7": {
+    "__comp": "__comp---theme-debug-global-dataede-0fa",
+    "__context": {
+      "plugin": "plugin---cforge-docusaurus-debugb-38-c80"
+    }
+  },
+  "/cforge/__docusaurus/debug/metadata-f8f": {
+    "__comp": "__comp---theme-debug-site-metadata-68-e-3d4",
+    "__context": {
+      "plugin": "plugin---cforge-docusaurus-debugb-38-c80"
+    }
+  },
+  "/cforge/__docusaurus/debug/registry-514": {
+    "__comp": "__comp---theme-debug-registry-679-501",
+    "__context": {
+      "plugin": "plugin---cforge-docusaurus-debugb-38-c80"
+    }
+  },
+  "/cforge/__docusaurus/debug/routes-38b": {
+    "__comp": "__comp---theme-debug-routes-946-699",
+    "__context": {
+      "plugin": "plugin---cforge-docusaurus-debugb-38-c80"
+    }
+  },
+  "/cforge/blog-1d1": {
+    "__comp": "__comp---theme-blog-list-pagea-6-a-7ba",
+    "__context": {
+      "plugin": "plugin---cforge-blog-369-388"
+    },
+    "sidebar": "sidebar---cforge-blog-814-237",
     "items": [
       {
-        "content": "e0e2aafe"
+        "content": "content---cforge-bloge-0-e-5dd"
       }
     ],
-    "__props": "125de2b8"
+    "__props": "__props---cforge-blog-125-c04"
   },
   "/cforge/blog/announcing-cforge-beta-v1-4-0-9f9": {
-    "__comp": "ccc49370",
+    "__comp": "__comp---theme-blog-post-pageccc-cab",
     "__context": {
       "data": {
-        "blogMetadata": "acecf23e"
+        "blogMetadata": "blogMetadata---cforge-blog-announcing-cforge-beta-v-1-4-0-ace-9b9"
       },
-      "plugin": "36994c47"
+      "plugin": "plugin---cforge-blog-369-388"
     },
-    "sidebar": "814f3328",
-    "content": "8802e98e"
+    "sidebar": "sidebar---cforge-blog-814-237",
+    "content": "content---cforge-blog-announcing-cforge-beta-v-1-4-0880-351"
   },
   "/cforge/blog/archive-6ba": {
-    "__comp": "9e4087bc",
+    "__comp": "__comp---theme-blog-archive-page-9-e-4-1d8",
     "__context": {
-      "plugin": "36994c47"
+      "plugin": "plugin---cforge-blog-369-388"
     },
-    "__props": "7394520f"
+    "__props": "__props---cforge-blog-archive-739-5f0"
   },
   "/cforge/blog/tags-75b": {
-    "__comp": "01a85c17",
+    "__comp": "__comp---theme-blog-tags-list-page-01-a-d0b",
     "__context": {
-      "plugin": "36994c47"
+      "plugin": "plugin---cforge-blog-369-388"
     },
-    "sidebar": "814f3328",
-    "__props": "a93ade8a"
+    "sidebar": "sidebar---cforge-blog-814-237",
+    "__props": "__props---cforge-blog-tagsa-93-624"
   },
   "/cforge/blog/tags/beta-988": {
-    "__comp": "6875c492",
+    "__comp": "__comp---theme-blog-tags-posts-page-687-b6c",
     "__context": {
-      "plugin": "36994c47"
+      "plugin": "plugin---cforge-blog-369-388"
     },
-    "sidebar": "814f3328",
+    "sidebar": "sidebar---cforge-blog-814-237",
     "items": [
       {
-        "content": "e0e2aafe"
+        "content": "content---cforge-bloge-0-e-5dd"
       }
     ],
-    "__props": "ac226e25"
+    "__props": "__props---cforge-blog-tags-betaac-2-31c"
   },
   "/cforge/blog/tags/cforge-b02": {
-    "__comp": "6875c492",
+    "__comp": "__comp---theme-blog-tags-posts-page-687-b6c",
     "__context": {
-      "plugin": "36994c47"
+      "plugin": "plugin---cforge-blog-369-388"
     },
-    "sidebar": "814f3328",
+    "sidebar": "sidebar---cforge-blog-814-237",
     "items": [
       {
-        "content": "e0e2aafe"
+        "content": "content---cforge-bloge-0-e-5dd"
       }
     ],
-    "__props": "c413afb5"
+    "__props": "__props---cforge-blog-tags-cforgec-41-f91"
   },
   "/cforge/blog/tags/release-adb": {
-    "__comp": "6875c492",
+    "__comp": "__comp---theme-blog-tags-posts-page-687-b6c",
     "__context": {
-      "plugin": "36994c47"
+      "plugin": "plugin---cforge-blog-369-388"
     },
-    "sidebar": "814f3328",
+    "sidebar": "sidebar---cforge-blog-814-237",
     "items": [
       {
-        "content": "e0e2aafe"
+        "content": "content---cforge-bloge-0-e-5dd"
       }
     ],
-    "__props": "a79a15bf"
+    "__props": "__props---cforge-blog-tags-releasea-79-97c"
   },
   "/cforge/docs-955": {
-    "__comp": "5e95c892",
+    "__comp": "__comp---theme-docs-root-5-e-9-0b6",
     "__context": {
-      "plugin": "aba21aa0"
+      "plugin": "plugin---cforge-docsaba-e51"
     }
   },
   "/cforge/docs-21a": {
-    "__comp": "a7bd4aaa",
-    "__props": "5e38ca63"
+    "__comp": "__comp---theme-doc-version-roota-7-b-5de",
+    "__props": "__props---cforge-docs-5-e-3-510"
   },
   "/cforge/docs-1cc": {
-    "__comp": "a94703ab"
+    "__comp": "__comp---theme-doc-roota-94-67a"
   },
   "/cforge/docs/advanced-topics-029": {
-    "__comp": "17896441",
-    "content": "5d250c2b"
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---cforge-docs-advanced-topics-5-d-2-06b"
   },
   "/cforge/docs/build-variants-a86": {
-    "__comp": "17896441",
-    "content": "15db3679"
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---cforge-docs-build-variants-15-d-b9b"
   },
   "/cforge/docs/command-reference-687": {
-    "__comp": "17896441",
-    "content": "66992f67"
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---cforge-docs-command-reference-669-4ea"
   },
   "/cforge/docs/contributing-db8": {
-    "__comp": "17896441",
-    "content": "4d54d076"
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---cforge-docs-contributing-4-d-5-773"
   },
   "/cforge/docs/cross-compilation-4e1": {
-    "__comp": "17896441",
-    "content": "3a34d351"
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---cforge-docs-cross-compilation-3-a-3-5c4"
   },
   "/cforge/docs/dependencies-dc4": {
-    "__comp": "17896441",
-    "content": "7f85490b"
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---cforge-docs-dependencies-7-f-8-714"
   },
   "/cforge/docs/examples-117": {
-    "__comp": "17896441",
-    "content": "09d5ad39"
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---cforge-docs-examples-09-d-6c2"
   },
   "/cforge/docs/ide-integration-aa8": {
-    "__comp": "17896441",
-    "content": "69f04c60"
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---cforge-docs-ide-integration-69-f-f8a"
   },
   "/cforge/docs/installation-f59": {
-    "__comp": "17896441",
-    "content": "3b8c55ea"
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---cforge-docs-installation-3-b-8-730"
   },
   "/cforge/docs/intro-4e0": {
-    "__comp": "17896441",
-    "content": "0e384e19"
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---cforge-docs-intro-0-e-3-dae"
   },
   "/cforge/docs/license-b8c": {
-    "__comp": "17896441",
-    "content": "ac5280f2"
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---cforge-docs-licenseac-5-52f"
   },
   "/cforge/docs/project-configuration-c32": {
-    "__comp": "17896441",
-    "content": "449695dd"
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---cforge-docs-project-configuration-449-fb2"
   },
   "/cforge/docs/quick-start-357": {
-    "__comp": "17896441",
-    "content": "72e14192"
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---cforge-docs-quick-start-72-e-e71"
   },
   "/cforge/docs/scripts-hooks-cbf": {
-    "__comp": "17896441",
-    "content": "eedadc0c"
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---cforge-docs-scripts-hookseed-d11"
   },
   "/cforge/docs/testing-bb3": {
-    "__comp": "17896441",
-    "content": "fbe93038"
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---cforge-docs-testingfbe-5a1"
   },
   "/cforge/docs/troubleshooting-373": {
-    "__comp": "17896441",
-    "content": "9d9f8394"
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---cforge-docs-troubleshooting-9-d-9-bb8"
   },
   "/cforge/docs/workspaces-546": {
-    "__comp": "17896441",
-    "content": "9b4cd6e8"
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---cforge-docs-workspaces-9-b-4-247"
   },
   "/cforge/-e22": {
-    "__comp": "c4f5d8e4",
+    "__comp": "__comp---site-src-pages-index-jsc-4-f-f99",
     "__context": {
-      "plugin": "a7456010"
+      "plugin": "plugin---cforge-a-74-65e"
     },
-    "config": "5e9f5e1a"
+    "config": "config---cforge-5-e-9-4da"
   }
 }

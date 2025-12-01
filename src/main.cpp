@@ -53,6 +53,23 @@ cforge_int_t cforge_init_context(cforge_int_t argc, cforge_string_t argv[],
 }
 
 cforge_int_t cforge_main_impl(cforge_int_t argc, cforge_string_t argv[]) {
+#ifdef _WIN32
+
+  #ifndef ENABLE_VIRTUAL_TERMINAL_PROCESSING
+    #define ENABLE_VIRTUAL_TERMINAL_PROCESSING 0x0004
+  #endif
+
+  HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
+
+  if (hOut != INVALID_HANDLE_VALUE) {
+    DWORD dwMode = 0;
+    if (GetConsoleMode(hOut, &dwMode)) {
+      dwMode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+      SetConsoleMode(hOut, dwMode);
+    }
+  }
+#endif
+
   cforge_context_t ctx;
   if (cforge_init_context(argc, argv, &ctx) != 0) {
     return 1;

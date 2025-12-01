@@ -26,7 +26,7 @@ export default {
       "classic",
       {
         "docs": {
-          "sidebarPath": "C:\\Projects\\CPP\\cforge\\docs\\sidebars.js",
+          "sidebarPath": "C:\\Projects\\CPP\\cforge\\cforge-web\\sidebars.js",
           "editUrl": "https://github.com/chasesunstrom/cforge/edit/main/docs/"
         },
         "blog": {
@@ -35,7 +35,7 @@ export default {
           "authorsMapPath": "blog/authors.yml"
         },
         "theme": {
-          "customCss": "C:\\Projects\\CPP\\cforge\\docs\\src\\css\\custom.css"
+          "customCss": "C:\\Projects\\CPP\\cforge\\cforge-web\\src\\css\\custom.css"
         }
       }
     ]

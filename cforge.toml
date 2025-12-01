@@ -1,6 +1,6 @@
 [project]
 name = "cforge"
-version = "2.2.1"
+version = "2.2.2"
 description = "A C/C++ build tool with dependency management"
 cpp_standard = "17"
 binary_type = "executable"
@@ -15,13 +15,13 @@ directory = "build"
 source_dirs = ["src"]
 include_dirs = ["include"]
 
-[build.configs.debug]
+[build.config.debug]
 defines = ["DEBUG=1", "FMT_HEADER_ONLY=ON", "FMT_UNICODE=0"]
-flags      = ["DEBUG_INFO", "NO_OPT"]
+flags = ["DEBUG_INFO", "NO_OPT"]
 
-[build.configs.release]
-defines    = ["NDEBUG=1", "FMT_HEADER_ONLY=ON", "FMT_UNICODE=0"]
-flags      = ["OPTIMIZE"]
+[build.config.release]
+defines = ["NDEBUG=1", "FMT_HEADER_ONLY=ON", "FMT_UNICODE=0"]
+flags = ["OPTIMIZE"]
 
 [test]
 enabled = false

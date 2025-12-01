@@ -21,6 +21,7 @@
 #include <algorithm>
 #include <cctype>
 #include <chrono>
+#include <cstdlib>
 #include <ctime>
 #include <filesystem>
 #include <fmt/color.h>
@@ -349,10 +350,7 @@ bool clone_git_dependencies(const std::filesystem::path &project_dir,
     logger::print_action("Downloaded", dep);
   }
 
-  // Store cforge.toml hash
-  dep_hashes.set_hash("cforge.toml", toml_hash);
-
-  // Save updated hashes
+  // Save updated dependency hashes (but NOT cforge.toml hash - that's handled by generate_cmakelists_from_toml)
   dep_hashes.save(project_dir);
 
   if (all_success) {
@@ -491,24 +489,12 @@ static bool build_project(const std::filesystem::path &project_dir,
                           const std::string &build_config, int num_jobs,
                           bool verbose, const std::string &target = "",
                           std::set<std::string> *built_projects = nullptr,
-                          bool skip_deps = false) {
+                          bool skip_deps = false,
+                          const std::string &cross_profile = "") {
   // Start project build timer
   auto project_build_start = std::chrono::steady_clock::now();
 
-  // Get project name from directory
-  std::string project_name = project_dir.filename().string();
-
-  // If we're tracking built projects, check if this one is already done
-  if (built_projects &&
-      built_projects->find(project_name) != built_projects->end()) {
-    logger::print_verbose("Project '" + project_name +
-                          "' already built, skipping");
-    return true;
-  }
-
-  logger::building(project_name + " [" + build_config + "]");
-
-  // Load project configuration
+  // Load project configuration first to get the correct project name
   toml::table config_table;
   std::filesystem::path config_path = project_dir / "cforge.toml";
 
@@ -526,6 +512,20 @@ static bool build_project(const std::filesystem::path &project_dir,
 
   // Create a toml_reader wrapper for consistent API
   toml_reader project_config(config_table);
+
+  // Get project name from cforge.toml, fallback to directory name
+  std::string project_name = project_config.get_string(
+      "project.name", project_dir.filename().string());
+
+  // If we're tracking built projects, check if this one is already done
+  if (built_projects &&
+      built_projects->find(project_name) != built_projects->end()) {
+    logger::print_verbose("Project '" + project_name +
+                          "' already built, skipping");
+    return true;
+  }
+
+  logger::building(project_name + " [" + build_config + "]");
 
   // Check if we're in a workspace and workspace CMakeLists exists
   auto [is_workspace, workspace_dir] = is_in_workspace(project_dir);
@@ -650,47 +650,124 @@ static bool build_project(const std::filesystem::path &project_dir,
     }
   }
 
-  // Cross-compilation settings: inject toolchain file, system name, and
-  // processors
-  if (has_project_config &&
-      project_config.has_key("build.cross.toolchain_file")) {
-    std::string tc_file =
-        project_config.get_string("build.cross.toolchain_file", "");
-    if (!tc_file.empty()) {
-      cmake_args.push_back("-DCMAKE_TOOLCHAIN_FILE=" + tc_file);
-      logger::print_verbose("Using CMake toolchain file: " + tc_file);
+  // Cross-compilation settings
+  // Supports both [cross] section and [cross.profile.<name>] profiles
+  bool cross_enabled = false;
+  std::string cross_system;
+  std::string cross_processor;
+  std::string cross_toolchain;
+  std::string cross_c_compiler;
+  std::string cross_cxx_compiler;
+  std::string cross_sysroot;
+  std::string cross_find_root;
+  std::map<std::string, std::string> cross_variables;
+
+  if (has_project_config) {
+    // Check if a profile is specified via command line
+    if (!cross_profile.empty()) {
+      std::string profile_key = "cross.profile." + cross_profile;
+      if (project_config.has_key(profile_key + ".system") ||
+          project_config.has_key(profile_key + ".toolchain")) {
+        cross_enabled = true;
+        logger::print_action("Cross-compiling", "using profile '" + cross_profile + "'");
+
+        // Read profile settings
+        cross_system = project_config.get_string(profile_key + ".system", "");
+        cross_processor = project_config.get_string(profile_key + ".processor", "");
+        cross_toolchain = project_config.get_string(profile_key + ".toolchain", "");
+        cross_sysroot = project_config.get_string(profile_key + ".sysroot", "");
+
+        // Compilers can be specified as inline table or separate keys
+        cross_c_compiler = project_config.get_string(profile_key + ".compilers.c", "");
+        cross_cxx_compiler = project_config.get_string(profile_key + ".compilers.cxx", "");
+        if (cross_c_compiler.empty()) {
+          cross_c_compiler = project_config.get_string(profile_key + ".c", "");
+        }
+        if (cross_cxx_compiler.empty()) {
+          cross_cxx_compiler = project_config.get_string(profile_key + ".cxx", "");
+        }
+
+        // Read variables as inline table
+        cross_variables = project_config.get_string_map(profile_key + ".variables");
+      } else {
+        logger::print_error("Cross-compilation profile '" + cross_profile + "' not found");
+        return false;
+      }
     }
-  }
-  if (has_project_config && project_config.has_key("build.cross.system_name")) {
-    std::string sys_name =
-        project_config.get_string("build.cross.system_name", "");
-    if (!sys_name.empty()) {
-      cmake_args.push_back("-DCMAKE_SYSTEM_NAME=" + sys_name);
-      logger::print_verbose("Using CMake system name: " + sys_name);
+    // Check default [cross] section if no profile specified
+    else if (project_config.get_bool("cross.enabled", false)) {
+      cross_enabled = true;
+      logger::print_action("Cross-compiling", "using default cross configuration");
+
+      // Read [cross.target] settings
+      cross_system = project_config.get_string("cross.target.system", "");
+      cross_processor = project_config.get_string("cross.target.processor", "");
+      cross_toolchain = project_config.get_string("cross.target.toolchain", "");
+
+      // Read [cross.compilers] settings
+      cross_c_compiler = project_config.get_string("cross.compilers.c", "");
+      cross_cxx_compiler = project_config.get_string("cross.compilers.cxx", "");
+
+      // Read [cross.paths] settings
+      cross_sysroot = project_config.get_string("cross.paths.sysroot", "");
+      cross_find_root = project_config.get_string("cross.paths.find_root", "");
+
+      // Read [cross.variables] as inline table
+      cross_variables = project_config.get_string_map("cross.variables");
     }
-  }
-  if (has_project_config &&
-      project_config.has_key("build.cross.system_processor")) {
-    std::string sys_proc =
-        project_config.get_string("build.cross.system_processor", "");
-    if (!sys_proc.empty()) {
-      cmake_args.push_back("-DCMAKE_SYSTEM_PROCESSOR=" + sys_proc);
-      logger::print_verbose("Using CMake system processor: " + sys_proc);
-    }
-  }
-  if (has_project_config && project_config.has_key("build.cross.c_compiler")) {
-    std::string cc = project_config.get_string("build.cross.c_compiler", "");
-    if (!cc.empty()) {
-      cmake_args.push_back("-DCMAKE_C_COMPILER=" + cc);
-      logger::print_verbose("Using CMake C compiler: " + cc);
-    }
-  }
-  if (has_project_config &&
-      project_config.has_key("build.cross.cxx_compiler")) {
-    std::string cxx = project_config.get_string("build.cross.cxx_compiler", "");
-    if (!cxx.empty()) {
-      cmake_args.push_back("-DCMAKE_CXX_COMPILER=" + cxx);
-      logger::print_verbose("Using CMake CXX compiler: " + cxx);
+
+    // Apply cross-compilation settings to CMake args
+    if (cross_enabled) {
+      if (!cross_toolchain.empty()) {
+        // Expand environment variables in toolchain path
+        std::string expanded_toolchain = cross_toolchain;
+        size_t pos = 0;
+        while ((pos = expanded_toolchain.find("${", pos)) != std::string::npos) {
+          size_t end = expanded_toolchain.find("}", pos);
+          if (end != std::string::npos) {
+            std::string var_name = expanded_toolchain.substr(pos + 2, end - pos - 2);
+            const char* var_value = std::getenv(var_name.c_str());
+            if (var_value) {
+              expanded_toolchain.replace(pos, end - pos + 1, var_value);
+            } else {
+              pos = end + 1;
+            }
+          } else {
+            break;
+          }
+        }
+        cmake_args.push_back("-DCMAKE_TOOLCHAIN_FILE=" + expanded_toolchain);
+        logger::print_verbose("Using toolchain file: " + expanded_toolchain);
+      }
+      if (!cross_system.empty()) {
+        cmake_args.push_back("-DCMAKE_SYSTEM_NAME=" + cross_system);
+        logger::print_verbose("Target system: " + cross_system);
+      }
+      if (!cross_processor.empty()) {
+        cmake_args.push_back("-DCMAKE_SYSTEM_PROCESSOR=" + cross_processor);
+        logger::print_verbose("Target processor: " + cross_processor);
+      }
+      if (!cross_c_compiler.empty()) {
+        cmake_args.push_back("-DCMAKE_C_COMPILER=" + cross_c_compiler);
+        logger::print_verbose("C compiler: " + cross_c_compiler);
+      }
+      if (!cross_cxx_compiler.empty()) {
+        cmake_args.push_back("-DCMAKE_CXX_COMPILER=" + cross_cxx_compiler);
+        logger::print_verbose("C++ compiler: " + cross_cxx_compiler);
+      }
+      if (!cross_sysroot.empty()) {
+        cmake_args.push_back("-DCMAKE_SYSROOT=" + cross_sysroot);
+        logger::print_verbose("Sysroot: " + cross_sysroot);
+      }
+      if (!cross_find_root.empty()) {
+        cmake_args.push_back("-DCMAKE_FIND_ROOT_PATH=" + cross_find_root);
+        logger::print_verbose("Find root path: " + cross_find_root);
+      }
+      // Apply custom variables
+      for (const auto& [var_name, var_value] : cross_variables) {
+        cmake_args.push_back("-D" + var_name + "=" + var_value);
+        logger::print_verbose("Variable: " + var_name + "=" + var_value);
+      }
     }
   }
 
@@ -1000,7 +1077,8 @@ static bool build_project(const std::filesystem::path &project_dir,
                                     const std::string &build_config,
                                     int num_jobs, bool verbose,
                                     const std::string &target,
-                                    bool skip_deps = false) {
+                                    bool skip_deps = false,
+                                    const std::string &cross_profile = "") {
   // Change to project directory
   std::filesystem::current_path(project.path);
 
@@ -1029,7 +1107,7 @@ static bool build_project(const std::filesystem::path &project_dir,
 
   // Build the project
   bool success = build_project(project.path, build_config, num_jobs, verbose,
-                               target, nullptr, skip_deps);
+                               target, nullptr, skip_deps, cross_profile);
 
   if (!success) {
     logger::print_error("Failed to build project '" + project.name + "'");
@@ -1059,6 +1137,7 @@ cforge_int_t cforge_cmd_build(const cforge_context_t *ctx) {
   bool verbose = logger::get_verbosity() == log_verbosity::VERBOSITY_VERBOSE;
   std::string target;
   std::string project_name;
+  std::string cross_profile;  // Cross-compilation profile name
   [[maybe_unused]] bool generate_workspace_cmake = false;
   [[maybe_unused]] bool force_regenerate = false;
   bool skip_deps = false;
@@ -1108,6 +1187,15 @@ cforge_int_t cforge_cmd_build(const cforge_context_t *ctx) {
       generate_workspace_cmake = true;
     } else if (arg == "--force-regenerate") {
       force_regenerate = true;
+    } else if (arg == "--profile" || arg == "-P") {
+      if (i + 1 < ctx->args.arg_count) {
+        cross_profile = ctx->args.args[i + 1];
+        logger::print_verbose("Using cross-compilation profile: " + cross_profile);
+        i++; // Skip the next argument
+      }
+    } else if (arg.substr(0, 10) == "--profile=") {
+      cross_profile = arg.substr(10);
+      logger::print_verbose("Using cross-compilation profile: " + cross_profile);
     }
   }
 
@@ -1303,12 +1391,10 @@ cforge_int_t cforge_cmd_build(const cforge_context_t *ctx) {
     return 0;
   } else {
     // Single project build outside workspace
-    // Ensure project CMakeLists.txt exists before building
-    std::filesystem::path cmake_file = current_dir / "CMakeLists.txt";
+    // Always check if CMakeLists.txt needs regeneration (hash comparison inside)
     std::filesystem::path toml_file = current_dir / CFORGE_FILE;
-    if (!std::filesystem::exists(cmake_file) &&
-        std::filesystem::exists(toml_file)) {
-      logger::print_verbose("Generating project CMakeLists.txt for build");
+    if (std::filesystem::exists(toml_file)) {
+      logger::print_verbose("Checking if CMakeLists.txt needs regeneration");
       toml_reader proj_cfg(toml::parse_file(toml_file.string()));
       if (!generate_cmakelists_from_toml(current_dir, proj_cfg, verbose)) {
         logger::print_error(
@@ -1318,7 +1404,7 @@ cforge_int_t cforge_cmd_build(const cforge_context_t *ctx) {
     }
     // Build the standalone project
     if (!build_project(current_dir, config_name, num_jobs, verbose, target,
-                       nullptr, skip_deps)) {
+                       nullptr, skip_deps, cross_profile)) {
       return 1;
     }
 

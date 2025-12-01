@@ -522,22 +522,124 @@ static bool create_cforge_toml(const std::filesystem::path &project_path,
   config << "# Dependencies section\n";
   config << "# [dependencies]\n\n";
 
+  config << "# Git dependencies\n";
+  config << "# [dependencies.git.json]\n";
+  config << "# url = \"https://github.com/nlohmann/json.git\"\n";
+  config << "# tag = \"v3.11.2\"\n";
+  config << "# link = true\n";
+  config << "# include = true\n\n";
+
   config << "# vcpkg dependencies\n";
   config << "# [dependencies.vcpkg]\n";
-  config << "# fmt = \"9.1.0\"  # Package name = version\n";
-  config << "# curl = { version = \"7.80.0\", components = [\"ssl\"] }  # With "
-            "components\n\n";
+  config << "# path = \"C:/vcpkg\"  # Optional: path to vcpkg\n";
+  config << "# triplet = \"x64-windows\"  # Optional: vcpkg triplet\n";
+  config << "#\n";
+  config << "# [dependencies.vcpkg.fmt]\n";
+  config << "# version = \"9.1.0\"\n";
+  config << "#\n";
+  config << "# [dependencies.vcpkg.curl]\n";
+  config << "# version = \"7.80.0\"\n";
+  config << "# features = [\"ssl\", \"http2\"]\n";
+  config << "# target_name = \"CURL::libcurl\"\n\n";
 
-  config << "# git dependencies\n";
-  config << "# [dependencies.git]\n";
-  config << "# json = { url = \"https://github.com/nlohmann/json.git\", tag = "
-            "\"v3.11.2\" }\n";
-  config << "# spdlog = { url = \"https://github.com/gabime/spdlog.git\", "
-            "branch = \"v1.x\" }\n\n";
+  config << "# System dependencies (find_package, pkg_config, or manual)\n";
+  config << "# [dependencies.system.OpenGL]\n";
+  config << "# method = \"find_package\"  # find_package, pkg_config, or manual\n";
+  config << "# required = true\n";
+  config << "# components = [\"GL\", \"GLU\"]\n";
+  config << "#\n";
+  config << "# [dependencies.system.custom_lib]\n";
+  config << "# method = \"manual\"\n";
+  config << "# include_dirs = [\"/usr/local/include/custom\"]\n";
+  config << "# library_dirs = [\"/usr/local/lib\"]\n";
+  config << "# libraries = [\"custom\"]\n";
+  config << "# platforms = [\"linux\", \"macos\"]  # Optional: limit to platforms\n\n";
 
-  config << "# system dependencies\n";
-  config << "# [dependencies.system]\n";
-  config << "# OpenGL = true  # System-provided dependency\n";
+  config << "# Subdirectory dependencies (for existing CMake projects)\n";
+  config << "# [dependencies.subdirectory.spdlog]\n";
+  config << "# path = \"extern/spdlog\"\n";
+  config << "# target = \"spdlog::spdlog\"\n";
+  config << "# options = { SPDLOG_BUILD_TESTS = \"OFF\" }\n\n";
+
+  // Platform-specific configuration
+  config << "# Platform-specific configuration\n";
+  config << "# [platform.windows]\n";
+  config << "# defines = [\"WIN32\", \"_WINDOWS\"]\n";
+  config << "# links = [\"kernel32\", \"user32\"]\n";
+  config << "# flags = [\"/W4\"]\n";
+  config << "#\n";
+  config << "# [platform.linux]\n";
+  config << "# defines = [\"LINUX\"]\n";
+  config << "# links = [\"pthread\", \"dl\"]\n";
+  config << "# flags = [\"-Wall\"]\n";
+  config << "#\n";
+  config << "# [platform.macos]\n";
+  config << "# defines = [\"MACOS\"]\n";
+  config << "# frameworks = [\"Cocoa\", \"IOKit\"]  # macOS frameworks\n";
+  config << "# flags = [\"-Wall\"]\n\n";
+
+  // Compiler-specific configuration
+  config << "# Compiler-specific configuration\n";
+  config << "# [compiler.msvc]\n";
+  config << "# flags = [\"/W4\", \"/WX\"]\n";
+  config << "# defines = [\"_CRT_SECURE_NO_WARNINGS\"]\n";
+  config << "#\n";
+  config << "# [compiler.gcc]\n";
+  config << "# flags = [\"-Wall\", \"-Wextra\", \"-Wpedantic\"]\n";
+  config << "#\n";
+  config << "# [compiler.clang]\n";
+  config << "# flags = [\"-Wall\", \"-Wextra\", \"-Wpedantic\"]\n";
+  config << "#\n";
+  config << "# [compiler.mingw]\n";
+  config << "# flags = [\"-Wall\", \"-Wextra\"]\n";
+  config << "# defines = [\"MINGW\"]\n\n";
+
+  // Platform + Compiler combination
+  config << "# Platform + Compiler combination\n";
+  config << "# [platform.windows.compiler.msvc]\n";
+  config << "# flags = [\"/W4\"]\n";
+  config << "# defines = [\"_CRT_SECURE_NO_WARNINGS\"]\n\n";
+
+  // Cross-compilation
+  config << "# Cross-compilation (optional)\n";
+  config << "# [cross]\n";
+  config << "# enabled = true\n";
+  config << "#\n";
+  config << "# [cross.target]\n";
+  config << "# system = \"Linux\"           # CMAKE_SYSTEM_NAME\n";
+  config << "# processor = \"aarch64\"      # CMAKE_SYSTEM_PROCESSOR\n";
+  config << "# toolchain = \"path/to/toolchain.cmake\"  # Optional\n";
+  config << "#\n";
+  config << "# [cross.compilers]\n";
+  config << "# c = \"/usr/bin/aarch64-linux-gnu-gcc\"\n";
+  config << "# cxx = \"/usr/bin/aarch64-linux-gnu-g++\"\n";
+  config << "#\n";
+  config << "# [cross.paths]\n";
+  config << "# sysroot = \"/path/to/sysroot\"\n";
+  config << "# find_root = \"/path/to/find/root\"\n";
+  config << "#\n";
+  config << "# [cross.variables]  # Custom CMake variables\n";
+  config << "# ANDROID_ABI = \"arm64-v8a\"\n";
+  config << "#\n";
+  config << "# Cross-compilation profiles (use with: cforge build --profile <name>)\n";
+  config << "# [cross.profile.android-arm64]\n";
+  config << "# system = \"Android\"\n";
+  config << "# processor = \"aarch64\"\n";
+  config << "# toolchain = \"${ANDROID_NDK}/build/cmake/android.toolchain.cmake\"\n";
+  config << "# variables = { ANDROID_ABI = \"arm64-v8a\", ANDROID_PLATFORM = \"android-24\" }\n";
+  config << "#\n";
+  config << "# [cross.profile.raspberry-pi]\n";
+  config << "# system = \"Linux\"\n";
+  config << "# processor = \"armv7l\"\n";
+  config << "# compilers = { c = \"arm-linux-gnueabihf-gcc\", cxx = \"arm-linux-gnueabihf-g++\" }\n";
+  config << "# sysroot = \"/path/to/rpi-sysroot\"\n\n";
+
+  // CMake integration
+  config << "# CMake integration\n";
+  config << "# [cmake]\n";
+  config << "# generator = \"Ninja\"  # Optional: override CMake generator\n";
+  config << "# includes = [\"cmake/custom.cmake\"]  # Custom CMake files to include\n";
+  config << "# module_paths = [\"cmake/modules\"]  # Custom module paths\n";
 
   config.close();
   logger::created("cforge.toml");

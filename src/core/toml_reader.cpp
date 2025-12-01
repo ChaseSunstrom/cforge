@@ -209,4 +209,59 @@ toml_reader::get_tables(const std::string &prefix) const {
   }
 }
 
+std::map<std::string, std::string>
+toml_reader::get_string_map(const std::string &key) const {
+  std::map<std::string, std::string> result;
+  if (!toml_data) {
+    return result;
+  }
+
+  try {
+    auto &table = *static_cast<toml::table *>(toml_data);
+    auto value = table.at_path(key);
+    if (!value || !value.is_table()) {
+      return result;
+    }
+
+    auto subtable = value.as_table();
+    for (const auto &[k, v] : *subtable) {
+      if (v.is_string()) {
+        result[std::string(k.str())] = v.as_string()->get();
+      } else if (v.is_boolean()) {
+        result[std::string(k.str())] = v.as_boolean()->get() ? "ON" : "OFF";
+      } else if (v.is_integer()) {
+        result[std::string(k.str())] = std::to_string(v.as_integer()->get());
+      }
+    }
+    return result;
+  } catch (...) {
+    return result;
+  }
+}
+
+std::string toml_reader::get_string_or_deprecated(
+    const std::string &key, const std::string &deprecated_key,
+    const std::string &default_value, bool warn) const {
+  // First try the preferred key
+  if (has_key(key)) {
+    return get_string(key, default_value);
+  }
+
+  // Then try the deprecated key
+  if (has_key(deprecated_key)) {
+    if (warn) {
+      logger::print_warning("Config key '" + deprecated_key +
+                            "' is deprecated, use '" + key + "' instead");
+    }
+    return get_string(deprecated_key, default_value);
+  }
+
+  return default_value;
+}
+
+bool toml_reader::has_key_or_deprecated(const std::string &key,
+                                        const std::string &deprecated_key) const {
+  return has_key(key) || has_key(deprecated_key);
+}
+
 } // namespace cforge

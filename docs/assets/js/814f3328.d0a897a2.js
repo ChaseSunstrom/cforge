@@ -1,1 +1,0 @@
-"use strict";(self.webpackChunkdocs=self.webpackChunkdocs||[]).push([[472],{5513:e=>{e.exports=JSON.parse('{"title":"Recent posts","items":[{"title":"Announcing CForge Beta-v1.4.0","permalink":"/cforge/blog/announcing-cforge-beta-v1-4-0","unlisted":false,"date":"2025-03-25T00:00:00.000Z"}]}')}}]);

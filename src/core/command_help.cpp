@@ -145,6 +145,8 @@ cforge_int_t cforge_cmd_help(const cforge_context_t *ctx) {
                         "CMakeLists.txt and clean build");
     logger::print_plain(
         "  --skip-deps, --no-deps   Skip updating Git dependencies");
+    logger::print_plain(
+        "  -P, --profile <name>     Use cross-compilation profile");
     logger::print_plain("");
     logger::print_plain("Examples:");
     logger::print_plain(
@@ -161,6 +163,8 @@ cforge_int_t cforge_cmd_help(const cforge_context_t *ctx) {
                         "fresh configuration");
     logger::print_plain("  cforge build --skip-deps           Build without "
                         "updating Git dependencies");
+    logger::print_plain("  cforge build --profile android-arm64  Build using "
+                        "cross-compilation profile");
   } else if (specific_command == "clean") {
     logger::print_plain("cforge clean - Clean build artifacts");
     logger::print_plain("");

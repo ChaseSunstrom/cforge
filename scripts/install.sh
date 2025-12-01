@@ -404,7 +404,7 @@ main() {
     echo ""
     echo "╔═══════════════════════════════════════════╗"
     echo "║         cforge Installer                  ║"
-    echo "║  C/C++ Build System with TOML Config      ║"
+    echo "║  C/C++ Build System with TOML Config     ║"
     echo "╚═══════════════════════════════════════════╝"
     echo ""
 

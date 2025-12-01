@@ -1,7 +1,7 @@
 {
   "id": "dependencies",
   "title": "Working with Dependencies",
-  "description": "📦 Working with Dependencies",
+  "description": "Working with Dependencies",
   "source": "@site/docs/dependencies.md",
   "sourceDirName": ".",
   "slug": "/dependencies",

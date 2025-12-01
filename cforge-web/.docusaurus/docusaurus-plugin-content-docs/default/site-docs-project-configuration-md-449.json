@@ -1,7 +1,7 @@
 {
   "id": "project-configuration",
   "title": "Project Configuration",
-  "description": "📋 Project Configuration",
+  "description": "Project Configuration",
   "source": "@site/docs/project-configuration.md",
   "sourceDirName": ".",
   "slug": "/project-configuration",

@@ -15,7 +15,7 @@
 
 # CForge
 
-![Version](https://img.shields.io/badge/beta-2.2.1-blue.svg)
+![Version](https://img.shields.io/badge/beta-2.2.2-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 [![GitHub stars](https://img.shields.io/github/stars/ChaseSunstrom/cforge?style=social)](https://github.com/ChaseSunstrom/cforge)
 
@@ -458,32 +458,123 @@ generators = ["ZIP", "TGZ"]
 vendor = "Your Name"
 ```
 
-### CMake Overrides
+### Using Version in Code
 
-Specify generator, platform, toolset, and explicit compilers:
-```toml
-[cmake]
-generator    = "Ninja"                  # CMake generator
-platform     = "x64"                    # CMake platform for Visual Studio
-toolset      = "ClangCl"                # CMake toolset (Visual Studio or Ninja)
-c_compiler   = "/usr/bin/gcc-10"        # C compiler
-cxx_compiler = "/usr/bin/g++-10"        # C++ compiler
+The version from `cforge.toml` is automatically available as compile definitions:
+
+```cpp
+#include <iostream>
+
+int main() {
+    // Generic version macros (works for any project)
+    std::cout << "Version: " << PROJECT_VERSION << std::endl;
+    std::cout << "Major: " << PROJECT_VERSION_MAJOR << std::endl;
+    std::cout << "Minor: " << PROJECT_VERSION_MINOR << std::endl;
+    std::cout << "Patch: " << PROJECT_VERSION_PATCH << std::endl;
+
+    // Project-specific macros (e.g., for project named "myapp")
+    // std::cout << myapp_VERSION << std::endl;
+
+    return 0;
+}
 ```
 
-### Platform-specific Configuration
+Available macros:
+| Macro | Description | Example |
+|-------|-------------|---------|
+| `PROJECT_VERSION` | Full version string | `"1.2.3"` |
+| `PROJECT_VERSION_MAJOR` | Major version number | `1` |
+| `PROJECT_VERSION_MINOR` | Minor version number | `2` |
+| `PROJECT_VERSION_PATCH` | Patch version number | `3` |
+| `<ProjectName>_VERSION` | Project-specific version | `"1.2.3"` |
+
+### CMake Integration
+
+Customize CMake behavior with includes, injections, and module paths:
 
 ```toml
-[platforms.windows]
-defines = ["WINDOWS", "WIN32"]
-flags = ["UNICODE"]
+[cmake]
+version = "3.15"                      # Minimum CMake version
+generator = "Ninja"                    # CMake generator
+includes = ["cmake/custom.cmake"]      # Custom CMake files to include
+module_paths = ["cmake/modules"]       # Custom module search paths
 
-[platforms.darwin]
-defines = ["OSX"]
-flags = []
+# Inject custom CMake code
+inject_before_target = """
+# Code inserted before add_executable/add_library
+include(FetchContent)
+"""
 
-[platforms.linux]
+inject_after_target = """
+# Code inserted after add_executable/add_library
+target_precompile_headers(${PROJECT_NAME} PRIVATE <pch.hpp>)
+"""
+
+[cmake.compilers]
+c = "/usr/bin/gcc-12"
+cxx = "/usr/bin/g++-12"
+
+[cmake.visual_studio]
+platform = "x64"
+toolset = "v143"
+```
+
+### Platform-Specific Configuration
+
+Configure settings per platform (windows, linux, macos):
+
+```toml
+[platform.windows]
+defines = ["WIN32", "_WINDOWS"]
+flags = ["/W4"]
+links = ["kernel32", "user32"]
+
+[platform.linux]
 defines = ["LINUX"]
-flags = []
+flags = ["-Wall", "-Wextra"]
+links = ["pthread", "dl"]
+
+[platform.macos]
+defines = ["MACOS"]
+flags = ["-Wall"]
+frameworks = ["Cocoa", "IOKit"]  # macOS frameworks
+```
+
+### Compiler-Specific Configuration
+
+Configure settings per compiler (msvc, gcc, clang, apple_clang, mingw):
+
+```toml
+[compiler.msvc]
+flags = ["/W4", "/WX", "/permissive-"]
+defines = ["_CRT_SECURE_NO_WARNINGS"]
+
+[compiler.gcc]
+flags = ["-Wall", "-Wextra", "-Wpedantic"]
+
+[compiler.clang]
+flags = ["-Wall", "-Wextra", "-Wpedantic"]
+
+[compiler.mingw]
+flags = ["-Wall", "-Wextra"]
+defines = ["MINGW"]
+```
+
+### Platform + Compiler Combinations
+
+Combine platform and compiler for fine-grained control:
+
+```toml
+[platform.windows.compiler.msvc]
+flags = ["/W4"]
+defines = ["_CRT_SECURE_NO_WARNINGS"]
+
+[platform.windows.compiler.mingw]
+defines = ["MINGW_BUILD"]
+links = ["mingw32"]
+
+[platform.linux.compiler.gcc]
+flags = ["-Wall", "-Wextra", "-fPIC"]
 ```
 
 ---
@@ -521,9 +612,46 @@ shallow = true
 
 ### System Dependencies
 
+System dependencies support three methods: `find_package`, `pkg_config`, and `manual`:
+
 ```toml
-[dependencies]
-system = ["X11", "pthread", "dl"]
+# Auto-detect with CMake find_package
+[dependencies.system.OpenGL]
+method = "find_package"
+required = true
+components = ["GL", "GLU"]
+target = "OpenGL::GL"
+
+# Auto-detect with pkg-config
+[dependencies.system.x11]
+method = "pkg_config"
+package = "x11"
+platforms = ["linux"]  # Only on Linux
+
+# Manual specification
+[dependencies.system.custom_lib]
+method = "manual"
+include_dirs = ["/usr/local/include/custom"]
+library_dirs = ["/usr/local/lib"]
+libraries = ["custom", "custom_util"]
+defines = ["USE_CUSTOM_LIB"]
+platforms = ["linux", "macos"]  # Limit to specific platforms
+```
+
+### Subdirectory Dependencies
+
+Use existing CMake projects as dependencies:
+
+```toml
+[dependencies.subdirectory.spdlog]
+path = "extern/spdlog"
+target = "spdlog::spdlog"
+options = { SPDLOG_BUILD_TESTS = "OFF" }
+
+[dependencies.subdirectory.glfw]
+path = "extern/glfw"
+target = "glfw"
+options = { GLFW_BUILD_EXAMPLES = "OFF", GLFW_BUILD_TESTS = "OFF" }
 ```
 
 ### Dependency Lock File
@@ -637,22 +765,49 @@ target = "my_benchmarks"
 
 ## 🌐 Cross-Compilation
 
-CForge supports cross-compilation:
+CForge supports cross-compilation with a unified configuration:
 
 ```toml
-[build.cross]
-toolchain_file = "/path/to/toolchain.cmake"
-system_name = "Android"
-system_processor = "arm64"
-c_compiler = "aarch64-linux-android21-clang"
-cxx_compiler = "aarch64-linux-android21-clang++"
+[cross]
+enabled = true
+
+[cross.target]
+system = "Linux"           # CMAKE_SYSTEM_NAME
+processor = "aarch64"      # CMAKE_SYSTEM_PROCESSOR
+toolchain = "path/to/toolchain.cmake"  # Optional
+
+[cross.compilers]
+c = "/usr/bin/aarch64-linux-gnu-gcc"
+cxx = "/usr/bin/aarch64-linux-gnu-g++"
+
+[cross.paths]
+sysroot = "/path/to/sysroot"
+find_root = "/path/to/find/root"
+```
+
+### Cross-Compilation Profiles
+
+Define reusable cross-compilation profiles:
+
+```toml
+[cross.profile.android-arm64]
+system = "Android"
+processor = "aarch64"
+toolchain = "${ANDROID_NDK}/build/cmake/android.toolchain.cmake"
+variables = { ANDROID_ABI = "arm64-v8a", ANDROID_PLATFORM = "android-24" }
+
+[cross.profile.raspberry-pi]
+system = "Linux"
+processor = "armv7l"
+compilers = { c = "arm-linux-gnueabihf-gcc", cxx = "arm-linux-gnueabihf-g++" }
+sysroot = "/path/to/rpi-sysroot"
 ```
 
 ```bash
-cforge build --target android-arm64
+cforge build --profile android-arm64
 ```
 
-Supported platforms: Android, iOS, Raspberry Pi, WebAssembly.
+Supported platforms: Android, iOS, Raspberry Pi, WebAssembly, and more!.
 
 ---
 
@@ -770,6 +925,12 @@ cforge list configs
 - **Enhanced Diagnostics**: Cargo-style colored errors with suggestions
 - **Build Timing**: Duration tracking for builds
 - **Lock Files**: Reproducible builds with dependency locking
+- **Platform-Specific Configuration**: Per-platform defines, flags, links, frameworks
+- **Compiler-Specific Configuration**: Per-compiler settings (MSVC, GCC, Clang, MinGW)
+- **Enhanced System Dependencies**: find_package, pkg_config, manual methods with platform filtering
+- **Subdirectory Dependencies**: Use existing CMake projects as dependencies
+- **CMake Integration**: Custom includes, module paths, code injection
+- **Cross-Compilation Profiles**: Reusable cross-compilation configurations
 
 ### 📝 Planned Features
 

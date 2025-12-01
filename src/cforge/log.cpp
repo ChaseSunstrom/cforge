@@ -29,9 +29,9 @@ void logger::set_verbosity(log_verbosity level) { s_verbosity = level; }
 
 log_verbosity logger::get_verbosity() { return s_verbosity; }
 
-// ============================================================
+
 // Core formatting helper
-// ============================================================
+
 
 void logger::print_status_line(const std::string &status,
                                const std::string &message,
@@ -47,9 +47,9 @@ void logger::print_status_line(const std::string &status,
   fmt::print(stream, " {}\n", message);
 }
 
-// ============================================================
+
 // Main logging functions
-// ============================================================
+
 
 void logger::print_action(const std::string &action,
                           const std::string &message) {
@@ -99,9 +99,9 @@ void logger::print_verbose(const std::string &message) {
   print_status_line("", message, fmt::color::gray, false);
 }
 
-// ============================================================
+
 // Cargo-style action helpers
-// ============================================================
+
 
 void logger::compiling(const std::string &target) {
   if (s_verbosity == log_verbosity::VERBOSITY_QUIET)
@@ -203,9 +203,9 @@ void logger::cleaning(const std::string &target) {
   print_status_line("Cleaning", target, fmt::color::green);
 }
 
-// ============================================================
+
 // Legacy compatibility
-// ============================================================
+
 
 void logger::print_header(const std::string &message) {
   if (s_verbosity == log_verbosity::VERBOSITY_QUIET)
@@ -232,9 +232,9 @@ void logger::print_lines(const std::vector<std::string> &messages) {
 
 } // namespace cforge
 
-// ============================================================
+
 // C wrapper implementations
-// ============================================================
+
 extern "C" {
 
 void cforge_set_verbosity_impl(cforge_log_verbosity_t level) {

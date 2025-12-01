@@ -1,1 +1,0 @@
-"use strict";(self.webpackChunkdocs=self.webpackChunkdocs||[]).push([[477],{1314:e=>{e.exports=JSON.parse('{"tags":[{"label":"cforge","permalink":"/cforge/blog/tags/cforge","count":1},{"label":"release","permalink":"/cforge/blog/tags/release","count":1},{"label":"beta","permalink":"/cforge/blog/tags/beta","count":1}]}')}}]);
