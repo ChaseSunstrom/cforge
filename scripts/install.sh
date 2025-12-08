@@ -11,11 +11,12 @@
 
 set -euo pipefail
 
-# Colors for output
+# Colors for output (Cargo-style)
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
 NC='\033[0m' # No Color
 
 # Default installation paths
@@ -25,11 +26,27 @@ ADD_TO_PATH=true
 VERBOSE=false
 CLEANUP=true
 
-# Print colored output
-info() { echo -e "${BLUE}[INFO]${NC} $*"; }
-success() { echo -e "${GREEN}[OK]${NC} $*"; }
-warn() { echo -e "${YELLOW}[WARN]${NC} $*"; }
-error() { echo -e "${RED}[ERROR]${NC} $*" >&2; }
+# Cargo-style output: 12-char right-aligned status word
+# Format: "{status:>12} {message}"
+print_status() {
+    local status="$1"
+    local message="$2"
+    local color="$3"
+    printf "${color}${BOLD}%12s${NC} %s\n" "$status" "$message"
+}
+
+# Cargo-style helpers
+info() { print_status "Checking" "$*" "$CYAN"; }
+success() { print_status "Finished" "$*" "$GREEN"; }
+warn() { print_status "Warning" "$*" "$YELLOW"; }
+error() { print_status "Error" "$*" "$RED" >&2; }
+found() { print_status "Found" "$*" "$GREEN"; }
+fetching() { print_status "Fetching" "$*" "$GREEN"; }
+cloning() { print_status "Cloning" "$*" "$GREEN"; }
+building() { print_status "Building" "$*" "$GREEN"; }
+installing() { print_status "Installing" "$*" "$GREEN"; }
+configuring() { print_status "Configuring" "$*" "$GREEN"; }
+adding() { print_status "Adding" "$*" "$GREEN"; }
 
 # Print usage
 usage() {
@@ -150,14 +167,14 @@ install_package() {
 
 # Check and install dependencies
 check_dependencies() {
-    info "Checking dependencies..."
+    print_status "Checking" "dependencies..." "$CYAN"
 
     # Git
     if ! command -v git >/dev/null 2>&1; then
         warn "git not found, installing..."
         install_package git || { error "Failed to install git"; exit 1; }
     fi
-    success "git found"
+    found "git"
 
     # CMake
     if ! command -v cmake >/dev/null 2>&1; then
@@ -173,7 +190,7 @@ check_dependencies() {
         error "CMake >= $required required (found $cmake_version)"
         exit 1
     fi
-    success "cmake $cmake_version found"
+    found "cmake $cmake_version"
 
     # C++ compiler
     if ! command -v g++ >/dev/null 2>&1 && ! command -v clang++ >/dev/null 2>&1; then
@@ -190,9 +207,9 @@ check_dependencies() {
         esac
     fi
     if command -v g++ >/dev/null 2>&1; then
-        success "g++ found"
+        found "g++"
     elif command -v clang++ >/dev/null 2>&1; then
-        success "clang++ found"
+        found "clang++"
     fi
 
     # Ninja (optional but recommended)
@@ -207,7 +224,7 @@ check_dependencies() {
         install_package "$ninja_pkg" 2>/dev/null || warn "Could not install ninja, will use make instead"
     fi
     if command -v ninja >/dev/null 2>&1; then
-        success "ninja found"
+        found "ninja"
     fi
 }
 
@@ -215,7 +232,7 @@ check_dependencies() {
 create_temp_dir() {
     TEMP_DIR=$(mktemp -d)
     trap 'cleanup' EXIT
-    info "Working in $TEMP_DIR"
+    print_status "Preparing" "build environment" "$CYAN"
 }
 
 # Cleanup function
@@ -227,7 +244,7 @@ cleanup() {
 
 # Clone and build cforge
 build_cforge() {
-    info "Cloning cforge repository..."
+    cloning "cforge repository"
     cd "$TEMP_DIR"
 
     if [[ "$VERBOSE" == true ]]; then
@@ -238,7 +255,7 @@ build_cforge() {
 
     cd cforge
 
-    info "Fetching dependencies..."
+    fetching "dependencies"
     mkdir -p vendor
     cd vendor
 
@@ -254,7 +271,7 @@ build_cforge() {
     cd tomlplusplus && git checkout v3.4.0 --quiet && cd ..
     cd ..
 
-    info "Configuring build..."
+    configuring "CMake build"
     mkdir -p build
 
     local cmake_args=(
@@ -275,7 +292,7 @@ build_cforge() {
         cmake "${cmake_args[@]}" >/dev/null
     fi
 
-    info "Building cforge..."
+    building "cforge"
     local jobs
     if command -v nproc >/dev/null 2>&1; then
         jobs=$(nproc)
@@ -289,12 +306,12 @@ build_cforge() {
         cmake --build build --config Release -j"$jobs" >/dev/null
     fi
 
-    success "Build completed"
+    success "build completed"
 }
 
 # Install cforge
 install_cforge() {
-    info "Installing to $PREFIX..."
+    installing "to $PREFIX"
 
     mkdir -p "$PREFIX/bin"
 
@@ -315,7 +332,7 @@ install_cforge() {
     cp "$binary" "$PREFIX/bin/cforge"
     chmod +x "$PREFIX/bin/cforge"
 
-    success "Installed cforge to $PREFIX/bin/cforge"
+    success "installed cforge to $PREFIX/bin/cforge"
 }
 
 # Add to PATH
@@ -328,11 +345,11 @@ add_to_path() {
 
     # Check if already in PATH
     if [[ ":$PATH:" == *":$bin_dir:"* ]]; then
-        info "$bin_dir is already in PATH"
+        print_status "Skipping" "$bin_dir is already in PATH" "$CYAN"
         return
     fi
 
-    info "Adding $bin_dir to PATH..."
+    adding "$bin_dir to PATH"
 
     # Detect shell config file
     local shell_config=""
@@ -363,10 +380,10 @@ add_to_path() {
             echo "" >> "$shell_config"
             echo "# Added by cforge installer" >> "$shell_config"
             echo "$export_line" >> "$shell_config"
-            success "Added to $shell_config"
+            success "added to $shell_config"
             warn "Run 'source $shell_config' or restart your terminal"
         else
-            info "PATH entry already exists in $shell_config"
+            print_status "Skipping" "PATH entry already exists in $shell_config" "$CYAN"
         fi
     else
         warn "Could not detect shell config file"
@@ -377,14 +394,14 @@ add_to_path() {
 
 # Verify installation
 verify_installation() {
-    info "Verifying installation..."
+    print_status "Verifying" "installation" "$CYAN"
 
     if [[ -x "$PREFIX/bin/cforge" ]]; then
         local version
         version=$("$PREFIX/bin/cforge" version 2>/dev/null || echo "unknown")
         success "cforge installed successfully!"
         echo ""
-        echo "  Version: $version"
+        echo "  Version:  $version"
         echo "  Location: $PREFIX/bin/cforge"
         echo ""
         echo "Get started:"
@@ -402,16 +419,13 @@ verify_installation() {
 # Main installation flow
 main() {
     echo ""
-    echo "╔═══════════════════════════════════════════╗"
-    echo "║         cforge Installer                  ║"
-    echo "║  C/C++ Build System with TOML Config     ║"
-    echo "╚═══════════════════════════════════════════╝"
+    echo -e "${GREEN}${BOLD}cforge${NC} - C/C++ Build System Installer"
     echo ""
 
     local os
     os=$(detect_os)
-    info "Detected OS: $os"
-    info "Install prefix: $PREFIX"
+    print_status "Detected" "OS: $os" "$CYAN"
+    print_status "Prefix" "$PREFIX" "$CYAN"
     echo ""
 
     check_dependencies

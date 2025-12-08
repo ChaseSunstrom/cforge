@@ -58,11 +58,31 @@ if (-not $Prefix) {
     }
 }
 
-# Colors
-function Write-Info { Write-Host "[INFO] " -ForegroundColor Blue -NoNewline; Write-Host $args }
-function Write-Ok { Write-Host "[OK] " -ForegroundColor Green -NoNewline; Write-Host $args }
-function Write-Warn { Write-Host "[WARN] " -ForegroundColor Yellow -NoNewline; Write-Host $args }
-function Write-Err { Write-Host "[ERROR] " -ForegroundColor Red -NoNewline; Write-Host $args }
+# Cargo-style output: 12-char right-aligned status word
+# Format: "{status:>12} {message}"
+function Write-Status {
+    param(
+        [string]$Status,
+        [string]$Message,
+        [ConsoleColor]$Color = "Green"
+    )
+    Write-Host ("{0,12}" -f $Status) -ForegroundColor $Color -NoNewline
+    Write-Host " $Message"
+}
+
+# Cargo-style helpers
+function Write-Info { Write-Status -Status "Checking" -Message "$args" -Color Cyan }
+function Write-Ok { Write-Status -Status "Finished" -Message "$args" -Color Green }
+function Write-Warn { Write-Status -Status "Warning" -Message "$args" -Color Yellow }
+function Write-Err { Write-Status -Status "Error" -Message "$args" -Color Red }
+function Write-Found { Write-Status -Status "Found" -Message "$args" -Color Green }
+function Write-Fetching { Write-Status -Status "Fetching" -Message "$args" -Color Green }
+function Write-Cloning { Write-Status -Status "Cloning" -Message "$args" -Color Green }
+function Write-Building { Write-Status -Status "Building" -Message "$args" -Color Green }
+function Write-Installing { Write-Status -Status "Installing" -Message "$args" -Color Green }
+function Write-Configuring { Write-Status -Status "Configuring" -Message "$args" -Color Green }
+function Write-Adding { Write-Status -Status "Adding" -Message "$args" -Color Green }
+function Write-Setting { Write-Status -Status "Setting" -Message "$args" -Color Cyan }
 
 function Show-Help {
     @"
@@ -124,7 +144,7 @@ function Install-Tool {
 }
 
 function Test-Dependencies {
-    Write-Info "Checking dependencies..."
+    Write-Status -Status "Checking" -Message "dependencies..." -Color Cyan
 
     # Git
     if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
@@ -135,7 +155,7 @@ function Test-Dependencies {
         # Refresh PATH
         $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
     }
-    Write-Ok "git found"
+    Write-Found "git"
 
     # CMake
     if (-not (Get-Command cmake -ErrorAction SilentlyContinue)) {
@@ -162,7 +182,7 @@ function Test-Dependencies {
     } catch {
         Write-Warn "Could not parse CMake version '$cmakeVersionRaw', continuing anyway..."
     }
-    Write-Ok "cmake $cmakeVersionRaw found"
+    Write-Found "cmake $cmakeVersionRaw"
 
     # Visual Studio / Build Tools
     $vsWhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
@@ -171,13 +191,13 @@ function Test-Dependencies {
         $vsPath = & $vsWhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
         if ($vsPath) {
             $hasVS = $true
-            Write-Ok "Visual Studio found at $vsPath"
+            Write-Found "Visual Studio at $vsPath"
         }
     }
 
     if (-not $hasVS) {
         Write-Warn "Visual Studio Build Tools not found"
-        Write-Info "Attempting to install Visual Studio Build Tools..."
+        Write-Installing "Visual Studio Build Tools..."
 
         if (Get-Command winget -ErrorAction SilentlyContinue) {
             try {
@@ -200,7 +220,7 @@ function Test-Dependencies {
         $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
     }
     if (Get-Command ninja -ErrorAction SilentlyContinue) {
-        Write-Ok "ninja found"
+        Write-Found "ninja"
     }
 }
 
@@ -225,7 +245,7 @@ function Get-VsDevEnv {
         return $false
     }
 
-    Write-Info "Setting up Visual Studio environment..."
+    Write-Setting "up Visual Studio environment"
 
     # Run vcvarsall and capture environment
     $arch = if ([Environment]::Is64BitOperatingSystem) { "x64" } else { "x86" }
@@ -255,7 +275,7 @@ function Get-VsDevEnv {
 function Build-Cforge {
     param([string]$TempDir)
 
-    Write-Info "Cloning cforge repository..."
+    Write-Cloning "cforge repository"
     Push-Location $TempDir
 
     try {
@@ -267,7 +287,7 @@ function Build-Cforge {
 
         Set-Location cforge
 
-        Write-Info "Fetching dependencies..."
+        Write-Fetching "dependencies"
         New-Item -ItemType Directory -Force -Path vendor | Out-Null
         Set-Location vendor
 
@@ -283,7 +303,7 @@ function Build-Cforge {
         Set-Location tomlplusplus; git checkout v3.4.0 --quiet 2>$null; Set-Location ..
         Set-Location ..
 
-        Write-Info "Configuring build..."
+        Write-Configuring "CMake build"
         New-Item -ItemType Directory -Force -Path build | Out-Null
 
         $cmakeArgs = @(
@@ -317,7 +337,7 @@ function Build-Cforge {
             exit 1
         }
 
-        Write-Info "Building cforge..."
+        Write-Building "cforge"
         $jobs = [Environment]::ProcessorCount
         if ($VerboseOutput) {
             cmake --build build --config Release -j $jobs
@@ -334,7 +354,7 @@ function Build-Cforge {
 
         $ErrorActionPreference = $prevErrorAction
 
-        Write-Ok "Build completed"
+        Write-Ok "build completed"
         return "$TempDir\cforge\build"
 
     } finally {
@@ -345,7 +365,7 @@ function Build-Cforge {
 function Install-Cforge {
     param([string]$BuildDir)
 
-    Write-Info "Installing to $Prefix..."
+    Write-Installing "to $Prefix"
 
     # Create directories - use same structure as `cforge install`
     # This is: <prefix>/installed/cforge/bin/
@@ -375,7 +395,7 @@ function Install-Cforge {
     }
 
     Copy-Item $binary "$installBinDir\cforge.exe" -Force
-    Write-Ok "Installed cforge to $installBinDir\cforge.exe"
+    Write-Ok "installed cforge to $installBinDir\cforge.exe"
 }
 
 function Add-ToPath {
@@ -385,11 +405,11 @@ function Add-ToPath {
     $currentPath = [Environment]::GetEnvironmentVariable("Path", "User")
 
     if ($currentPath -like "*$binDir*") {
-        Write-Info "$binDir is already in PATH"
+        Write-Status -Status "Skipping" -Message "$binDir is already in PATH" -Color Cyan
         return
     }
 
-    Write-Info "Adding $binDir to PATH..."
+    Write-Adding "$binDir to PATH"
 
     $newPath = "$binDir;$currentPath"
     [Environment]::SetEnvironmentVariable("Path", $newPath, "User")
@@ -397,12 +417,12 @@ function Add-ToPath {
     # Update current session
     $env:Path = "$binDir;$env:Path"
 
-    Write-Ok "Added to PATH"
+    Write-Ok "added to PATH"
     Write-Warn "Restart your terminal for PATH changes to take effect"
 }
 
 function Test-Installation {
-    Write-Info "Verifying installation..."
+    Write-Status -Status "Verifying" -Message "installation" -Color Cyan
 
     $cforge = "$Prefix\installed\cforge\bin\cforge.exe"
     if (Test-Path $cforge) {
@@ -411,7 +431,7 @@ function Test-Installation {
 
         Write-Ok "cforge installed successfully!"
         Write-Host ""
-        Write-Host "  Version: $version"
+        Write-Host "  Version:  $version"
         Write-Host "  Location: $cforge"
         Write-Host ""
         Write-Host "Get started:"
@@ -429,13 +449,11 @@ function Test-Installation {
 # Main
 function Main {
     Write-Host ""
-    Write-Host "+===========================================+" -ForegroundColor Cyan
-    Write-Host "|         cforge Installer                  |" -ForegroundColor Cyan
-    Write-Host "|  C/C++ Build System with TOML Config      |" -ForegroundColor Cyan
-    Write-Host "+===========================================+" -ForegroundColor Cyan
+    Write-Host "cforge" -ForegroundColor Green -NoNewline
+    Write-Host " - C/C++ Build System Installer"
     Write-Host ""
 
-    Write-Info "Install prefix: $Prefix"
+    Write-Status -Status "Prefix" -Message "$Prefix" -Color Cyan
     Write-Host ""
 
     Test-Dependencies
@@ -451,6 +469,7 @@ function Main {
     # Create temp directory
     $tempDir = Join-Path $env:TEMP "cforge-install-$(Get-Random)"
     New-Item -ItemType Directory -Force -Path $tempDir | Out-Null
+    Write-Status -Status "Preparing" -Message "build environment" -Color Cyan
 
     try {
         $buildDir = Build-Cforge -TempDir $tempDir
