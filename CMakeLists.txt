@@ -67,14 +67,26 @@ else()
   set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/${CMAKE_BUILD_TYPE}")
 endif()
 
-# Index dependencies (from cforge-index registry)
-# fmt (index package)
-include_directories("${CMAKE_CURRENT_SOURCE_DIR}/vendor/fmt/include")
-add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/vendor/fmt" "${CMAKE_BINARY_DIR}/_deps/fmt")
+# Index dependencies via FetchContent
+include(FetchContent)
 
-# tomlplusplus (index package)
-include_directories("${CMAKE_CURRENT_SOURCE_DIR}/vendor/tomlplusplus/include")
-add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/vendor/tomlplusplus" "${CMAKE_BINARY_DIR}/_deps/tomlplusplus")
+# fmt v11.1.4
+FetchContent_Declare(
+    fmt
+    GIT_REPOSITORY https://github.com/fmtlib/fmt.git
+    GIT_TAG 11.1.4
+    GIT_SHALLOW TRUE
+)
+
+# tomlplusplus v3.4.0
+FetchContent_Declare(
+    tomlplusplus
+    GIT_REPOSITORY https://github.com/marzer/tomlplusplus.git
+    GIT_TAG v3.4.0
+    GIT_SHALLOW TRUE
+)
+
+FetchContent_MakeAvailable(fmt tomlplusplus)
 
 # Add source files
 file(GLOB_RECURSE SOURCES
@@ -102,7 +114,7 @@ target_include_directories(${PROJECT_NAME} PUBLIC
     "${SOURCE_DIR}/include"
 )
 
-# Link index dependencies
+# Link FetchContent dependencies
 target_link_libraries(${PROJECT_NAME} PUBLIC
     fmt::fmt
     tomlplusplus::tomlplusplus

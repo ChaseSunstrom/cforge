@@ -32,5 +32,4 @@ contact = "Chase Sunstrom <casunstrom@gmail.com>"
 [dependencies]
 directory = "vendor"
 tomlplusplus = "3.4.0"
-fetch_content = false
 fmt = "11.1.4"
