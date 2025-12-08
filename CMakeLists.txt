@@ -67,44 +67,14 @@ else()
   set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/${CMAKE_BUILD_TYPE}")
 endif()
 
-# Git dependencies
-include(FetchContent)
-# Ensure dependencies directory exists
-set(DEPS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/vendor")
-file(MAKE_DIRECTORY ${DEPS_DIR})
+# Index dependencies (from cforge-index registry)
+# fmt (index package)
+include_directories("${CMAKE_CURRENT_SOURCE_DIR}/vendor/fmt/include")
+add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/vendor/fmt" "${CMAKE_BINARY_DIR}/_deps/fmt")
 
-# Configure Git to prefer HTTPS but allow other protocols
-set(FETCHCONTENT_GIT_PROTOCOL "https")
-
-# fmt dependency
-message(STATUS "Setting up fmt dependency from https://github.com/fmtlib/fmt.git")
-FetchContent_Declare(fmt
-    GIT_REPOSITORY https://github.com/fmtlib/fmt.git
-    GIT_TAG 11.1.4
-    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/vendor/fmt
-)
-# Include directories for fmt
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/vendor/fmt/include)
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/vendor/fmt/.)
-
-# For fmt, configure options
-set(FMT_TEST OFF CACHE BOOL "" FORCE)
-set(FMT_DOC OFF CACHE BOOL "" FORCE)
-set(FMT_SYSTEM_HEADERS ON CACHE BOOL "" FORCE)
-FetchContent_MakeAvailable(fmt)
-
-# tomlplusplus dependency
-message(STATUS "Setting up tomlplusplus dependency from https://github.com/marzer/tomlplusplus.git")
-FetchContent_Declare(tomlplusplus
-    GIT_REPOSITORY https://github.com/marzer/tomlplusplus.git
-    GIT_TAG v3.4.0
-    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/vendor/tomlplusplus
-)
-# Include directories for tomlplusplus
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/vendor/tomlplusplus/include)
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/vendor/tomlplusplus/.)
-
-FetchContent_MakeAvailable(tomlplusplus)
+# tomlplusplus (index package)
+include_directories("${CMAKE_CURRENT_SOURCE_DIR}/vendor/tomlplusplus/include")
+add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/vendor/tomlplusplus" "${CMAKE_BINARY_DIR}/_deps/tomlplusplus")
 
 # Add source files
 file(GLOB_RECURSE SOURCES
@@ -132,6 +102,12 @@ target_include_directories(${PROJECT_NAME} PUBLIC
     "${SOURCE_DIR}/include"
 )
 
+# Link index dependencies
+target_link_libraries(${PROJECT_NAME} PUBLIC
+    fmt::fmt
+    tomlplusplus::tomlplusplus
+)
+
 # Definitions for config 'Debug'
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
   target_compile_definitions(${PROJECT_NAME} PUBLIC DEBUG=1)
@@ -141,7 +117,6 @@ endif()
 
 # Link libraries
 target_link_libraries(${PROJECT_NAME} PUBLIC
-    fmt
 )
 
 # Compiler options

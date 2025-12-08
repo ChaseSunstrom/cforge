@@ -3,16 +3,16 @@
 # Do not commit to version control.
 
 [metadata]
-generated = "2025-12-08T21:34:44Z"
+generated = "2025-12-08T23:57:23Z"
 
 [config]
-hash = "6c58b1c81cf5b809"
-
-[dependency.tomlplusplus]
-hash = "ee0d779c66a1ea01"
-version = "v3.4.0"
+hash = "7937ea90e387c7be"
 
 [dependency.fmt]
-hash = "2e1bd4a6644e748e"
+hash = "1597a53385d75ae0"
 version = "11.1.4"
+
+[dependency.tomlplusplus]
+hash = "dd811f31298761f9"
+version = "3.4.0"
 

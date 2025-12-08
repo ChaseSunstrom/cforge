@@ -608,8 +608,9 @@ Registry dependencies in `cforge.toml`:
 
 ```toml
 [dependencies]
-# Simple version constraint
+# Simple version constraint - uses CMake FetchContent by default
 fmt = "11.1.4"
+tomlplusplus = "3.4.0"
 
 # With features and options
 spdlog = { version = "1.15.0", features = ["async", "stdout"] }
@@ -620,6 +621,17 @@ nlohmann-json = { version = "3.11.3", header_only = true }
 # Wildcard versions (like Rust)
 catch2 = "3.*"          # Any 3.x version
 benchmark = "1.9.*"     # Any 1.9.x version
+```
+
+By default, index dependencies use CMake's FetchContent to download packages during the CMake configure step. This is the recommended approach as it integrates seamlessly with CMake's dependency management.
+
+To disable FetchContent and pre-clone packages instead:
+
+```toml
+[dependencies]
+fetch_content = false   # Pre-clone packages to vendor/ directory
+directory = "vendor"    # Where to clone packages (default: "deps")
+fmt = "11.1.4"
 ```
 
 ### Git Dependencies

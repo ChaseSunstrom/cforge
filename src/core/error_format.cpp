@@ -1182,13 +1182,19 @@ std::vector<diagnostic> parse_linker_errors(const std::string &error_output) {
       continue;
     }
 
-    
+
     // LLD linker errors
-    
+
     if (std::regex_search(line, matches, lld_error_regex)) {
+      std::string message = matches[1].str();
+
+      // Skip if message is empty or only whitespace
+      if (message.empty() || message.find_first_not_of(" \t\r\n") == std::string::npos) {
+        continue;
+      }
+
       diagnostic diag;
       diag.level = diagnostic_level::ERROR;
-      std::string message = matches[1].str();
       diag.message = message;
       diag.file_path = "";
       diag.line_number = 0;
@@ -1269,14 +1275,21 @@ std::vector<diagnostic> parse_linker_errors(const std::string &error_output) {
       continue;
     }
 
-    
+
     // Clang linker wrapper errors
-    
+
     if (std::regex_search(line, matches, clang_linker_error_regex)) {
+      std::string message = matches[1].str();
+
+      // Skip if message is empty or only whitespace
+      if (message.empty() || message.find_first_not_of(" \t\r\n") == std::string::npos) {
+        continue;
+      }
+
       diagnostic diag;
       diag.level = diagnostic_level::ERROR;
       diag.code = "LNK-CLANG";
-      diag.message = matches[1].str();
+      diag.message = message;
       diag.file_path = "";
       diag.line_number = 0;
       diag.column_number = 0;
@@ -1288,17 +1301,24 @@ std::vector<diagnostic> parse_linker_errors(const std::string &error_output) {
       continue;
     }
 
-    
+
     // collect2 errors (GCC linker wrapper)
-    
+
     if (std::regex_search(line, matches, collect2_error_regex)) {
+      std::string message = matches[1].str();
+
+      // Skip if message is empty or only whitespace
+      if (message.empty() || message.find_first_not_of(" \t\r\n") == std::string::npos) {
+        continue;
+      }
+
       // collect2 is a summary error; we prefer the more specific errors above
       // Only add if we haven't captured any linker errors yet
       if (diagnostics.empty()) {
         diagnostic diag;
         diag.level = diagnostic_level::ERROR;
         diag.code = "LNK-LD";
-        diag.message = matches[1].str();
+        diag.message = message;
         diag.file_path = "";
         diag.line_number = 0;
         diag.column_number = 0;
@@ -1311,11 +1331,16 @@ std::vector<diagnostic> parse_linker_errors(const std::string &error_output) {
       continue;
     }
 
-    
+
     // ld linker errors
-    
+
     if (std::regex_search(line, matches, ld_error_regex)) {
       std::string message = matches[1].str();
+
+      // Skip if message is empty or only whitespace
+      if (message.empty() || message.find_first_not_of(" \t\r\n") == std::string::npos) {
+        continue;
+      }
 
       // Skip if it's just a warning or note
       if (message.find("warning") != std::string::npos &&

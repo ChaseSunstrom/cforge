@@ -50,6 +50,16 @@ struct package_version {
 };
 
 /**
+ * @brief Git tag discovery configuration
+ */
+struct tag_config {
+  std::string pattern = "{version}";  // Pattern like "v{version}", "{version}", "release-{version}"
+  std::string version_regex;           // Regex to extract version from tag (auto-generated from pattern)
+  std::vector<std::string> exclude;    // Tags to exclude (e.g., "nightly", "beta")
+  int max_versions = 50;               // Maximum versions to cache
+};
+
+/**
  * @brief Package integration info
  */
 struct package_integration {
@@ -80,6 +90,10 @@ struct package_info {
   std::map<std::string, package_feature> features;
   std::vector<std::string> default_features;
   std::vector<package_version> versions;
+
+  // Git tag discovery
+  tag_config tags;
+  bool auto_discover_versions = true;  // If true, fetch versions from Git tags
 
   std::vector<std::string> maintainer_owners;
   std::vector<std::string> maintainer_authors;
@@ -236,6 +250,9 @@ private:
   std::filesystem::path cache_dir_;
   std::filesystem::path index_dir_;
 
+  // Cache for Git tags (repo_url -> versions)
+  mutable std::map<std::string, std::vector<package_version>> version_cache_;
+
   /**
    * @brief Load a package definition from the index
    * @param name Package name
@@ -243,6 +260,46 @@ private:
    */
   std::optional<package_info>
   load_package_file(const std::string &name) const;
+
+  /**
+   * @brief Fetch Git tags from a remote repository
+   * @param repo_url Repository URL
+   * @param config Tag configuration (pattern, excludes)
+   * @return Vector of discovered versions
+   */
+  std::vector<package_version>
+  fetch_git_tags(const std::string &repo_url, const tag_config &config) const;
+
+  /**
+   * @brief Convert a tag pattern to a regex for version extraction
+   * @param pattern Pattern like "v{version}" or "{version}"
+   * @return Regex string to extract version from tag
+   */
+  static std::string pattern_to_regex(const std::string &pattern);
+
+  /**
+   * @brief Convert version to tag using pattern
+   * @param version Version string (e.g., "1.2.3")
+   * @param pattern Tag pattern (e.g., "v{version}")
+   * @return Tag string (e.g., "v1.2.3")
+   */
+  static std::string version_to_tag(const std::string &version,
+                                     const std::string &pattern);
+
+  /**
+   * @brief Load cached versions for a package
+   * @param name Package name
+   * @return Vector of cached versions, empty if not cached
+   */
+  std::vector<package_version> load_version_cache(const std::string &name) const;
+
+  /**
+   * @brief Save versions to cache
+   * @param name Package name
+   * @param versions Versions to cache
+   */
+  void save_version_cache(const std::string &name,
+                          const std::vector<package_version> &versions) const;
 
   /**
    * @brief Check if a version matches a version specification

@@ -11,7 +11,9 @@
 #include "core/error_format.hpp"
 #include "core/file_system.h"
 #include "core/git_utils.hpp"
+#include "core/lockfile.hpp"
 #include "core/process_utils.hpp"
+#include "core/registry.hpp"
 #include "core/script_runner.hpp"
 #include "core/toml_reader.hpp"
 #include "core/workspace.hpp"
@@ -362,6 +364,225 @@ bool clone_git_dependencies(const std::filesystem::path &project_dir,
 }
 
 /**
+ * @brief Resolve and clone index (registry) dependencies for a project
+ *
+ * This function reads the [dependencies] section, identifies packages that
+ * should come from the cforge-index registry, resolves them to git URLs/tags,
+ * and clones them.
+ *
+ * @param project_dir Project directory
+ * @param project_config Project configuration from cforge.toml
+ * @param verbose Verbose output flag
+ * @param skip_deps Skip dependencies flag
+ * @return bool Success flag
+ */
+bool resolve_index_dependencies(const std::filesystem::path &project_dir,
+                                 const toml_reader &project_config,
+                                 bool verbose, bool skip_deps) {
+  if (skip_deps) {
+    logger::print_verbose("Skipping index dependency resolution (--skip-deps flag)");
+    return true;
+  }
+
+  // Check if we have a [dependencies] section
+  if (!project_config.has_key("dependencies")) {
+    logger::print_verbose("No dependencies section found");
+    return true;
+  }
+
+  // Get dependencies directory from configuration
+  std::string deps_dir =
+      project_config.get_string("dependencies.directory", "deps");
+  std::filesystem::path deps_path = project_dir / deps_dir;
+
+  // Create dependencies directory if it doesn't exist
+  if (!std::filesystem::exists(deps_path)) {
+    std::filesystem::create_directories(deps_path);
+  }
+
+  // Get all dependency keys - look for entries that are index dependencies
+  // An index dependency is specified as: name = "version" or name = { version = "..." }
+  // without git/vcpkg/system/project flags
+  auto dep_keys = project_config.get_table_keys("dependencies");
+  logger::print_verbose("resolve_index_dependencies: Found " + std::to_string(dep_keys.size()) + " keys in [dependencies]");
+
+  std::vector<std::pair<std::string, std::string>> index_deps; // name -> version
+
+  for (const auto &dep : dep_keys) {
+    logger::print_verbose("  Checking key: " + dep);
+
+    // Skip known non-package keys
+    if (dep == "directory" || dep == "git" || dep == "vcpkg" ||
+        dep == "system" || dep == "project" || dep == "subdirectory" ||
+        dep == "fetch_content") {
+      logger::print_verbose("    Skipping (special key)");
+      continue;
+    }
+
+    std::string dep_key = "dependencies." + dep;
+
+    // Check if this is a simple string version or a table
+    std::string version = project_config.get_string(dep_key, "");
+    if (!version.empty()) {
+      // Simple format: dep = "version"
+      logger::print_verbose("    Found index dep: " + dep + " = " + version);
+      index_deps.push_back({dep, version});
+      continue;
+    }
+
+    // Check if it's a table with version key
+    std::string version_key = dep_key + ".version";
+    version = project_config.get_string(version_key, "");
+
+    // Skip if it has explicit source indicators
+    bool has_git = !project_config.get_string(dep_key + ".git", "").empty();
+    bool has_vcpkg = project_config.get_bool(dep_key + ".vcpkg", false);
+    bool has_system = project_config.get_bool(dep_key + ".system", false);
+    bool has_project = project_config.get_bool(dep_key + ".project", false);
+
+    if (!has_git && !has_vcpkg && !has_system && !has_project && !version.empty()) {
+      // This is an index dependency
+      logger::print_verbose("    Found index dep (table): " + dep + " = " + version);
+      index_deps.push_back({dep, version});
+    } else {
+      logger::print_verbose("    Skipping (no version or has source indicator)");
+    }
+  }
+
+  if (index_deps.empty()) {
+    logger::print_verbose("No index dependencies found to resolve");
+    return true;
+  }
+
+  logger::print_verbose("Total index deps to resolve: " + std::to_string(index_deps.size()));
+
+  logger::print_action("Resolving", std::to_string(index_deps.size()) + " package(s) from registry");
+
+  // Initialize registry
+  registry reg;
+
+  // Check if registry needs update
+  if (reg.needs_update()) {
+    logger::print_action("Updating", "package index");
+    if (!reg.update()) {
+      logger::print_warning("Failed to update package index, using cached version");
+    }
+  }
+
+  // Check if git is available
+  if (!is_command_available("git", 20)) {
+    logger::print_error("Git is not available. Please install Git.");
+    return false;
+  }
+
+  // Load dependency hashes
+  dependency_hash dep_hashes;
+  dep_hashes.load(project_dir);
+
+  bool all_success = true;
+  bool deps_changed = false;  // Track if any deps were cloned/updated
+
+  for (const auto &[name, version_spec] : index_deps) {
+    // Get package info from registry
+    auto pkg_opt = reg.get_package(name);
+    if (!pkg_opt) {
+      logger::print_error("Package '" + name + "' not found in registry");
+      all_success = false;
+      continue;
+    }
+
+    const auto &pkg = *pkg_opt;
+
+    // Resolve version
+    std::string resolved_version = reg.resolve_version(name, version_spec);
+    if (resolved_version.empty()) {
+      logger::print_error("Could not resolve version '" + version_spec + "' for package '" + name + "'");
+      all_success = false;
+      continue;
+    }
+
+    // Find the version entry to get the tag
+    std::string git_tag;
+    for (const auto &ver : pkg.versions) {
+      if (ver.version == resolved_version) {
+        git_tag = ver.tag;
+        break;
+      }
+    }
+
+    if (git_tag.empty()) {
+      logger::print_error("Could not find git tag for version " + resolved_version + " of " + name);
+      all_success = false;
+      continue;
+    }
+
+    std::filesystem::path dep_path = deps_path / name;
+
+    // Check if already exists and up to date
+    std::string stored_version = dep_hashes.get_version(name);
+    bool version_changed = resolved_version != stored_version;
+
+    if (std::filesystem::exists(dep_path)) {
+      if (version_changed) {
+        logger::print_action("Updating", name + " from " + stored_version + " to " + resolved_version);
+        try {
+          std::filesystem::remove_all(dep_path);
+          deps_changed = true;  // Version update requires regeneration
+        } catch (const std::exception &e) {
+          logger::print_error("Failed to remove old version of '" + name + "': " + e.what());
+          all_success = false;
+          continue;
+        }
+      } else {
+        logger::print_verbose("Package '" + name + "' already at version " + resolved_version);
+        continue;
+      }
+    }
+
+    // Clone the package
+    logger::fetching(name + "@" + resolved_version);
+
+    std::vector<std::string> clone_args = {"clone", "--depth=1", pkg.repository,
+                                           dep_path.string(), "--branch", git_tag};
+    if (!verbose) {
+      clone_args.push_back("--quiet");
+    }
+
+    bool clone_result = execute_tool("git", clone_args, "",
+                                     "Git Clone for " + name, verbose, 600);
+
+    if (!clone_result) {
+      logger::print_error("Failed to clone package '" + name + "' from " + pkg.repository);
+      all_success = false;
+      continue;
+    }
+
+    // Store hash and version
+    std::string current_hash = dependency_hash::calculate_directory_hash(dep_path);
+    dep_hashes.set_hash(name, current_hash);
+    dep_hashes.set_version(name, resolved_version);
+    deps_changed = true;  // Mark that deps changed
+
+    logger::print_action("Downloaded", name + "@" + resolved_version);
+  }
+
+  // If any deps were cloned/updated, clear the cforge.toml hash to force CMakeLists.txt regeneration
+  if (deps_changed) {
+    logger::print_verbose("Dependencies changed - will force CMakeLists.txt regeneration");
+    dep_hashes.set_hash("cforge.toml", "");  // Clear the hash to force regeneration
+  }
+
+  // Save updated dependency hashes
+  dep_hashes.save(project_dir);
+
+  if (all_success) {
+    logger::print_action("Finished", "all packages resolved");
+  }
+
+  return all_success;
+}
+
+/**
  * @brief Run CMake configure step
  *
  * @param cmake_args CMake arguments
@@ -562,6 +783,23 @@ static bool build_project(const std::filesystem::path &project_dir,
   // Handle project-level dependencies and CMakeLists generation (skip in
   // workspace build)
   if (!use_workspace_build && has_project_config) {
+    // Resolve index/registry dependencies first (they get cloned to deps/)
+    // Skip if using FetchContent mode (CMake will handle downloading)
+    bool use_fetch_content = project_config.get_bool("dependencies.fetch_content", true);
+    if (!use_fetch_content) {
+      try {
+        std::filesystem::current_path(project_dir);
+        if (!resolve_index_dependencies(project_dir, project_config, verbose, skip_deps)) {
+          logger::print_warning("Some index dependencies could not be resolved");
+        }
+      } catch (const std::exception &ex) {
+        logger::print_warning("Exception while resolving index dependencies: " +
+                              std::string(ex.what()));
+      }
+    } else {
+      logger::print_verbose("Using FetchContent mode - CMake will download index dependencies");
+    }
+
     // Clone Git dependencies before generating CMakeLists.txt
     if (project_config.has_key("dependencies.git")) {
       logger::print_action("Setting up", "Git dependencies");
@@ -581,6 +819,16 @@ static bool build_project(const std::filesystem::path &project_dir,
         logger::print_error("Exception while setting up Git dependencies: " +
                             std::string(ex.what()));
         return false;
+      }
+    }
+
+    // Generate/update lock file after dependencies are resolved
+    {
+      std::string deps_dir_str =
+          project_config.get_string("dependencies.directory", "deps");
+      std::filesystem::path deps_path = project_dir / deps_dir_str;
+      if (std::filesystem::exists(deps_path)) {
+        update_lockfile(project_dir, deps_path, verbose);
       }
     }
 
@@ -1320,12 +1568,28 @@ cforge_int_t cforge_cmd_build(const cforge_context_t *ctx) {
       logger::building("entire workspace");
     }
 
-    // Handle Git dependencies for workspace projects if not skipped
+    // Handle dependencies for workspace projects if not skipped
     if (!skip_deps) {
       for (const auto &proj : ws.get_projects()) {
         auto proj_toml = proj.path / CFORGE_FILE;
         if (std::filesystem::exists(proj_toml)) {
           toml_reader pcfg(toml::parse_file(proj_toml.string()));
+
+          // Resolve index/registry dependencies first (skip if using FetchContent)
+          bool proj_use_fetch_content = pcfg.get_bool("dependencies.fetch_content", true);
+          if (!proj_use_fetch_content) {
+            try {
+              std::filesystem::current_path(proj.path);
+              if (!resolve_index_dependencies(proj.path, pcfg, verbose, skip_deps)) {
+                logger::print_warning("Some index dependencies could not be resolved for project: " + proj.name);
+              }
+            } catch (const std::exception &ex) {
+              logger::print_warning("Exception while resolving index dependencies for project " +
+                                    proj.name + ": " + std::string(ex.what()));
+            }
+          }
+
+          // Then handle Git dependencies
           if (pcfg.has_key("dependencies.git")) {
             logger::print_action("Setting up",
                                  "Git dependencies for project: " + proj.name);

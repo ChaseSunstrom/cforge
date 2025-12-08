@@ -7,17 +7,15 @@
 
 [metadata]
 version = "1"
-generated = "2025-12-01T21:06:52Z"
+generated = "2025-12-08T23:57:23Z"
 
 [dependency.fmt]
-source = "git"
-url = "https://github.com/fmtlib/fmt.git"
+source = "index"
 version = "11.1.4"
 resolved = "123913715afeb8a437e6388b4473fcc4753e1c9a"
 
 [dependency.tomlplusplus]
-source = "git"
-url = "https://github.com/marzer/tomlplusplus.git"
-version = "v3.4.0"
+source = "index"
+version = "3.4.0"
 resolved = "30172438cee64926dc41fdd9c11fb3ba5b2ba9de"
 

@@ -254,6 +254,32 @@ public:
   }
 
   /**
+   * @brief Lock an index dependency (from cforge-index registry)
+   *
+   * @param name Package name
+   * @param version Package version
+   * @param repo_dir Local repository directory
+   */
+  void lock_index_dependency(const std::string &name,
+                             const std::string &version,
+                             const std::filesystem::path &repo_dir) {
+    locked_dependency dep;
+    dep.name = name;
+    dep.source_type = "index";
+    dep.version = version;
+
+    // Get the actual commit hash
+    std::string commit = git_get_head_commit(repo_dir, false);
+    if (!commit.empty()) {
+      dep.resolved = commit;
+    } else {
+      dep.resolved = version; // Fallback to requested version
+    }
+
+    dependencies_[name] = dep;
+  }
+
+  /**
    * @brief Remove a dependency from the lock file
    *
    * @param name Dependency name
@@ -380,6 +406,55 @@ inline bool update_lockfile(const std::filesystem::path &project_dir,
 
       if (verbose) {
         logger::print_verbose("Locked vcpkg package: " + dep);
+      }
+    }
+  }
+
+  // Lock index dependencies (simple name = "version" format)
+  // Skip if using FetchContent mode (CMake handles downloading, packages not in deps_dir)
+  bool use_fetch_content = config.get_bool("dependencies.fetch_content", true);
+  if (!use_fetch_content && config.has_key("dependencies")) {
+    auto all_deps = config.get_table_keys("dependencies");
+
+    for (const auto &dep : all_deps) {
+      // Skip known special sections
+      if (dep == "directory" || dep == "git" || dep == "vcpkg" ||
+          dep == "subdirectory" || dep == "system" || dep == "project" ||
+          dep == "fetch_content") {
+        continue;
+      }
+
+      // Check if this is a simple version string (index dependency)
+      std::string dep_key = "dependencies." + dep;
+
+      // Skip if it's a table with source-specific keys
+      if (config.has_key(dep_key + ".url") ||
+          config.has_key(dep_key + ".vcpkg_name") ||
+          config.has_key(dep_key + ".path") ||
+          config.has_key(dep_key + ".system")) {
+        continue;
+      }
+
+      // Get the version
+      std::string version = config.get_string(dep_key, "");
+      if (version.empty()) {
+        continue;
+      }
+
+      std::filesystem::path repo_dir = deps_dir / dep;
+
+      if (std::filesystem::exists(repo_dir)) {
+        lock.lock_index_dependency(dep, version, repo_dir);
+
+        if (verbose) {
+          auto locked = lock.get_dependency(dep);
+          if (locked) {
+            logger::print_verbose("Locked " + dep + " at " + locked->resolved);
+          }
+        }
+      } else if (verbose) {
+        logger::print_warning("Index dependency " + dep +
+                              " not found, skipping lock");
       }
     }
   }

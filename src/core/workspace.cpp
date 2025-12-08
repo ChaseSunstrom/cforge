@@ -9,6 +9,7 @@
 #include "core/constants.h"
 #include "core/dependency_hash.hpp"
 #include "core/process_utils.hpp"
+#include "core/registry.hpp"
 #include "core/toml_reader.hpp"
 
 #include <algorithm>
@@ -620,6 +621,353 @@ void configure_git_dependencies_in_cmake(const toml_reader &project_config,
 }
 
 /**
+ * @brief Helper to get list of index dependencies (from cforge-index)
+ */
+/**
+ * @brief Index dependency info for CMake generation
+ */
+struct index_dep_info {
+  std::string name;
+  std::string version;
+};
+
+/**
+ * @brief Get list of index dependencies with their versions
+ */
+static std::vector<index_dep_info> get_index_dependencies_with_versions(
+    const toml_reader &project_config) {
+  std::vector<index_dep_info> index_deps;
+
+  if (!project_config.has_key("dependencies")) {
+    logger::print_verbose("No [dependencies] section found");
+    return index_deps;
+  }
+
+  auto all_deps = project_config.get_table_keys("dependencies");
+  logger::print_verbose("Found " + std::to_string(all_deps.size()) + " keys in [dependencies]");
+
+  for (const auto &dep : all_deps) {
+    logger::print_verbose("  Checking dependency key: " + dep);
+
+    // Skip known special sections
+    if (dep == "directory" || dep == "git" || dep == "vcpkg" ||
+        dep == "subdirectory" || dep == "system" || dep == "project" ||
+        dep == "fetch_content") {
+      logger::print_verbose("    Skipping (special key)");
+      continue;
+    }
+
+    // Check if this is a simple version string (index dependency)
+    std::string dep_key = "dependencies." + dep;
+
+    // Check if it's a table with source-specific keys
+    if (project_config.has_key(dep_key + ".url") ||
+        project_config.has_key(dep_key + ".vcpkg_name") ||
+        project_config.has_key(dep_key + ".path") ||
+        project_config.has_key(dep_key + ".system")) {
+      logger::print_verbose("    Skipping (has source-specific keys)");
+      continue;
+    }
+
+    // Get version string
+    std::string version = project_config.get_string(dep_key, "");
+    if (version.empty()) {
+      logger::print_verbose("    Skipping (no version string found)");
+      continue;
+    }
+
+    logger::print_verbose("    Found index dep: " + dep + " = " + version);
+    index_deps.push_back({dep, version});
+  }
+
+  logger::print_verbose("Total index dependencies found: " + std::to_string(index_deps.size()));
+  return index_deps;
+}
+
+/**
+ * @brief Get list of index dependencies (names only, for backward compatibility)
+ * Only returns deps that exist in the deps directory
+ */
+static std::vector<std::string> get_index_dependencies(
+    const std::filesystem::path &project_dir,
+    const toml_reader &project_config,
+    const std::string &deps_dir) {
+  std::vector<std::string> result;
+
+  auto deps = get_index_dependencies_with_versions(project_config);
+  logger::print_verbose("Checking " + std::to_string(deps.size()) + " index deps for existence in " + deps_dir);
+
+  for (const auto &dep : deps) {
+    // Check if the package directory exists in vendor
+    std::filesystem::path pkg_path = project_dir / deps_dir / dep.name;
+    logger::print_verbose("  Checking path: " + pkg_path.string());
+    if (std::filesystem::exists(pkg_path)) {
+      logger::print_verbose("    EXISTS - adding " + dep.name);
+      result.push_back(dep.name);
+    } else {
+      logger::print_verbose("    NOT FOUND - skipping " + dep.name);
+    }
+  }
+
+  logger::print_verbose("Index dependencies with existing paths: " + std::to_string(result.size()));
+  return result;
+}
+
+/**
+ * @brief Configure index dependencies - Phase 1: add_subdirectory and include_directories
+ * This is called BEFORE the target is created
+ *
+ * @param project_dir Project directory
+ * @param project_config Project configuration from cforge.toml
+ * @param deps_dir Dependencies directory (e.g., "vendor")
+ * @param cmakelists Output stream
+ */
+void configure_index_dependencies_phase1(const std::filesystem::path &project_dir,
+                                         const toml_reader &project_config,
+                                         const std::string &deps_dir,
+                                         std::ofstream &cmakelists) {
+  auto index_deps = get_index_dependencies(project_dir, project_config, deps_dir);
+  if (index_deps.empty()) {
+    return;
+  }
+
+  // Initialize registry to get package info (use project_dir so index is at project_dir/cforge-index)
+  registry reg(project_dir);
+
+  cmakelists << "# Index dependencies (from cforge-index registry)\n";
+
+  for (const auto &dep : index_deps) {
+    std::filesystem::path pkg_path = project_dir / deps_dir / dep;
+
+    // Try to load package info from registry
+    auto pkg_info = reg.get_package(dep);
+
+    std::string include_dir = "include";
+    std::map<std::string, std::string> cmake_options;
+
+    if (pkg_info) {
+      if (!pkg_info->integration.include_dir.empty()) {
+        include_dir = pkg_info->integration.include_dir;
+      }
+      cmake_options = pkg_info->integration.cmake_options;
+    }
+
+    cmakelists << "# " << dep << " (index package)\n";
+
+    // Add CMake options from package config
+    for (const auto &[opt_key, opt_val] : cmake_options) {
+      cmakelists << "set(" << opt_key << " " << opt_val << " CACHE BOOL \"\" FORCE)\n";
+    }
+
+    // Add include directory (global, not target-specific)
+    cmakelists << "include_directories(\"${CMAKE_CURRENT_SOURCE_DIR}/" << deps_dir << "/" << dep << "/" << include_dir << "\")\n";
+
+    // Check if package has CMakeLists.txt - if so, add_subdirectory
+    if (std::filesystem::exists(pkg_path / "CMakeLists.txt")) {
+      cmakelists << "add_subdirectory(\"${CMAKE_CURRENT_SOURCE_DIR}/" << deps_dir << "/" << dep << "\"";
+      cmakelists << " \"${CMAKE_BINARY_DIR}/_deps/" << dep << "\")\n";
+    }
+
+    cmakelists << "\n";
+  }
+}
+
+/**
+ * @brief Configure index dependencies - Phase 2: target_link_libraries
+ * This is called AFTER the target is created
+ *
+ * @param project_dir Project directory
+ * @param project_config Project configuration from cforge.toml
+ * @param deps_dir Dependencies directory (e.g., "vendor")
+ * @param cmakelists Output stream
+ */
+void configure_index_dependencies_phase2(const std::filesystem::path &project_dir,
+                                         const toml_reader &project_config,
+                                         const std::string &deps_dir,
+                                         std::ofstream &cmakelists) {
+  auto index_deps = get_index_dependencies(project_dir, project_config, deps_dir);
+  if (index_deps.empty()) {
+    return;
+  }
+
+  // Initialize registry to get package info (use project_dir so index is at project_dir/cforge-index)
+  registry reg(project_dir);
+
+  // Collect targets to link
+  std::vector<std::string> targets_to_link;
+
+  for (const auto &dep : index_deps) {
+    std::filesystem::path pkg_path = project_dir / deps_dir / dep;
+
+    // Try to load package info from registry
+    auto pkg_info = reg.get_package(dep);
+
+    std::string cmake_target;
+
+    if (pkg_info) {
+      cmake_target = pkg_info->integration.cmake_target;
+    }
+
+    if (cmake_target.empty()) {
+      // Default: assume target is dep::dep
+      cmake_target = dep + "::" + dep;
+    }
+
+    // Link if package has CMakeLists.txt (even for header-only, target_link_libraries
+    // propagates include directories for INTERFACE targets)
+    if (std::filesystem::exists(pkg_path / "CMakeLists.txt") && !cmake_target.empty()) {
+      targets_to_link.push_back(cmake_target);
+    }
+  }
+
+  if (!targets_to_link.empty()) {
+    cmakelists << "# Link index dependencies\n";
+    cmakelists << "target_link_libraries(${PROJECT_NAME} PUBLIC\n";
+    for (const auto &target : targets_to_link) {
+      cmakelists << "    " << target << "\n";
+    }
+    cmakelists << ")\n\n";
+  }
+}
+
+/**
+ * @brief Configure index dependencies using FetchContent - Phase 1
+ * This generates FetchContent_Declare calls BEFORE the target is created
+ *
+ * @param project_dir Project directory (for registry lookup)
+ * @param project_config Project configuration from cforge.toml
+ * @param cmakelists Output stream
+ */
+void configure_index_dependencies_fetchcontent_phase1(
+    const std::filesystem::path &project_dir,
+    const toml_reader &project_config,
+    std::ofstream &cmakelists) {
+  auto index_deps = get_index_dependencies_with_versions(project_config);
+  if (index_deps.empty()) {
+    return;
+  }
+
+  // Initialize registry to get package info
+  registry reg(project_dir);
+
+  cmakelists << "# Index dependencies via FetchContent\n";
+  cmakelists << "include(FetchContent)\n\n";
+
+  std::vector<std::string> deps_to_fetch;
+
+  for (const auto &dep : index_deps) {
+    // Get package info from registry
+    auto pkg_info = reg.get_package(dep.name);
+    if (!pkg_info) {
+      logger::print_warning("Package '" + dep.name + "' not found in registry, skipping FetchContent");
+      continue;
+    }
+
+    if (pkg_info->repository.empty()) {
+      logger::print_warning("Package '" + dep.name + "' has no repository URL, skipping FetchContent");
+      continue;
+    }
+
+    // Resolve version to a git tag
+    std::string git_tag = dep.version;
+    for (const auto &ver : pkg_info->versions) {
+      if (ver.version == dep.version) {
+        git_tag = ver.tag;
+        break;
+      }
+    }
+
+    // If using tag_pattern, construct the tag
+    if (git_tag == dep.version && !pkg_info->tags.pattern.empty()) {
+      git_tag = pkg_info->tags.pattern;
+      size_t pos = git_tag.find("{version}");
+      if (pos != std::string::npos) {
+        git_tag.replace(pos, 9, dep.version);
+      }
+    }
+
+    cmakelists << "# " << dep.name << " v" << dep.version << "\n";
+
+    // Add CMake options from package config
+    for (const auto &[opt_key, opt_val] : pkg_info->integration.cmake_options) {
+      cmakelists << "set(" << opt_key << " " << opt_val << " CACHE BOOL \"\" FORCE)\n";
+    }
+
+    // FetchContent_Declare
+    cmakelists << "FetchContent_Declare(\n";
+    cmakelists << "    " << dep.name << "\n";
+    cmakelists << "    GIT_REPOSITORY " << pkg_info->repository << "\n";
+    cmakelists << "    GIT_TAG " << git_tag << "\n";
+    cmakelists << "    GIT_SHALLOW TRUE\n";
+    cmakelists << ")\n\n";
+
+    deps_to_fetch.push_back(dep.name);
+  }
+
+  // FetchContent_MakeAvailable for all dependencies
+  if (!deps_to_fetch.empty()) {
+    cmakelists << "FetchContent_MakeAvailable(";
+    for (size_t i = 0; i < deps_to_fetch.size(); ++i) {
+      if (i > 0) cmakelists << " ";
+      cmakelists << deps_to_fetch[i];
+    }
+    cmakelists << ")\n\n";
+  }
+}
+
+/**
+ * @brief Configure index dependencies using FetchContent - Phase 2
+ * This generates target_link_libraries calls AFTER the target is created
+ *
+ * @param project_dir Project directory (for registry lookup)
+ * @param project_config Project configuration from cforge.toml
+ * @param cmakelists Output stream
+ */
+void configure_index_dependencies_fetchcontent_phase2(
+    const std::filesystem::path &project_dir,
+    const toml_reader &project_config,
+    std::ofstream &cmakelists) {
+  auto index_deps = get_index_dependencies_with_versions(project_config);
+  if (index_deps.empty()) {
+    return;
+  }
+
+  // Initialize registry to get package info
+  registry reg(project_dir);
+
+  // Collect targets to link
+  std::vector<std::string> targets_to_link;
+
+  for (const auto &dep : index_deps) {
+    auto pkg_info = reg.get_package(dep.name);
+    if (!pkg_info || pkg_info->repository.empty()) {
+      // Fallback: assume target is dep::dep if package not in registry
+      targets_to_link.push_back(dep.name + "::" + dep.name);
+      continue;
+    }
+
+    std::string cmake_target = pkg_info->integration.cmake_target;
+
+    if (cmake_target.empty()) {
+      cmake_target = dep.name + "::" + dep.name;
+    }
+
+    // Always link to the CMake target - even for header-only libraries,
+    // target_link_libraries propagates include directories for INTERFACE targets
+    targets_to_link.push_back(cmake_target);
+  }
+
+  if (!targets_to_link.empty()) {
+    cmakelists << "# Link FetchContent dependencies\n";
+    cmakelists << "target_link_libraries(${PROJECT_NAME} PUBLIC\n";
+    for (const auto &target : targets_to_link) {
+      cmakelists << "    " << target << "\n";
+    }
+    cmakelists << ")\n\n";
+  }
+}
+
+/**
  * @brief Generate a CMakeLists.txt file from cforge.toml configuration
  *
  * @param project_dir Project directory
@@ -897,6 +1245,15 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
   // Handle Git dependencies
   configure_git_dependencies_in_cmake(project_config, deps_dir, cmakelists);
 
+  // Handle index dependencies phase 1 (before target)
+  // Check if fetch_content mode is enabled (default: true)
+  bool use_fetch_content = project_config.get_bool("dependencies.fetch_content", true);
+  if (use_fetch_content) {
+    configure_index_dependencies_fetchcontent_phase1(project_dir, project_config, cmakelists);
+  } else {
+    configure_index_dependencies_phase1(project_dir, project_config, deps_dir, cmakelists);
+  }
+
   // Source files - use the original project source directory
   cmakelists << "# Add source files\n";
   cmakelists << "file(GLOB_RECURSE SOURCES\n";
@@ -981,6 +1338,13 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
     cmakelists << "target_include_directories(${PROJECT_NAME} PUBLIC\n";
     cmakelists << "    \"${SOURCE_DIR}/include\"\n";
     cmakelists << ")\n\n";
+  }
+
+  // Handle index dependencies phase 2 (target_link_libraries - after target)
+  if (use_fetch_content) {
+    configure_index_dependencies_fetchcontent_phase2(project_dir, project_config, cmakelists);
+  } else {
+    configure_index_dependencies_phase2(project_dir, project_config, deps_dir, cmakelists);
   }
 
   // Handle workspace project dependencies includes

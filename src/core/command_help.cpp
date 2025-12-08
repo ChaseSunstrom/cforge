@@ -43,9 +43,11 @@ cforge_int_t cforge_cmd_help(const cforge_context_t *ctx) {
     logger::print_plain("  deps      Manage Git dependencies");
     logger::print_plain("  vcpkg     Manage vcpkg dependencies");
     logger::print_plain("  install   Install a cforge project to the system");
+    logger::print_plain("  search    Search for packages in the registry");
+    logger::print_plain("  info      Show detailed package information");
     logger::print_plain("  add       Add a dependency to the project");
     logger::print_plain("  remove    Remove a dependency from the project");
-    logger::print_plain("  update    Update cforge");
+    logger::print_plain("  update    Update cforge or packages");
     logger::print_plain("  ide       Generate IDE project files");
     logger::print_plain("  list      List dependencies or projects");
     logger::print_plain(
@@ -285,14 +287,30 @@ cforge_int_t cforge_cmd_help(const cforge_context_t *ctx) {
   } else if (specific_command == "add") {
     logger::print_plain("cforge add - Add a dependency");
     logger::print_plain("");
-    logger::print_plain("Usage: cforge add <package> [options]");
+    logger::print_plain("Usage: cforge add <package>[@version] [options]");
     logger::print_plain("");
     logger::print_plain("Arguments:");
-    logger::print_plain(
-        "  package          Package to add (format: name[:version])");
+    logger::print_plain("  package          Package name (e.g., fmt, spdlog)");
+    logger::print_plain("  @version         Optional version (e.g., @11.1.4, @1.*)");
     logger::print_plain("");
-    logger::print_plain("Options:");
+    logger::print_plain("Source Options (default: registry):");
+    logger::print_plain("  --git <url>      Add as Git dependency");
+    logger::print_plain("  --tag <tag>      Git tag (with --git)");
+    logger::print_plain("  --branch <name>  Git branch (with --git)");
+    logger::print_plain("  --vcpkg          Add as vcpkg package");
+    logger::print_plain("  --index          Add from registry (default)");
+    logger::print_plain("");
+    logger::print_plain("Other Options:");
+    logger::print_plain("  --features <f>   Comma-separated features to enable");
+    logger::print_plain("  --header-only    Mark as header-only library");
     logger::print_plain("  -v, --verbose    Show verbose output");
+    logger::print_plain("");
+    logger::print_plain("Examples:");
+    logger::print_plain("  cforge add fmt                    Add fmt from registry");
+    logger::print_plain("  cforge add fmt@11.1.4             Add specific version");
+    logger::print_plain("  cforge add spdlog --features async");
+    logger::print_plain("  cforge add boost --vcpkg          Add from vcpkg");
+    logger::print_plain("  cforge add mylib --git https://github.com/user/mylib --tag v1.0");
   } else if (specific_command == "remove") {
     logger::print_plain("cforge remove - Remove a dependency");
     logger::print_plain("");
@@ -303,13 +321,54 @@ cforge_int_t cforge_cmd_help(const cforge_context_t *ctx) {
     logger::print_plain("");
     logger::print_plain("Options:");
     logger::print_plain("  -v, --verbose    Show verbose output");
-  } else if (specific_command == "update") {
-    logger::print_plain("cforge update - Update cforge");
+  } else if (specific_command == "search") {
+    logger::print_plain("cforge search - Search for packages in the registry");
     logger::print_plain("");
-    logger::print_plain("Usage: cforge update [options]");
+    logger::print_plain("Usage: cforge search <query> [options]");
+    logger::print_plain("");
+    logger::print_plain("Arguments:");
+    logger::print_plain("  query            Search term to find packages");
     logger::print_plain("");
     logger::print_plain("Options:");
+    logger::print_plain("  --limit <n>      Maximum results to show (default: 20)");
+    logger::print_plain("  --update         Force update the package index first");
     logger::print_plain("  -v, --verbose    Show verbose output");
+    logger::print_plain("");
+    logger::print_plain("Examples:");
+    logger::print_plain("  cforge search json          Find JSON-related packages");
+    logger::print_plain("  cforge search logging       Find logging libraries");
+    logger::print_plain("  cforge search --limit 5 ui  Show top 5 UI packages");
+  } else if (specific_command == "info") {
+    logger::print_plain("cforge info - Show detailed package information");
+    logger::print_plain("");
+    logger::print_plain("Usage: cforge info <package> [options]");
+    logger::print_plain("");
+    logger::print_plain("Arguments:");
+    logger::print_plain("  package          Name of package to get info for");
+    logger::print_plain("");
+    logger::print_plain("Options:");
+    logger::print_plain("  --versions       Show all available versions");
+    logger::print_plain("  --update         Force update the package index first");
+    logger::print_plain("  -v, --verbose    Show verbose output");
+    logger::print_plain("");
+    logger::print_plain("Examples:");
+    logger::print_plain("  cforge info fmt             Show fmt package details");
+    logger::print_plain("  cforge info spdlog --versions  Show all spdlog versions");
+  } else if (specific_command == "update") {
+    logger::print_plain("cforge update - Update cforge or packages");
+    logger::print_plain("");
+    logger::print_plain("Usage: cforge update <--self|--packages> [options]");
+    logger::print_plain("");
+    logger::print_plain("Options:");
+    logger::print_plain("  -s, --self       Update cforge itself to latest version");
+    logger::print_plain("  -p, --packages   Update the package registry index");
+    logger::print_plain("  -v, --verbose    Show verbose output");
+    logger::print_plain("");
+    logger::print_plain("Examples:");
+    logger::print_plain("  cforge update --self       Update cforge to latest");
+    logger::print_plain("  cforge update --packages   Refresh package registry");
+    logger::print_plain("");
+    logger::print_plain("Note: You must specify either --self or --packages");
   } else if (specific_command == "vcpkg") {
     logger::print_plain("cforge vcpkg - Run vcpkg commands");
     logger::print_plain("");

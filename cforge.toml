@@ -23,9 +23,6 @@ flags = ["DEBUG_INFO", "NO_OPT"]
 defines = ["NDEBUG=1", "FMT_HEADER_ONLY=ON", "FMT_UNICODE=0"]
 flags = ["OPTIMIZE"]
 
-[test]
-enabled = false
-
 [package]
 enabled = true
 generators = ["ZIP", "TGZ", "DEB"]
@@ -34,9 +31,6 @@ contact = "Chase Sunstrom <casunstrom@gmail.com>"
 
 [dependencies]
 directory = "vendor"
-
-[dependencies.git]
-# TOML parsing library - using latest main branch
-tomlplusplus = { url = "https://github.com/marzer/tomlplusplus.git", tag = "v3.4.0", link = false }
-# Formatting library - using latest main branch
-fmt = { url = "https://github.com/fmtlib/fmt.git", tag = "11.1.4" }
+tomlplusplus = "3.4.0"
+fetch_content = false
+fmt = "11.1.4"

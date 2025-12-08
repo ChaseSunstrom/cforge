@@ -236,6 +236,200 @@ std::optional<package_info> registry::get_package(const std::string &name) const
   return load_package_file(name);
 }
 
+std::string registry::pattern_to_regex(const std::string &pattern) {
+  // Convert pattern like "v{version}" to regex like "^v([0-9]+\\.[0-9]+\\.?[0-9]*)$"
+  std::string regex_str = "^";
+  size_t pos = 0;
+  size_t version_pos = pattern.find("{version}");
+
+  if (version_pos == std::string::npos) {
+    // No {version} placeholder, treat whole pattern as version
+    return "^([0-9]+(?:\\.[0-9]+)*)$";
+  }
+
+  // Escape everything before {version}
+  for (size_t i = 0; i < version_pos; ++i) {
+    char c = pattern[i];
+    if (c == '.' || c == '*' || c == '+' || c == '?' || c == '^' ||
+        c == '$' || c == '[' || c == ']' || c == '(' || c == ')' ||
+        c == '{' || c == '}' || c == '|' || c == '\\') {
+      regex_str += '\\';
+    }
+    regex_str += c;
+  }
+
+  // Add version capture group - matches semver-like versions
+  regex_str += "([0-9]+(?:\\.[0-9]+)*)";
+
+  // Escape everything after {version}
+  for (size_t i = version_pos + 9; i < pattern.size(); ++i) {
+    char c = pattern[i];
+    if (c == '.' || c == '*' || c == '+' || c == '?' || c == '^' ||
+        c == '$' || c == '[' || c == ']' || c == '(' || c == ')' ||
+        c == '{' || c == '}' || c == '|' || c == '\\') {
+      regex_str += '\\';
+    }
+    regex_str += c;
+  }
+
+  regex_str += "$";
+  return regex_str;
+}
+
+std::string registry::version_to_tag(const std::string &version,
+                                      const std::string &pattern) {
+  std::string tag = pattern;
+  size_t pos = tag.find("{version}");
+  if (pos != std::string::npos) {
+    tag.replace(pos, 9, version);
+  }
+  return tag;
+}
+
+std::vector<package_version>
+registry::fetch_git_tags(const std::string &repo_url,
+                          const tag_config &config) const {
+  std::vector<package_version> versions;
+
+  // Check in-memory cache first
+  auto cache_it = version_cache_.find(repo_url);
+  if (cache_it != version_cache_.end()) {
+    return cache_it->second;
+  }
+
+  logger::print_verbose("Fetching tags from " + repo_url);
+
+  // Run git ls-remote --tags
+  std::string stdout_output;
+  auto result = execute_process(
+      "git", {"ls-remote", "--tags", "--refs", repo_url}, "",
+      [&stdout_output](const std::string &line) { stdout_output += line + "\n"; },
+      [](const std::string &) {}, 30);
+
+  if (!result.success) {
+    logger::print_verbose("Failed to fetch tags from " + repo_url);
+    return versions;
+  }
+
+  // Parse the output - format: "SHA\trefs/tags/tagname"
+  std::string regex_str = pattern_to_regex(config.pattern);
+  std::regex version_regex;
+  try {
+    version_regex = std::regex(regex_str);
+  } catch (const std::regex_error &e) {
+    logger::print_verbose("Invalid tag pattern regex: " + regex_str);
+    return versions;
+  }
+
+  std::istringstream iss(stdout_output);
+  std::string line;
+
+  while (std::getline(iss, line)) {
+    // Find the tag name after refs/tags/
+    size_t tag_pos = line.find("refs/tags/");
+    if (tag_pos == std::string::npos) {
+      continue;
+    }
+
+    std::string tag = line.substr(tag_pos + 10);
+
+    // Trim whitespace
+    tag.erase(tag.find_last_not_of(" \t\r\n") + 1);
+
+    // Check exclusions
+    bool excluded = false;
+    for (const auto &excl : config.exclude) {
+      if (tag.find(excl) != std::string::npos) {
+        excluded = true;
+        break;
+      }
+    }
+    if (excluded) {
+      continue;
+    }
+
+    // Extract version using regex
+    std::smatch match;
+    if (std::regex_match(tag, match, version_regex) && match.size() >= 2) {
+      package_version ver;
+      ver.version = match[1].str();
+      ver.tag = tag;
+      versions.push_back(ver);
+    }
+  }
+
+  // Sort by version (newest first)
+  std::sort(versions.begin(), versions.end(),
+            [](const package_version &a, const package_version &b) {
+              return compare_versions(a.version, b.version) > 0;
+            });
+
+  // Limit number of versions
+  if (versions.size() > static_cast<size_t>(config.max_versions)) {
+    versions.resize(config.max_versions);
+  }
+
+  // Cache the results
+  version_cache_[repo_url] = versions;
+
+  return versions;
+}
+
+std::vector<package_version>
+registry::load_version_cache(const std::string &name) const {
+  std::vector<package_version> versions;
+  // Always use global cache directory for version caching (not project-local)
+  std::filesystem::path cache_file = get_default_cache_dir() / "versions" / (name + ".cache");
+
+  if (!std::filesystem::exists(cache_file)) {
+    return versions;
+  }
+
+  // Check if cache is still valid (1 hour)
+  auto mod_time = std::filesystem::last_write_time(cache_file);
+  auto now = std::filesystem::file_time_type::clock::now();
+  auto age = std::chrono::duration_cast<std::chrono::hours>(now - mod_time);
+  if (age.count() > 1) {
+    return versions;  // Cache expired
+  }
+
+  std::ifstream file(cache_file);
+  if (!file) {
+    return versions;
+  }
+
+  std::string line;
+  while (std::getline(file, line)) {
+    size_t tab_pos = line.find('\t');
+    if (tab_pos != std::string::npos) {
+      package_version ver;
+      ver.version = line.substr(0, tab_pos);
+      ver.tag = line.substr(tab_pos + 1);
+      versions.push_back(ver);
+    }
+  }
+
+  return versions;
+}
+
+void registry::save_version_cache(
+    const std::string &name,
+    const std::vector<package_version> &versions) const {
+  // Always use global cache directory for version caching (not project-local)
+  std::filesystem::path version_cache_dir = get_default_cache_dir() / "versions";
+  std::filesystem::create_directories(version_cache_dir);
+
+  std::filesystem::path cache_file = version_cache_dir / (name + ".cache");
+  std::ofstream file(cache_file);
+  if (!file) {
+    return;
+  }
+
+  for (const auto &ver : versions) {
+    file << ver.version << "\t" << ver.tag << "\n";
+  }
+}
+
 std::optional<package_info>
 registry::load_package_file(const std::string &name) const {
   // Determine the package file path
@@ -267,17 +461,34 @@ registry::load_package_file(const std::string &name) const {
   info.categories = reader.get_string_array("package.categories");
   info.verified = reader.get_bool("package.verified", false);
 
-  // Integration
-  info.integration.type = reader.get_string("integration.type", "cmake");
-  info.integration.cmake_target = reader.get_string("integration.cmake_target", "");
-  info.integration.include_dir = reader.get_string("integration.include_dir", "");
+  // Tag discovery configuration
+  info.tags.pattern = reader.get_string("package.tag_pattern", "v{version}");
+  info.tags.exclude = reader.get_string_array("package.tag_exclude");
+  info.tags.max_versions = reader.get_int("package.max_versions", 50);
+  info.auto_discover_versions = reader.get_bool("package.auto_versions", true);
+
+  // Integration - support both old [integration] and new [cmake] sections
+  info.integration.type = reader.get_string("integration.type",
+                                            reader.get_string("cmake.type", "cmake"));
+  info.integration.cmake_target = reader.get_string("integration.cmake_target",
+                                                    reader.get_string("cmake.target", ""));
+  info.integration.include_dir = reader.get_string("integration.include_dir",
+                                                   reader.get_string("cmake.include_dir", ""));
   info.integration.single_header = reader.get_string("integration.single_header", "");
   info.integration.cmake_subdir = reader.get_string("integration.cmake_subdir", "");
   info.integration.header_only_option =
       reader.get_string("integration.header_only_option", "");
 
+  // Check if header_only is set at cmake level
+  if (reader.get_bool("cmake.header_only", false)) {
+    info.integration.type = "header_only";
+  }
+
   // Default features
-  info.default_features = reader.get_string_array("features.default");
+  info.default_features = reader.get_string_array("package.features.default");
+  if (info.default_features.empty()) {
+    info.default_features = reader.get_string_array("features.default");
+  }
 
   // Features
   for (const auto &feature_name : reader.get_table_keys("features")) {
@@ -290,18 +501,22 @@ registry::load_package_file(const std::string &name) const {
     std::string prefix = "features." + feature_name;
     feat.cmake_option = reader.get_string(prefix + ".option", "");
     feat.description = reader.get_string(prefix + ".description", "");
-    feat.required_deps = reader.get_string_array(prefix + ".requires.dependencies");
+    // Support both inline requires and nested requires.dependencies
+    feat.required_deps = reader.get_string_array(prefix + ".requires");
+    if (feat.required_deps.empty()) {
+      feat.required_deps = reader.get_string_array(prefix + ".requires.dependencies");
+    }
 
     info.features[feature_name] = feat;
   }
 
-  // Versions - we need to handle the array of tables
-  // For now, parse from raw file
+  // First try to load explicit [[versions]] from file
   std::ifstream file(pkg_file);
   if (file) {
     std::string line;
     package_version current_ver;
     bool in_version = false;
+    bool has_explicit_versions = false;
 
     while (std::getline(file, line)) {
       // Trim whitespace
@@ -312,6 +527,7 @@ registry::load_package_file(const std::string &name) const {
       line = line.substr(start);
 
       if (line.find("[[versions]]") == 0) {
+        has_explicit_versions = true;
         if (in_version && !current_ver.version.empty()) {
           info.versions.push_back(current_ver);
         }
@@ -361,6 +577,23 @@ registry::load_package_file(const std::string &name) const {
     // Don't forget the last version
     if (in_version && !current_ver.version.empty()) {
       info.versions.push_back(current_ver);
+    }
+
+    // If no explicit versions and auto-discover is enabled, fetch from Git
+    if (info.versions.empty() && info.auto_discover_versions &&
+        !info.repository.empty()) {
+      // Try cache first
+      info.versions = load_version_cache(name);
+
+      if (info.versions.empty()) {
+        // Fetch from Git
+        info.versions = fetch_git_tags(info.repository, info.tags);
+
+        // Cache the results
+        if (!info.versions.empty()) {
+          save_version_cache(name, info.versions);
+        }
+      }
     }
   }
 
