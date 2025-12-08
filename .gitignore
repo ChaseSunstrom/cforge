@@ -8,6 +8,7 @@ out/
 build-debug/
 build-release/
 cforge/
+cforge-index/
 
 # CMake build files
 CMakeFiles/

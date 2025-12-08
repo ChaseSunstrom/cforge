@@ -252,19 +252,24 @@ update_dependencies_with_git(const std::filesystem::path &project_dir,
  * @return cforge_int_t Exit code (0 for success)
  */
 cforge_int_t cforge_cmd_update(const cforge_context_t *ctx) {
-  // Determine if we're updating a project (cforge.toml present) or cforge
-  // itself
   std::filesystem::path cwd = ctx->working_dir;
   std::filesystem::path config_file = cwd / "cforge.toml";
   bool project_present = std::filesystem::exists(config_file);
   installer installer_instance;
 
-  // Parse flags for self-update
+  // Parse flags
   std::string install_path;
   bool add_to_path = false;
+  bool update_self = false;
+  bool update_packages = false;
+
   for (int i = 0; i < ctx->args.arg_count; ++i) {
     std::string arg = ctx->args.args[i];
-    if (arg == "--path" || arg == "-p") {
+    if (arg == "--self" || arg == "-s") {
+      update_self = true;
+    } else if (arg == "--packages" || arg == "-p") {
+      update_packages = true;
+    } else if (arg == "--path") {
       if (i + 1 < ctx->args.arg_count) {
         install_path = ctx->args.args[++i];
       }
@@ -273,7 +278,30 @@ cforge_int_t cforge_cmd_update(const cforge_context_t *ctx) {
     }
   }
 
-  if (!project_present) {
+  // Require explicit flag
+  if (!update_self && !update_packages) {
+    logger::print_error("Please specify what to update:");
+    logger::print_action("--self, -s", "Update cforge itself");
+    logger::print_action("--packages, -p", "Update project dependencies");
+    logger::print_action("Usage", "cforge update --self");
+    logger::print_action("Usage", "cforge update --packages");
+    return 1;
+  }
+
+  // Cannot use both flags at once
+  if (update_self && update_packages) {
+    logger::print_error("Cannot use both --self and --packages at the same time");
+    return 1;
+  }
+
+  // Handle --packages when no project exists
+  if (update_packages && !project_present) {
+    logger::print_error("No cforge.toml found in current directory");
+    logger::print_action("Hint", "Run 'cforge init' to create a new project, or use 'cforge update --self' to update cforge");
+    return 1;
+  }
+
+  if (update_self) {
     // Self-update: clone, build, and install from GitHub
     logger::print_header("Updating cforge itself");
 
@@ -482,7 +510,7 @@ cforge_int_t cforge_cmd_update(const cforge_context_t *ctx) {
     return 0;
   }
 
-  // Otherwise, update project dependencies as before
+  // Update project dependencies (update_packages == true)
   logger::print_header("Updating project dependencies");
   // Check for verbosity
   bool verbose = logger::get_verbosity() == log_verbosity::VERBOSITY_VERBOSE;

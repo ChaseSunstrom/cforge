@@ -15,7 +15,7 @@
 
 # CForge
 
-![Version](https://img.shields.io/badge/beta-2.2.2-blue.svg)
+![Version](https://img.shields.io/badge/beta-2.3.0-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 [![GitHub stars](https://img.shields.io/github/stars/ChaseSunstrom/cforge?style=social)](https://github.com/ChaseSunstrom/cforge)
 
@@ -52,7 +52,8 @@ CForge is a modern build system designed to simplify C/C++ project management. I
 
 - **Simple TOML Configuration**: Easy project setup without complex CMake syntax
 - **Multi-platform**: Supports Windows, macOS, Linux
-- **Dependency Management**: Integrated support for `vcpkg`, Git, and custom dependencies
+- **Package Registry**: Search and install packages from the cforge index (like Cargo)
+- **Dependency Management**: Unified dependency config with registry, vcpkg, Git, and system deps
 - **Workspaces**: Manage multiple projects together with dependency resolution
 - **Cross-compilation**: Support for Android, iOS, Raspberry Pi, WebAssembly
 - **IDE Integration**: VS Code, CLion, Xcode, Visual Studio
@@ -64,7 +65,7 @@ CForge is a modern build system designed to simplify C/C++ project management. I
 - **Developer Tools**: Code formatting, linting, file templates, watch mode
 - **Shell Completions**: Tab completion for bash, zsh, PowerShell, fish
 - **Documentation Generation**: Integrated Doxygen support
-- **Package Management**: Create distributable packages for your software
+- **Package Creation**: Create distributable packages for your software
 
 ---
 
@@ -196,10 +197,12 @@ Hello, cforge!
 
 | Command      | Description                         | Example                            |
 |--------------|-------------------------------------|------------------------------------|
+| `search`     | Search for packages in registry     | `cforge search json`               |
+| `info`       | Show package details                | `cforge info spdlog --versions`    |
+| `add`        | Add a dependency                    | `cforge add fmt@11.1.4`            |
+| `remove`     | Remove a dependency                 | `cforge remove fmt`                |
 | `deps`       | Manage Git dependencies             | `cforge deps fetch`                |
 | `vcpkg`      | Manage vcpkg dependencies           | `cforge vcpkg install fmt`         |
-| `add`        | Add a dependency                    | `cforge add fmt --git`             |
-| `remove`     | Remove a dependency                 | `cforge remove fmt`                |
 | `tree`       | Visualize dependency tree           | `cforge tree`                      |
 | `lock`       | Manage dependency lock file         | `cforge lock --verify`             |
 
@@ -229,7 +232,7 @@ Hello, cforge!
 |--------------|-------------------------------------|------------------------------------|
 | `version`    | Show version information            | `cforge version`                   |
 | `help`       | Show help for a command             | `cforge help build`                |
-| `update`     | Update cforge itself                | `cforge update`                    |
+| `update`     | Update cforge or packages           | `cforge update --self`             |
 
 ### Command Options
 
@@ -581,33 +584,86 @@ flags = ["-Wall", "-Wextra", "-fPIC"]
 
 ## 📦 Working with Dependencies
 
-CForge supports multiple dependency management systems:
+CForge supports a unified dependency configuration with multiple sources. Dependencies are consolidated under the `[dependencies]` section with source options: `index` (default), `git`, `vcpkg`, `system`, and `project`.
+
+### Package Registry (Index Dependencies)
+
+CForge has a built-in package registry similar to Cargo. Search and add packages easily:
+
+```bash
+# Search for packages
+cforge search json
+
+# Get package info
+cforge info spdlog --versions
+
+# Add a package (defaults to registry)
+cforge add fmt@11.1.4
+
+# Add with specific features
+cforge add spdlog@1.15.0 --features async,stdout
+```
+
+Registry dependencies in `cforge.toml`:
+
+```toml
+[dependencies]
+# Simple version constraint
+fmt = "11.1.4"
+
+# With features and options
+spdlog = { version = "1.15.0", features = ["async", "stdout"] }
+
+# Header-only library
+nlohmann-json = { version = "3.11.3", header_only = true }
+
+# Wildcard versions (like Rust)
+catch2 = "3.*"          # Any 3.x version
+benchmark = "1.9.*"     # Any 1.9.x version
+```
+
+### Git Dependencies
+
+For packages not in the registry, use Git directly:
+
+```toml
+[dependencies]
+# Git with tag
+fmt = { git = "https://github.com/fmtlib/fmt.git", tag = "11.1.4" }
+
+# Git with branch
+imgui = { git = "https://github.com/ocornut/imgui.git", branch = "master", shallow = true }
+
+# Git with specific commit
+tomlplusplus = { git = "https://github.com/marzer/tomlplusplus.git", commit = "abc123" }
+```
+
+Or use the CLI:
+
+```bash
+cforge add fmt --git https://github.com/fmtlib/fmt.git --tag 11.1.4
+```
 
 ### vcpkg Integration
+
+Use vcpkg packages from the vcpkg ecosystem:
 
 ```toml
 [dependencies.vcpkg]
 enabled = true
 path = "~/.vcpkg"          # Optional: directory of vcpkg installation
 triplet = "x64-windows"    # Optional: specify vcpkg target triplet
-packages = ["fmt", "boost", "nlohmann-json"]
+
+[dependencies]
+boost = { vcpkg = true }
+openssl = { vcpkg = true, features = ["ssl", "crypto"] }
 ```
 
-### Git Dependencies
+Or use the CLI:
 
-```toml
-[dependencies.git.fmt]
-url = "https://github.com/fmtlib/fmt.git"
-tag = "11.1.4"
-
-[dependencies.git.nlohmann_json]
-url = "https://github.com/nlohmann/json.git"
-tag = "v3.11.3"
-
-[dependencies.git.imgui]
-url = "https://github.com/ocornut/imgui.git"
-branch = "master"
-shallow = true
+```bash
+cforge add boost --vcpkg
+cforge vcpkg install openssl
 ```
 
 ### System Dependencies
@@ -615,43 +671,50 @@ shallow = true
 System dependencies support three methods: `find_package`, `pkg_config`, and `manual`:
 
 ```toml
+[dependencies]
 # Auto-detect with CMake find_package
-[dependencies.system.OpenGL]
-method = "find_package"
-required = true
-components = ["GL", "GLU"]
-target = "OpenGL::GL"
+OpenGL = { system = true, method = "find_package", components = ["GL", "GLU"], target = "OpenGL::GL" }
 
 # Auto-detect with pkg-config
-[dependencies.system.x11]
-method = "pkg_config"
-package = "x11"
-platforms = ["linux"]  # Only on Linux
+x11 = { system = true, method = "pkg_config", package = "x11" }
 
 # Manual specification
-[dependencies.system.custom_lib]
-method = "manual"
-include_dirs = ["/usr/local/include/custom"]
-library_dirs = ["/usr/local/lib"]
-libraries = ["custom", "custom_util"]
-defines = ["USE_CUSTOM_LIB"]
-platforms = ["linux", "macos"]  # Limit to specific platforms
+custom_lib = { system = true, method = "manual", include_dirs = ["/usr/local/include/custom"], libraries = ["custom"] }
 ```
 
-### Subdirectory Dependencies
+### Platform-Specific Dependencies
 
-Use existing CMake projects as dependencies:
+Add dependencies only for specific platforms:
 
 ```toml
-[dependencies.subdirectory.spdlog]
-path = "extern/spdlog"
-target = "spdlog::spdlog"
-options = { SPDLOG_BUILD_TESTS = "OFF" }
+[platform.windows.dependencies]
+winapi = { vcpkg = true }
 
-[dependencies.subdirectory.glfw]
-path = "extern/glfw"
-target = "glfw"
-options = { GLFW_BUILD_EXAMPLES = "OFF", GLFW_BUILD_TESTS = "OFF" }
+[platform.linux.dependencies]
+x11 = { system = true, method = "pkg_config", package = "x11" }
+
+[platform.macos.dependencies]
+cocoa = { system = true, frameworks = ["Cocoa", "IOKit"] }
+```
+
+### Project Dependencies (Workspaces)
+
+Reference other projects in a workspace:
+
+```toml
+[dependencies]
+core = { project = true, include_dirs = ["include"], link = true }
+utils = { project = true, link_type = "PRIVATE" }
+```
+
+### Updating Dependencies
+
+```bash
+# Update all packages from registry
+cforge update --packages
+
+# Update cforge itself
+cforge update --self
 ```
 
 ### Dependency Lock File
@@ -908,7 +971,8 @@ cforge list configs
 
 - **Simple TOML Configuration**: Easy project setup without complex CMake syntax
 - **Multi-platform Support**: Windows, macOS, Linux compatibility
-- **Dependency Management**: vcpkg, Git, and system dependencies
+- **Package Registry**: Search and add packages from the cforge index (`cforge search`, `cforge info`, `cforge add`)
+- **Unified Dependency Management**: Consolidated `[dependencies]` section with registry, vcpkg, Git, system, and project sources
 - **Workspace Support**: Multi-project management with dependency resolution
 - **IDE Integration**: VS Code, CLion, Visual Studio, Xcode
 - **Testing**: Integrated test runner with category/filter support

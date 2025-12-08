@@ -13,6 +13,7 @@
 #define CFORGE_VERSION "beta-" PROJECT_VERSION
 
 #define CFORGE_REPO_URL "https://github.com/ChaseSunstrom/cforge.git"
+#define INDEX_REPO_URL "https://github.com/ChaseSunstrom/cforge-index.git"
 #define CFORGE_FILE "cforge.toml"
 #define DEFAULT_BUILD_DIR "build"
 #define DEFAULT_BIN_DIR "bin"

@@ -8,6 +8,7 @@
 #include "core/constants.h"
 #include "core/file_system.h"
 #include "core/process_utils.hpp"
+#include "core/registry.hpp"
 #include "core/toml_reader.hpp"
 #include "core/workspace.hpp"
 #include "core/workspace_utils.hpp"
@@ -382,16 +383,14 @@ static bool add_vcpkg_dependency_to_config(
     const std::filesystem::path & /*project_dir*/,
     const std::filesystem::path &config_file, const std::string &package_name,
     const std::string &package_version, bool verbose) {
-  // For vcpkg, we need to specify a version or use empty string for latest
+  // New consolidated format under [dependencies]
   std::string entry;
   if (package_version.empty()) {
-    // Use empty string for latest version in vcpkg
-    entry = package_name + " = \"\"";
+    entry = package_name + " = { source = \"vcpkg\" }";
   } else {
-    entry = package_name + " = \"" + package_version + "\"";
+    entry = package_name + " = { source = \"vcpkg\", version = \"" + package_version + "\" }";
   }
-  return add_dependency_to_section(config_file, "dependencies.vcpkg", entry,
-                                   verbose);
+  return add_dependency_to_section(config_file, "dependencies", entry, verbose);
 }
 
 static bool add_git_dependency_to_config(
@@ -404,16 +403,46 @@ static bool add_git_dependency_to_config(
     return false;
   }
 
-  // Build the entry with URL and tag
-  std::string entry = package_name + " = { url = \"" + package_url + "\"";
+  // New consolidated format under [dependencies]
+  std::string entry = package_name + " = { git = \"" + package_url + "\"";
   if (!tag.empty()) {
     entry += ", tag = \"" + tag + "\"";
-  } else {
-    entry += ", tag = \"\"";
   }
   entry += " }";
-  return add_dependency_to_section(config_file, "dependencies.git", entry,
-                                   verbose);
+  return add_dependency_to_section(config_file, "dependencies", entry, verbose);
+}
+
+static bool add_index_dependency_to_config(
+    const std::filesystem::path & /*project_dir*/,
+    const std::filesystem::path &config_file, const std::string &package_name,
+    const std::string &version, const std::vector<std::string> &features,
+    bool header_only, bool verbose) {
+  std::string entry;
+
+  // Simple format if no special options
+  if (features.empty() && !header_only) {
+    entry = package_name + " = \"" + (version.empty() ? "*" : version) + "\"";
+  } else {
+    // Complex format with options
+    entry = package_name + " = { version = \"" + (version.empty() ? "*" : version) + "\"";
+
+    if (!features.empty()) {
+      entry += ", features = [";
+      for (size_t i = 0; i < features.size(); ++i) {
+        if (i > 0) entry += ", ";
+        entry += "\"" + features[i] + "\"";
+      }
+      entry += "]";
+    }
+
+    if (header_only) {
+      entry += ", header_only = true";
+    }
+
+    entry += " }";
+  }
+
+  return add_dependency_to_section(config_file, "dependencies", entry, verbose);
 }
 
 /**
@@ -437,8 +466,10 @@ cforge_int_t cforge_cmd_add(const cforge_context_t *ctx) {
   }
 
   // Parse flags and arguments
-  bool mode_git = false, mode_vcpkg = false;
+  bool mode_git = false, mode_vcpkg = false, mode_index = false;
+  bool header_only = false;
   std::string tag_value;
+  std::vector<std::string> features;
   std::vector<std::string> args;
   for (int i = 0; i < ctx->args.arg_count; ++i)
     args.push_back(ctx->args.args[i]);
@@ -448,6 +479,10 @@ cforge_int_t cforge_cmd_add(const cforge_context_t *ctx) {
       mode_git = true;
     else if (args[i] == "--vcpkg")
       mode_vcpkg = true;
+    else if (args[i] == "--index")
+      mode_index = true;
+    else if (args[i] == "--header-only")
+      header_only = true;
     else if (args[i] == "--tag") {
       if (i + 1 < args.size()) {
         tag_value = args[i + 1];
@@ -456,29 +491,58 @@ cforge_int_t cforge_cmd_add(const cforge_context_t *ctx) {
         logger::print_error("--tag flag requires a value");
         return 1;
       }
+    } else if (args[i] == "--features" || args[i] == "-f") {
+      if (i + 1 < args.size()) {
+        // Parse comma-separated features
+        std::string feat_str = args[i + 1];
+        std::stringstream ss(feat_str);
+        std::string feat;
+        while (std::getline(ss, feat, ',')) {
+          // Trim whitespace
+          size_t start = feat.find_first_not_of(" \t");
+          size_t end = feat.find_last_not_of(" \t");
+          if (start != std::string::npos) {
+            features.push_back(feat.substr(start, end - start + 1));
+          }
+        }
+        ++i;
+      } else {
+        logger::print_error("--features flag requires a value");
+        return 1;
+      }
     } else
       filtered.push_back(args[i]);
   }
   args.swap(filtered);
-  if (mode_git && mode_vcpkg) {
-    logger::print_error("Cannot use both --git and --vcpkg");
+
+  // Count modes
+  int mode_count = (mode_git ? 1 : 0) + (mode_vcpkg ? 1 : 0) + (mode_index ? 1 : 0);
+  if (mode_count > 1) {
+    logger::print_error("Cannot use multiple source flags (--git, --vcpkg, --index)");
     return 1;
+  }
+
+  // Default to index mode if no mode specified
+  if (mode_count == 0) {
+    mode_index = true;
   }
 
   // Check if package name was provided
   if (args.empty() || args[0].empty() || args[0][0] == '-') {
     logger::print_error("package name not specified");
-    logger::print_action("Usage", "cforge add <package> [--git|--vcpkg]");
-    logger::print_action("For git dependencies",
-                         "cforge add --git <name> <url> [--tag <version>]");
-    logger::print_action("For vcpkg dependencies",
-                         "cforge add <package>[:version] [--vcpkg]");
+    logger::print_action("Usage", "cforge add <package>[@version] [options]");
+    logger::print_action("From registry", "cforge add fmt@11.1.4");
+    logger::print_action("With features", "cforge add spdlog --features async,fmt_external");
+    logger::print_action("Git dependency", "cforge add --git mylib https://github.com/user/lib --tag v1.0");
+    logger::print_action("vcpkg package", "cforge add openssl --vcpkg");
     return 1;
   }
 
-  // Extract package name and version or URL
+  // Extract package name and version
   std::string package_name = args[0];
-  std::string package_version_or_url;
+  std::string package_version;
+  std::string package_url;
+
   if (mode_git) {
     if (args.size() < 2) {
       logger::print_error("URL for git dependency not specified");
@@ -486,116 +550,145 @@ cforge_int_t cforge_cmd_add(const cforge_context_t *ctx) {
                            "cforge add --git <name> <url> [--tag <version>]");
       return 1;
     }
-    package_version_or_url = args[1];
+    package_url = args[1];
   } else {
-    // vcpkg mode or default: parse version
-    size_t colon_pos = package_name.find(':');
-    std::string package_version;
-    if (colon_pos != std::string::npos) {
-      package_version = package_name.substr(colon_pos + 1);
-      package_name = package_name.substr(0, colon_pos);
+    // Parse name@version format
+    size_t at_pos = package_name.find('@');
+    if (at_pos != std::string::npos) {
+      package_version = package_name.substr(at_pos + 1);
+      package_name = package_name.substr(0, at_pos);
     }
-    package_version_or_url = package_version;
   }
 
   // Check for verbosity
   bool verbose = logger::get_verbosity() == log_verbosity::VERBOSITY_VERBOSE;
 
+  // For index mode, verify the package exists in the registry
+  if (mode_index) {
+    registry reg;
+
+    // Update index if needed
+    if (reg.needs_update()) {
+      logger::print_status("Updating package index...");
+      reg.update();
+    }
+
+    auto pkg = reg.get_package(package_name);
+    if (!pkg) {
+      logger::print_error("Package '" + package_name + "' not found in registry");
+      logger::print_action("Hint", "Run 'cforge search " + package_name + "' to search for packages");
+      logger::print_action("Hint", "Use --git or --vcpkg to add from other sources");
+      return 1;
+    }
+
+    // Resolve version if not specified
+    if (package_version.empty()) {
+      package_version = reg.resolve_version(package_name, "*");
+      if (package_version.empty() && !pkg->versions.empty()) {
+        package_version = pkg->versions[0].version;
+      }
+    } else {
+      // Validate version exists
+      std::string resolved = reg.resolve_version(package_name, package_version);
+      if (resolved.empty()) {
+        logger::print_error("Version '" + package_version + "' not found for package '" + package_name + "'");
+        logger::print_action("Hint", "Run 'cforge info " + package_name + " --versions' to see available versions");
+        return 1;
+      }
+      package_version = resolved;
+    }
+
+    logger::print_action("Found", package_name + " " + package_version);
+  }
+
+  // Helper lambda to add dependency to a single project
+  auto add_to_project = [&](const std::filesystem::path &proj_dir,
+                            const std::filesystem::path &proj_config) -> bool {
+    bool cfg_ok = false;
+    bool inst_ok = true;
+
+    if (mode_git) {
+      // Get the configured dependency directory from cforge.toml
+      toml_reader project_config;
+      if (!project_config.load(proj_config.string())) {
+        logger::print_error("Failed to read project configuration");
+        return false;
+      }
+
+      std::string deps_dir =
+          project_config.get_string("dependencies.directory", "deps");
+      std::filesystem::path deps_path = proj_dir / deps_dir / package_name;
+
+      cfg_ok = add_git_dependency_to_config(proj_dir, proj_config, package_name,
+                                            package_url, tag_value, verbose);
+      inst_ok = clone_git_repo(package_url, deps_path.string(), tag_value, verbose);
+
+    } else if (mode_vcpkg) {
+      cfg_ok = add_vcpkg_dependency_to_config(proj_dir, proj_config, package_name,
+                                              package_version, verbose);
+      inst_ok = install_package_with_vcpkg(proj_dir, package_name,
+                                           package_version, verbose);
+
+    } else if (mode_index) {
+      // Add from registry - just update config (dependency will be fetched on build)
+      cfg_ok = add_index_dependency_to_config(proj_dir, proj_config, package_name,
+                                              package_version, features,
+                                              header_only, verbose);
+      // For index dependencies, we don't install immediately
+      // They will be fetched when building
+      inst_ok = true;
+    }
+
+    if (!cfg_ok) {
+      logger::print_error("Failed to update configuration for dependency: " +
+                          package_name);
+      return false;
+    }
+
+    if (!inst_ok) {
+      if (mode_vcpkg) {
+        logger::print_warning("Dependency '" + package_name +
+                              "' added to config, but installation failed. "
+                              "Run 'cforge vcpkg setup' then rebuild");
+      } else if (mode_git) {
+        logger::print_warning("Dependency '" + package_name +
+                              "' added to config, but clone failed");
+      }
+    }
+
+    return true;
+  };
+
   // Apply to each project in workspace or single project
   if (in_workspace_root) {
-    bool cfg_all = true;
-    bool inst_all = true;
+    bool all_ok = true;
     auto projects = cforge::get_workspace_projects(workspace_root);
+
     for (const auto &proj : projects) {
       auto proj_dir = workspace_root / proj;
       auto proj_config = proj_dir / CFORGE_FILE;
       if (!std::filesystem::exists(proj_config))
         continue;
-      bool cfg_ok = false;
-      bool inst_ok = true;
-      if (mode_git) {
-        // Get the configured dependency directory from cforge.toml
-        toml_reader project_config;
-        if (!project_config.load(proj_config.string())) {
-          logger::print_error("Failed to read project configuration");
-          return 1;
-        }
 
-        std::string deps_dir =
-            project_config.get_string("dependencies.directory", "deps");
-        std::filesystem::path deps_path = proj_dir / deps_dir / package_name;
-
-        cfg_ok = add_git_dependency_to_config(
-            proj_dir, proj_config, package_name, package_version_or_url,
-            tag_value, verbose);
-        inst_ok = clone_git_repo(package_version_or_url, deps_path.string(),
-                                 tag_value, verbose);
-      } else {
-        cfg_ok =
-            add_vcpkg_dependency_to_config(proj_dir, proj_config, package_name,
-                                           package_version_or_url, verbose);
-        inst_ok = install_package_with_vcpkg(proj_dir, package_name,
-                                             package_version_or_url, verbose);
+      if (!add_to_project(proj_dir, proj_config)) {
+        all_ok = false;
       }
-      cfg_all = cfg_all && cfg_ok;
-      inst_all = inst_all && inst_ok;
     }
-    if (!cfg_all) {
-      logger::print_error("Failed to update configuration for dependency: " +
-                          package_name + " in some workspace projects");
+
+    if (!all_ok) {
+      logger::print_error("Failed to add dependency to some workspace projects");
       return 1;
     }
-    if (!inst_all) {
-      logger::print_warning(
-          "Dependency '" + package_name +
-          "' added to config in workspace, but installation failed in some "
-          "projects. Run 'cforge vcpkg setup' then 'cforge add " +
-          package_name + "' to install");
-    }
+
     logger::print_action("Added", package_name + " to workspace projects");
     return 0;
   }
 
   // Single project addition
-  {
-    bool cfg_ok = false;
-    bool inst_ok = true;
-    if (mode_git) {
-      // Get the configured dependency directory from cforge.toml
-      toml_reader project_config;
-      if (!project_config.load(config_file.string())) {
-        logger::print_error("Failed to read project configuration");
-        return 1;
-      }
-
-      std::string deps_dir =
-          project_config.get_string("dependencies.directory", "deps");
-      std::filesystem::path deps_path = project_dir / deps_dir / package_name;
-
-      cfg_ok = add_git_dependency_to_config(
-          project_dir, config_file, package_name, package_version_or_url,
-          tag_value, verbose);
-      inst_ok = clone_git_repo(package_version_or_url, deps_path.string(),
-                               tag_value, verbose);
-    } else {
-      cfg_ok =
-          add_vcpkg_dependency_to_config(project_dir, config_file, package_name,
-                                         package_version_or_url, verbose);
-      inst_ok = install_package_with_vcpkg(project_dir, package_name,
-                                           package_version_or_url, verbose);
-    }
-    if (!cfg_ok) {
-      logger::print_error("Failed to update configuration for dependency: " +
-                          package_name);
-      return 1;
-    }
-    if (!inst_ok) {
-      logger::print_warning("Dependency '" + package_name +
-                            "' added to config, but installation failed. Run "
-                            "'cforge vcpkg setup' then 'cforge add " +
-                            package_name + "' to install");
-    }
-    logger::print_action("Added", package_name);
-    return 0;
+  if (!add_to_project(project_dir, config_file)) {
+    return 1;
   }
+
+  logger::print_action("Added", package_name + " " + package_version);
+  return 0;
 }

@@ -139,6 +139,10 @@ extern "C" cforge_int_t cforge_dispatch_command(const cforge_context_t *ctx) {
   } else if (strcmp(ctx->args.command, "bench") == 0 ||
              strcmp(ctx->args.command, "benchmark") == 0) {
     return cforge_cmd_bench(ctx);
+  } else if (strcmp(ctx->args.command, "search") == 0) {
+    return cforge_cmd_search(ctx);
+  } else if (strcmp(ctx->args.command, "info") == 0) {
+    return cforge_cmd_info(ctx);
   } else if (strcmp(ctx->args.command, "help") == 0 ||
              strcmp(ctx->args.command, "--help") == 0 ||
              strcmp(ctx->args.command, "-h") == 0) {

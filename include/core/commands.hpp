@@ -222,3 +222,19 @@ cforge_int_t cforge_cmd_new(const cforge_context_t *ctx);
  * @return cforge_int_t Exit code (0 for success)
  */
 cforge_int_t cforge_cmd_bench(const cforge_context_t *ctx);
+
+/**
+ * @brief Handle the 'search' command to search packages in the registry
+ *
+ * @param ctx Context containing parsed arguments
+ * @return cforge_int_t Exit code (0 for success)
+ */
+cforge_int_t cforge_cmd_search(const cforge_context_t *ctx);
+
+/**
+ * @brief Handle the 'info' command to display package information
+ *
+ * @param ctx Context containing parsed arguments
+ * @return cforge_int_t Exit code (0 for success)
+ */
+cforge_int_t cforge_cmd_info(const cforge_context_t *ctx);
