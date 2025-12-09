@@ -8,6 +8,7 @@
 #include "core/file_system.h"
 #include "core/installer.hpp"
 #include "core/process_utils.hpp"
+#include "core/registry.hpp"
 #include "core/toml_reader.hpp"
 #include <filesystem>
 #include <map>
@@ -282,7 +283,7 @@ cforge_int_t cforge_cmd_update(const cforge_context_t *ctx) {
   if (!update_self && !update_packages) {
     logger::print_error("Please specify what to update:");
     logger::print_action("--self, -s", "Update cforge itself");
-    logger::print_action("--packages, -p", "Update project dependencies");
+    logger::print_action("--packages, -p", "Update the package registry index");
     logger::print_action("Usage", "cforge update --self");
     logger::print_action("Usage", "cforge update --packages");
     return 1;
@@ -291,13 +292,6 @@ cforge_int_t cforge_cmd_update(const cforge_context_t *ctx) {
   // Cannot use both flags at once
   if (update_self && update_packages) {
     logger::print_error("Cannot use both --self and --packages at the same time");
-    return 1;
-  }
-
-  // Handle --packages when no project exists
-  if (update_packages && !project_present) {
-    logger::print_error("No cforge.toml found in current directory");
-    logger::print_action("Hint", "Run 'cforge init' to create a new project, or use 'cforge update --self' to update cforge");
     return 1;
   }
 
@@ -510,44 +504,15 @@ cforge_int_t cforge_cmd_update(const cforge_context_t *ctx) {
     return 0;
   }
 
-  // Update project dependencies (update_packages == true)
-  logger::print_header("Updating project dependencies");
-  // Check for verbosity
-  bool verbose = logger::get_verbosity() == log_verbosity::VERBOSITY_VERBOSE;
+  // Update package registry index (update_packages == true)
+  logger::print_header("Updating package registry index");
 
-  // Update vcpkg first
-  bool vcpkg_updated = update_vcpkg(cwd, verbose);
-  if (!vcpkg_updated) {
-    logger::print_warning("Failed to update vcpkg");
-  }
-
-  // Load project configuration
-  toml_reader config;
-  if (!config.load(config_file.string())) {
-    logger::print_error("Failed to parse configuration file: " +
-                        config_file.string());
-    return 1;
-  }
-  // Update vcpkg-managed dependencies from [dependencies.vcpkg]
-  std::map<std::string, std::string> vcpkg_deps;
-  for (const auto &key : config.get_table_keys("dependencies.vcpkg")) {
-    vcpkg_deps[key] =
-        config.get_string(std::string("dependencies.vcpkg.") + key, "*");
-  }
-  bool deps_updated = update_dependencies_with_vcpkg(cwd, vcpkg_deps, verbose);
-  if (!deps_updated) {
-    logger::print_warning("Failed to update some vcpkg dependencies");
-  }
-  // Update Git dependencies
-  bool git_ok = update_dependencies_with_git(cwd, config, verbose);
-  if (!git_ok) {
-    logger::print_warning("Failed to update some git dependencies");
-  }
-  if (vcpkg_updated && deps_updated && git_ok) {
-    logger::finished("Successfully updated all dependencies");
+  registry reg;
+  if (reg.update(true)) {  // force=true to always update
+    logger::finished("Package registry updated successfully");
     return 0;
   } else {
-    logger::print_error("Failed to update one or more dependencies");
+    logger::print_error("Failed to update package registry");
     return 1;
   }
 }
