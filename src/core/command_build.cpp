@@ -660,13 +660,8 @@ static bool run_cmake_configure(const std::vector<std::string> &cmake_args,
       formatted_errors = format_build_errors(pr.stdout_output);
     }
     if (!formatted_errors.empty()) {
-      std::istringstream iss(formatted_errors);
-      std::string line;
-      while (std::getline(iss, line)) {
-        if (!line.empty()) {
-          logger::print_error(line);
-        }
-      }
+      // Print formatted errors directly (they already contain "error" prefix from Rust-style formatting)
+      fmt::print("{}", formatted_errors);
     } else {
       // Fallback: print raw outputs
       if (!pr.stderr_output.empty()) {
@@ -824,10 +819,16 @@ static bool build_project(const std::filesystem::path &project_dir,
 
     // Generate/update lock file after dependencies are resolved
     {
+      bool use_fetch_content = project_config.get_bool("dependencies.fetch_content", true);
       std::string deps_dir_str =
           project_config.get_string("dependencies.directory", "deps");
       std::filesystem::path deps_path = project_dir / deps_dir_str;
-      if (std::filesystem::exists(deps_path)) {
+
+      if (use_fetch_content) {
+        // FetchContent mode: generate lock file from cforge.toml + registry
+        generate_lockfile_from_config(project_dir, project_config, verbose);
+      } else if (std::filesystem::exists(deps_path)) {
+        // Clone mode: scan deps directory
         update_lockfile(project_dir, deps_path, verbose);
       }
     }

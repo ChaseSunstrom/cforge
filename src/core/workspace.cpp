@@ -732,7 +732,7 @@ void configure_index_dependencies_phase1(const std::filesystem::path &project_di
   }
 
   // Initialize registry to get package info (use project_dir so index is at project_dir/cforge-index)
-  registry reg(project_dir);
+  registry reg;  // Use default cache directory
 
   cmakelists << "# Index dependencies (from cforge-index registry)\n";
 
@@ -791,7 +791,7 @@ void configure_index_dependencies_phase2(const std::filesystem::path &project_di
   }
 
   // Initialize registry to get package info (use project_dir so index is at project_dir/cforge-index)
-  registry reg(project_dir);
+  registry reg;  // Use default cache directory
 
   // Collect targets to link
   std::vector<std::string> targets_to_link;
@@ -848,7 +848,7 @@ void configure_index_dependencies_fetchcontent_phase1(
   }
 
   // Initialize registry to get package info
-  registry reg(project_dir);
+  registry reg;  // Use default cache directory
 
   cmakelists << "# Index dependencies via FetchContent\n";
   cmakelists << "include(FetchContent)\n\n";
@@ -933,7 +933,7 @@ void configure_index_dependencies_fetchcontent_phase2(
   }
 
   // Initialize registry to get package info
-  registry reg(project_dir);
+  registry reg;  // Use default cache directory
 
   // Collect targets to link
   std::vector<std::string> targets_to_link;

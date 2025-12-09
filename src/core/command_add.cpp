@@ -322,18 +322,26 @@ static bool add_dependency_to_section(const std::filesystem::path &config_file,
   int section_end = -1;
 
   // Read all lines and find the section
+  std::string section_header = "[" + section + "]";
   while (std::getline(file, line)) {
     lines.push_back(line);
 
-    // Check if this is our section
-    if (line.find("[" + section + "]") != std::string::npos) {
+    // Trim whitespace for comparison
+    std::string trimmed = line;
+    size_t start = trimmed.find_first_not_of(" \t");
+    if (start != std::string::npos) {
+      trimmed = trimmed.substr(start);
+    }
+
+    // Check if this is exactly our section (not a subsection like [dependencies.git])
+    if (trimmed == section_header) {
       in_section = true;
       section_found = true;
       continue;
     }
 
     // Check if we're leaving the section (new section starts)
-    if (in_section && !line.empty() && line[0] == '[') {
+    if (in_section && !trimmed.empty() && trimmed[0] == '[') {
       section_end = lines.size() - 1;
       in_section = false;
     }
@@ -345,8 +353,11 @@ static bool add_dependency_to_section(const std::filesystem::path &config_file,
     if (verbose) {
       logger::print_verbose("Creating new section: [" + section + "]");
     }
-    lines.push_back(""); // Add blank line before new section
-    lines.push_back("[" + section + "]");
+    // Add blank line before new section if file doesn't end with blank line
+    if (!lines.empty() && !lines.back().empty()) {
+      lines.push_back("");
+    }
+    lines.push_back(section_header);
     section_end = lines.size();
   }
 
