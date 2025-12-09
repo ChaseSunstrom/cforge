@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<VSTemplate Version="3.0.0" Type="Project" xmlns="http://schemas.microsoft.com/developer/vstemplate/2005">
+  <TemplateData>
+    <Name>cforge Workspace</Name>
+    <Description>A cforge workspace with multiple projects (app and library). Great for organizing larger C/C++ projects.</Description>
+    <ProjectType>VC</ProjectType>
+    <LanguageTag>cpp</LanguageTag>
+    <PlatformTag>Windows</PlatformTag>
+    <PlatformTag>Linux</PlatformTag>
+    <ProjectTypeTag>cforge</ProjectTypeTag>
+    <ProjectTypeTag>Workspace</ProjectTypeTag>
+    <SortOrder>1002</SortOrder>
+    <CreateNewFolder>true</CreateNewFolder>
+    <DefaultName>CforgeWorkspace</DefaultName>
+    <ProvideDefaultName>true</ProvideDefaultName>
+    <CreateInPlace>true</CreateInPlace>
+  </TemplateData>
+  <TemplateContent>
+    <Project File="CforgeWorkspace.vcxproj" ReplaceParameters="true">
+      <ProjectItem ReplaceParameters="true" TargetFileName="cforge.workspace.toml">cforge.workspace.toml</ProjectItem>
+      <ProjectItem ReplaceParameters="false" TargetFileName=".gitignore">.gitignore</ProjectItem>
+      <Folder Name="app" TargetFolderName="app">
+        <ProjectItem ReplaceParameters="true" TargetFileName="app.vcxproj">app.vcxproj</ProjectItem>
+        <ProjectItem ReplaceParameters="true" TargetFileName="cforge.toml">app_cforge.toml</ProjectItem>
+        <Folder Name="src" TargetFolderName="src">
+          <ProjectItem ReplaceParameters="true" TargetFileName="main.cpp">app_main.cpp</ProjectItem>
+        </Folder>
+      </Folder>
+      <Folder Name="lib" TargetFolderName="lib">
+        <ProjectItem ReplaceParameters="true" TargetFileName="lib.vcxproj">lib.vcxproj</ProjectItem>
+        <ProjectItem ReplaceParameters="true" TargetFileName="cforge.toml">lib_cforge.toml</ProjectItem>
+        <Folder Name="src" TargetFolderName="src">
+          <ProjectItem ReplaceParameters="true" TargetFileName="lib.cpp">lib.cpp</ProjectItem>
+        </Folder>
+        <Folder Name="include" TargetFolderName="include">
+          <ProjectItem ReplaceParameters="true" TargetFileName="lib.hpp">lib.hpp</ProjectItem>
+        </Folder>
+      </Folder>
+    </Project>
+  </TemplateContent>
+</VSTemplate>

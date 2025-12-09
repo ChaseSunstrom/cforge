@@ -1,0 +1,18 @@
+[project]
+name = "$safeprojectname$"
+version = "0.1.0"
+description = "A cforge C++ static library"
+cpp_standard = "17"
+c_standard = "11"
+binary_type = "static_library"
+authors = []
+license = "MIT"
+
+[build]
+build_type = "Debug"
+directory = "build"
+source_dirs = ["src"]
+include_dirs = ["include"]
+
+[dependencies]
+# Add dependencies here

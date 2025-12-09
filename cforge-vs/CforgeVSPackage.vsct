@@ -1,0 +1,144 @@
+<?xml version="1.0" encoding="utf-8"?>
+<CommandTable xmlns="http://schemas.microsoft.com/VisualStudio/2005-10-18/CommandTable" xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <Extern href="stdidcmd.h"/>
+  <Extern href="vsshlids.h"/>
+
+  <Commands package="guidCforgePackage">
+    <Groups>
+      <Group guid="guidCforgeMenuGroup" id="CforgeMenuGroup" priority="0x0600">
+        <Parent guid="guidSHLMainMenu" id="IDM_VS_MENU_TOOLS"/>
+      </Group>
+      <Group guid="guidCforgeMenuGroup" id="CforgeBuildMenuGroup" priority="0x0100">
+        <Parent guid="guidCforgeMenuGroup" id="CforgeMenu"/>
+      </Group>
+      <Group guid="guidCforgeMenuGroup" id="CforgeDependencyMenuGroup" priority="0x0200">
+        <Parent guid="guidCforgeMenuGroup" id="CforgeMenu"/>
+      </Group>
+      <Group guid="guidCforgeMenuGroup" id="CforgeToolMenuGroup" priority="0x0300">
+        <Parent guid="guidCforgeMenuGroup" id="CforgeMenu"/>
+      </Group>
+    </Groups>
+
+    <Menus>
+      <Menu guid="guidCforgeMenuGroup" id="CforgeMenu" priority="0x0100" type="Menu">
+        <Parent guid="guidCforgeMenuGroup" id="CforgeMenuGroup"/>
+        <Strings>
+          <ButtonText>cforge</ButtonText>
+        </Strings>
+      </Menu>
+    </Menus>
+
+    <Buttons>
+      <!-- Build Commands -->
+      <Button guid="guidCforgeMenuGroup" id="BuildCommandId" priority="0x0100" type="Button">
+        <Parent guid="guidCforgeMenuGroup" id="CforgeBuildMenuGroup"/>
+        <Strings>
+          <ButtonText>Build (Debug)</ButtonText>
+          <ToolTipText>Build project in Debug configuration</ToolTipText>
+        </Strings>
+      </Button>
+      <Button guid="guidCforgeMenuGroup" id="BuildReleaseCommandId" priority="0x0101" type="Button">
+        <Parent guid="guidCforgeMenuGroup" id="CforgeBuildMenuGroup"/>
+        <Strings>
+          <ButtonText>Build (Release)</ButtonText>
+          <ToolTipText>Build project in Release configuration</ToolTipText>
+        </Strings>
+      </Button>
+      <Button guid="guidCforgeMenuGroup" id="CleanCommandId" priority="0x0102" type="Button">
+        <Parent guid="guidCforgeMenuGroup" id="CforgeBuildMenuGroup"/>
+        <Strings>
+          <ButtonText>Clean</ButtonText>
+          <ToolTipText>Clean build artifacts</ToolTipText>
+        </Strings>
+      </Button>
+      <Button guid="guidCforgeMenuGroup" id="RunCommandId" priority="0x0103" type="Button">
+        <Parent guid="guidCforgeMenuGroup" id="CforgeBuildMenuGroup"/>
+        <Strings>
+          <ButtonText>Run</ButtonText>
+          <ToolTipText>Build and run the executable</ToolTipText>
+        </Strings>
+      </Button>
+      <Button guid="guidCforgeMenuGroup" id="TestCommandId" priority="0x0104" type="Button">
+        <Parent guid="guidCforgeMenuGroup" id="CforgeBuildMenuGroup"/>
+        <Strings>
+          <ButtonText>Run Tests</ButtonText>
+          <ToolTipText>Build and run tests</ToolTipText>
+        </Strings>
+      </Button>
+      <Button guid="guidCforgeMenuGroup" id="WatchCommandId" priority="0x0105" type="Button">
+        <Parent guid="guidCforgeMenuGroup" id="CforgeBuildMenuGroup"/>
+        <Strings>
+          <ButtonText>Watch</ButtonText>
+          <ToolTipText>Watch for file changes and rebuild</ToolTipText>
+        </Strings>
+      </Button>
+
+      <!-- Dependency Commands -->
+      <Button guid="guidCforgeMenuGroup" id="AddDependencyCommandId" priority="0x0200" type="Button">
+        <Parent guid="guidCforgeMenuGroup" id="CforgeDependencyMenuGroup"/>
+        <Strings>
+          <ButtonText>Add Dependency...</ButtonText>
+          <ToolTipText>Add a package dependency</ToolTipText>
+        </Strings>
+      </Button>
+      <Button guid="guidCforgeMenuGroup" id="UpdatePackagesCommandId" priority="0x0201" type="Button">
+        <Parent guid="guidCforgeMenuGroup" id="CforgeDependencyMenuGroup"/>
+        <Strings>
+          <ButtonText>Update Package Registry</ButtonText>
+          <ToolTipText>Update the cforge package index</ToolTipText>
+        </Strings>
+      </Button>
+      <Button guid="guidCforgeMenuGroup" id="OpenDependencyWindowCommandId" priority="0x0202" type="Button">
+        <Parent guid="guidCforgeMenuGroup" id="CforgeDependencyMenuGroup"/>
+        <Strings>
+          <ButtonText>Dependency Manager</ButtonText>
+          <ToolTipText>Open the dependency manager window</ToolTipText>
+        </Strings>
+      </Button>
+
+      <!-- Tool Commands -->
+      <Button guid="guidCforgeMenuGroup" id="FormatCommandId" priority="0x0300" type="Button">
+        <Parent guid="guidCforgeMenuGroup" id="CforgeToolMenuGroup"/>
+        <Strings>
+          <ButtonText>Format Code</ButtonText>
+          <ToolTipText>Format code with clang-format</ToolTipText>
+        </Strings>
+      </Button>
+      <Button guid="guidCforgeMenuGroup" id="LintCommandId" priority="0x0301" type="Button">
+        <Parent guid="guidCforgeMenuGroup" id="CforgeToolMenuGroup"/>
+        <Strings>
+          <ButtonText>Run Linter</ButtonText>
+          <ToolTipText>Run clang-tidy static analysis</ToolTipText>
+        </Strings>
+      </Button>
+    </Buttons>
+
+  </Commands>
+
+  <Symbols>
+    <GuidSymbol name="guidCforgePackage" value="{7a8b9c0d-1e2f-3a4b-5c6d-7e8f9a0b1c2d}" />
+
+    <GuidSymbol name="guidCforgeMenuGroup" value="{7a8b9c0d-2e3f-4a5b-6c7d-8e9f0a1b2c3d}">
+      <IDSymbol name="CforgeMenuGroup" value="0x1000"/>
+      <IDSymbol name="CforgeMenu" value="0x1100"/>
+      <IDSymbol name="CforgeBuildMenuGroup" value="0x1001"/>
+      <IDSymbol name="CforgeDependencyMenuGroup" value="0x1002"/>
+      <IDSymbol name="CforgeToolMenuGroup" value="0x1003"/>
+
+      <IDSymbol name="BuildCommandId" value="0x0100"/>
+      <IDSymbol name="BuildReleaseCommandId" value="0x0101"/>
+      <IDSymbol name="CleanCommandId" value="0x0102"/>
+      <IDSymbol name="RunCommandId" value="0x0103"/>
+      <IDSymbol name="TestCommandId" value="0x0104"/>
+      <IDSymbol name="WatchCommandId" value="0x0105"/>
+
+      <IDSymbol name="AddDependencyCommandId" value="0x0200"/>
+      <IDSymbol name="UpdatePackagesCommandId" value="0x0201"/>
+      <IDSymbol name="OpenDependencyWindowCommandId" value="0x0202"/>
+
+      <IDSymbol name="FormatCommandId" value="0x0300"/>
+      <IDSymbol name="LintCommandId" value="0x0301"/>
+    </GuidSymbol>
+
+  </Symbols>
+</CommandTable>

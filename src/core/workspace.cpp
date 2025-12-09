@@ -842,6 +842,8 @@ void configure_index_dependencies_fetchcontent_phase1(
     const std::filesystem::path &project_dir,
     const toml_reader &project_config,
     std::ofstream &cmakelists) {
+  (void)project_dir;  // Unused - registry uses default cache directory
+
   auto index_deps = get_index_dependencies_with_versions(project_config);
   if (index_deps.empty()) {
     return;
@@ -927,6 +929,8 @@ void configure_index_dependencies_fetchcontent_phase2(
     const std::filesystem::path &project_dir,
     const toml_reader &project_config,
     std::ofstream &cmakelists) {
+  (void)project_dir;  // Unused - registry uses default cache directory
+
   auto index_deps = get_index_dependencies_with_versions(project_config);
   if (index_deps.empty()) {
     return;
@@ -978,6 +982,8 @@ void configure_index_dependencies_fetchcontent_phase2(
 bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
                                    const toml_reader &project_config,
                                    bool verbose) {
+  (void)verbose;  // Unused - using global logger verbosity instead
+
   // Load dependency hashes
   dependency_hash dep_hashes;
   dep_hashes.load(project_dir);

@@ -1,0 +1,20 @@
+[project]
+name = "$safeprojectname$"
+version = "0.1.0"
+description = "A cforge C++ project"
+cpp_standard = "17"
+c_standard = "11"
+binary_type = "executable"
+authors = []
+license = "MIT"
+
+[build]
+build_type = "Debug"
+directory = "build"
+source_dirs = ["src"]
+include_dirs = ["include"]
+
+[dependencies]
+# Add dependencies here, for example:
+# fmt = "11.1.4"
+# spdlog = "*"

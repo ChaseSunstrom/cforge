@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  
+  <!-- Import default C++ properties for IntelliSense -->
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" Condition="Exists('$(VCTargetsPath)\Microsoft.Cpp.Default.props')" />
+  
+  <PropertyGroup>
+    <BuildDependsOn>CforgeBuild</BuildDependsOn>
+    <CleanDependsOn>CforgeClean</CleanDependsOn>
+    <RebuildDependsOn>CforgeClean;CforgeBuild</RebuildDependsOn>
+  </PropertyGroup>
+
+  <!-- cforge Build Target -->
+  <Target Name="CforgeBuild" Outputs="$(OutDir)$(ProjectName).exe">
+    <Message Importance="high" Text="Building cforge project: $(MSBuildProjectName)" />
+    <Message Importance="high" Text="Configuration: $(Configuration)" />
+    
+    <Exec Command="cforge build" 
+          Condition="'$(Configuration)' == 'Debug'" 
+          WorkingDirectory="$(MSBuildProjectDirectory)"
+          ConsoleToMSBuild="true"
+          StandardOutputImportance="normal"
+          StandardErrorImportance="high" />
+          
+    <Exec Command="cforge build -c Release" 
+          Condition="'$(Configuration)' == 'Release'" 
+          WorkingDirectory="$(MSBuildProjectDirectory)"
+          ConsoleToMSBuild="true"
+          StandardOutputImportance="normal"
+          StandardErrorImportance="high" />
+  </Target>
+
+  <!-- cforge Clean Target -->
+  <Target Name="CforgeClean">
+    <Message Importance="high" Text="Cleaning cforge project: $(MSBuildProjectName)" />
+    <Exec Command="cforge clean" 
+          WorkingDirectory="$(MSBuildProjectDirectory)"
+          ConsoleToMSBuild="true"
+          IgnoreExitCode="true" />
+  </Target>
+
+  <!-- cforge Run Target -->
+  <Target Name="CforgeRun" DependsOnTargets="CforgeBuild">
+    <Message Importance="high" Text="Running cforge project: $(MSBuildProjectName)" />
+    <Exec Command="cforge run" 
+          Condition="'$(Configuration)' == 'Debug'" 
+          WorkingDirectory="$(MSBuildProjectDirectory)"
+          ConsoleToMSBuild="true" />
+    <Exec Command="cforge run -c Release" 
+          Condition="'$(Configuration)' == 'Release'" 
+          WorkingDirectory="$(MSBuildProjectDirectory)"
+          ConsoleToMSBuild="true" />
+  </Target>
+
+  <!-- cforge Test Target -->
+  <Target Name="CforgeTest" DependsOnTargets="CforgeBuild">
+    <Message Importance="high" Text="Testing cforge project: $(MSBuildProjectName)" />
+    <Exec Command="cforge test" 
+          WorkingDirectory="$(MSBuildProjectDirectory)"
+          ConsoleToMSBuild="true" />
+  </Target>
+
+  <!-- Default Build Target -->
+  <Target Name="Build" DependsOnTargets="CforgeBuild" />
+  <Target Name="Clean" DependsOnTargets="CforgeClean" />
+  <Target Name="Rebuild" DependsOnTargets="CforgeClean;CforgeBuild" />
+  
+</Project>

@@ -1,0 +1,29 @@
+# Build directories
+build/
+out/
+bin/
+obj/
+
+# cforge
+cforge.lock
+.cforge/
+
+# IDE
+.vs/
+.vscode/
+*.user
+*.suo
+
+# Compiled files
+*.o
+*.obj
+*.exe
+*.dll
+*.so
+*.dylib
+*.a
+*.lib
+
+# Debug files
+*.pdb
+*.ilk

@@ -1,0 +1,19 @@
+[project]
+name = "app"
+version = "0.1.0"
+description = "Application executable"
+cpp_standard = "17"
+c_standard = "11"
+binary_type = "executable"
+authors = []
+license = "MIT"
+
+[build]
+build_type = "Debug"
+directory = "build"
+source_dirs = ["src"]
+include_dirs = ["include"]
+
+[dependencies]
+# Reference the local library project
+lib = { project = true, include_dirs = ["include"], link = true }

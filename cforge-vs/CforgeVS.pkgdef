@@ -1,0 +1,23 @@
+; cforge Visual Studio Extension Registry Entries
+
+; Register the cforge project type
+[$RootKey$\Projects\{9A19103F-16F7-4668-BE54-9A1E7A4F7556}]
+@="CforgeProject"
+"DisplayName"="cforge Project"
+"DisplayProjectFileExtensions"="cforge Project Files (*.cforgeproj);*.cforgeproj"
+"Package"="{7a8b9c0d-1e2f-3a4b-5c6d-7e8f9a0b1c2d}"
+"PossibleProjectExtensions"="cforgeproj"
+"ProjectTemplatesDir"="$PackageFolder$\\ProjectTemplates"
+
+; Register the .cforgeproj file extension
+[$RootKey$\Projects\{9A19103F-16F7-4668-BE54-9A1E7A4F7556}\Extensions\cforgeproj]
+@=dword:0000001e
+
+; Add MSBuild extension path so VS can find Cforge.props and Cforge.targets
+[$RootKey$\MSBuild\SafeImports]
+"CforgeVS1"="$PackageFolder$\\BuildSystem\\Cforge.props"
+"CforgeVS2"="$PackageFolder$\\BuildSystem\\Cforge.targets"
+
+; Register the custom MSBuild extension path
+[$RootKey$\MSBuild\CustomImportSearchPaths]
+"CforgeVS"="$PackageFolder$\\BuildSystem"

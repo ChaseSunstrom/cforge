@@ -5,6 +5,8 @@ build/
 vendor/
 
 out/
+bin/
+obj/
 build-debug/
 build-release/
 cforge/
@@ -57,5 +59,6 @@ CMakeCache.txt
 *.exe
 *.out
 *.app
+*.csproj.user
 
 .claude/

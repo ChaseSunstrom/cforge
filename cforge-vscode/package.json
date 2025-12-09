@@ -1,0 +1,268 @@
+{
+  "name": "cforge",
+  "displayName": "cforge - C/C++ Build System",
+  "description": "VS Code integration for the cforge C/C++ build system with package management, build commands, and intelligent cforge.toml editing",
+  "version": "0.1.0",
+  "publisher": "ChaseSunstromDev",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Linters",
+    "Other"
+  ],
+  "galleryBanner": {
+    "color": "#1e1e1e",
+    "theme": "dark"
+  },
+  "keywords": [
+    "c++",
+    "cpp",
+    "c",
+    "cmake",
+    "build",
+    "cforge"
+  ],
+  "activationEvents": [
+    "workspaceContains:cforge.toml",
+    "workspaceContains:workspace.toml"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "cforge.init",
+        "title": "Initialize Project",
+        "category": "cforge"
+      },
+      {
+        "command": "cforge.build",
+        "title": "Build",
+        "category": "cforge",
+        "icon": "$(tools)"
+      },
+      {
+        "command": "cforge.buildDebug",
+        "title": "Build (Debug)",
+        "category": "cforge"
+      },
+      {
+        "command": "cforge.buildRelease",
+        "title": "Build (Release)",
+        "category": "cforge"
+      },
+      {
+        "command": "cforge.clean",
+        "title": "Clean",
+        "category": "cforge",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "cforge.run",
+        "title": "Run",
+        "category": "cforge",
+        "icon": "$(play)"
+      },
+      {
+        "command": "cforge.test",
+        "title": "Run Tests",
+        "category": "cforge",
+        "icon": "$(beaker)"
+      },
+      {
+        "command": "cforge.addDependency",
+        "title": "Add Dependency",
+        "category": "cforge",
+        "icon": "$(add)"
+      },
+      {
+        "command": "cforge.removeDependency",
+        "title": "Remove Dependency",
+        "category": "cforge"
+      },
+      {
+        "command": "cforge.searchPackages",
+        "title": "Search Packages",
+        "category": "cforge",
+        "icon": "$(search)"
+      },
+      {
+        "command": "cforge.updatePackages",
+        "title": "Update Package Registry",
+        "category": "cforge"
+      },
+      {
+        "command": "cforge.generateLock",
+        "title": "Generate Lock File",
+        "category": "cforge"
+      },
+      {
+        "command": "cforge.watch",
+        "title": "Watch & Rebuild",
+        "category": "cforge",
+        "icon": "$(eye)"
+      },
+      {
+        "command": "cforge.format",
+        "title": "Format Code",
+        "category": "cforge"
+      },
+      {
+        "command": "cforge.lint",
+        "title": "Run Linter",
+        "category": "cforge"
+      },
+      {
+        "command": "cforge.openTerminal",
+        "title": "Open cforge Terminal",
+        "category": "cforge"
+      },
+      {
+        "command": "cforge.refreshDependencies",
+        "title": "Refresh Dependencies",
+        "category": "cforge",
+        "icon": "$(refresh)"
+      }
+    ],
+    "views": {
+      "explorer": [
+        {
+          "id": "cforgeDependencies",
+          "name": "cforge Dependencies",
+          "when": "cforge.projectDetected"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "cforgeDependencies",
+        "contents": "No cforge project detected.\n[Initialize Project](command:cforge.init)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "cforge.addDependency",
+          "when": "view == cforgeDependencies",
+          "group": "navigation"
+        },
+        {
+          "command": "cforge.refreshDependencies",
+          "when": "view == cforgeDependencies",
+          "group": "navigation"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "cforge.build",
+          "when": "resourceFilename == cforge.toml",
+          "group": "navigation"
+        },
+        {
+          "command": "cforge.run",
+          "when": "resourceFilename == cforge.toml",
+          "group": "navigation"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "cforge",
+      "properties": {
+        "cforge.executablePath": {
+          "type": "string",
+          "default": "cforge",
+          "description": "Path to the cforge executable"
+        },
+        "cforge.defaultBuildConfig": {
+          "type": "string",
+          "enum": ["Debug", "Release", "RelWithDebInfo", "MinSizeRel"],
+          "default": "Debug",
+          "description": "Default build configuration"
+        },
+        "cforge.autoShowOutput": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically show output panel when running commands"
+        },
+        "cforge.watchOnSave": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically rebuild on file save"
+        }
+      }
+    },
+    "taskDefinitions": [
+      {
+        "type": "cforge",
+        "required": ["command"],
+        "properties": {
+          "command": {
+            "type": "string",
+            "description": "The cforge command to run"
+          },
+          "config": {
+            "type": "string",
+            "description": "Build configuration (Debug, Release, etc.)"
+          },
+          "args": {
+            "type": "array",
+            "description": "Additional arguments"
+          }
+        }
+      }
+    ],
+    "problemMatchers": [
+      {
+        "name": "cforge",
+        "owner": "cforge",
+        "fileLocation": ["relative", "${workspaceFolder}"],
+        "pattern": [
+          {
+            "regexp": "^(.*):(\\d+):(\\d+):\\s+(warning|error):\\s+(.*)$",
+            "file": 1,
+            "line": 2,
+            "column": 3,
+            "severity": 4,
+            "message": 5
+          }
+        ]
+      }
+    ],
+    "languages": [
+      {
+        "id": "toml",
+        "extensions": [".toml"],
+        "filenames": ["cforge.toml", "workspace.toml"]
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.80.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "eslint": "^8.0.0",
+    "typescript": "^5.0.0",
+    "@vscode/vsce": "^2.22.0"
+  },
+  "icon": "images/cforge.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ChaseSunstrom/cforge.git"
+    
+  },
+  "homepage": "https://github.com/ChaseSunstrom/cforge",
+  "bugs": {
+    "url": "https://github.com/ChaseSunstrom/cforge/issues"
+  },
+  "readme": "README.md",
+  "license": "MIT"
+}

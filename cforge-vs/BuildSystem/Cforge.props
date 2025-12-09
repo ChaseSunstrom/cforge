@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <!-- cforge Project Properties -->
+    <CforgeProjectType>executable</CforgeProjectType>
+    <CforgeBuildType>Debug</CforgeBuildType>
+    <CforgeCppStandard>17</CforgeCppStandard>
+    
+    <!-- Visual Studio Integration -->
+    <TargetFrameworkIdentifier>.NETFramework</TargetFrameworkIdentifier>
+    <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
+    <DefaultLanguageSourceExtension>.cpp</DefaultLanguageSourceExtension>
+    <Language>C++</Language>
+    <TargetRuntime>Native</TargetRuntime>
+    <OutputType>Exe</OutputType>
+    
+    <!-- Build Output -->
+    <OutDir>$(MSBuildProjectDirectory)\build\</OutDir>
+    <IntDir>$(MSBuildProjectDirectory)\build\obj\</IntDir>
+    
+    <!-- Project Capabilities for CPS -->
+    <ProjectCapabilities>CforgeProject;LanguageService</ProjectCapabilities>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
+    <CforgeBuildType>Debug</CforgeBuildType>
+  </PropertyGroup>
+  
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <CforgeBuildType>Release</CforgeBuildType>
+  </PropertyGroup>
+
+  <!-- Default Items -->
+  <ItemGroup>
+    <None Include="cforge.toml" Condition="Exists('$(MSBuildProjectDirectory)\cforge.toml')" />
+  </ItemGroup>
+</Project>

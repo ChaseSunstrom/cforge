@@ -1,0 +1,3 @@
+[workspace]
+name = "$safeprojectname$"
+members = ["app", "lib"]

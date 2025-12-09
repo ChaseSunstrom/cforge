@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+
+  <!-- Project Configurations -->
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{$guid2$}</ProjectGuid>
+    <RootNamespace>$safeprojectname$_app</RootNamespace>
+    <ProjectName>app</ProjectName>
+    <Keyword>Win32Proj</Keyword>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <VCProjectVersion>17.0</VCProjectVersion>
+  </PropertyGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+
+  <PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ConfigurationType>Application</ConfigurationType>
+    <PlatformToolset>v143</PlatformToolset>
+    <UseDebugLibraries>true</UseDebugLibraries>
+  </PropertyGroup>
+
+  <PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ConfigurationType>Application</ConfigurationType>
+    <PlatformToolset>v143</PlatformToolset>
+    <UseDebugLibraries>false</UseDebugLibraries>
+  </PropertyGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+
+  <!-- cforge Project Properties -->
+  <PropertyGroup>
+    <CforgeProjectType>executable</CforgeProjectType>
+    <OutDir>$(MSBuildProjectDirectory)\build\$(Configuration)\</OutDir>
+    <IntDir>$(MSBuildProjectDirectory)\build\obj\$(Configuration)\</IntDir>
+  </PropertyGroup>
+
+  <!-- Source Files -->
+  <ItemGroup>
+    <ClCompile Include="src\*.cpp" />
+  </ItemGroup>
+
+  <!-- cforge Configuration -->
+  <ItemGroup>
+    <None Include="cforge.toml" />
+  </ItemGroup>
+
+  <!-- Override standard build with cforge -->
+  <PropertyGroup>
+    <BuildDependsOn>CforgeBuild</BuildDependsOn>
+    <CleanDependsOn>CforgeClean</CleanDependsOn>
+    <RebuildDependsOn>CforgeClean;CforgeBuild</RebuildDependsOn>
+  </PropertyGroup>
+
+  <Target Name="CforgeBuild" Outputs="$(OutDir)$(ProjectName).exe">
+    <Message Importance="high" Text="Building cforge project: $(MSBuildProjectName)" />
+    <Exec Command="cforge build" Condition="'$(Configuration)' == 'Debug'" WorkingDirectory="$(MSBuildProjectDirectory)" ConsoleToMSBuild="true" />
+    <Exec Command="cforge build -c Release" Condition="'$(Configuration)' == 'Release'" WorkingDirectory="$(MSBuildProjectDirectory)" ConsoleToMSBuild="true" />
+  </Target>
+
+  <Target Name="CforgeClean">
+    <Exec Command="cforge clean" WorkingDirectory="$(MSBuildProjectDirectory)" ConsoleToMSBuild="true" IgnoreExitCode="true" />
+  </Target>
+
+  <Target Name="Build" DependsOnTargets="CforgeBuild" />
+  <Target Name="Clean" DependsOnTargets="CforgeClean" />
+  <Target Name="Rebuild" DependsOnTargets="CforgeClean;CforgeBuild" />
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>
