@@ -62,3 +62,4 @@ CMakeCache.txt
 *.csproj.user
 
 .claude/
+.cache/
