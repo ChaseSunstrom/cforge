@@ -1977,8 +1977,28 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
              << project_config.get_string("project.version", "1.0.0")
              << "\")\n";
   cmakelists << "set(CPACK_PACKAGE_INSTALL_DIRECTORY \"${PROJECT_NAME}\")\n";
-  cmakelists << "set(CPACK_RESOURCE_FILE_LICENSE "
-                "\"${CMAKE_CURRENT_SOURCE_DIR}/LICENSE\")\n\n";
+
+  // Only set license file if it exists
+  std::filesystem::path license_path = project_dir / "LICENSE";
+  if (std::filesystem::exists(license_path)) {
+    cmakelists << "set(CPACK_RESOURCE_FILE_LICENSE "
+                  "\"${CMAKE_CURRENT_SOURCE_DIR}/LICENSE\")\n";
+  } else {
+    // Also check for LICENSE.txt and LICENSE.md
+    license_path = project_dir / "LICENSE.txt";
+    if (std::filesystem::exists(license_path)) {
+      cmakelists << "set(CPACK_RESOURCE_FILE_LICENSE "
+                    "\"${CMAKE_CURRENT_SOURCE_DIR}/LICENSE.txt\")\n";
+    } else {
+      license_path = project_dir / "LICENSE.md";
+      if (std::filesystem::exists(license_path)) {
+        cmakelists << "set(CPACK_RESOURCE_FILE_LICENSE "
+                      "\"${CMAKE_CURRENT_SOURCE_DIR}/LICENSE.md\")\n";
+      }
+      // If no license file exists, don't set CPACK_RESOURCE_FILE_LICENSE
+    }
+  }
+  cmakelists << "\n";
 
   // Set package file name with configuration
   cmakelists << "set(CPACK_PACKAGE_FILE_NAME "

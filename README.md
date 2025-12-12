@@ -15,7 +15,7 @@
 
 # CForge
 
-![Version](https://img.shields.io/badge/beta-2.3.1-blue.svg)
+![Version](https://img.shields.io/badge/beta-2.3.2-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 [![GitHub stars](https://img.shields.io/github/stars/ChaseSunstrom/cforge?style=social)](https://github.com/ChaseSunstrom/cforge)
 

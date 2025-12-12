@@ -18,7 +18,95 @@
 #include <string>
 #include <vector>
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 using namespace cforge;
+
+/**
+ * @brief Make all files in a directory writable (removes read-only attribute)
+ *        This is needed on Windows to delete .git directories that have
+ * read-only pack files
+ *
+ * @param dir Directory to process
+ */
+static void make_directory_writable(const std::filesystem::path &dir) {
+  try {
+    for (const auto &entry :
+         std::filesystem::recursive_directory_iterator(dir)) {
+      try {
+        std::filesystem::permissions(entry.path(),
+                                     std::filesystem::perms::owner_write,
+                                     std::filesystem::perm_options::add);
+      } catch (...) {
+        // Ignore permission errors on individual files
+      }
+    }
+  } catch (...) {
+    // Ignore errors during iteration
+  }
+}
+
+/**
+ * @brief Forcefully remove a directory, handling .git directories on Windows
+ *
+ * @param dir Directory to remove
+ * @return bool Success flag
+ */
+static bool force_remove_directory(const std::filesystem::path &dir) {
+  if (!std::filesystem::exists(dir)) {
+    return true;
+  }
+
+  // First attempt: standard remove_all
+  try {
+    std::filesystem::remove_all(dir);
+    return true;
+  } catch (...) {
+    // Continue to fallback methods
+  }
+
+  // Second attempt: make all files writable, then remove
+  make_directory_writable(dir);
+  try {
+    std::filesystem::remove_all(dir);
+    return true;
+  } catch (...) {
+    // Continue to fallback methods
+  }
+
+#ifdef _WIN32
+  // Third attempt on Windows: use system command
+  std::string cmd = "cmd /c \"rmdir /s /q \"" + dir.string() + "\"\" 2>nul";
+  int result = std::system(cmd.c_str());
+  if (result == 0 || !std::filesystem::exists(dir)) {
+    return true;
+  }
+
+  // Fourth attempt: use robocopy trick (create empty dir, mirror to target)
+  // This can handle files that are locked or have special characters
+  std::filesystem::path temp_empty =
+      std::filesystem::temp_directory_path() / "cforge_empty_dir";
+  try {
+    std::filesystem::create_directories(temp_empty);
+    cmd = "robocopy \"" + temp_empty.string() + "\" \"" + dir.string() +
+          "\" /mir /r:1 /w:1 >nul 2>&1";
+    std::system(cmd.c_str());
+    std::filesystem::remove_all(temp_empty);
+    std::filesystem::remove_all(dir);
+    return !std::filesystem::exists(dir);
+  } catch (...) {
+    // Clean up temp directory
+    try {
+      std::filesystem::remove_all(temp_empty);
+    } catch (...) {
+    }
+  }
+#endif
+
+  return !std::filesystem::exists(dir);
+}
 
 // Note: get_build_dir_for_config() is now in build_utils.hpp
 
@@ -65,13 +153,12 @@ static bool clean_build_directory(const std::filesystem::path &build_dir,
 
   logger::removing(build_dir.string());
 
-  try {
-    std::filesystem::remove_all(build_dir);
+  if (force_remove_directory(build_dir)) {
     logger::print_action("Removed", build_dir.string());
     return true;
-  } catch (const std::exception &e) {
+  } else {
     logger::print_error("Failed to remove build directory: " +
-                        std::string(e.what()));
+                        build_dir.string());
     return false;
   }
 }
@@ -89,7 +176,8 @@ static bool clean_cmake_files(bool verbose) {
       "CMakeCache.txt",        "CMakeFiles",
       "cmake_install.cmake",   "CMakeScripts",
       "compile_commands.json", "CTestTestfile.cmake",
-      "CMakeLists.txt.user",   "CMakeLists.txt"};
+      "CMakeLists.txt.user",   "CMakeLists.txt",
+      "cforge.hash"};
 
   bool success = true;
   int count = 0;

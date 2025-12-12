@@ -372,11 +372,14 @@ cforge_int_t cforge_cmd_remove(const cforge_context_t *ctx) {
     return 1;
   }
 
-  // Try to remove from both git and vcpkg sections
+  // Try to remove from git, vcpkg, and main dependencies sections
   bool git_removed = remove_dependency_from_section(
       config_file, "dependencies.git", package_name, verbose);
   bool vcpkg_removed = remove_dependency_from_section(
       config_file, "dependencies.vcpkg", package_name, verbose);
+  // Also try the main [dependencies] section for index dependencies
+  bool index_removed = remove_dependency_from_section(
+      config_file, "dependencies", package_name, verbose);
 
   // If it was in git dependencies, also remove the cloned repository
   if (git_removed) {
@@ -393,7 +396,10 @@ cforge_int_t cforge_cmd_remove(const cforge_context_t *ctx) {
     }
   }
 
-  if (!git_removed && !vcpkg_removed) {
+  // Index dependencies don't need any additional cleanup since they're
+  // fetched during build via FetchContent and stored in build/_deps
+
+  if (!git_removed && !vcpkg_removed && !index_removed) {
     logger::print_error("Failed to remove dependency: " + package_name);
     return 1;
   }
