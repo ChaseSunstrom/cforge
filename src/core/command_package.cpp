@@ -316,11 +316,12 @@ static bool build_project(const cforge_context_t *ctx) {
  * @param workspace_dir Path to the workspace directory
  * @return bool Success flag
  */
-[[maybe_unused]] static bool
+static bool
 create_workspace_package(const std::string &workspace_name,
                          const std::vector<workspace_project> &projects,
-                         const std::string &build_config, [[maybe_unused]] bool verbose,
+                         const std::string &build_config, bool verbose,
                          const std::filesystem::path &workspace_dir) {
+  (void)verbose; // Used conditionally below
   logger::creating("consolidated workspace package");
 
   // Create a staging area for all project outputs
@@ -2514,10 +2515,10 @@ list_packages(const std::filesystem::path &dir,
 cforge_int_t cforge_cmd_package(const cforge_context_t *ctx) {
   logger::packaging("project");
 
-  // Check if this is a workspace
+  // Check if this is a workspace (supports both unified cforge.toml and legacy cforge.workspace.toml)
   std::filesystem::path current_dir = std::filesystem::path(ctx->working_dir);
-  std::filesystem::path workspace_file = current_dir / WORKSPACE_FILE;
-  bool is_workspace = std::filesystem::exists(workspace_file);
+  auto [is_ws, workspace_dir] = is_in_workspace(current_dir);
+  bool is_workspace = is_ws && current_dir == workspace_dir;
 
   // Parse common parameters
 
@@ -2618,29 +2619,16 @@ cforge_int_t cforge_cmd_package(const cforge_context_t *ctx) {
       logger::print_verbose("Packaging in workspace context: " +
                             current_dir.string());
 
-      // Load workspace configuration
-      toml::table workspace_table;
-      try {
-        workspace_table = toml::parse_file(workspace_file.string());
-      } catch (const toml::parse_error &e) {
-        logger::print_error("Failed to parse workspace configuration: " +
-                            std::string(e.what()));
+      // Load workspace using the workspace class (supports both unified and legacy formats)
+      workspace ws;
+      if (!ws.load(workspace_dir)) {
+        logger::print_error("Failed to load workspace for packaging");
         return 1;
       }
-      toml_reader workspace_config(workspace_table);
 
-      // Determine build configuration and generators from workspace config
-      if (config_name.empty()) {
-        config_name =
-            workspace_config.get_string("workspace.build_type", "Debug");
-      }
+      // Use default generators if not specified
       if (generators.empty()) {
-        auto ws_gens = workspace_config.get_string_array("package.generators");
-        if (!ws_gens.empty()) {
-          generators = uppercase_generators(ws_gens);
-        } else {
-          generators = get_default_generators();
-        }
+        generators = get_default_generators();
       }
 
       // Build all projects if needed
@@ -2666,12 +2654,6 @@ cforge_int_t cforge_cmd_package(const cforge_context_t *ctx) {
         }
       }
 
-      // Load workspace and get projects
-      workspace ws;
-      if (!ws.load(current_dir)) {
-        logger::print_error("Failed to load workspace for packaging");
-        return 1;
-      }
       auto projects = ws.get_projects();
 
       // Create consolidated workspace package

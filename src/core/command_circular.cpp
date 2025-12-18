@@ -106,6 +106,15 @@ cforge_int_t cforge_cmd_circular(const cforge_context_t *ctx) {
   // Check if we're in a workspace
   auto [is_ws, workspace_dir] = is_in_workspace(current_dir);
 
+  // Auto-detect workspace: if we're in a workspace and at the workspace root, enable workspace mode
+  if (is_ws && !check_workspace) {
+    // Check if current directory is the workspace root
+    if (current_dir == workspace_dir) {
+      logger::print_verbose("Auto-detected workspace root, enabling workspace mode");
+      check_workspace = true;
+    }
+  }
+
   if (check_workspace && is_ws) {
     // Analyze all projects in workspace
     workspace ws;

@@ -4,6 +4,7 @@
  *
  * Supports multiple test frameworks (GTest, Catch2, doctest, Boost.Test, Builtin)
  * with Cargo/Rust-style output formatting by default.
+ * Supports workspace-level test execution across all projects.
  */
 
 #include "cforge/log.hpp"
@@ -13,10 +14,12 @@
 #include "core/test_output_formatter.hpp"
 #include "core/test_runner.hpp"
 #include "core/toml_reader.hpp"
+#include "core/workspace.hpp"
 
 #include <algorithm>
 #include <cstring>
 #include <filesystem>
+#include <fmt/core.h>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -144,6 +147,93 @@ TestOptions parse_test_options(const cforge_context_t *ctx) {
   return opts;
 }
 
+/**
+ * @brief Run tests for a single project
+ *
+ * @param project_dir Project directory
+ * @param opts Test options
+ * @param summary_out Output parameter for test summary
+ * @param results_out Output parameter for test results
+ * @return int Exit code (0 for success)
+ */
+int run_tests_for_project(const std::filesystem::path &project_dir,
+                          const TestOptions &opts,
+                          TestSummary &summary_out,
+                          std::vector<TestResult> &results_out) {
+  namespace fs = std::filesystem;
+
+  // Load project configuration
+  toml_reader cfg;
+  if (!cfg.load((project_dir / CFORGE_FILE).string())) {
+    logger::print_error("Failed to load " CFORGE_FILE " in " + project_dir.string());
+    return 1;
+  }
+
+  // Get project name
+  std::string project_name = cfg.get_string("project.name", "");
+  if (project_name.empty()) {
+    logger::print_error("project.name must be set in " CFORGE_FILE);
+    return 1;
+  }
+
+  // Determine test directory
+  std::string test_dir = cfg.get_string("test.directory", "tests");
+  fs::path tests_dir = project_dir / test_dir;
+
+  // Create test directory if it doesn't exist
+  if (!fs::exists(tests_dir)) {
+    logger::print_action("Creating", "test directory: " + tests_dir.string());
+    fs::create_directories(tests_dir);
+  }
+
+  // Ensure builtin test framework header exists
+  ensure_test_framework_header(tests_dir);
+
+  // Create test runner
+  TestRunner runner(project_dir, cfg);
+  if (!runner.load_config()) {
+    logger::print_error("Failed to load test configuration for " + project_name);
+    return 1;
+  }
+
+  // Discover test targets
+  auto targets = runner.discover_targets();
+  if (targets.empty()) {
+    logger::print_verbose("No test targets found in " + project_name);
+    return 0; // Not an error - project just has no tests
+  }
+
+  // List mode
+  if (opts.list_only) {
+    auto tests = runner.list_tests();
+    TestOutputFormatter formatter(TestOutputFormatter::Style::Cargo);
+    formatter.print_test_list(tests);
+    return 0;
+  }
+
+  // Run tests
+  TestRunOptions run_opts;
+  run_opts.build_config = opts.build_config;
+  run_opts.filter = opts.filter;
+  run_opts.native_output = opts.native_output;
+  run_opts.no_build = opts.no_build;
+  run_opts.list_only = opts.list_only;
+  run_opts.verbose = opts.verbose;
+  run_opts.jobs = opts.jobs;
+  run_opts.timeout_override = opts.timeout;
+
+  // Execute tests
+  summary_out = runner.run_tests(run_opts);
+  results_out = runner.get_results();
+
+  // Return appropriate exit code
+  if (summary_out.failed > 0 || summary_out.timeout > 0) {
+    return 1;
+  }
+
+  return 0;
+}
+
 } // anonymous namespace
 
 /**
@@ -162,12 +252,133 @@ TestOptions parse_test_options(const cforge_context_t *ctx) {
  *
  * FILTER:
  *   Positional filter, e.g., "math::*" or "Math.Add*"
+ *
+ * When run from a workspace root, tests are executed for all projects
+ * in the workspace in dependency order.
  */
 cforge_int_t cforge_cmd_test(const cforge_context_t *ctx) {
   namespace fs = std::filesystem;
 
-  // Load project configuration
-  fs::path project_dir = fs::absolute(ctx->working_dir);
+  fs::path current_dir = fs::absolute(ctx->working_dir);
+
+  // Parse options first
+  TestOptions opts = parse_test_options(ctx);
+
+  // Check if we're in a workspace
+  auto [is_ws, workspace_dir] = is_in_workspace(current_dir);
+
+  // If we're at the workspace root, run tests for all projects
+  if (is_ws && current_dir == workspace_dir) {
+    workspace ws;
+    if (!ws.load(workspace_dir)) {
+      logger::print_error("Failed to load workspace configuration");
+      return 1;
+    }
+
+    logger::print_header("Running tests for workspace: " + ws.get_name());
+
+    // Get projects in build order (respects dependencies)
+    auto build_order = ws.get_build_order();
+    auto projects = ws.get_projects();
+
+    // Aggregate results across all projects
+    TestSummary total_summary{};
+    std::vector<TestResult> all_results;
+    int projects_tested = 0;
+    int projects_failed = 0;
+
+    // Create formatter for output
+    TestOutputFormatter formatter(
+        opts.native_output ? TestOutputFormatter::Style::Native
+                           : TestOutputFormatter::Style::Cargo);
+
+    for (const auto &project_name : build_order) {
+      // Find the project
+      auto it = std::find_if(projects.begin(), projects.end(),
+                             [&project_name](const workspace_project &p) {
+                               return p.name == project_name;
+                             });
+
+      if (it == projects.end()) {
+        continue;
+      }
+
+      const auto &project = *it;
+
+      // Check if project has cforge.toml
+      if (!fs::exists(project.path / CFORGE_FILE)) {
+        logger::print_verbose("Skipping " + project.name + " (no cforge.toml)");
+        continue;
+      }
+
+      // Check if project has tests directory
+      toml_reader proj_cfg;
+      if (proj_cfg.load((project.path / CFORGE_FILE).string())) {
+        std::string test_dir = proj_cfg.get_string("test.directory", "tests");
+        if (!fs::exists(project.path / test_dir)) {
+          logger::print_verbose("Skipping " + project.name + " (no tests directory)");
+          continue;
+        }
+      }
+
+      logger::print_action("Testing", project.name);
+
+      TestSummary project_summary{};
+      std::vector<TestResult> project_results;
+
+      int result = run_tests_for_project(project.path, opts, project_summary, project_results);
+
+      // Aggregate results
+      total_summary.passed += project_summary.passed;
+      total_summary.failed += project_summary.failed;
+      total_summary.skipped += project_summary.skipped;
+      total_summary.timeout += project_summary.timeout;
+      total_summary.total_duration += project_summary.total_duration;
+
+      // Copy results with project prefix
+      for (auto &r : project_results) {
+        r.name = project.name + "::" + r.name;
+        all_results.push_back(r);
+      }
+
+      projects_tested++;
+      if (result != 0) {
+        projects_failed++;
+      }
+    }
+
+    // Print aggregated results
+    if (!opts.native_output && !opts.list_only) {
+      fmt::print("\n");
+      logger::print_header("Workspace Test Summary");
+
+      // Print header with actual test count
+      formatter.print_run_start(static_cast<int>(all_results.size()));
+
+      for (const auto &result : all_results) {
+        formatter.print_test_result(result);
+      }
+
+      // Print failure details
+      formatter.print_all_failures(all_results);
+
+      // Print summary
+      formatter.print_summary(total_summary);
+
+      fmt::print("\nProjects tested: {}, Projects with failures: {}\n",
+                 projects_tested, projects_failed);
+    }
+
+    // Return failure if any tests failed
+    if (total_summary.failed > 0 || total_summary.timeout > 0) {
+      return 1;
+    }
+
+    return 0;
+  }
+
+  // Single project mode - original behavior
+  fs::path project_dir = current_dir;
   toml_reader cfg;
   if (!cfg.load((project_dir / CFORGE_FILE).string())) {
     logger::print_error("Failed to load " CFORGE_FILE);
@@ -180,9 +391,6 @@ cforge_int_t cforge_cmd_test(const cforge_context_t *ctx) {
     logger::print_error("project.name must be set in " CFORGE_FILE);
     return 1;
   }
-
-  // Parse options
-  TestOptions opts = parse_test_options(ctx);
 
   // Determine test directory
   std::string test_dir = cfg.get_string("test.directory", "tests");

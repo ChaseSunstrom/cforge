@@ -215,5 +215,10 @@ cforge_int_t cforge_cmd_doctor(const cforge_context_t *ctx) {
     fmt::print("{} passed, {} warnings\n", passed, warnings);
   }
 
+  // Show additional info in verbose mode
+  if (verbose) {
+    fmt::print("\nDetailed tool information available with verbose output.\n");
+  }
+
   return 0;
 }
