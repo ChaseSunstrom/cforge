@@ -143,6 +143,10 @@ extern "C" cforge_int_t cforge_dispatch_command(const cforge_context_t *ctx) {
     return cforge_cmd_search(ctx);
   } else if (strcmp(ctx->args.command, "info") == 0) {
     return cforge_cmd_info(ctx);
+  } else if (strcmp(ctx->args.command, "circular") == 0) {
+    return cforge_cmd_circular(ctx);
+  } else if (strcmp(ctx->args.command, "doctor") == 0) {
+    return cforge_cmd_doctor(ctx);
   } else if (strcmp(ctx->args.command, "help") == 0 ||
              strcmp(ctx->args.command, "--help") == 0 ||
              strcmp(ctx->args.command, "-h") == 0) {

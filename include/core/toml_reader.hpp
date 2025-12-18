@@ -108,6 +108,20 @@ public:
   std::map<std::string, std::string> get_string_map(const std::string &key) const;
 
   /**
+   * @brief Get an array of tables from the TOML file
+   * @param key The key to look up (e.g., "test.targets" for [[test.targets]])
+   * @return Vector of toml_reader objects, each wrapping one table from the array
+   */
+  std::vector<toml_reader> get_table_array(const std::string &key) const;
+
+  /**
+   * @brief Get a sub-table as a new toml_reader
+   * @param key The table key to look up (can be dotted)
+   * @return Optional toml_reader wrapping the sub-table, or empty if not found
+   */
+  std::optional<toml_reader> get_table(const std::string &key) const;
+
+  /**
    * @brief Get a string value with fallback to deprecated key
    * @param key The preferred key to look up
    * @param deprecated_key The old deprecated key to try if preferred not found

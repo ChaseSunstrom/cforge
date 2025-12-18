@@ -239,6 +239,51 @@ toml_reader::get_string_map(const std::string &key) const {
   }
 }
 
+std::vector<toml_reader>
+toml_reader::get_table_array(const std::string &key) const {
+  std::vector<toml_reader> result;
+  if (!toml_data) {
+    return result;
+  }
+
+  try {
+    auto &table = *static_cast<toml::table *>(toml_data);
+    auto value = table.at_path(key);
+    if (!value || !value.is_array()) {
+      return result;
+    }
+
+    auto array = value.as_array();
+    for (const auto &item : *array) {
+      if (item.is_table()) {
+        result.emplace_back(*item.as_table());
+      }
+    }
+    return result;
+  } catch (...) {
+    return result;
+  }
+}
+
+std::optional<toml_reader>
+toml_reader::get_table(const std::string &key) const {
+  if (!toml_data) {
+    return std::nullopt;
+  }
+
+  try {
+    auto &table = *static_cast<toml::table *>(toml_data);
+    auto value = table.at_path(key);
+    if (!value || !value.is_table()) {
+      return std::nullopt;
+    }
+
+    return toml_reader(*value.as_table());
+  } catch (...) {
+    return std::nullopt;
+  }
+}
+
 std::string toml_reader::get_string_or_deprecated(
     const std::string &key, const std::string &deprecated_key,
     const std::string &default_value, bool warn) const {

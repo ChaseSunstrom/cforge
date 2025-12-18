@@ -280,4 +280,30 @@ void configure_git_dependencies_in_cmake(const toml_reader &project_config,
                                          const std::string &deps_dir,
                                          std::ofstream &cmakelists);
 
+/**
+ * @brief Configure index dependencies using FetchContent - Phase 1
+ * Generates FetchContent_Declare calls BEFORE the target is created
+ *
+ * @param project_dir Project directory (for registry lookup)
+ * @param project_config Project configuration from cforge.toml
+ * @param cmakelists Output stream
+ */
+void configure_index_dependencies_fetchcontent_phase1(
+    const std::filesystem::path &project_dir,
+    const toml_reader &project_config,
+    std::ofstream &cmakelists);
+
+/**
+ * @brief Configure index dependencies using FetchContent - Phase 2
+ * Generates target_link_libraries calls AFTER the target is created
+ *
+ * @param project_dir Project directory (for registry lookup)
+ * @param project_config Project configuration from cforge.toml
+ * @param cmakelists Output stream
+ */
+void configure_index_dependencies_fetchcontent_phase2(
+    const std::filesystem::path &project_dir,
+    const toml_reader &project_config,
+    std::ofstream &cmakelists);
+
 } // namespace cforge

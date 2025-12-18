@@ -215,6 +215,40 @@ public:
   static void cleaning(const std::string &target);
 
   // ============================================================
+  // Build progress display (Rust-style)
+  // ============================================================
+
+  /**
+   * @brief Print "Compiling {file}" with optional timing
+   * @param file The file being compiled
+   * @param duration_secs Optional duration in seconds (for completed files)
+   */
+  static void compiling_file(const std::string &file,
+                             double duration_secs = -1.0);
+
+  /**
+   * @brief Display a progress bar
+   * @param current Current step (1-based)
+   * @param total Total steps
+   * @param in_place If true, update the line in place (use carriage return)
+   */
+  static void progress_bar(int current, int total, bool in_place = true);
+
+  /**
+   * @brief Clear the current terminal line
+   */
+  static void clear_line();
+
+  /**
+   * @brief Print build timing summary
+   * @param total_duration Total build time in seconds
+   * @param slowest_files Vector of (filename, duration) pairs for slowest files
+   */
+  static void print_timing_summary(
+      double total_duration,
+      const std::vector<std::pair<std::string, double>> &slowest_files);
+
+  // ============================================================
   // Legacy compatibility (maps to new style)
   // ============================================================
 

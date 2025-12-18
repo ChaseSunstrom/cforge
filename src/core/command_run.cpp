@@ -8,6 +8,7 @@
 #include "core/build_utils.hpp"
 #include "core/commands.hpp"
 #include "core/constants.h"
+#include "core/error_format.hpp"
 #include "core/file_system.h"
 #include "core/process_utils.hpp"
 #include "core/script_runner.hpp"
@@ -633,12 +634,18 @@ cforge_int_t cforge_cmd_run(const cforge_context_t *ctx) {
       // Display program output header
       logger::print_action("", "Program Output\n");
 
+      // Capture stderr for runtime error formatting
+      std::string captured_stderr;
+
       // Create callbacks to display raw program output
       std::function<void(const std::string &)> stdout_callback =
           [](const std::string &chunk) { std::cout << chunk << std::flush; };
 
       std::function<void(const std::string &)> stderr_callback =
-          [](const std::string &chunk) { std::cerr << chunk << std::flush; };
+          [&captured_stderr](const std::string &chunk) {
+            std::cerr << chunk << std::flush;
+            captured_stderr += chunk;
+          };
 
       // Execute the program with output handling
       process_result result =
@@ -654,6 +661,18 @@ cforge_int_t cforge_cmd_run(const cforge_context_t *ctx) {
         logger::finished(config);
         return 0;
       } else {
+        // Combine stdout and stderr for error analysis
+        std::string combined_output = result.stdout_output + "\n" +
+                                      result.stderr_output + "\n" +
+                                      captured_stderr;
+
+        // Try to format any runtime errors
+        std::string formatted = format_build_errors(combined_output);
+        if (!formatted.empty()) {
+          std::cout << "\n";
+          std::cout << formatted;
+        }
+
         logger::print_error("program exited with code: " +
                             std::to_string(result.exit_code));
         return result.exit_code;

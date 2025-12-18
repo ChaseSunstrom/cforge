@@ -132,12 +132,36 @@ const std::string &workspace_config::get_description() const {
 bool workspace::load(const std::filesystem::path &workspace_path) {
   workspace_path_ = workspace_path;
 
-  // Check if the workspace configuration file exists
-  std::filesystem::path config_path = workspace_path / WORKSPACE_FILE;
-  if (!std::filesystem::exists(config_path)) {
-    logger::print_error("Workspace configuration file not found: " +
-                        config_path.string());
-    return false;
+  // First priority: Check for cforge.toml with [workspace] section
+  std::filesystem::path unified_config_path = workspace_path / CFORGE_FILE;
+  std::filesystem::path legacy_config_path = workspace_path / WORKSPACE_FILE;
+  std::filesystem::path config_path;
+
+  if (std::filesystem::exists(unified_config_path)) {
+    try {
+      auto test_config = toml::parse_file(unified_config_path.string());
+      if (test_config.contains("workspace")) {
+        config_path = unified_config_path;
+      }
+    } catch (...) {
+      // Fall through to legacy check
+    }
+  }
+
+  // Fall back to legacy cforge.workspace.toml
+  if (config_path.empty()) {
+    if (std::filesystem::exists(legacy_config_path)) {
+      config_path = legacy_config_path;
+      logger::print_warning(
+          "Using deprecated cforge.workspace.toml format. "
+          "Consider migrating to cforge.toml with [workspace] section.");
+    } else {
+      logger::print_error(
+          "No workspace configuration found. Expected either:\n"
+          "  - " + unified_config_path.string() + " with [workspace] section\n"
+          "  - " + legacy_config_path.string());
+      return false;
+    }
   }
 
   // Load the configuration
@@ -454,7 +478,26 @@ generate_cmake_linking_options(const workspace_project &project,
 
 std::pair<bool, std::filesystem::path>
 is_in_workspace(const std::filesystem::path &path) {
-  // Check if the current directory has a workspace.toml file
+  // Helper to check if a cforge.toml has a [workspace] section
+  auto has_workspace_section = [](const std::filesystem::path &toml_path) -> bool {
+    if (!std::filesystem::exists(toml_path)) {
+      return false;
+    }
+    try {
+      auto config = toml::parse_file(toml_path.string());
+      return config.contains("workspace");
+    } catch (...) {
+      return false;
+    }
+  };
+
+  // First priority: Check for cforge.toml with [workspace] section
+  std::filesystem::path cforge_file = path / CFORGE_FILE;
+  if (has_workspace_section(cforge_file)) {
+    return {true, path};
+  }
+
+  // Second priority: Check for legacy cforge.workspace.toml
   std::filesystem::path workspace_file = path / WORKSPACE_FILE;
   if (std::filesystem::exists(workspace_file)) {
     return {true, path};
@@ -464,6 +507,14 @@ is_in_workspace(const std::filesystem::path &path) {
   std::filesystem::path current = path;
   while (current.has_parent_path() && current != current.parent_path()) {
     current = current.parent_path();
+
+    // Check cforge.toml with [workspace] section first
+    cforge_file = current / CFORGE_FILE;
+    if (has_workspace_section(cforge_file)) {
+      return {true, current};
+    }
+
+    // Fall back to legacy workspace file
     workspace_file = current / WORKSPACE_FILE;
     if (std::filesystem::exists(workspace_file)) {
       return {true, current};
@@ -870,25 +921,38 @@ void configure_index_dependencies_fetchcontent_phase1(
       continue;
     }
 
+    // Resolve version - handle wildcards first
+    std::string resolved_version = dep.version;
+    if (dep.version == "*" || dep.version.empty()) {
+      // Use latest version from registry
+      if (!pkg_info->versions.empty()) {
+        resolved_version = pkg_info->versions.front().version;
+        logger::print_verbose("Resolved " + dep.name + "@* to " + resolved_version);
+      } else {
+        logger::print_warning("Package '" + dep.name + "' has no versions in registry, cannot resolve '*'");
+        continue;
+      }
+    }
+
     // Resolve version to a git tag
-    std::string git_tag = dep.version;
+    std::string git_tag = resolved_version;
     for (const auto &ver : pkg_info->versions) {
-      if (ver.version == dep.version) {
+      if (ver.version == resolved_version) {
         git_tag = ver.tag;
         break;
       }
     }
 
     // If using tag_pattern, construct the tag
-    if (git_tag == dep.version && !pkg_info->tags.pattern.empty()) {
+    if (git_tag == resolved_version && !pkg_info->tags.pattern.empty()) {
       git_tag = pkg_info->tags.pattern;
       size_t pos = git_tag.find("{version}");
       if (pos != std::string::npos) {
-        git_tag.replace(pos, 9, dep.version);
+        git_tag.replace(pos, 9, resolved_version);
       }
     }
 
-    cmakelists << "# " << dep.name << " v" << dep.version << "\n";
+    cmakelists << "# " << dep.name << " v" << resolved_version << "\n";
 
     // Add CMake options from package config
     for (const auto &[opt_key, opt_val] : pkg_info->integration.cmake_options) {
@@ -2557,7 +2621,20 @@ bool workspace::run_project(const std::string &project_name,
 }
 
 bool workspace::is_workspace_dir(const std::filesystem::path &dir) {
-  // Check if the workspace configuration file exists
+  // First priority: Check for cforge.toml with [workspace] section
+  std::filesystem::path cforge_file = dir / CFORGE_FILE;
+  if (std::filesystem::exists(cforge_file)) {
+    try {
+      auto config = toml::parse_file(cforge_file.string());
+      if (config.contains("workspace")) {
+        return true;
+      }
+    } catch (...) {
+      // Ignore parse errors, continue to check legacy file
+    }
+  }
+
+  // Fall back to legacy workspace file
   return std::filesystem::exists(dir / WORKSPACE_FILE);
 }
 
@@ -2574,13 +2651,30 @@ bool workspace::create_workspace(const std::filesystem::path &workspace_path,
     }
   }
 
-  // Create the workspace configuration file
-  std::filesystem::path config_path = workspace_path / WORKSPACE_FILE;
+  // Use unified cforge.toml format (preferred)
+  std::filesystem::path config_path = workspace_path / CFORGE_FILE;
+  std::filesystem::path legacy_path = workspace_path / WORKSPACE_FILE;
 
-  // Don't overwrite existing configuration
+  // Don't overwrite existing configuration (check both formats)
   if (std::filesystem::exists(config_path)) {
-    logger::print_warning("Workspace configuration file already exists: " +
-                          config_path.string());
+    // Check if it already has a workspace section
+    try {
+      auto existing = toml::parse_file(config_path.string());
+      if (existing.contains("workspace")) {
+        logger::print_warning("Workspace configuration already exists in: " +
+                              config_path.string());
+        return true;
+      }
+    } catch (...) {
+      // File exists but isn't valid TOML or doesn't have workspace section
+    }
+  }
+
+  if (std::filesystem::exists(legacy_path)) {
+    logger::print_warning("Legacy workspace configuration already exists: " +
+                          legacy_path.string());
+    logger::print_warning(
+        "Consider migrating to cforge.toml with [workspace] section");
     return true;
   }
 
@@ -2592,13 +2686,28 @@ bool workspace::create_workspace(const std::filesystem::path &workspace_path,
     return false;
   }
 
-  // Write the configuration
-  config_file << "# Workspace configuration for cforge\n\n";
+  // Write the unified workspace configuration
+  config_file << "# Workspace configuration for cforge\n";
+  config_file << "# This file defines a multi-project workspace\n\n";
   config_file << "[workspace]\n";
   config_file << "name = \"" << workspace_name << "\"\n";
   config_file << "description = \"A C++ workspace created with cforge\"\n";
-  config_file << "projects = []\n";
-  config_file << "# main_project = \"main_project\"\n";
+  config_file << "\n";
+  config_file << "# Option 1: List directories that have their own cforge.toml\n";
+  config_file << "members = []\n";
+  config_file << "\n";
+  config_file << "# Option 2: Define projects inline with [[workspace.projects]]\n";
+  config_file << "# [[workspace.projects]]\n";
+  config_file << "# name = \"app\"\n";
+  config_file << "# path = \"app\"\n";
+  config_file << "# startup = true\n";
+  config_file << "\n";
+  config_file << "# [[workspace.projects]]\n";
+  config_file << "# name = \"lib\"\n";
+  config_file << "# path = \"lib\"\n";
+  config_file << "\n";
+  config_file << "# Default startup project (optional)\n";
+  config_file << "# main_project = \"app\"\n";
 
   config_file.close();
 
@@ -2617,13 +2726,35 @@ bool workspace::create_workspace(const std::filesystem::path &workspace_path,
 void workspace::load_projects() {
   projects_.clear();
 
-  // Get the list of projects from the TOML config
-  std::vector<std::string> project_strings =
-      config_->get_string_array("workspace.projects");
+  // Determine the correct config path (unified cforge.toml or legacy workspace file)
+  std::filesystem::path config_path;
+  std::filesystem::path unified_path = workspace_path_ / CFORGE_FILE;
+  std::filesystem::path legacy_path = workspace_path_ / WORKSPACE_FILE;
+
+  // Check for unified format first
+  if (std::filesystem::exists(unified_path)) {
+    try {
+      auto test_config = toml::parse_file(unified_path.string());
+      if (test_config.contains("workspace")) {
+        config_path = unified_path;
+      }
+    } catch (...) {
+      // Fall through to legacy
+    }
+  }
+
+  // Fall back to legacy format
+  if (config_path.empty() && std::filesystem::exists(legacy_path)) {
+    config_path = legacy_path;
+  }
+
+  if (config_path.empty()) {
+    logger::print_error("No workspace configuration found");
+    return;
+  }
 
   // Parse each project string and add to the projects list
   workspace_config workspace_cfg;
-  std::filesystem::path config_path = workspace_path_ / WORKSPACE_FILE;
   if (!workspace_cfg.load(config_path.string())) {
     logger::print_error("Failed to load workspace configuration file");
     return;
@@ -2705,11 +2836,35 @@ bool generate_workspace_cmakelists(const std::filesystem::path &workspace_dir,
   dependency_hash dep_hashes;
   dep_hashes.load(workspace_dir);
 
-  // Calculate current workspace toml hash
-  std::filesystem::path toml_path = workspace_dir / "cforge.workspace.toml";
-  if (!std::filesystem::exists(toml_path)) {
-    logger::print_error("cforge.workspace.toml not found at: " +
-                        toml_path.string());
+  // Find workspace configuration file (unified or legacy)
+  std::filesystem::path toml_path;
+  std::string hash_key;
+
+  // Check unified format first
+  std::filesystem::path unified_path = workspace_dir / CFORGE_FILE;
+  std::filesystem::path legacy_path = workspace_dir / WORKSPACE_FILE;
+
+  if (std::filesystem::exists(unified_path)) {
+    try {
+      auto test_config = toml::parse_file(unified_path.string());
+      if (test_config.contains("workspace")) {
+        toml_path = unified_path;
+        hash_key = CFORGE_FILE;
+      }
+    } catch (...) {
+      // Fall through to legacy
+    }
+  }
+
+  // Fall back to legacy format
+  if (toml_path.empty() && std::filesystem::exists(legacy_path)) {
+    toml_path = legacy_path;
+    hash_key = WORKSPACE_FILE;
+  }
+
+  if (toml_path.empty()) {
+    logger::print_error("No workspace configuration found at: " +
+                        workspace_dir.string());
     return false;
   }
 
@@ -2718,20 +2873,22 @@ bool generate_workspace_cmakelists(const std::filesystem::path &workspace_dir,
   {
     std::ifstream toml_in(toml_path);
     if (!toml_in) {
-      logger::print_error("Failed to open cforge.workspace.toml");
+      logger::print_error("Failed to open workspace configuration: " +
+                          toml_path.string());
       return false;
     }
     std::ostringstream oss;
     oss << toml_in.rdbuf();
     toml_content = oss.str();
     if (toml_content.empty()) {
-      logger::print_error("cforge.workspace.toml is empty");
+      logger::print_error("Workspace configuration file is empty: " +
+                          toml_path.string());
       return false;
     }
   }
 
   std::string toml_hash = dep_hashes.calculate_file_content_hash(toml_content);
-  std::string stored_toml_hash = dep_hashes.get_hash("cforge.workspace.toml");
+  std::string stored_toml_hash = dep_hashes.get_hash(hash_key);
 
   // Only skip regeneration if CMakeLists.txt already exists and the TOML hash
   // is unchanged
@@ -2819,7 +2976,7 @@ bool generate_workspace_cmakelists(const std::filesystem::path &workspace_dir,
   // ... existing code ...
 
   // Store the new workspace toml hash
-  dep_hashes.set_hash("cforge.workspace.toml", toml_hash);
+  dep_hashes.set_hash(hash_key, toml_hash);
   dep_hashes.save(workspace_dir);
 
   return true;
@@ -2836,22 +2993,62 @@ bool workspace_config::load(const std::string &workspace_file) {
   name_ = reader.get_string("workspace.name", "cpp-workspace");
   description_ = reader.get_string("workspace.description", "A C++ workspace");
 
-  // Load projects using array-of-tables [[workspace.project]] with fallback
+  // Get workspace directory for resolving paths
+  std::filesystem::path workspace_dir =
+      std::filesystem::path(workspace_file).parent_path();
+
+  // Load projects using multiple formats with priority
   projects_.clear();
   bool had_table_startup = false;
+
   try {
     auto raw = toml::parse_file(workspace_file);
-    auto node = raw["workspace"]["project"];
-    if (node && node.is_array_of_tables()) {
-      // New format as array of tables
-      for (auto &elem : *node.as_array()) {
+
+    // Priority 1: Load from workspace.members (directories with own cforge.toml)
+    auto members_node = raw["workspace"]["members"];
+    if (members_node && members_node.is_array()) {
+      for (auto &elem : *members_node.as_array()) {
+        if (!elem.is_string())
+          continue;
+        std::string member_path = elem.value_or(std::string());
+        if (member_path.empty())
+          continue;
+
+        // Resolve the path and check for cforge.toml
+        std::filesystem::path full_path = workspace_dir / member_path;
+        std::filesystem::path project_toml = full_path / CFORGE_FILE;
+
+        if (std::filesystem::exists(project_toml)) {
+          workspace_project project;
+          project.path = full_path;
+          // Read project name from its own cforge.toml
+          toml_reader proj_reader;
+          if (proj_reader.load(project_toml.string())) {
+            project.name = proj_reader.get_string("project.name", member_path);
+          } else {
+            project.name = member_path;
+          }
+          project.is_startup_project = false;
+          projects_.push_back(project);
+        } else {
+          logger::print_warning("Member '" + member_path +
+                                "' does not have a cforge.toml file");
+        }
+      }
+    }
+
+    // Priority 2: Load from [[workspace.projects]] inline definitions
+    auto projects_node = raw["workspace"]["projects"];
+    if (projects_node && projects_node.is_array_of_tables()) {
+      for (auto &elem : *projects_node.as_array()) {
         if (!elem.is_table())
           continue;
         toml::table &tbl = *elem.as_table();
         workspace_project project;
         project.name = tbl["name"].value_or("");
-        project.path = tbl["path"].value_or(project.name);
-        // Read startup flag as boolean or string (accept "true" as true)
+        project.path = workspace_dir / tbl["path"].value_or(project.name);
+
+        // Read startup flag
         auto flag_node = tbl["startup"];
         if (flag_node && flag_node.is_boolean()) {
           project.is_startup_project = flag_node.value_or(false);
@@ -2862,17 +3059,86 @@ bool workspace_config::load(const std::string &workspace_file) {
         } else {
           project.is_startup_project = false;
         }
+
+        if (project.is_startup_project) {
+          had_table_startup = true;
+        }
+
+        // Check for conflict: project has both inline settings AND its own cforge.toml
+        std::filesystem::path local_toml = project.path / CFORGE_FILE;
+        bool has_local_toml = std::filesystem::exists(local_toml);
+        bool has_inline_settings = tbl.contains("cpp_standard") ||
+                                   tbl.contains("binary_type") ||
+                                   tbl.contains("version") ||
+                                   tbl.contains("sources") ||
+                                   tbl.contains("build");
+
+        if (has_local_toml && has_inline_settings) {
+          // Warn about conflict - project's cforge.toml takes priority
+          logger::print_warning(
+              "Project '" + project.name + "' has conflicting settings:");
+          logger::print_warning(
+              "  --> " + workspace_file + " (workspace) vs " +
+              local_toml.string());
+          logger::print_warning(
+              "  = Using project's own cforge.toml values (project takes priority)");
+          logger::print_warning(
+              "  = help: Remove inline settings from workspace or delete " +
+              local_toml.string());
+        }
+
+        projects_.push_back(project);
+      }
+    }
+
+    // Priority 3: Legacy [[workspace.project]] format (singular)
+    auto project_node = raw["workspace"]["project"];
+    if (project_node && project_node.is_array_of_tables()) {
+      for (auto &elem : *project_node.as_array()) {
+        if (!elem.is_table())
+          continue;
+        toml::table &tbl = *elem.as_table();
+        workspace_project project;
+        project.name = tbl["name"].value_or("");
+        project.path = workspace_dir / tbl["path"].value_or(project.name);
+
+        auto flag_node = tbl["startup"];
+        if (flag_node && flag_node.is_boolean()) {
+          project.is_startup_project = flag_node.value_or(false);
+        } else if (flag_node && flag_node.is_string()) {
+          std::string s = flag_node.value_or(std::string());
+          std::transform(s.begin(), s.end(), s.begin(), ::tolower);
+          project.is_startup_project = (s == "true");
+        } else {
+          project.is_startup_project = false;
+        }
+
         if (project.is_startup_project) {
           had_table_startup = true;
         }
         projects_.push_back(project);
       }
-    } else {
-      // Legacy parsing: string array format "name:path:is_startup_project"
+    }
+
+    // Priority 4: Legacy string array format "name:path:is_startup_project"
+    if (projects_.empty()) {
       std::vector<std::string> project_paths =
           reader.get_string_array("workspace.projects");
       if (!project_paths.empty()) {
         for (const auto &project_path : project_paths) {
+          // Check if it's a simple string (just a path/name) vs colon-separated
+          if (project_path.find(':') == std::string::npos ||
+              (project_path.length() > 1 && project_path[1] == ':' &&
+               (project_path[2] == '\\' || project_path[2] == '/'))) {
+            // Simple path or Windows absolute path - treat as member
+            workspace_project project;
+            project.path = workspace_dir / project_path;
+            project.name = std::filesystem::path(project_path).filename().string();
+            project.is_startup_project = false;
+            projects_.push_back(project);
+            continue;
+          }
+
           workspace_project project;
           std::vector<std::string> parts;
           std::string::size_type start = 0, end = 0;
@@ -2895,9 +3161,9 @@ bool workspace_config::load(const std::string &workspace_file) {
           if (parts.size() >= 1)
             project.name = parts[0];
           if (parts.size() >= 2)
-            project.path = std::filesystem::path(parts[1]);
+            project.path = workspace_dir / parts[1];
           else if (!project.name.empty())
-            project.path = project.name;
+            project.path = workspace_dir / project.name;
           if (parts.size() >= 3)
             project.is_startup_project = (parts[2] == "true");
           if (project.is_startup_project) {
@@ -2912,7 +3178,7 @@ bool workspace_config::load(const std::string &workspace_file) {
                         std::string(e.what()));
   }
 
-  // Check for default startup project only if none in table-of-tables
+  // Check for default startup project only if none marked in projects
   std::string main_project = reader.get_string("workspace.main_project", "");
   if (!had_table_startup && !main_project.empty()) {
     set_startup_project(main_project);

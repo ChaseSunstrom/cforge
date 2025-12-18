@@ -167,6 +167,126 @@ std::vector<diagnostic> parse_compiler_errors(const std::string &error_output);
 std::vector<diagnostic> parse_template_errors(const std::string &error_output);
 
 /**
+ * @brief Parse preprocessor errors (#error, macro expansion, etc.)
+ *
+ * @param error_output Raw error output
+ * @return Vector of extracted diagnostics
+ */
+std::vector<diagnostic> parse_preprocessor_errors(const std::string &error_output);
+
+/**
+ * @brief Parse AddressSanitizer/UndefinedBehaviorSanitizer output
+ *
+ * @param error_output Raw error output
+ * @return Vector of extracted diagnostics
+ */
+std::vector<diagnostic> parse_sanitizer_errors(const std::string &error_output);
+
+/**
+ * @brief Parse assertion failures (assert, static_assert)
+ *
+ * @param error_output Raw error output
+ * @return Vector of extracted diagnostics
+ */
+std::vector<diagnostic> parse_assertion_errors(const std::string &error_output);
+
+/**
+ * @brief Parse C++20 module errors
+ *
+ * @param error_output Raw error output
+ * @return Vector of extracted diagnostics
+ */
+std::vector<diagnostic> parse_module_errors(const std::string &error_output);
+
+/**
+ * @brief Parse runtime errors (segfault, exceptions, etc.)
+ *
+ * @param error_output Raw error output
+ * @return Vector of extracted diagnostics
+ */
+std::vector<diagnostic> parse_runtime_errors(const std::string &error_output);
+
+/**
+ * @brief Parse test framework output (Google Test, Catch2, Boost.Test)
+ *
+ * @param error_output Raw error output
+ * @return Vector of extracted diagnostics
+ */
+std::vector<diagnostic> parse_test_framework_errors(const std::string &error_output);
+
+/**
+ * @brief Parse static analysis tool output (clang-tidy, cppcheck)
+ *
+ * @param error_output Raw error output
+ * @return Vector of extracted diagnostics
+ */
+std::vector<diagnostic> parse_static_analysis_errors(const std::string &error_output);
+
+/**
+ * @brief Parse C++20 concept constraint errors
+ *
+ * @param error_output Raw error output
+ * @return Vector of extracted diagnostics
+ */
+std::vector<diagnostic> parse_concept_errors(const std::string &error_output);
+
+/**
+ * @brief Parse constexpr evaluation errors
+ *
+ * @param error_output Raw error output
+ * @return Vector of extracted diagnostics
+ */
+std::vector<diagnostic> parse_constexpr_errors(const std::string &error_output);
+
+/**
+ * @brief Parse C++20 coroutine errors (co_await, co_yield, co_return)
+ *
+ * @param error_output Raw error output
+ * @return Vector of extracted diagnostics
+ */
+std::vector<diagnostic> parse_coroutine_errors(const std::string &error_output);
+
+/**
+ * @brief Parse C++20 ranges library errors
+ *
+ * @param error_output Raw error output
+ * @return Vector of extracted diagnostics
+ */
+std::vector<diagnostic> parse_ranges_errors(const std::string &error_output);
+
+/**
+ * @brief Parse CUDA/HIP GPU compiler errors
+ *
+ * @param error_output Raw error output
+ * @return Vector of extracted diagnostics
+ */
+std::vector<diagnostic> parse_cuda_hip_errors(const std::string &error_output);
+
+/**
+ * @brief Parse Intel ICC/ICX compiler errors
+ *
+ * @param error_output Raw error output
+ * @return Vector of extracted diagnostics
+ */
+std::vector<diagnostic> parse_intel_compiler_errors(const std::string &error_output);
+
+/**
+ * @brief Parse precompiled header (PCH) errors
+ *
+ * @param error_output Raw error output
+ * @return Vector of extracted diagnostics
+ */
+std::vector<diagnostic> parse_pch_errors(const std::string &error_output);
+
+/**
+ * @brief Parse cross-compilation and ABI mismatch errors
+ *
+ * @param error_output Raw error output
+ * @return Vector of extracted diagnostics
+ */
+std::vector<diagnostic> parse_abi_errors(const std::string &error_output);
+
+/**
  * @brief Deduplicate diagnostics by grouping similar errors
  *
  * Groups errors with the same code and similar messages, incrementing

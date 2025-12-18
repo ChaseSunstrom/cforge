@@ -125,6 +125,33 @@ std::string format_build_errors(const std::string &error_output) {
   return ss.str();
 }
 
+// Helper function to read a specific line from a file
+static std::string read_line_from_file(const std::string &file_path, int line_number) {
+  if (file_path.empty() || line_number <= 0) {
+    return "";
+  }
+
+  try {
+    std::ifstream file(file_path);
+    if (!file.is_open()) {
+      return "";
+    }
+
+    std::string line;
+    int current_line = 0;
+    while (std::getline(file, line) && current_line < line_number) {
+      current_line++;
+      if (current_line == line_number) {
+        return line;
+      }
+    }
+  } catch (...) {
+    // Ignore file read errors
+  }
+
+  return "";
+}
+
 // Format a diagnostic in Cargo/Rust style
 std::string format_diagnostic_to_string(const diagnostic &diag) {
   std::stringstream ss;
@@ -166,8 +193,16 @@ std::string format_diagnostic_to_string(const diagnostic &diag) {
 
   // File location: " --> src/main.cpp:10:5"
   if (!diag.file_path.empty()) {
+    // Shorten long paths for display
+    std::string display_path = diag.file_path;
+    if (display_path.length() > 60) {
+      // Use ... for middle of path
+      display_path = display_path.substr(0, 25) + "..." +
+                     display_path.substr(display_path.length() - 32);
+    }
+
     ss << fmt::format(fg(fmt::color::cyan), "  --> ");
-    ss << diag.file_path;
+    ss << display_path;
     if (diag.line_number > 0) {
       ss << ":" << diag.line_number;
       if (diag.column_number > 0) {
@@ -177,8 +212,14 @@ std::string format_diagnostic_to_string(const diagnostic &diag) {
     ss << "\n";
   }
 
+  // Get line content - either from diagnostic or by reading the file
+  std::string line_content = diag.line_content;
+  if (line_content.empty() && !diag.file_path.empty() && diag.line_number > 0) {
+    line_content = read_line_from_file(diag.file_path, diag.line_number);
+  }
+
   // Code snippet with line numbers
-  if (!diag.line_content.empty() && diag.line_number > 0) {
+  if (!line_content.empty() && diag.line_number > 0) {
     // Calculate gutter width based on line number
     int gutter_width = std::to_string(diag.line_number).length();
     if (gutter_width < 2)
@@ -190,7 +231,7 @@ std::string format_diagnostic_to_string(const diagnostic &diag) {
     // The actual code line
     ss << fmt::format(fg(fmt::color::cyan), "{:>{}} | ", diag.line_number,
                       gutter_width);
-    ss << diag.line_content << "\n";
+    ss << line_content << "\n";
 
     // The error pointer line
     ss << fmt::format(fg(fmt::color::cyan), "{:>{}} | ", "", gutter_width);
@@ -200,16 +241,16 @@ std::string format_diagnostic_to_string(const diagnostic &diag) {
       size_t token_length = 1;
 
       // Try to find the token length
-      if (col < diag.line_content.length()) {
-        if (std::isalnum(diag.line_content[col]) ||
-            diag.line_content[col] == '_') {
+      if (col < line_content.length()) {
+        if (std::isalnum(line_content[col]) ||
+            line_content[col] == '_') {
           size_t start = col;
           size_t end = col;
 
           // Find token boundaries
-          while (end < diag.line_content.length() &&
-                 (std::isalnum(diag.line_content[end]) ||
-                  diag.line_content[end] == '_')) {
+          while (end < line_content.length() &&
+                 (std::isalnum(line_content[end]) ||
+                  line_content[end] == '_')) {
             end++;
           }
           token_length = end - start;
@@ -309,6 +350,81 @@ std::vector<diagnostic> extract_diagnostics(const std::string &error_output) {
   auto template_diags = parse_template_errors(error_output);
   all_diagnostics.insert(all_diagnostics.end(), template_diags.begin(),
                          template_diags.end());
+
+  // Parse preprocessor errors (#error, macro issues)
+  auto preprocessor_diags = parse_preprocessor_errors(error_output);
+  all_diagnostics.insert(all_diagnostics.end(), preprocessor_diags.begin(),
+                         preprocessor_diags.end());
+
+  // Parse sanitizer output (ASan, UBSan, TSan)
+  auto sanitizer_diags = parse_sanitizer_errors(error_output);
+  all_diagnostics.insert(all_diagnostics.end(), sanitizer_diags.begin(),
+                         sanitizer_diags.end());
+
+  // Parse assertion failures
+  auto assertion_diags = parse_assertion_errors(error_output);
+  all_diagnostics.insert(all_diagnostics.end(), assertion_diags.begin(),
+                         assertion_diags.end());
+
+  // Parse C++20 module errors
+  auto module_diags = parse_module_errors(error_output);
+  all_diagnostics.insert(all_diagnostics.end(), module_diags.begin(),
+                         module_diags.end());
+
+  // Parse runtime errors
+  auto runtime_diags = parse_runtime_errors(error_output);
+  all_diagnostics.insert(all_diagnostics.end(), runtime_diags.begin(),
+                         runtime_diags.end());
+
+  // Parse test framework errors (GTest, Catch2, Boost.Test)
+  auto test_diags = parse_test_framework_errors(error_output);
+  all_diagnostics.insert(all_diagnostics.end(), test_diags.begin(),
+                         test_diags.end());
+
+  // Parse static analysis tool output (clang-tidy, cppcheck)
+  auto analysis_diags = parse_static_analysis_errors(error_output);
+  all_diagnostics.insert(all_diagnostics.end(), analysis_diags.begin(),
+                         analysis_diags.end());
+
+  // Parse C++20 concept constraint errors
+  auto concept_diags = parse_concept_errors(error_output);
+  all_diagnostics.insert(all_diagnostics.end(), concept_diags.begin(),
+                         concept_diags.end());
+
+  // Parse constexpr evaluation errors
+  auto constexpr_diags = parse_constexpr_errors(error_output);
+  all_diagnostics.insert(all_diagnostics.end(), constexpr_diags.begin(),
+                         constexpr_diags.end());
+
+  // Parse C++20 coroutine errors
+  auto coroutine_diags = parse_coroutine_errors(error_output);
+  all_diagnostics.insert(all_diagnostics.end(), coroutine_diags.begin(),
+                         coroutine_diags.end());
+
+  // Parse C++20 ranges library errors
+  auto ranges_diags = parse_ranges_errors(error_output);
+  all_diagnostics.insert(all_diagnostics.end(), ranges_diags.begin(),
+                         ranges_diags.end());
+
+  // Parse CUDA/HIP GPU compiler errors
+  auto cuda_diags = parse_cuda_hip_errors(error_output);
+  all_diagnostics.insert(all_diagnostics.end(), cuda_diags.begin(),
+                         cuda_diags.end());
+
+  // Parse Intel ICC/ICX compiler errors
+  auto intel_diags = parse_intel_compiler_errors(error_output);
+  all_diagnostics.insert(all_diagnostics.end(), intel_diags.begin(),
+                         intel_diags.end());
+
+  // Parse precompiled header (PCH) errors
+  auto pch_diags = parse_pch_errors(error_output);
+  all_diagnostics.insert(all_diagnostics.end(), pch_diags.begin(),
+                         pch_diags.end());
+
+  // Parse cross-compilation and ABI mismatch errors
+  auto abi_diags = parse_abi_errors(error_output);
+  all_diagnostics.insert(all_diagnostics.end(), abi_diags.begin(),
+                         abi_diags.end());
 
   return all_diagnostics;
 }
@@ -2643,9 +2759,9 @@ std::vector<fix_suggestion> generate_fix_suggestions(const diagnostic &diag) {
     suggestions.push_back(fix);
   }
 
-  
+
   // GCC/Clang note about similar names
-  
+
   for (const auto &note : diag.notes) {
     std::string note_lower = note;
     std::transform(note_lower.begin(), note_lower.end(), note_lower.begin(),
@@ -2664,7 +2780,2361 @@ std::vector<fix_suggestion> generate_fix_suggestions(const diagnostic &diag) {
     }
   }
 
+
+  // Virtual destructor missing
+
+  if (msg_lower.find("has virtual functions but non-virtual destructor") != std::string::npos ||
+      msg_lower.find("destructor is not virtual") != std::string::npos ||
+      diag.code.find("-Wnon-virtual-dtor") != std::string::npos) {
+
+    fix_suggestion fix;
+    fix.description = "Add virtual destructor";
+    fix.replacement = "virtual ~ClassName() = default;";
+    fix.is_insertion = true;
+    suggestions.push_back(fix);
+  }
+
+
+  // Override keyword missing
+
+  if (msg_lower.find("hides overloaded virtual function") != std::string::npos ||
+      msg_lower.find("suggest override") != std::string::npos ||
+      diag.code.find("-Woverloaded-virtual") != std::string::npos ||
+      diag.code.find("-Wsuggest-override") != std::string::npos) {
+
+    fix_suggestion fix;
+    fix.description = "Add 'override' keyword";
+    fix.replacement = " override";
+    fix.is_insertion = true;
+    suggestions.push_back(fix);
+  }
+
+
+  // Multiple definition - suggest inline or move to .cpp
+
+  if (msg_lower.find("multiple definition") != std::string::npos ||
+      msg_lower.find("already defined") != std::string::npos ||
+      msg_lower.find("duplicate symbol") != std::string::npos) {
+
+    fix_suggestion fix1;
+    fix1.description = "Mark as inline if in header file";
+    fix1.replacement = "inline ";
+    fix1.is_insertion = true;
+    suggestions.push_back(fix1);
+
+    fix_suggestion fix2;
+    fix2.description = "Move definition to a .cpp file";
+    suggestions.push_back(fix2);
+
+    fix_suggestion fix3;
+    fix3.description = "Check for missing include guards or #pragma once";
+    suggestions.push_back(fix3);
+  }
+
+
+  // Use after move
+
+  if (msg_lower.find("use after move") != std::string::npos ||
+      msg_lower.find("moved from") != std::string::npos ||
+      diag.code.find("-Wuse-after-move") != std::string::npos) {
+
+    fix_suggestion fix1;
+    fix1.description = "Remove use of moved-from object";
+    suggestions.push_back(fix1);
+
+    fix_suggestion fix2;
+    fix2.description = "Use a copy instead of move";
+    suggestions.push_back(fix2);
+  }
+
+
+  // Dangling reference/pointer
+
+  if (msg_lower.find("dangling") != std::string::npos ||
+      msg_lower.find("lifetime") != std::string::npos ||
+      msg_lower.find("stack memory") != std::string::npos ||
+      diag.code.find("-Wreturn-local-addr") != std::string::npos ||
+      diag.code.find("-Wdangling") != std::string::npos) {
+
+    fix_suggestion fix;
+    fix.description = "Return by value or extend object lifetime";
+    suggestions.push_back(fix);
+  }
+
+
+  // Deprecated feature usage
+
+  if (msg_lower.find("deprecated") != std::string::npos ||
+      diag.code.find("-Wdeprecated") != std::string::npos) {
+
+    fix_suggestion fix;
+    fix.description = "Update to use the non-deprecated alternative";
+    suggestions.push_back(fix);
+  }
+
+
+  // Missing #pragma once / include guard
+
+  if (msg_lower.find("included multiple times") != std::string::npos ||
+      msg_lower.find("recursive include") != std::string::npos) {
+
+    fix_suggestion fix1;
+    fix1.description = "Add #pragma once at the top of the header";
+    fix1.replacement = "#pragma once\n";
+    fix1.is_insertion = true;
+    suggestions.push_back(fix1);
+
+    fix_suggestion fix2;
+    fix2.description = "Consider using forward declarations instead of #include";
+    suggestions.push_back(fix2);
+  }
+
+
+  // Thread safety issues
+
+  if (msg_lower.find("thread") != std::string::npos &&
+      (msg_lower.find("race") != std::string::npos ||
+       msg_lower.find("unsafe") != std::string::npos)) {
+
+    fix_suggestion fix;
+    fix.description = "Add synchronization (mutex, atomic, etc.)";
+    suggestions.push_back(fix);
+  }
+
+
+  // Memory leak potential
+
+  if (msg_lower.find("memory leak") != std::string::npos ||
+      msg_lower.find("not freed") != std::string::npos) {
+
+    fix_suggestion fix;
+    fix.description = "Use smart pointers (std::unique_ptr or std::shared_ptr)";
+    suggestions.push_back(fix);
+  }
+
   return suggestions;
+}
+
+// ============================================================================
+// Preprocessor Error Parser
+// ============================================================================
+
+std::vector<diagnostic> parse_preprocessor_errors(const std::string &error_output) {
+  std::vector<diagnostic> diagnostics;
+
+  // #error directive: file.h:10:2: error: #error "message"
+  std::regex error_directive_regex(
+      R"(([^:]+):(\d+):(?:\d+:)?\s*error:\s*#error\s*[\"']?([^\"'\n]+)[\"']?)");
+
+  // Macro expansion errors
+  std::regex macro_error_regex(
+      R"(([^:]+):(\d+):(?:\d+:)?\s*error:\s*(?:in expansion of macro|expanding macro)\s*[`'\"](\w+)[`'\"])");
+
+  // Include guard warning
+  std::regex include_guard_regex(
+      R"(([^:]+):(\d+):(?:\d+:)?\s*warning:\s*.*include guard.*\s*\[([^\]]+)\])");
+
+  // Pragma error/warning
+  std::regex pragma_regex(
+      R"(([^:]+):(\d+):(?:\d+:)?\s*(error|warning):\s*(?:#pragma|_Pragma)\s*(.*))");
+
+  // Conditional compilation errors
+  std::regex conditional_regex(
+      R"(([^:]+):(\d+):(?:\d+:)?\s*error:\s*(?:unterminated|unbalanced)\s*(#if|#ifdef|#ifndef|#else|#endif))");
+
+  // Macro redefinition
+  std::regex redef_regex(
+      R"(([^:]+):(\d+):(?:\d+:)?\s*warning:\s*[\"'](\w+)[\"']\s*(?:redefined|macro redefinition))");
+
+  std::string line;
+  std::istringstream stream(error_output);
+
+  while (std::getline(stream, line)) {
+    std::smatch matches;
+
+    // #error directive
+    if (std::regex_search(line, matches, error_directive_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.file_path = matches[1].str();
+      diag.line_number = std::stoi(matches[2].str());
+      diag.column_number = 0;
+      diag.code = "PP-ERROR";
+      diag.message = "#error: " + matches[3].str();
+      diag.help_text = "This #error directive was triggered intentionally. "
+                       "Check the preprocessor conditions that led here.";
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // Macro expansion errors
+    if (std::regex_search(line, matches, macro_error_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.file_path = matches[1].str();
+      diag.line_number = std::stoi(matches[2].str());
+      diag.column_number = 0;
+      diag.code = "PP-MACRO";
+      diag.message = "Error expanding macro '" + matches[3].str() + "'";
+      diag.help_text = "Check the macro definition and arguments. "
+                       "Ensure all macro parameters are properly escaped.";
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // Conditional compilation errors
+    if (std::regex_search(line, matches, conditional_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.file_path = matches[1].str();
+      diag.line_number = std::stoi(matches[2].str());
+      diag.column_number = 0;
+      diag.code = "PP-COND";
+      diag.message = "Unterminated or unbalanced " + matches[3].str();
+      diag.help_text = "Make sure all #if/#ifdef/#ifndef have matching #endif. "
+                       "Check for missing #endif at end of file.";
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // Macro redefinition
+    if (std::regex_search(line, matches, redef_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::WARNING;
+      diag.file_path = matches[1].str();
+      diag.line_number = std::stoi(matches[2].str());
+      diag.column_number = 0;
+      diag.code = "PP-REDEF";
+      diag.message = "Macro '" + matches[3].str() + "' redefined";
+      diag.help_text = "The macro is defined multiple times. Use #undef before redefining, "
+                       "or wrap in #ifndef to avoid redefinition.";
+      diagnostics.push_back(diag);
+      continue;
+    }
+  }
+
+  return diagnostics;
+}
+
+// ============================================================================
+// Sanitizer Error Parser (ASan, UBSan, TSan, MSan)
+// ============================================================================
+
+std::vector<diagnostic> parse_sanitizer_errors(const std::string &error_output) {
+  std::vector<diagnostic> diagnostics;
+
+  // AddressSanitizer errors
+  // ==12345==ERROR: AddressSanitizer: heap-buffer-overflow on address 0x...
+  std::regex asan_error_regex(
+      R"(==\d+==ERROR:\s*AddressSanitizer:\s*([^\n]+))");
+
+  // ASan stack trace location
+  // #0 0x... in function_name file.cpp:123
+  std::regex asan_frame_regex(
+      R"(#(\d+)\s+0x[0-9a-fA-F]+\s+in\s+(\S+)\s+([^:]+):(\d+))");
+
+  // UndefinedBehaviorSanitizer
+  // file.cpp:123:45: runtime error: signed integer overflow
+  std::regex ubsan_regex(
+      R"(([^:]+):(\d+):(\d+):\s*runtime error:\s*(.+))");
+
+  // ThreadSanitizer
+  // WARNING: ThreadSanitizer: data race (pid=12345)
+  std::regex tsan_regex(
+      R"(WARNING:\s*ThreadSanitizer:\s*([^\(]+))");
+
+  // MemorySanitizer
+  // ==12345==WARNING: MemorySanitizer: use-of-uninitialized-value
+  std::regex msan_regex(
+      R"(==\d+==WARNING:\s*MemorySanitizer:\s*([^\n]+))");
+
+  // LeakSanitizer
+  // ==12345==ERROR: LeakSanitizer: detected memory leaks
+  std::regex lsan_regex(
+      R"(==\d+==ERROR:\s*LeakSanitizer:\s*([^\n]+))");
+
+  std::string line;
+  std::istringstream stream(error_output);
+  diagnostic *current_diag = nullptr;
+
+  while (std::getline(stream, line)) {
+    std::smatch matches;
+
+    // AddressSanitizer error header
+    if (std::regex_search(line, matches, asan_error_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.code = "ASAN";
+      std::string error_type = matches[1].str();
+      diag.message = "AddressSanitizer: " + error_type;
+
+      // Add specific help based on error type
+      if (error_type.find("heap-buffer-overflow") != std::string::npos) {
+        diag.help_text = "Writing or reading beyond allocated heap memory. "
+                         "Check array bounds and pointer arithmetic.";
+      } else if (error_type.find("stack-buffer-overflow") != std::string::npos) {
+        diag.help_text = "Writing or reading beyond stack-allocated array. "
+                         "Check array indices and buffer sizes.";
+      } else if (error_type.find("heap-use-after-free") != std::string::npos) {
+        diag.help_text = "Accessing memory after it was freed. "
+                         "Use smart pointers or carefully manage object lifetimes.";
+      } else if (error_type.find("double-free") != std::string::npos) {
+        diag.help_text = "Memory freed twice. Use smart pointers to prevent this.";
+      } else if (error_type.find("stack-use-after-return") != std::string::npos) {
+        diag.help_text = "Using a pointer to local variable after function returned. "
+                         "Don't return pointers/references to local variables.";
+      } else if (error_type.find("null-dereference") != std::string::npos ||
+                 error_type.find("SEGV") != std::string::npos) {
+        diag.help_text = "Dereferencing null or invalid pointer. Add null checks.";
+      } else {
+        diag.help_text = "Memory error detected. Check pointer/array operations.";
+      }
+
+      diagnostics.push_back(diag);
+      current_diag = &diagnostics.back();
+      continue;
+    }
+
+    // ASan stack frame - add to current diagnostic
+    if (current_diag && std::regex_search(line, matches, asan_frame_regex)) {
+      if (matches[1].str() == "0") { // First frame is usually the error location
+        current_diag->file_path = matches[3].str();
+        current_diag->line_number = std::stoi(matches[4].str());
+        current_diag->notes.push_back("in function: " + matches[2].str());
+      }
+      continue;
+    }
+
+    // UndefinedBehaviorSanitizer
+    if (std::regex_search(line, matches, ubsan_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.file_path = matches[1].str();
+      diag.line_number = std::stoi(matches[2].str());
+      diag.column_number = std::stoi(matches[3].str());
+      diag.code = "UBSAN";
+      diag.message = "UndefinedBehavior: " + matches[4].str();
+
+      std::string msg = matches[4].str();
+      if (msg.find("signed integer overflow") != std::string::npos) {
+        diag.help_text = "Signed integer overflow is undefined behavior. "
+                         "Use unsigned types or check for overflow before operations.";
+      } else if (msg.find("shift") != std::string::npos) {
+        diag.help_text = "Invalid shift operation. Check shift amount is within bounds.";
+      } else if (msg.find("null pointer") != std::string::npos) {
+        diag.help_text = "Null pointer dereference. Add null checks before use.";
+      } else if (msg.find("division by zero") != std::string::npos) {
+        diag.help_text = "Division by zero. Check divisor before dividing.";
+      } else {
+        diag.help_text = "Undefined behavior detected. Review the operation.";
+      }
+
+      diagnostics.push_back(diag);
+      current_diag = &diagnostics.back();
+      continue;
+    }
+
+    // ThreadSanitizer
+    if (std::regex_search(line, matches, tsan_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.code = "TSAN";
+      diag.message = "ThreadSanitizer: " + matches[1].str();
+      diag.help_text = "Data race detected. Use mutexes, atomics, or other "
+                       "synchronization primitives to protect shared data.";
+      diagnostics.push_back(diag);
+      current_diag = &diagnostics.back();
+      continue;
+    }
+
+    // MemorySanitizer
+    if (std::regex_search(line, matches, msan_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.code = "MSAN";
+      diag.message = "MemorySanitizer: " + matches[1].str();
+      diag.help_text = "Use of uninitialized memory detected. "
+                       "Initialize all variables before use.";
+      diagnostics.push_back(diag);
+      current_diag = &diagnostics.back();
+      continue;
+    }
+
+    // LeakSanitizer
+    if (std::regex_search(line, matches, lsan_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.code = "LSAN";
+      diag.message = "LeakSanitizer: " + matches[1].str();
+      diag.help_text = "Memory leak detected. Use smart pointers (unique_ptr, shared_ptr) "
+                       "or ensure all allocations have corresponding deallocations.";
+      diagnostics.push_back(diag);
+      current_diag = &diagnostics.back();
+      continue;
+    }
+  }
+
+  return diagnostics;
+}
+
+// ============================================================================
+// Assertion Error Parser
+// ============================================================================
+
+std::vector<diagnostic> parse_assertion_errors(const std::string &error_output) {
+  std::vector<diagnostic> diagnostics;
+
+  // static_assert failure (GCC/Clang)
+  // file.cpp:123: error: static assertion failed: message
+  std::regex static_assert_gcc_regex(
+      R"(([^:]+):(\d+):\s*error:\s*static assertion failed(?::\s*(.+))?)");
+
+  // static_assert failure (MSVC)
+  // file.cpp(123): error C2338: static_assert failed 'message'
+  std::regex static_assert_msvc_regex(
+      R"(([^\(]+)\((\d+)\):\s*error\s+C2338:\s*static_assert failed\s*'?([^']*)'?)");
+
+  // Runtime assert failure (standard library)
+  // Assertion failed: expression, file filename, line N
+  std::regex assert_failure_regex(
+      R"(Assertion failed:\s*([^,]+),\s*file\s+([^,]+),\s*line\s+(\d+))");
+
+  // GCC/Clang runtime assert
+  // file:line: function: Assertion `expr' failed.
+  std::regex gcc_assert_regex(
+      R"(([^:]+):(\d+):\s*(\S+):\s*Assertion\s*[`']([^'`]+)[`']\s*failed)");
+
+  // MSVC runtime assert
+  // Debug Assertion Failed! ... File: file.cpp, Line: 123
+  std::regex msvc_assert_regex(
+      R"(Debug Assertion Failed.*File:\s*([^,]+),\s*Line:\s*(\d+))");
+
+  std::string line;
+  std::istringstream stream(error_output);
+
+  while (std::getline(stream, line)) {
+    std::smatch matches;
+
+    // static_assert (GCC/Clang)
+    if (std::regex_search(line, matches, static_assert_gcc_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.file_path = matches[1].str();
+      diag.line_number = std::stoi(matches[2].str());
+      diag.column_number = 0;
+      diag.code = "STATIC-ASSERT";
+      diag.message = "static_assert failed";
+      if (matches[3].matched && !matches[3].str().empty()) {
+        diag.message += ": " + matches[3].str();
+      }
+      diag.help_text = "A compile-time assertion failed. Check the condition "
+                       "and ensure template parameters/constants meet requirements.";
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // static_assert (MSVC)
+    if (std::regex_search(line, matches, static_assert_msvc_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.file_path = matches[1].str();
+      diag.line_number = std::stoi(matches[2].str());
+      diag.column_number = 0;
+      diag.code = "C2338";
+      diag.message = "static_assert failed";
+      if (!matches[3].str().empty()) {
+        diag.message += ": " + matches[3].str();
+      }
+      diag.help_text = "A compile-time assertion failed. Check the condition "
+                       "and ensure template parameters/constants meet requirements.";
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // Runtime assert (standard)
+    if (std::regex_search(line, matches, assert_failure_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.file_path = matches[2].str();
+      diag.line_number = std::stoi(matches[3].str());
+      diag.column_number = 0;
+      diag.code = "ASSERT";
+      diag.message = "Assertion failed: " + matches[1].str();
+      diag.help_text = "A runtime assertion failed. The condition was expected to be true. "
+                       "Check the program state and input data.";
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // GCC/Clang runtime assert
+    if (std::regex_search(line, matches, gcc_assert_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.file_path = matches[1].str();
+      diag.line_number = std::stoi(matches[2].str());
+      diag.column_number = 0;
+      diag.code = "ASSERT";
+      diag.message = "Assertion `" + matches[4].str() + "' failed";
+      diag.notes.push_back("in function: " + matches[3].str());
+      diag.help_text = "A runtime assertion failed. Check the condition and inputs.";
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // MSVC runtime assert
+    if (std::regex_search(line, matches, msvc_assert_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.file_path = matches[1].str();
+      diag.line_number = std::stoi(matches[2].str());
+      diag.column_number = 0;
+      diag.code = "ASSERT";
+      diag.message = "Debug Assertion Failed";
+      diag.help_text = "A debug assertion failed. This usually indicates a bug "
+                       "or invalid program state. Check preconditions.";
+      diagnostics.push_back(diag);
+      continue;
+    }
+  }
+
+  return diagnostics;
+}
+
+// ============================================================================
+// C++20 Module Error Parser
+// ============================================================================
+
+std::vector<diagnostic> parse_module_errors(const std::string &error_output) {
+  std::vector<diagnostic> diagnostics;
+
+  // Module not found
+  std::regex module_not_found_regex(
+      R"(([^:]+):(\d+):(?:\d+:)?\s*(?:fatal\s+)?error:\s*(?:module|import)\s*['\"]?(\S+)['\"]?\s*not found)");
+
+  // Module interface error
+  std::regex module_interface_regex(
+      R"(([^:]+):(\d+):(?:\d+:)?\s*error:\s*(?:cannot|failed to)\s*(?:compile|build)\s*module\s*['\"]?(\S+)['\"]?)");
+
+  // Module partition error
+  std::regex partition_regex(
+      R"(([^:]+):(\d+):(?:\d+:)?\s*error:\s*module partition\s*['\"]?(\S+)['\"]?)");
+
+  // GCC module error: importing module X requires first compiling its interface
+  std::regex gcc_module_regex(
+      R"(([^:]+):(\d+):(?:\d+:)?\s*error:\s*failed to read compiled module:\s*(.+))");
+
+  // MSVC module error: cannot open module file 'X.ifc'
+  std::regex msvc_module_regex(
+      R"(([^\(]+)\((\d+)\):\s*error\s+C\d+:\s*cannot open module\s+(?:interface\s+)?file\s*'([^']+)')");
+
+  std::string line;
+  std::istringstream stream(error_output);
+
+  while (std::getline(stream, line)) {
+    std::smatch matches;
+
+    // Module not found
+    if (std::regex_search(line, matches, module_not_found_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.file_path = matches[1].str();
+      diag.line_number = std::stoi(matches[2].str());
+      diag.column_number = 0;
+      diag.code = "MODULE-NOTFOUND";
+      diag.message = "Module '" + matches[3].str() + "' not found";
+      diag.help_text = "The imported module was not found. Ensure:\n"
+                       "   - The module interface file exists\n"
+                       "   - The module was compiled before this translation unit\n"
+                       "   - Module search paths are correctly configured";
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // Module interface error
+    if (std::regex_search(line, matches, module_interface_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.file_path = matches[1].str();
+      diag.line_number = std::stoi(matches[2].str());
+      diag.column_number = 0;
+      diag.code = "MODULE-INTERFACE";
+      diag.message = "Failed to compile module interface '" + matches[3].str() + "'";
+      diag.help_text = "Module interface compilation failed. Check for errors in the module interface unit.";
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // GCC module read error
+    if (std::regex_search(line, matches, gcc_module_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.file_path = matches[1].str();
+      diag.line_number = std::stoi(matches[2].str());
+      diag.column_number = 0;
+      diag.code = "MODULE-READ";
+      diag.message = "Failed to read compiled module: " + matches[3].str();
+      diag.help_text = "Could not read the compiled module. Ensure the module was built "
+                       "before importing it, and check module cache paths.";
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // MSVC module file error
+    if (std::regex_search(line, matches, msvc_module_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.file_path = matches[1].str();
+      diag.line_number = std::stoi(matches[2].str());
+      diag.column_number = 0;
+      diag.code = "MODULE-FILE";
+      diag.message = "Cannot open module file '" + matches[3].str() + "'";
+      diag.help_text = "Module interface file (.ifc) not found. Compile the module "
+                       "interface before importing it.";
+      diagnostics.push_back(diag);
+      continue;
+    }
+  }
+
+  return diagnostics;
+}
+
+// ============================================================================
+// Runtime Error Parser (Segfaults, Exceptions, etc.)
+// ============================================================================
+
+std::vector<diagnostic> parse_runtime_errors(const std::string &error_output) {
+  std::vector<diagnostic> diagnostics;
+
+  // Segmentation fault
+  std::regex segfault_regex(R"(Segmentation fault|SIGSEGV)");
+
+  // Stack overflow
+  std::regex stackoverflow_regex(R"(Stack overflow|SIGSTKFLT|stack smashing)");
+
+  // Floating point exception
+  std::regex fpe_regex(R"(Floating point exception|SIGFPE)");
+
+  // Abort
+  std::regex abort_regex(R"(Aborted|SIGABRT)");
+
+  // Bus error
+  std::regex bus_regex(R"(Bus error|SIGBUS)");
+
+  // Illegal instruction
+  std::regex illegal_regex(R"(Illegal instruction|SIGILL)");
+
+  // C++ exception
+  std::regex cpp_exception_regex(
+      R"(terminate called after throwing.*'(\w+)'|exception of type '([^']+)'|what\(\):\s*(.+))");
+
+  // Uncaught exception with stack trace (GCC)
+  std::regex uncaught_regex(
+      R"(terminate called after throwing an instance of '([^']+)')");
+
+  // Windows exception
+  std::regex windows_exception_regex(
+      R"(Exception Code:\s*(0x[0-9A-Fa-f]+)|Access Violation|STATUS_ACCESS_VIOLATION)");
+
+  std::string line;
+  std::istringstream stream(error_output);
+
+  while (std::getline(stream, line)) {
+    std::smatch matches;
+
+    // Segmentation fault
+    if (std::regex_search(line, matches, segfault_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.code = "SEGFAULT";
+      diag.message = "Segmentation fault (invalid memory access)";
+      diag.help_text = "The program tried to access invalid memory. Common causes:\n"
+                       "   - Dereferencing null pointer\n"
+                       "   - Array/buffer overflow\n"
+                       "   - Use after free\n"
+                       "   - Stack overflow from infinite recursion\n"
+                       "Run with AddressSanitizer (-fsanitize=address) for details.";
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // Stack overflow
+    if (std::regex_search(line, matches, stackoverflow_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.code = "STACKOVERFLOW";
+      diag.message = "Stack overflow detected";
+      diag.help_text = "The stack exceeded its limit. Common causes:\n"
+                       "   - Infinite recursion\n"
+                       "   - Very large stack allocations (large arrays)\n"
+                       "   - Deep call chains\n"
+                       "Consider using heap allocation or increasing stack size.";
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // Floating point exception
+    if (std::regex_search(line, matches, fpe_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.code = "FPE";
+      diag.message = "Floating point exception";
+      diag.help_text = "Invalid floating point operation. Common causes:\n"
+                       "   - Division by zero\n"
+                       "   - Invalid operation (sqrt of negative, etc.)\n"
+                       "   - Overflow/underflow\n"
+                       "Add checks before mathematical operations.";
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // Abort
+    if (std::regex_search(line, matches, abort_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.code = "ABORT";
+      diag.message = "Program aborted";
+      diag.help_text = "The program was terminated. This usually indicates:\n"
+                       "   - Failed assertion\n"
+                       "   - Uncaught exception\n"
+                       "   - Explicit abort() call\n"
+                       "   - Memory allocation failure";
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // C++ exception
+    if (std::regex_search(line, matches, uncaught_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.code = "EXCEPTION";
+      diag.message = "Uncaught exception of type '" + matches[1].str() + "'";
+      diag.help_text = "An exception was thrown but not caught. Add appropriate "
+                       "try-catch blocks or fix the underlying issue.";
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // Windows exception
+    if (std::regex_search(line, matches, windows_exception_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.code = "WIN-EXCEPTION";
+      diag.message = "Windows exception: Access Violation";
+      diag.help_text = "The program tried to access invalid memory on Windows. "
+                       "Check for null pointers and buffer overflows.";
+      diagnostics.push_back(diag);
+      continue;
+    }
+  }
+
+  return diagnostics;
+}
+
+// ============================================================================
+// Test Framework Error Parser (Google Test, Catch2, Boost.Test)
+// ============================================================================
+
+std::vector<diagnostic> parse_test_framework_errors(const std::string &error_output) {
+  std::vector<diagnostic> diagnostics;
+
+  // Google Test failure
+  // file.cpp:123: Failure
+  // Expected equality of these values:
+  //   x
+  //     Which is: 1
+  //   y
+  //     Which is: 2
+  std::regex gtest_failure_regex(
+      R"(([^:]+):(\d+):\s*Failure)");
+
+  // Google Test EXPECT/ASSERT failure
+  // file.cpp:123: error: Expected: (x) == (y), actual: 1 vs 2
+  std::regex gtest_expect_regex(
+      R"(([^:]+):(\d+):\s*error:\s*(.+))");
+
+  // Google Test death test
+  std::regex gtest_death_regex(
+      R"(Death test:\s*(.+))");
+
+  // Catch2 failure
+  // file.cpp:123: FAILED:
+  //   REQUIRE( x == y )
+  // with expansion:
+  //   1 == 2
+  std::regex catch2_failure_regex(
+      R"(([^:]+):(\d+):\s*FAILED:)");
+
+  // Catch2 assertion
+  std::regex catch2_assertion_regex(
+      R"(([^:]+):(\d+):\s*(REQUIRE|CHECK|REQUIRE_FALSE|CHECK_FALSE)\s*\(\s*(.+)\s*\))");
+
+  // Boost.Test failure
+  // file.cpp(123): error: in "test_name": check x == y has failed
+  std::regex boost_test_regex(
+      R"(([^\(]+)\((\d+)\):\s*(error|fatal error):\s*in\s*\"([^\"]+)\":\s*(.+))");
+
+  // Generic test failure pattern
+  // [  FAILED  ] TestSuite.TestName (123 ms)
+  std::regex gtest_failed_test_regex(
+      R"(\[\s*FAILED\s*\]\s*(\S+)\s*\((\d+)\s*ms\))");
+
+  std::string line;
+  std::istringstream stream(error_output);
+  std::vector<std::string> context_lines;
+
+  while (std::getline(stream, line)) {
+    std::smatch matches;
+
+    // Google Test failure
+    if (std::regex_search(line, matches, gtest_failure_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.file_path = matches[1].str();
+      diag.line_number = std::stoi(matches[2].str());
+      diag.column_number = 0;
+      diag.code = "GTEST";
+      diag.message = "Test assertion failed";
+
+      // Collect next few lines for context
+      std::string next_line;
+      for (int i = 0; i < 6 && std::getline(stream, next_line); ++i) {
+        if (!next_line.empty() && next_line[0] != '[') {
+          diag.notes.push_back(next_line);
+        }
+      }
+
+      diag.help_text = "A test assertion failed. Check expected vs actual values above.";
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // Google Test EXPECT/ASSERT error
+    if (std::regex_search(line, matches, gtest_expect_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.file_path = matches[1].str();
+      diag.line_number = std::stoi(matches[2].str());
+      diag.column_number = 0;
+      diag.code = "GTEST";
+      diag.message = matches[3].str();
+      diag.help_text = "A test assertion failed.";
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // Catch2 failure
+    if (std::regex_search(line, matches, catch2_failure_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.file_path = matches[1].str();
+      diag.line_number = std::stoi(matches[2].str());
+      diag.column_number = 0;
+      diag.code = "CATCH2";
+      diag.message = "Test assertion failed";
+
+      // Collect context
+      std::string next_line;
+      for (int i = 0; i < 5 && std::getline(stream, next_line); ++i) {
+        if (!next_line.empty()) {
+          diag.notes.push_back(next_line);
+        }
+      }
+
+      diag.help_text = "A Catch2 assertion failed. See expansion above.";
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // Boost.Test failure
+    if (std::regex_search(line, matches, boost_test_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.file_path = matches[1].str();
+      diag.line_number = std::stoi(matches[2].str());
+      diag.column_number = 0;
+      diag.code = "BOOST-TEST";
+      diag.message = "In test '" + matches[4].str() + "': " + matches[5].str();
+      diag.help_text = "A Boost.Test assertion failed.";
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // Failed test summary line
+    if (std::regex_search(line, matches, gtest_failed_test_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.code = "TEST-FAILED";
+      diag.message = "Test failed: " + matches[1].str();
+      diag.notes.push_back("Duration: " + matches[2].str() + " ms");
+      diag.help_text = "This test case failed. See detailed output above.";
+      diagnostics.push_back(diag);
+      continue;
+    }
+  }
+
+  return diagnostics;
+}
+
+// ============================================================================
+// Static Analysis Error Parser (clang-tidy, cppcheck)
+// ============================================================================
+
+std::vector<diagnostic> parse_static_analysis_errors(const std::string &error_output) {
+  std::vector<diagnostic> diagnostics;
+
+  // clang-tidy format
+  // file.cpp:123:45: warning: ... [check-name]
+  std::regex clang_tidy_regex(
+      R"(([^:]+):(\d+):(\d+):\s*(warning|error|note):\s*([^\[]+)\[([^\]]+)\])");
+
+  // cppcheck format
+  // [file.cpp:123]: (error) Message
+  std::regex cppcheck_regex(
+      R"(\[([^\]:]+):(\d+)\]:\s*\((error|warning|style|performance|portability|information)\)\s*(.+))");
+
+  // cppcheck XML format attribute extraction
+  std::regex cppcheck_xml_regex(
+      R"(file=\"([^\"]+)\"\s+line=\"(\d+)\".*severity=\"([^\"]+)\".*msg=\"([^\"]+)\")");
+
+  // PVS-Studio format
+  // file.cpp:123:1: error: V501 Message
+  std::regex pvs_regex(
+      R"(([^:]+):(\d+):(\d+):\s*(error|warning|note):\s*(V\d+)\s*(.+))");
+
+  std::string line;
+  std::istringstream stream(error_output);
+
+  while (std::getline(stream, line)) {
+    std::smatch matches;
+
+    // clang-tidy
+    if (std::regex_search(line, matches, clang_tidy_regex)) {
+      diagnostic diag;
+      diag.file_path = matches[1].str();
+      diag.line_number = std::stoi(matches[2].str());
+      diag.column_number = std::stoi(matches[3].str());
+
+      std::string level = matches[4].str();
+      if (level == "error") {
+        diag.level = diagnostic_level::ERROR;
+      } else if (level == "warning") {
+        diag.level = diagnostic_level::WARNING;
+      } else {
+        diag.level = diagnostic_level::NOTE;
+      }
+
+      diag.code = matches[6].str(); // The check name like "modernize-use-nullptr"
+      diag.message = matches[5].str();
+
+      // Add help based on check category
+      std::string check = diag.code;
+      if (check.find("modernize") == 0) {
+        diag.help_text = "Consider updating to modern C++ idioms.";
+      } else if (check.find("bugprone") == 0) {
+        diag.help_text = "This pattern may indicate a bug.";
+      } else if (check.find("performance") == 0) {
+        diag.help_text = "This could impact performance.";
+      } else if (check.find("readability") == 0) {
+        diag.help_text = "This affects code readability.";
+      } else if (check.find("cppcoreguidelines") == 0) {
+        diag.help_text = "Violates C++ Core Guidelines.";
+      } else {
+        diag.help_text = "Static analysis finding.";
+      }
+
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // cppcheck
+    if (std::regex_search(line, matches, cppcheck_regex)) {
+      diagnostic diag;
+      diag.file_path = matches[1].str();
+      diag.line_number = std::stoi(matches[2].str());
+      diag.column_number = 0;
+
+      std::string severity = matches[3].str();
+      if (severity == "error") {
+        diag.level = diagnostic_level::ERROR;
+        diag.code = "CPPCHECK-ERR";
+      } else if (severity == "warning") {
+        diag.level = diagnostic_level::WARNING;
+        diag.code = "CPPCHECK-WARN";
+      } else if (severity == "performance") {
+        diag.level = diagnostic_level::WARNING;
+        diag.code = "CPPCHECK-PERF";
+      } else {
+        diag.level = diagnostic_level::NOTE;
+        diag.code = "CPPCHECK-" + severity;
+      }
+
+      diag.message = matches[4].str();
+      diag.help_text = "Static analysis finding from cppcheck.";
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // PVS-Studio
+    if (std::regex_search(line, matches, pvs_regex)) {
+      diagnostic diag;
+      diag.file_path = matches[1].str();
+      diag.line_number = std::stoi(matches[2].str());
+      diag.column_number = std::stoi(matches[3].str());
+
+      std::string level = matches[4].str();
+      if (level == "error") {
+        diag.level = diagnostic_level::ERROR;
+      } else if (level == "warning") {
+        diag.level = diagnostic_level::WARNING;
+      } else {
+        diag.level = diagnostic_level::NOTE;
+      }
+
+      diag.code = matches[5].str(); // V-code like V501
+      diag.message = matches[6].str();
+      diag.help_text = "Static analysis finding from PVS-Studio.";
+      diagnostics.push_back(diag);
+      continue;
+    }
+  }
+
+  return diagnostics;
+}
+
+// ============================================================================
+// C++20 Concept Constraint Error Parser
+// ============================================================================
+
+std::vector<diagnostic> parse_concept_errors(const std::string &error_output) {
+  std::vector<diagnostic> diagnostics;
+
+  // GCC/Clang concept constraint not satisfied
+  // file.cpp:123:45: error: no matching function for call to 'foo'
+  // note: constraints not satisfied
+  std::regex constraint_not_satisfied_regex(
+      R"(([^:]+):(\d+):(?:\d+:)?\s*note:\s*constraints?\s*not\s*satisfied)");
+
+  // GCC concept error
+  // file.cpp:123:45: error: template constraint failure
+  std::regex gcc_concept_regex(
+      R"(([^:]+):(\d+):(?:\d+:)?\s*error:\s*(?:template\s+)?(?:constraint|concept)\s*(?:failure|not\s*satisfied))");
+
+  // Clang concept error
+  // file.cpp:123:45: error: constraints not satisfied for ...
+  std::regex clang_concept_regex(
+      R"(([^:]+):(\d+):(\d+):\s*error:\s*constraints\s*not\s*satisfied\s*(?:for|in)\s*(.+))");
+
+  // MSVC concept error
+  // file.cpp(123): error C7602: 'concept_name': the associated constraints are not satisfied
+  std::regex msvc_concept_regex(
+      R"(([^\(]+)\((\d+)\):\s*error\s+C7602:\s*'([^']+)':\s*(.+))");
+
+  // Requires clause error
+  std::regex requires_clause_regex(
+      R"(([^:]+):(\d+):(?:\d+:)?\s*(?:error|note):\s*(?:in|within)\s*requires.clause)");
+
+  std::string line;
+  std::istringstream stream(error_output);
+
+  while (std::getline(stream, line)) {
+    std::smatch matches;
+
+    // Clang concept constraint error
+    if (std::regex_search(line, matches, clang_concept_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.file_path = matches[1].str();
+      diag.line_number = std::stoi(matches[2].str());
+      diag.column_number = std::stoi(matches[3].str());
+      diag.code = "CONCEPT";
+      diag.message = "Constraints not satisfied for " + matches[4].str();
+      diag.help_text = "The type does not satisfy the concept requirements. "
+                       "Check that all required member functions and operators exist.";
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // GCC concept error
+    if (std::regex_search(line, matches, gcc_concept_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.file_path = matches[1].str();
+      diag.line_number = std::stoi(matches[2].str());
+      diag.column_number = 0;
+      diag.code = "CONCEPT";
+      diag.message = "Concept constraint not satisfied";
+      diag.help_text = "The template argument does not satisfy the concept. "
+                       "Check type requirements.";
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // MSVC concept error
+    if (std::regex_search(line, matches, msvc_concept_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.file_path = matches[1].str();
+      diag.line_number = std::stoi(matches[2].str());
+      diag.column_number = 0;
+      diag.code = "C7602";
+      diag.message = "Concept '" + matches[3].str() + "': " + matches[4].str();
+      diag.help_text = "The associated constraints are not satisfied. "
+                       "Verify the type meets all concept requirements.";
+      diagnostics.push_back(diag);
+      continue;
+    }
+  }
+
+  return diagnostics;
+}
+
+// ============================================================================
+// Constexpr Evaluation Error Parser
+// ============================================================================
+
+std::vector<diagnostic> parse_constexpr_errors(const std::string &error_output) {
+  std::vector<diagnostic> diagnostics;
+
+  // GCC/Clang constexpr evaluation error
+  // file.cpp:123:45: error: 'foo' is not a constant expression
+  std::regex not_constexpr_regex(
+      R"(([^:]+):(\d+):(?:\d+:)?\s*error:\s*'?([^']+)'?\s*is\s*not\s*a\s*constant\s*expression)");
+
+  // Constexpr function call error
+  // in 'constexpr' expansion of 'foo()'
+  std::regex constexpr_expansion_regex(
+      R"(in\s*'constexpr'\s*expansion\s*of\s*'([^']+)')");
+
+  // Non-constexpr function call
+  std::regex non_constexpr_call_regex(
+      R"(([^:]+):(\d+):(?:\d+:)?\s*error:\s*call\s*to\s*non-'?constexpr'?\s*function\s*'([^']+)')");
+
+  // consteval error
+  std::regex consteval_regex(
+      R"(([^:]+):(\d+):(?:\d+:)?\s*error:\s*(?:call\s*to|cannot\s*call)\s*(?:immediate|consteval)\s*function)");
+
+  // MSVC constexpr error
+  // file.cpp(123): error C2131: expression did not evaluate to a constant
+  std::regex msvc_constexpr_regex(
+      R"(([^\(]+)\((\d+)\):\s*error\s+C2131:\s*(.+))");
+
+  // Undefined behavior in constant evaluation
+  std::regex ub_constexpr_regex(
+      R"(([^:]+):(\d+):(?:\d+:)?\s*error:\s*(?:undefined behavior|UB)\s*in\s*constant\s*expression)");
+
+  std::string line;
+  std::istringstream stream(error_output);
+
+  while (std::getline(stream, line)) {
+    std::smatch matches;
+
+    // Not a constant expression
+    if (std::regex_search(line, matches, not_constexpr_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.file_path = matches[1].str();
+      diag.line_number = std::stoi(matches[2].str());
+      diag.column_number = 0;
+      diag.code = "CONSTEXPR";
+      diag.message = "'" + matches[3].str() + "' is not a constant expression";
+      diag.help_text = "This expression cannot be evaluated at compile time. "
+                       "Check for:\n"
+                       "   - Calls to non-constexpr functions\n"
+                       "   - Dynamic memory allocation\n"
+                       "   - Undefined behavior\n"
+                       "   - Non-literal types";
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // Non-constexpr function call
+    if (std::regex_search(line, matches, non_constexpr_call_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.file_path = matches[1].str();
+      diag.line_number = std::stoi(matches[2].str());
+      diag.column_number = 0;
+      diag.code = "CONSTEXPR";
+      diag.message = "Call to non-constexpr function '" + matches[3].str() + "'";
+      diag.help_text = "Cannot call a non-constexpr function in a constant expression. "
+                       "Mark the function as constexpr if possible.";
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // consteval error
+    if (std::regex_search(line, matches, consteval_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.file_path = matches[1].str();
+      diag.line_number = std::stoi(matches[2].str());
+      diag.column_number = 0;
+      diag.code = "CONSTEVAL";
+      diag.message = "Invalid call to consteval/immediate function";
+      diag.help_text = "consteval functions must be called at compile time. "
+                       "Ensure all arguments are constant expressions.";
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // MSVC constexpr error
+    if (std::regex_search(line, matches, msvc_constexpr_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.file_path = matches[1].str();
+      diag.line_number = std::stoi(matches[2].str());
+      diag.column_number = 0;
+      diag.code = "C2131";
+      diag.message = matches[3].str();
+      diag.help_text = "Expression did not evaluate to a constant. "
+                       "Check for non-constant subexpressions.";
+      diagnostics.push_back(diag);
+      continue;
+    }
+  }
+
+  return diagnostics;
+}
+
+// ============================================================================
+// C++20 Coroutine Error Parser
+// ============================================================================
+
+std::vector<diagnostic> parse_coroutine_errors(const std::string &error_output) {
+  std::vector<diagnostic> diagnostics;
+
+  // co_await requires awaitable type
+  // file.cpp:123:5: error: no member named 'await_ready' in 'MyType'
+  std::regex await_ready_regex(
+      R"(([^:]+):(\d+):(?:\d+:)?\s*error:\s*no\s*member\s*named\s*'await_ready'\s*in\s*'([^']+)')");
+
+  // co_await with non-awaitable
+  // error: no viable 'co_await' for 'value' of type 'int'
+  std::regex non_awaitable_regex(
+      R"(([^:]+):(\d+):(?:\d+:)?\s*error:\s*(?:no\s*viable\s*)?'?co_await'?\s*(?:for|on|of)\s*'?([^']+)'?)");
+
+  // Missing coroutine_handle or promise_type
+  std::regex missing_promise_regex(
+      R"(([^:]+):(\d+):(?:\d+:)?\s*error:\s*(?:no\s*type\s*named\s*)?'promise_type'\s*in)");
+
+  // co_return type mismatch
+  std::regex co_return_regex(
+      R"(([^:]+):(\d+):(?:\d+:)?\s*error:\s*(?:cannot\s*convert|no\s*viable\s*conversion).*co_return)");
+
+  // coroutine_traits specialization not found
+  std::regex traits_regex(
+      R"(([^:]+):(\d+):(?:\d+:)?\s*error:\s*(?:no|could\s*not\s*find)\s*(?:type|member)\s*.*coroutine_traits)");
+
+  // Missing <coroutine> header
+  std::regex header_regex(
+      R"(([^:]+):(\d+):(?:\d+:)?\s*(?:error|fatal\s*error):\s*'?(?:coroutine|experimental/coroutine)'?\s*(?:file\s*not\s*found|No\s*such\s*file))");
+
+  // co_yield errors
+  std::regex co_yield_regex(
+      R"(([^:]+):(\d+):(?:\d+:)?\s*error:.*co_yield.*(?:no\s*member|cannot|invalid))");
+
+  // Coroutine in non-coroutine function
+  std::regex non_coroutine_func_regex(
+      R"(([^:]+):(\d+):(?:\d+:)?\s*error:\s*'co_(?:await|yield|return)'\s*cannot\s*be\s*used\s*in)");
+
+  // MSVC coroutine errors
+  // error C3312: no callable 'await_resume' function found for type 'T'
+  std::regex msvc_await_regex(
+      R"(([^\(]+)\((\d+)\):\s*error\s+C3312:\s*(.+))");
+
+  // error C3313: 'identifier': variable cannot have type 'coroutine type'
+  std::regex msvc_coro_type_regex(
+      R"(([^\(]+)\((\d+)\):\s*error\s+C3313:\s*(.+))");
+
+  std::string line;
+  std::istringstream stream(error_output);
+
+  while (std::getline(stream, line)) {
+    std::smatch matches;
+
+    // Missing await_ready
+    if (std::regex_search(line, matches, await_ready_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.file_path = matches[1].str();
+      diag.line_number = std::stoi(matches[2].str());
+      diag.column_number = 0;
+      diag.code = "COROUTINE";
+      diag.message = "Type '" + matches[3].str() + "' is not awaitable (missing await_ready)";
+      diag.help_text = "To make a type awaitable, implement:\n"
+                       "   - bool await_ready() const\n"
+                       "   - void await_suspend(std::coroutine_handle<>)\n"
+                       "   - T await_resume()";
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // Non-awaitable type
+    if (std::regex_search(line, matches, non_awaitable_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.file_path = matches[1].str();
+      diag.line_number = std::stoi(matches[2].str());
+      diag.column_number = 0;
+      diag.code = "COROUTINE";
+      diag.message = "Cannot co_await on '" + matches[3].str() + "'";
+      diag.help_text = "The type must be awaitable. Either:\n"
+                       "   - Implement await_ready/await_suspend/await_resume\n"
+                       "   - Implement operator co_await()\n"
+                       "   - Specialize std::coroutine_traits";
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // Missing promise_type
+    if (std::regex_search(line, matches, missing_promise_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.file_path = matches[1].str();
+      diag.line_number = std::stoi(matches[2].str());
+      diag.column_number = 0;
+      diag.code = "COROUTINE";
+      diag.message = "Missing promise_type in coroutine return type";
+      diag.help_text = "Define a nested promise_type in your coroutine return type:\n"
+                       "   struct MyCoroutine {\n"
+                       "     struct promise_type {\n"
+                       "       MyCoroutine get_return_object();\n"
+                       "       std::suspend_always initial_suspend();\n"
+                       "       std::suspend_always final_suspend() noexcept;\n"
+                       "       void return_void(); // or return_value(T)\n"
+                       "       void unhandled_exception();\n"
+                       "     };\n"
+                       "   };";
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // Missing coroutine header
+    if (std::regex_search(line, matches, header_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.file_path = matches[1].str();
+      diag.line_number = std::stoi(matches[2].str());
+      diag.column_number = 0;
+      diag.code = "COROUTINE";
+      diag.message = "Missing <coroutine> header";
+      diag.help_text = "Add #include <coroutine> (C++20) or\n"
+                       "#include <experimental/coroutine> (C++17 with compiler support)";
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // coroutine_traits not found
+    if (std::regex_search(line, matches, traits_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.file_path = matches[1].str();
+      diag.line_number = std::stoi(matches[2].str());
+      diag.column_number = 0;
+      diag.code = "COROUTINE";
+      diag.message = "coroutine_traits specialization not found";
+      diag.help_text = "Define promise_type in your return type, or specialize "
+                       "std::coroutine_traits for your return type.";
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // co_await/co_yield/co_return in non-coroutine
+    if (std::regex_search(line, matches, non_coroutine_func_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.file_path = matches[1].str();
+      diag.line_number = std::stoi(matches[2].str());
+      diag.column_number = 0;
+      diag.code = "COROUTINE";
+      diag.message = "Coroutine keyword used in non-coroutine function";
+      diag.help_text = "co_await, co_yield, and co_return can only be used in coroutines. "
+                       "Ensure the function's return type has a valid promise_type.";
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // MSVC await errors
+    if (std::regex_search(line, matches, msvc_await_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.file_path = matches[1].str();
+      diag.line_number = std::stoi(matches[2].str());
+      diag.column_number = 0;
+      diag.code = "C3312";
+      diag.message = matches[3].str();
+      diag.help_text = "The awaitable type must have await_resume() member function.";
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // MSVC coroutine type errors
+    if (std::regex_search(line, matches, msvc_coro_type_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.file_path = matches[1].str();
+      diag.line_number = std::stoi(matches[2].str());
+      diag.column_number = 0;
+      diag.code = "C3313";
+      diag.message = matches[3].str();
+      diag.help_text = "Check coroutine type requirements and promise_type definition.";
+      diagnostics.push_back(diag);
+      continue;
+    }
+  }
+
+  return diagnostics;
+}
+
+// ============================================================================
+// C++20 Ranges Library Error Parser
+// ============================================================================
+
+std::vector<diagnostic> parse_ranges_errors(const std::string &error_output) {
+  std::vector<diagnostic> diagnostics;
+
+  // Range concept not satisfied
+  // error: type 'T' does not satisfy 'range'
+  std::regex range_concept_regex(
+      R"(([^:]+):(\d+):(?:\d+:)?\s*error:.*(?:type\s*)?'([^']+)'\s*does\s*not\s*satisfy\s*'?(ranges?::)?(\w+)'?)");
+
+  // Missing begin/end for range
+  std::regex begin_end_regex(
+      R"(([^:]+):(\d+):(?:\d+:)?\s*error:\s*no\s*(?:viable\s*)?(?:member|function)\s*(?:named\s*)?'(begin|end)')");
+
+  // views:: pipe operator errors
+  std::regex pipe_operator_regex(
+      R"(([^:]+):(\d+):(?:\d+:)?\s*error:.*(?:invalid|no\s*match).*operator\|.*(?:views|ranges))");
+
+  // Iterator requirements not met
+  std::regex iterator_regex(
+      R"(([^:]+):(\d+):(?:\d+:)?\s*error:.*(?:type\s*)?'([^']+)'\s*does\s*not\s*satisfy\s*'?(input|output|forward|bidirectional|random_access|contiguous)_iterator'?)");
+
+  // Sentinel requirements
+  std::regex sentinel_regex(
+      R"(([^:]+):(\d+):(?:\d+:)?\s*error:.*(?:type\s*)?'([^']+)'\s*does\s*not\s*satisfy\s*'?sentinel_for'?)");
+
+  // view_interface errors
+  std::regex view_interface_regex(
+      R"(([^:]+):(\d+):(?:\d+:)?\s*error:.*view_interface.*(?:incomplete|requires|missing))");
+
+  // Common range issues
+  std::regex common_range_regex(
+      R"(([^:]+):(\d+):(?:\d+:)?\s*error:.*common_range.*(?:not\s*satisfied|requires))");
+
+  // Projection callable errors
+  std::regex projection_regex(
+      R"(([^:]+):(\d+):(?:\d+:)?\s*error:.*(?:projection|callable).*(?:not\s*invocable|cannot\s*call))");
+
+  std::string line;
+  std::istringstream stream(error_output);
+
+  while (std::getline(stream, line)) {
+    std::smatch matches;
+
+    // Range concept not satisfied
+    if (std::regex_search(line, matches, range_concept_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.file_path = matches[1].str();
+      diag.line_number = std::stoi(matches[2].str());
+      diag.column_number = 0;
+      diag.code = "RANGES";
+      std::string concept_name = matches[5].str();
+      diag.message = "Type '" + matches[3].str() + "' does not satisfy '" + concept_name + "'";
+
+      // Provide specific help based on the concept
+      if (concept_name == "range" || concept_name == "input_range") {
+        diag.help_text = "To satisfy the range concept, the type must have:\n"
+                         "   - begin() returning an iterator\n"
+                         "   - end() returning a sentinel";
+      } else if (concept_name == "view") {
+        diag.help_text = "To satisfy view, the type must:\n"
+                         "   - Be a range\n"
+                         "   - Be movable\n"
+                         "   - Have O(1) copy/move/assignment (or be non-copyable)";
+      } else if (concept_name == "viewable_range") {
+        diag.help_text = "The type must be either:\n"
+                         "   - A view, or\n"
+                         "   - An lvalue reference to a range";
+      } else {
+        diag.help_text = "Ensure the type meets all requirements for the " + concept_name + " concept.";
+      }
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // Missing begin/end
+    if (std::regex_search(line, matches, begin_end_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.file_path = matches[1].str();
+      diag.line_number = std::stoi(matches[2].str());
+      diag.column_number = 0;
+      diag.code = "RANGES";
+      diag.message = "Missing '" + matches[3].str() + "' for range type";
+      diag.help_text = "Add a " + matches[3].str() + "() member function or a free function "
+                       "findable via ADL. Consider using std::ranges::begin/end customization points.";
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // Pipe operator errors
+    if (std::regex_search(line, matches, pipe_operator_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.file_path = matches[1].str();
+      diag.line_number = std::stoi(matches[2].str());
+      diag.column_number = 0;
+      diag.code = "RANGES";
+      diag.message = "Invalid ranges pipe operation";
+      diag.help_text = "When using the | operator with views:\n"
+                       "   - Left side must be a viewable_range\n"
+                       "   - Right side must be a range adaptor\n"
+                       "   - Include <ranges> header";
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // Iterator concept errors
+    if (std::regex_search(line, matches, iterator_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.file_path = matches[1].str();
+      diag.line_number = std::stoi(matches[2].str());
+      diag.column_number = 0;
+      diag.code = "RANGES";
+      std::string iter_type = matches[4].str();
+      diag.message = "Type '" + matches[3].str() + "' does not satisfy '" + iter_type + "_iterator'";
+      diag.help_text = "Iterator requirements for " + iter_type + "_iterator:\n"
+                       "   - Implement required operators (++, *, etc.)\n"
+                       "   - Define iterator_traits or use iterator tag\n"
+                       "   - Satisfy weaker iterator concepts first";
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // Sentinel errors
+    if (std::regex_search(line, matches, sentinel_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.file_path = matches[1].str();
+      diag.line_number = std::stoi(matches[2].str());
+      diag.column_number = 0;
+      diag.code = "RANGES";
+      diag.message = "Type '" + matches[3].str() + "' does not satisfy sentinel_for";
+      diag.help_text = "A sentinel must be:\n"
+                       "   - Semiregular (default constructible, copyable)\n"
+                       "   - Comparable with the iterator type (operator==)";
+      diagnostics.push_back(diag);
+      continue;
+    }
+  }
+
+  return diagnostics;
+}
+
+// ============================================================================
+// CUDA/HIP GPU Compiler Error Parser
+// ============================================================================
+
+std::vector<diagnostic> parse_cuda_hip_errors(const std::string &error_output) {
+  std::vector<diagnostic> diagnostics;
+
+  // NVCC errors: file.cu(123): error: identifier "foo" is undefined
+  std::regex nvcc_error_regex(
+      R"(([^\(]+)\((\d+)\):\s*error:\s*(.+))");
+
+  // NVCC warnings
+  std::regex nvcc_warning_regex(
+      R"(([^\(]+)\((\d+)\):\s*warning:\s*(.+))");
+
+  // CUDA kernel launch errors
+  std::regex kernel_launch_regex(
+      R"(([^\(]+)\((\d+)\):\s*error:.*(?:kernel|__global__|<<<|>>>).*)");
+
+  // Device code errors (calling host from device)
+  std::regex device_host_regex(
+      R"(([^\(]+)\((\d+)\):\s*error:\s*(?:calling\s*a\s*__host__\s*function.*from\s*a\s*__(?:device|global)__|identifier.*is\s*undefined\s*in\s*device\s*code))");
+
+  // Shared memory errors
+  std::regex shared_memory_regex(
+      R"(([^\(]+)\((\d+)\):\s*error:.*__shared__\s*(?:variable|memory|allocation))");
+
+  // HIP errors (similar to NVCC but with HIP naming)
+  std::regex hip_error_regex(
+      R"(([^:]+):(\d+):(?:\d+:)?\s*error:.*(?:hip|HIP|__hip_|hipLaunch))");
+
+  // CUDA architecture mismatch
+  std::regex arch_regex(
+      R"((?:error|warning):.*(?:sm_\d+|compute_\d+|arch=|gencode).*)");
+
+  // Memory copy direction errors
+  std::regex memcpy_regex(
+      R"(([^\(]+)\((\d+)\):\s*error:.*(?:cudaMemcpy|hipMemcpy).*(?:direction|kind|invalid))");
+
+  // PTX assembly errors
+  std::regex ptx_regex(
+      R"(ptxas\s*(?:error|fatal):?\s*(.+))");
+
+  // CUDA runtime API errors
+  std::regex cuda_api_regex(
+      R"(([^\(]+)\((\d+)\):\s*error:.*(?:cuda(?:Error|GetLastError|DeviceSynchronize|Malloc|Free)|hip(?:Error|GetLastError)))");
+
+  std::string line;
+  std::istringstream stream(error_output);
+
+  while (std::getline(stream, line)) {
+    std::smatch matches;
+
+    // Device/host boundary errors (higher priority)
+    if (std::regex_search(line, matches, device_host_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.file_path = matches[1].str();
+      diag.line_number = std::stoi(matches[2].str());
+      diag.column_number = 0;
+      diag.code = "CUDA";
+      diag.message = "Device/host boundary violation";
+      diag.help_text = "Cannot call __host__ functions from __device__ or __global__ code.\n"
+                       "Solutions:\n"
+                       "   - Mark the function with __device__ or __host__ __device__\n"
+                       "   - Use device-compatible alternatives\n"
+                       "   - Move the call outside kernel code";
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // Kernel launch errors
+    if (std::regex_search(line, matches, kernel_launch_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.file_path = matches[1].str();
+      diag.line_number = std::stoi(matches[2].str());
+      diag.column_number = 0;
+      diag.code = "CUDA";
+      diag.message = "Kernel launch error";
+      diag.help_text = "Check kernel launch syntax: kernel<<<grid, block>>>(args)\n"
+                       "   - grid: number of blocks (dim3 or int)\n"
+                       "   - block: threads per block (dim3 or int)\n"
+                       "   - Ensure function is declared __global__";
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // Shared memory errors
+    if (std::regex_search(line, matches, shared_memory_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.file_path = matches[1].str();
+      diag.line_number = std::stoi(matches[2].str());
+      diag.column_number = 0;
+      diag.code = "CUDA";
+      diag.message = "Shared memory error";
+      diag.help_text = "__shared__ memory restrictions:\n"
+                       "   - Must be declared inside __device__ or __global__ function\n"
+                       "   - Static size must be known at compile time (or use extern)\n"
+                       "   - Limited to GPU shared memory size (typically 48KB)";
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // Architecture mismatch
+    if (std::regex_search(line, matches, arch_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::WARNING;
+      diag.file_path = "";
+      diag.line_number = 0;
+      diag.column_number = 0;
+      diag.code = "CUDA-ARCH";
+      diag.message = "CUDA architecture configuration issue";
+      diag.help_text = "Ensure the target architecture matches your GPU:\n"
+                       "   - Use -arch=sm_XX where XX matches your GPU\n"
+                       "   - Common: sm_60 (Pascal), sm_70 (Volta), sm_80 (Ampere)\n"
+                       "   - Check with: nvidia-smi --query-gpu=compute_cap --format=csv";
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // PTX errors
+    if (std::regex_search(line, matches, ptx_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.file_path = "";
+      diag.line_number = 0;
+      diag.column_number = 0;
+      diag.code = "CUDA-PTX";
+      diag.message = "PTX assembly error: " + matches[1].str();
+      diag.help_text = "PTX errors usually indicate:\n"
+                       "   - Register pressure (too many variables)\n"
+                       "   - Invalid inline assembly\n"
+                       "   - Architecture-incompatible features";
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // Generic NVCC errors
+    if (std::regex_search(line, matches, nvcc_error_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.file_path = matches[1].str();
+      diag.line_number = std::stoi(matches[2].str());
+      diag.column_number = 0;
+      diag.code = "CUDA";
+      diag.message = matches[3].str();
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // HIP errors
+    if (std::regex_search(line, matches, hip_error_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.file_path = matches[1].str();
+      diag.line_number = std::stoi(matches[2].str());
+      diag.column_number = 0;
+      diag.code = "HIP";
+      diag.message = line;
+      diag.help_text = "HIP is AMD's GPU programming interface. "
+                       "Similar to CUDA but with hip* prefixes.";
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // NVCC warnings
+    if (std::regex_search(line, matches, nvcc_warning_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::WARNING;
+      diag.file_path = matches[1].str();
+      diag.line_number = std::stoi(matches[2].str());
+      diag.column_number = 0;
+      diag.code = "CUDA";
+      diag.message = matches[3].str();
+      diagnostics.push_back(diag);
+      continue;
+    }
+  }
+
+  return diagnostics;
+}
+
+// ============================================================================
+// Intel ICC/ICX Compiler Error Parser
+// ============================================================================
+
+std::vector<diagnostic> parse_intel_compiler_errors(const std::string &error_output) {
+  std::vector<diagnostic> diagnostics;
+
+  // Classic ICC error format: file.cpp(123): error: message
+  std::regex icc_error_regex(
+      R"(([^\(]+)\((\d+)\):\s*error(?:\s*#(\d+))?:\s*(.+))");
+
+  // Classic ICC warning format
+  std::regex icc_warning_regex(
+      R"(([^\(]+)\((\d+)\):\s*warning(?:\s*#(\d+))?:\s*(.+))");
+
+  // ICX (Intel oneAPI) uses Clang-like format: file.cpp:123:45: error: message
+  std::regex icx_error_regex(
+      R"(([^:]+):(\d+):(\d+):\s*error:\s*(.+))");
+
+  // ICX warning
+  std::regex icx_warning_regex(
+      R"(([^:]+):(\d+):(\d+):\s*warning:\s*(.+))");
+
+  // Intel-specific remarks (optimization reports)
+  std::regex remark_regex(
+      R"(([^\(]+)\((\d+)\):\s*remark(?:\s*#(\d+))?:\s*(.+))");
+
+  // Vectorization reports
+  std::regex vec_report_regex(
+      R"(([^\(]+)\((\d+)\):\s*(?:remark|warning).*(?:LOOP\s*WAS|vectoriz|unroll))");
+
+  // OpenMP errors (common with Intel compilers)
+  std::regex openmp_regex(
+      R"(([^\(]+)\((\d+)\):\s*error.*(?:omp|OMP|openmp|OpenMP)\s*(.+))");
+
+  // Intel MKL/IPP linking errors
+  std::regex mkl_regex(
+      R"((?:error|undefined).*(?:mkl_|MKL_|ipp|IPP)\w+)");
+
+  // SIMD intrinsics errors
+  std::regex simd_regex(
+      R"(([^\(]+)\((\d+)\):\s*error:.*(?:_mm|__m\d+|_mm\d+|avx|AVX|sse|SSE))");
+
+  std::string line;
+  std::istringstream stream(error_output);
+
+  while (std::getline(stream, line)) {
+    std::smatch matches;
+
+    // OpenMP errors (higher priority)
+    if (std::regex_search(line, matches, openmp_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.file_path = matches[1].str();
+      diag.line_number = std::stoi(matches[2].str());
+      diag.column_number = 0;
+      diag.code = "ICC-OMP";
+      diag.message = "OpenMP error: " + matches[3].str();
+      diag.help_text = "Common OpenMP issues:\n"
+                       "   - Ensure -fopenmp (ICX) or -qopenmp (ICC) flag is used\n"
+                       "   - Check pragma syntax: #pragma omp parallel for\n"
+                       "   - Verify variable scoping (private, shared, reduction)";
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // SIMD errors
+    if (std::regex_search(line, matches, simd_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.file_path = matches[1].str();
+      diag.line_number = std::stoi(matches[2].str());
+      diag.column_number = 0;
+      diag.code = "ICC-SIMD";
+      diag.message = "SIMD intrinsic error";
+      diag.help_text = "For Intel SIMD intrinsics:\n"
+                       "   - Include <immintrin.h> for all intrinsics\n"
+                       "   - Ensure target architecture supports the instruction set\n"
+                       "   - Use -march=native or specific -mavx2, -mavx512f, etc.";
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // MKL/IPP linking
+    if (std::regex_search(line, matches, mkl_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.file_path = "";
+      diag.line_number = 0;
+      diag.column_number = 0;
+      diag.code = "ICC-LIB";
+      diag.message = "Intel library linking error";
+      diag.help_text = "For Intel MKL/IPP:\n"
+                       "   - Use Intel Link Advisor for correct libraries\n"
+                       "   - Set MKLROOT or IPPROOT environment variables\n"
+                       "   - Try: -lmkl_intel_lp64 -lmkl_sequential -lmkl_core";
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // Vectorization reports (as notes)
+    if (std::regex_search(line, matches, vec_report_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::NOTE;
+      diag.file_path = matches[1].str();
+      diag.line_number = std::stoi(matches[2].str());
+      diag.column_number = 0;
+      diag.code = "ICC-VEC";
+      diag.message = "Vectorization report";
+      diag.help_text = "Use -qopt-report for detailed optimization reports.";
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // Classic ICC errors
+    if (std::regex_search(line, matches, icc_error_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.file_path = matches[1].str();
+      diag.line_number = std::stoi(matches[2].str());
+      diag.column_number = 0;
+      diag.code = matches[3].matched ? ("ICC-" + matches[3].str()) : "ICC";
+      diag.message = matches[4].str();
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // ICX errors (Clang-like)
+    if (std::regex_search(line, matches, icx_error_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.file_path = matches[1].str();
+      diag.line_number = std::stoi(matches[2].str());
+      diag.column_number = std::stoi(matches[3].str());
+      diag.code = "ICX";
+      diag.message = matches[4].str();
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // ICC warnings
+    if (std::regex_search(line, matches, icc_warning_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::WARNING;
+      diag.file_path = matches[1].str();
+      diag.line_number = std::stoi(matches[2].str());
+      diag.column_number = 0;
+      diag.code = matches[3].matched ? ("ICC-" + matches[3].str()) : "ICC";
+      diag.message = matches[4].str();
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // ICX warnings
+    if (std::regex_search(line, matches, icx_warning_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::WARNING;
+      diag.file_path = matches[1].str();
+      diag.line_number = std::stoi(matches[2].str());
+      diag.column_number = std::stoi(matches[3].str());
+      diag.code = "ICX";
+      diag.message = matches[4].str();
+      diagnostics.push_back(diag);
+      continue;
+    }
+  }
+
+  return diagnostics;
+}
+
+// ============================================================================
+// Precompiled Header (PCH) Error Parser
+// ============================================================================
+
+std::vector<diagnostic> parse_pch_errors(const std::string &error_output) {
+  std::vector<diagnostic> diagnostics;
+
+  // GCC/Clang PCH errors
+  // error: pch file built from a different branch
+  std::regex pch_mismatch_regex(
+      R"(([^:]+):(?:(\d+):)?(?:\d+:)?\s*error:.*(?:pch|PCH|precompiled\s*header).*(?:built\s*from|different|mismatch|invalid|corrupt))");
+
+  // PCH file not found
+  std::regex pch_not_found_regex(
+      R"(([^:]+):(?:(\d+):)?(?:\d+:)?\s*(?:error|fatal\s*error):.*(?:cannot\s*find|not\s*found|no\s*such).*(?:\.pch|\.gch|precompiled))");
+
+  // PCH was created with different compiler version
+  std::regex pch_version_regex(
+      R"(([^:]+):(?:(\d+):)?(?:\d+:)?\s*error:.*(?:pch|precompiled).*(?:version|compiler))");
+
+  // PCH created with different options
+  std::regex pch_options_regex(
+      R"(([^:]+):(?:(\d+):)?(?:\d+:)?\s*error:.*(?:pch|precompiled).*(?:option|flag|setting))");
+
+  // MSVC PCH errors
+  // error C1859: unexpected precompiled header error
+  std::regex msvc_pch_error_regex(
+      R"(([^\(]+)(?:\((\d+)\))?:\s*error\s+(C1[89]\d\d):\s*(.+))");
+
+  // MSVC: cannot find pch
+  std::regex msvc_pch_not_found_regex(
+      R"(([^\(]+)(?:\((\d+)\))?:\s*fatal\s*error\s+C1083:.*(?:pch|\.pch))");
+
+  // Clang: -include-pch errors
+  std::regex clang_include_pch_regex(
+      R"(([^:]+):(?:(\d+):)?(?:\d+:)?\s*error:.*-include-pch.*)");
+
+  // stdafx.h / pch.h missing (common Windows pattern)
+  std::regex stdafx_regex(
+      R"(([^:]+):(?:(\d+):)?(?:\d+:)?\s*(?:error|fatal\s*error):.*(?:stdafx\.h|pch\.h).*(?:not\s*found|No\s*such|cannot\s*open))");
+
+  std::string line;
+  std::istringstream stream(error_output);
+
+  while (std::getline(stream, line)) {
+    std::smatch matches;
+
+    // stdafx/pch.h not found (most common)
+    if (std::regex_search(line, matches, stdafx_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.file_path = matches[1].str();
+      diag.line_number = matches[2].matched ? std::stoi(matches[2].str()) : 0;
+      diag.column_number = 0;
+      diag.code = "PCH";
+      diag.message = "Precompiled header file not found";
+      diag.help_text = "Common solutions:\n"
+                       "   - Create stdafx.h/pch.h with common includes\n"
+                       "   - Disable PCH in project settings\n"
+                       "   - MSVC: Properties > C/C++ > Precompiled Headers > Not Using";
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // PCH version/compiler mismatch
+    if (std::regex_search(line, matches, pch_version_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.file_path = matches[1].str();
+      diag.line_number = matches[2].matched ? std::stoi(matches[2].str()) : 0;
+      diag.column_number = 0;
+      diag.code = "PCH";
+      diag.message = "Precompiled header version mismatch";
+      diag.help_text = "The PCH was built with a different compiler version.\n"
+                       "Solutions:\n"
+                       "   - Clean and rebuild the project\n"
+                       "   - Delete .pch/.gch files manually\n"
+                       "   - Rebuild PCH: MSVC uses /Yc, GCC/Clang auto-regenerate";
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // PCH compiler options mismatch
+    if (std::regex_search(line, matches, pch_options_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.file_path = matches[1].str();
+      diag.line_number = matches[2].matched ? std::stoi(matches[2].str()) : 0;
+      diag.column_number = 0;
+      diag.code = "PCH";
+      diag.message = "Precompiled header built with different options";
+      diag.help_text = "PCH must be built with same compiler options.\n"
+                       "Ensure consistent:\n"
+                       "   - Optimization level (-O0/-O2/-O3)\n"
+                       "   - C++ standard (-std=c++17/20)\n"
+                       "   - Include paths\n"
+                       "   - Preprocessor definitions";
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // PCH file not found
+    if (std::regex_search(line, matches, pch_not_found_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.file_path = matches[1].str();
+      diag.line_number = matches[2].matched ? std::stoi(matches[2].str()) : 0;
+      diag.column_number = 0;
+      diag.code = "PCH";
+      diag.message = "Precompiled header file not found";
+      diag.help_text = "The .pch/.gch file doesn't exist.\n"
+                       "   - Build PCH first (MSVC: /Yc flag on stdafx.cpp)\n"
+                       "   - Check the PCH output path\n"
+                       "   - Ensure PCH file is generated before other files compile";
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // MSVC PCH errors
+    if (std::regex_search(line, matches, msvc_pch_error_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.file_path = matches[1].str();
+      diag.line_number = matches[2].matched ? std::stoi(matches[2].str()) : 0;
+      diag.column_number = 0;
+      diag.code = matches[3].str();
+      diag.message = matches[4].str();
+
+      // Add specific help for known MSVC PCH error codes
+      std::string code = matches[3].str();
+      if (code == "C1859") {
+        diag.help_text = "Unexpected PCH error. Try:\n"
+                         "   - Clean solution and rebuild\n"
+                         "   - Delete .pch files in intermediate directory\n"
+                         "   - Check for header file corruption";
+      } else if (code == "C1850" || code == "C1851" || code == "C1852" || code == "C1853") {
+        diag.help_text = "PCH file is corrupt or incompatible.\n"
+                         "   - Delete the .pch file\n"
+                         "   - Rebuild the project";
+      } else {
+        diag.help_text = "MSVC precompiled header error.\n"
+                         "   - Try disabling PCH temporarily\n"
+                         "   - Check PCH settings in project properties";
+      }
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // General PCH mismatch
+    if (std::regex_search(line, matches, pch_mismatch_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.file_path = matches[1].str();
+      diag.line_number = matches[2].matched ? std::stoi(matches[2].str()) : 0;
+      diag.column_number = 0;
+      diag.code = "PCH";
+      diag.message = "Precompiled header mismatch or corruption";
+      diag.help_text = "Delete PCH files and rebuild:\n"
+                       "   - GCC: delete *.gch files\n"
+                       "   - MSVC: delete *.pch files\n"
+                       "   - Clang: delete *.pch files";
+      diagnostics.push_back(diag);
+      continue;
+    }
+  }
+
+  return diagnostics;
+}
+
+// ============================================================================
+// Cross-Compilation and ABI Mismatch Error Parser
+// ============================================================================
+
+std::vector<diagnostic> parse_abi_errors(const std::string &error_output) {
+  std::vector<diagnostic> diagnostics;
+
+  // ABI version mismatch
+  // warning: ABI version mismatch
+  std::regex abi_version_regex(
+      R"(([^:]+):(?:(\d+):)?(?:\d+:)?\s*(?:error|warning):.*ABI\s*(?:version\s*)?(?:mismatch|incompatib|differ))");
+
+  // C++ ABI tag issues (GCC)
+  std::regex abi_tag_regex(
+      R"(([^:]+):(?:(\d+):)?(?:\d+:)?\s*(?:error|warning):.*(?:_GLIBCXX_USE_CXX11_ABI|abi_tag))");
+
+  // Symbol visibility issues
+  std::regex visibility_regex(
+      R"(([^:]+):(?:(\d+):)?(?:\d+:)?\s*(?:error|warning):.*(?:visibility|hidden|default).*)");
+
+  // Architecture mismatch
+  std::regex arch_mismatch_regex(
+      R"((?:error|warning):.*(?:incompatible|mismatch).*(?:architecture|arch|x86_64|i386|arm|aarch64|32.bit|64.bit))");
+
+  // Cross-compile sysroot errors
+  std::regex sysroot_regex(
+      R"(([^:]+):(?:(\d+):)?(?:\d+:)?\s*(?:error|fatal\s*error):.*(?:sysroot|--sysroot|cannot\s*find.*target))");
+
+  // Target triple issues
+  std::regex triple_regex(
+      R"((?:error|warning):.*(?:target\s*triple|unknown\s*target|-target))");
+
+  // Linking objects from different ABIs
+  std::regex link_abi_regex(
+      R"((?:error|warning):.*(?:linking|link).*(?:different|incompatible).*(?:ABI|standard|libstdc\+\+|libc\+\+))");
+
+  // _ITERATOR_DEBUG_LEVEL mismatch (MSVC)
+  std::regex iterator_debug_regex(
+      R"((?:error|warning).*_ITERATOR_DEBUG_LEVEL.*(?:mismatch|different|inconsistent))");
+
+  // Runtime library mismatch (MSVC /MD /MT /MDd /MTd)
+  std::regex runtime_lib_regex(
+      R"((?:error|warning).*/M[DT]d?\s*.*(?:mismatch|conflict|inconsistent))");
+
+  // libstdc++ vs libc++ mixing
+  std::regex stdlib_regex(
+      R"((?:error|warning):.*(?:libstdc\+\+|libc\+\+).*(?:mismatch|incompatible|undefined))");
+
+  // Calling convention mismatch
+  std::regex calling_conv_regex(
+      R"(([^:]+):(?:(\d+):)?(?:\d+:)?\s*(?:error|warning):.*(?:calling\s*convention|__cdecl|__stdcall|__fastcall|__vectorcall))");
+
+  // Structure packing/alignment issues
+  std::regex packing_regex(
+      R"(([^:]+):(?:(\d+):)?(?:\d+:)?\s*(?:error|warning):.*(?:#pragma\s*pack|__attribute__.*packed|alignment|sizeof.*differ))");
+
+  std::string line;
+  std::istringstream stream(error_output);
+
+  while (std::getline(stream, line)) {
+    std::smatch matches;
+
+    // C++11 ABI tag (GCC dual ABI)
+    if (std::regex_search(line, matches, abi_tag_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.file_path = matches[1].str();
+      diag.line_number = matches[2].matched ? std::stoi(matches[2].str()) : 0;
+      diag.column_number = 0;
+      diag.code = "ABI";
+      diag.message = "C++ ABI compatibility issue (_GLIBCXX_USE_CXX11_ABI)";
+      diag.help_text = "GCC uses dual ABI since GCC 5.1 for std::string/std::list.\n"
+                       "Solutions:\n"
+                       "   - Ensure all libraries use same ABI:\n"
+                       "     #define _GLIBCXX_USE_CXX11_ABI 1 (new ABI, default)\n"
+                       "     #define _GLIBCXX_USE_CXX11_ABI 0 (old ABI)\n"
+                       "   - Rebuild all dependent libraries with same setting\n"
+                       "   - Check if prebuilt libraries were built with old ABI";
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // Architecture mismatch
+    if (std::regex_search(line, matches, arch_mismatch_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.file_path = "";
+      diag.line_number = 0;
+      diag.column_number = 0;
+      diag.code = "ABI-ARCH";
+      diag.message = "Architecture mismatch";
+      diag.help_text = "Cannot mix 32-bit and 64-bit code.\n"
+                       "   - Check all libraries match target architecture\n"
+                       "   - Use -m32 or -m64 consistently\n"
+                       "   - Cross-compiling: set correct --target\n"
+                       "   - MSVC: check Platform setting (Win32/x64/ARM64)";
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // MSVC runtime library mismatch
+    if (std::regex_search(line, matches, runtime_lib_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.file_path = "";
+      diag.line_number = 0;
+      diag.column_number = 0;
+      diag.code = "ABI-MSVC";
+      diag.message = "MSVC runtime library mismatch";
+      diag.help_text = "All code must use the same runtime:\n"
+                       "   /MD  - Dynamic release (msvcrt.dll)\n"
+                       "   /MDd - Dynamic debug (msvcrtd.dll)\n"
+                       "   /MT  - Static release\n"
+                       "   /MTd - Static debug\n"
+                       "Rebuild all libraries with consistent setting.";
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // Iterator debug level (MSVC)
+    if (std::regex_search(line, matches, iterator_debug_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.file_path = "";
+      diag.line_number = 0;
+      diag.column_number = 0;
+      diag.code = "ABI-MSVC";
+      diag.message = "_ITERATOR_DEBUG_LEVEL mismatch";
+      diag.help_text = "Debug iterator settings must match:\n"
+                       "   _ITERATOR_DEBUG_LEVEL=0 (Release)\n"
+                       "   _ITERATOR_DEBUG_LEVEL=2 (Debug)\n"
+                       "Don't mix Debug and Release libraries.";
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // libstdc++ vs libc++
+    if (std::regex_search(line, matches, stdlib_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.file_path = "";
+      diag.line_number = 0;
+      diag.column_number = 0;
+      diag.code = "ABI";
+      diag.message = "C++ standard library mismatch (libstdc++/libc++)";
+      diag.help_text = "Cannot mix libstdc++ and libc++ in same binary.\n"
+                       "   - Use -stdlib=libstdc++ or -stdlib=libc++ consistently\n"
+                       "   - Rebuild all libraries with same stdlib\n"
+                       "   - macOS default is libc++, Linux default is libstdc++";
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // Cross-compilation sysroot
+    if (std::regex_search(line, matches, sysroot_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.file_path = matches[1].str();
+      diag.line_number = matches[2].matched ? std::stoi(matches[2].str()) : 0;
+      diag.column_number = 0;
+      diag.code = "CROSS";
+      diag.message = "Cross-compilation sysroot error";
+      diag.help_text = "Set the correct sysroot for cross-compiling:\n"
+                       "   --sysroot=/path/to/target/sysroot\n"
+                       "   - Contains target system headers and libraries\n"
+                       "   - CMAKE_SYSROOT in CMake toolchain file";
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // Target triple
+    if (std::regex_search(line, matches, triple_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.file_path = "";
+      diag.line_number = 0;
+      diag.column_number = 0;
+      diag.code = "CROSS";
+      diag.message = "Invalid or unknown target triple";
+      diag.help_text = "Target triple format: arch-vendor-os[-env]\n"
+                       "Examples:\n"
+                       "   x86_64-unknown-linux-gnu\n"
+                       "   aarch64-linux-android\n"
+                       "   arm-none-eabi (bare metal)\n"
+                       "Use: clang -target <triple> or --target=<triple>";
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // Calling convention
+    if (std::regex_search(line, matches, calling_conv_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.file_path = matches[1].str();
+      diag.line_number = matches[2].matched ? std::stoi(matches[2].str()) : 0;
+      diag.column_number = 0;
+      diag.code = "ABI";
+      diag.message = "Calling convention mismatch";
+      diag.help_text = "Function calling conventions must match:\n"
+                       "   __cdecl    - C default, caller cleans stack\n"
+                       "   __stdcall  - Win32 API, callee cleans stack\n"
+                       "   __fastcall - Uses registers\n"
+                       "Check function declarations in headers match libraries.";
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // Structure packing
+    if (std::regex_search(line, matches, packing_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::WARNING;
+      diag.file_path = matches[1].str();
+      diag.line_number = matches[2].matched ? std::stoi(matches[2].str()) : 0;
+      diag.column_number = 0;
+      diag.code = "ABI";
+      diag.message = "Structure alignment/packing issue";
+      diag.help_text = "Structure layout must match across boundaries:\n"
+                       "   - Use consistent #pragma pack settings\n"
+                       "   - Explicit alignment: alignas(N)\n"
+                       "   - Check sizeof() matches expected values\n"
+                       "   - Binary protocols may need packed structures";
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // Generic ABI version mismatch
+    if (std::regex_search(line, matches, abi_version_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.file_path = matches[1].str();
+      diag.line_number = matches[2].matched ? std::stoi(matches[2].str()) : 0;
+      diag.column_number = 0;
+      diag.code = "ABI";
+      diag.message = "ABI version mismatch";
+      diag.help_text = "Binary interface versions don't match.\n"
+                       "   - Rebuild all components with same compiler version\n"
+                       "   - Check library versions are compatible\n"
+                       "   - Ensure consistent compiler flags";
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // Link-time ABI mismatch
+    if (std::regex_search(line, matches, link_abi_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::ERROR;
+      diag.file_path = "";
+      diag.line_number = 0;
+      diag.column_number = 0;
+      diag.code = "ABI";
+      diag.message = "Linking objects with incompatible ABIs";
+      diag.help_text = "Object files were compiled with different ABIs.\n"
+                       "   - Rebuild all objects with same compiler/settings\n"
+                       "   - Check third-party library compatibility\n"
+                       "   - Don't mix Debug/Release builds";
+      diagnostics.push_back(diag);
+      continue;
+    }
+
+    // Symbol visibility
+    if (std::regex_search(line, matches, visibility_regex)) {
+      diagnostic diag;
+      diag.level = diagnostic_level::WARNING;
+      diag.file_path = matches[1].str();
+      diag.line_number = matches[2].matched ? std::stoi(matches[2].str()) : 0;
+      diag.column_number = 0;
+      diag.code = "ABI";
+      diag.message = "Symbol visibility issue";
+      diag.help_text = "Symbol visibility affects linking:\n"
+                       "   - __attribute__((visibility(\"default\"))) - exported\n"
+                       "   - __attribute__((visibility(\"hidden\"))) - internal\n"
+                       "   - -fvisibility=hidden with explicit exports is best practice";
+      diagnostics.push_back(diag);
+      continue;
+    }
+  }
+
+  return diagnostics;
 }
 
 } // namespace cforge

@@ -204,6 +204,101 @@ void logger::cleaning(const std::string &target) {
 }
 
 
+// Build progress display (Rust-style)
+
+
+void logger::compiling_file(const std::string &file, double duration_secs) {
+  if (s_verbosity == log_verbosity::VERBOSITY_QUIET)
+    return;
+
+  std::string action = "Compiling";
+  std::string display_file = file;
+
+  // Check if this is a link action (indicated by "[link] " prefix)
+  if (file.rfind("[link] ", 0) == 0) {
+    action = "Linking";
+    display_file = file.substr(7);  // Remove "[link] " prefix
+  }
+
+  std::string message = display_file;
+  if (duration_secs >= 0) {
+    if (duration_secs >= 10.0) {
+      // Highlight slow files
+      message = fmt::format("{} ({:.1f}s) <- slow", display_file, duration_secs);
+    } else {
+      message = fmt::format("{} ({:.1f}s)", display_file, duration_secs);
+    }
+  }
+  print_status_line(action, message, fmt::color::green);
+}
+
+void logger::progress_bar(int current, int total, bool in_place) {
+  if (s_verbosity == log_verbosity::VERBOSITY_QUIET)
+    return;
+  if (total <= 0)
+    return;
+
+  const int bar_width = 20;
+  double progress = static_cast<double>(current) / static_cast<double>(total);
+  int filled = static_cast<int>(progress * bar_width);
+
+  // Build the bar with Unicode block characters
+  std::string bar;
+  for (int i = 0; i < bar_width; ++i) {
+    if (i < filled) {
+      bar += "\xe2\x96\x88"; // Full block
+    } else {
+      bar += "\xe2\x96\x91"; // Light shade
+    }
+  }
+
+  int percent = static_cast<int>(progress * 100);
+
+  if (in_place) {
+    // Use carriage return to update in place
+    fmt::print("\r");
+    fmt::print(fg(fmt::color::cyan), "{:>{}}", "", STATUS_WIDTH);
+    fmt::print(" [{}] {:3d}% ({}/{})", bar, percent, current, total);
+    std::cout << std::flush;
+  } else {
+    // Print on new line
+    fmt::print(fg(fmt::color::cyan), "{:>{}}", "", STATUS_WIDTH);
+    fmt::print(" [{}] {:3d}% ({}/{})\n", bar, percent, current, total);
+  }
+}
+
+void logger::clear_line() {
+  // Move to beginning of line and clear it
+  fmt::print("\r\033[K");
+  std::cout << std::flush;
+}
+
+void logger::print_timing_summary(
+    double total_duration,
+    const std::vector<std::pair<std::string, double>> &slowest_files) {
+  if (s_verbosity == log_verbosity::VERBOSITY_QUIET)
+    return;
+
+  fmt::print("\n");
+  print_status_line("Finished", fmt::format("in {:.2f}s", total_duration),
+                    fmt::color::green);
+
+  if (!slowest_files.empty()) {
+    fmt::print(fg(fmt::color::cyan) | fmt::emphasis::bold,
+               "{:>{}}", "Slowest", STATUS_WIDTH);
+    fmt::print(" files:\n");
+    for (const auto &[file, duration] : slowest_files) {
+      fmt::print("{:>{}}", "", STATUS_WIDTH);
+      if (duration >= 10.0) {
+        fmt::print(fg(fmt::color::yellow), " {:>6.1f}s  {}\n", duration, file);
+      } else {
+        fmt::print(" {:>6.1f}s  {}\n", duration, file);
+      }
+    }
+  }
+}
+
+
 // Legacy compatibility
 
 

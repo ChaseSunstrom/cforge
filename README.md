@@ -60,7 +60,7 @@ CForge is a modern build system designed to simplify C/C++ project management. I
 - **Testing & Benchmarking**: Integrated test runner and benchmark support
 - **Custom Scripts & Hooks**: Run project-specific tasks at various stages
 - **Automatic Tool Setup**: Installs missing tools automatically
-- **Enhanced Diagnostics**: Cargo-style colored error output with fix suggestions
+- **Enhanced Diagnostics**: Cargo-style colored error output with fix suggestionsv
 - **Build Timing**: See exactly how long builds take
 - **Developer Tools**: Code formatting, linting, file templates, watch mode
 - **Shell Completions**: Tab completion for bash, zsh, PowerShell, fish
@@ -796,20 +796,183 @@ link_type = "PRIVATE"
 
 ## 🧪 Testing & Benchmarking
 
-### Running Tests
+CForge provides a powerful testing system with support for multiple test frameworks, Cargo/Rust-style output, and flexible configuration.
+
+### Test Command
 
 ```bash
 # Run all tests
 cforge test
 
-# Run specific category
-cforge test Math
+# Filter tests by pattern
+cforge test "math::*"
+cforge test -f "Math.Add*"
 
-# Run specific tests in Release
-cforge test -c Release Math Add Divide
+# Run in Release configuration
+cforge test -c Release
+
+# List available tests without running
+cforge test --list
+
+# Use framework's native output (e.g., GTest, Catch2)
+cforge test --native
+
+# Skip build step (just run tests)
+cforge test --no-build
+
+# Set timeout and parallel jobs
+cforge test --timeout 60 -j4
 
 # Verbose output
 cforge test -v
+```
+
+### Cargo-Style Test Output
+
+By default, CForge displays test results in a modern Cargo/Rust-style format:
+
+```
+running 5 tests
+test math::addition ... ok
+test math::subtraction ... ok
+test math::multiplication ... ok
+test math::division ... FAILED
+test math::modulo ... ok
+
+failures:
+
+---- math::division stdout ----
+error[TEST]: assertion failed
+  --> tests/math_test.cpp:42:5
+   |
+42 |   EXPECT_EQ(divide(10, 3), 4);
+   |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = expected: 4
+   = actual: 3
+   = note: integer division truncates
+
+failures:
+    math::division
+
+test result: FAILED. 4 passed; 1 failed; 0 ignored; finished in 0.23s
+```
+
+### Supported Test Frameworks
+
+CForge supports multiple test frameworks with automatic detection:
+
+| Framework | Auto-Detection | Features |
+|-----------|---------------|----------|
+| **Builtin** | `#include "test_framework.h"` | Simple TEST() macro, lightweight |
+| **Google Test** | `#include <gtest/gtest.h>` | Full-featured, mocking support |
+| **Catch2** | `#include <catch2/catch.hpp>` | BDD-style, header-only option |
+| **doctest** | `#include <doctest/doctest.h>` | Fast compilation, lightweight |
+| **Boost.Test** | `#include <boost/test/...>` | Part of Boost ecosystem |
+
+### Test Configuration
+
+Configure testing in `cforge.toml`:
+
+```toml
+[test]
+directory = "tests"           # Test source directory (default: "tests")
+framework = "auto"            # "auto", "builtin", "gtest", "catch2", "doctest", "boost"
+timeout = 300                 # Default timeout per test in seconds
+jobs = 0                      # Parallel jobs (0 = auto-detect)
+auto_link_project = true      # Auto-link if project is a library
+output_style = "cargo"        # "cargo" (default) or "native"
+discovery = "both"            # "auto", "explicit", "both"
+```
+
+### Explicit Test Targets
+
+Define specific test targets with custom configuration:
+
+```toml
+[[test.targets]]
+name = "unit_tests"
+sources = ["tests/unit/*.cpp"]
+framework = "gtest"
+timeout = 60
+dependencies = ["mylib"]
+defines = ["UNIT_TESTING=1"]
+includes = ["tests/common"]
+
+[[test.targets]]
+name = "integration_tests"
+sources = ["tests/integration/**/*.cpp"]
+framework = "catch2"
+timeout = 300
+```
+
+### Framework-Specific Configuration
+
+Configure framework versions and options:
+
+```toml
+[test.gtest]
+fetch = true                  # Auto-fetch via FetchContent
+version = "1.14.0"            # GTest version
+
+[test.catch2]
+fetch = true
+version = "3.5.0"
+
+[test.doctest]
+fetch = true
+version = "2.4.11"
+```
+
+### Built-in Test Framework
+
+For simple testing needs, use CForge's built-in framework:
+
+```cpp
+// tests/math_test.cpp
+#include "test_framework.h"
+
+TEST(Math, Addition) {
+    test_assert(1 + 1 == 2);
+}
+
+TEST(Math, Subtraction) {
+    test_assert(5 - 3 == 2);
+}
+```
+
+The built-in framework provides:
+- `TEST(category, name)` - Define a test
+- `TEST(name)` - Define a test without category
+- `test_assert(expr)` - Assert expression is true
+- `cf_assert(expr)` - Alias for test_assert
+
+### Auto-Discovery vs Explicit Targets
+
+CForge supports both auto-discovery and explicit test targets:
+
+- **Auto-discovery**: Scans `tests/` directory for test files
+- **Explicit targets**: Use `[[test.targets]]` for precise control
+- **Both**: Combine auto-discovery with explicit targets (default)
+
+```toml
+[test]
+discovery = "both"     # Use both methods
+# discovery = "auto"   # Only auto-discover
+# discovery = "explicit"  # Only use [[test.targets]]
+```
+
+### Smart Project Linking
+
+When your project is a library, CForge automatically links it to tests:
+
+```toml
+[project]
+name = "mylib"
+binary_type = "static_library"  # or "shared_library"
+
+[test]
+auto_link_project = true    # Tests automatically link against mylib
 ```
 
 ### Running Benchmarks

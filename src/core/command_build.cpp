@@ -11,6 +11,7 @@
 #include "core/error_format.hpp"
 #include "core/file_system.h"
 #include "core/git_utils.hpp"
+#include "core/include_analyzer.hpp"
 #include "core/lockfile.hpp"
 #include "core/process_utils.hpp"
 #include "core/registry.hpp"
@@ -690,6 +691,77 @@ static bool run_cmake_configure(const std::vector<std::string> &cmake_args,
 }
 
 /**
+ * @brief Check for circular include dependencies and warn/fail if found
+ *
+ * @param project_dir Project directory
+ * @param project_config Project configuration
+ * @param verbose Verbose output
+ * @return bool True if build should continue, false if it should fail
+ */
+static bool check_circular_dependencies(const std::filesystem::path &project_dir,
+                                         const toml_reader &project_config,
+                                         bool verbose) {
+  // Check if circular dependency check is enabled (default: true)
+  bool warn_circular = project_config.get_bool("build.warn_circular", true);
+  bool fail_on_circular = project_config.get_bool("build.fail_on_circular", false);
+
+  if (!warn_circular && !fail_on_circular) {
+    return true; // Checks disabled
+  }
+
+  if (verbose) {
+    logger::print_verbose("Checking for circular include dependencies...");
+  }
+
+  include_analyzer analyzer(project_dir);
+  include_analysis_result result = analyzer.analyze(false); // Don't include deps
+
+  if (!result.has_cycles) {
+    if (verbose) {
+      logger::print_verbose("No circular dependencies found");
+    }
+    return true;
+  }
+
+  // Circular dependencies found - emit warnings
+  for (const auto &chain : result.chains) {
+    // Build the chain string
+    std::string chain_str;
+    for (size_t i = 0; i < chain.files.size(); ++i) {
+      chain_str += chain.files[i];
+      if (i < chain.files.size() - 1) {
+        chain_str += " -> ";
+      }
+    }
+
+    // Format warning in Rust style
+    fmt::print(fg(fmt::color::yellow) | fmt::emphasis::bold, "warning");
+    fmt::print(": circular include detected\n");
+    fmt::print(fg(fmt::color::blue) | fmt::emphasis::bold, "  --> ");
+    fmt::print("{}\n", chain.root);
+    fmt::print(fg(fmt::color::blue) | fmt::emphasis::bold, "   |\n");
+    fmt::print(fg(fmt::color::blue) | fmt::emphasis::bold, "   = ");
+    fmt::print("{}\n", chain_str);
+    fmt::print(fg(fmt::color::blue) | fmt::emphasis::bold, "   = ");
+    fmt::print(fg(fmt::color::green), "help");
+    fmt::print(": consider forward declarations or restructuring\n\n");
+  }
+
+  // Summary
+  fmt::print(fg(fmt::color::yellow) | fmt::emphasis::bold, "warning");
+  fmt::print(": {} circular dependency chain{} detected\n",
+             result.chains.size(),
+             result.chains.size() == 1 ? "" : "s");
+
+  if (fail_on_circular) {
+    logger::print_error("Build failed due to circular dependencies (build.fail_on_circular = true)");
+    return false;
+  }
+
+  return true;
+}
+
+/**
  * @brief Build the project with CMake
  *
  * @param project_dir Project directory
@@ -742,6 +814,11 @@ static bool build_project(const std::filesystem::path &project_dir,
   }
 
   logger::building(project_name + " [" + build_config + "]");
+
+  // Pre-build check for circular include dependencies
+  if (has_project_config && !check_circular_dependencies(project_dir, project_config, verbose)) {
+    return false;
+  }
 
   // Check if we're in a workspace and workspace CMakeLists exists
   auto [is_workspace, workspace_dir] = is_in_workspace(project_dir);
@@ -857,6 +934,42 @@ static bool build_project(const std::filesystem::path &project_dir,
   std::vector<std::string> cmake_args = {"-S", source_dir.string(), "-B",
                                          build_dir.string(),
                                          "-DCMAKE_BUILD_TYPE=" + build_config};
+
+  // ccache/sccache integration
+  // Configuration: build.compiler_cache = "auto" (default), "ccache", "sccache", or "none"
+  if (has_project_config) {
+    std::string cache_mode = project_config.get_string("build.compiler_cache", "auto");
+    std::string cache_program;
+
+    if (cache_mode == "none") {
+      logger::print_verbose("Compiler cache disabled by configuration");
+    } else if (cache_mode == "ccache") {
+      if (is_command_available("ccache", 5)) {
+        cache_program = "ccache";
+      } else {
+        logger::print_warning("ccache requested but not found in PATH");
+      }
+    } else if (cache_mode == "sccache") {
+      if (is_command_available("sccache", 5)) {
+        cache_program = "sccache";
+      } else {
+        logger::print_warning("sccache requested but not found in PATH");
+      }
+    } else if (cache_mode == "auto") {
+      // Auto-detect: prefer ccache, fallback to sccache
+      if (is_command_available("ccache", 5)) {
+        cache_program = "ccache";
+      } else if (is_command_available("sccache", 5)) {
+        cache_program = "sccache";
+      }
+    }
+
+    if (!cache_program.empty()) {
+      cmake_args.push_back("-DCMAKE_C_COMPILER_LAUNCHER=" + cache_program);
+      cmake_args.push_back("-DCMAKE_CXX_COMPILER_LAUNCHER=" + cache_program);
+      logger::print_action("Using", cache_program + " for compilation caching");
+    }
+  }
 
   // Inject top-level build.defines into CMake args
   if (has_project_config && project_config.has_key("build.defines")) {

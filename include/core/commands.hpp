@@ -238,3 +238,19 @@ cforge_int_t cforge_cmd_search(const cforge_context_t *ctx);
  * @return cforge_int_t Exit code (0 for success)
  */
 cforge_int_t cforge_cmd_info(const cforge_context_t *ctx);
+
+/**
+ * @brief Handle the 'circular' command to detect circular include dependencies
+ *
+ * @param ctx Context containing parsed arguments
+ * @return cforge_int_t Exit code (0 for success, 1 if cycles found)
+ */
+cforge_int_t cforge_cmd_circular(const cforge_context_t *ctx);
+
+/**
+ * @brief Handle the 'doctor' command to diagnose environment issues
+ *
+ * @param ctx Context containing parsed arguments
+ * @return cforge_int_t Exit code (0 for success)
+ */
+cforge_int_t cforge_cmd_doctor(const cforge_context_t *ctx);

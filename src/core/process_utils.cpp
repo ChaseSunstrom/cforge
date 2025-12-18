@@ -4,12 +4,14 @@
  */
 
 #include "core/process_utils.hpp"
+#include "core/build_progress.hpp"
 #include "core/error_format.hpp"
 #include <algorithm>
 #include <array>
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
+#include <sstream>
 
 #include <fmt/color.h>
 #include <fmt/core.h>
@@ -62,7 +64,7 @@ execute_process(const std::string &command,
 
   if (!CreatePipe(&stdout_read, &stdout_write, &sa, 0) ||
       !SetHandleInformation(stdout_read, HANDLE_FLAG_INHERIT, 0)) {
-    logger::print_error("Failed to create stdout pipe");
+    result.stderr_output = "Failed to create stdout pipe";
     return result;
   }
 
@@ -70,7 +72,7 @@ execute_process(const std::string &command,
       !SetHandleInformation(stderr_read, HANDLE_FLAG_INHERIT, 0)) {
     CloseHandle(stdout_read);
     CloseHandle(stdout_write);
-    logger::print_error("Failed to create stderr pipe");
+    result.stderr_output = "Failed to create stderr pipe";
     return result;
   }
 
@@ -111,7 +113,8 @@ execute_process(const std::string &command,
     CloseHandle(stderr_read);
     result.stderr_output =
         "Failed to create process: " + std::to_string(error_code);
-    logger::print_error(result.stderr_output);
+    // Don't print error here - let the caller decide how to handle it
+    // The error is captured in result.stderr_output
     return result;
   }
 
@@ -471,7 +474,16 @@ bool execute_tool(const std::string &command,
   // Collect output
   std::stringstream stdout_collect, stderr_collect;
 
-  // Process stdout in real-time if in verbose mode
+  // Build progress tracking - enabled for CMake Build commands
+  bool show_progress = !verbose && is_build_tool &&
+                       (tool_name_lower == "cmake build" ||
+                        tool_name.find("Build") != std::string::npos);
+  build_progress progress;
+  if (show_progress) {
+    progress.reset();
+  }
+
+  // Process stdout in real-time
   std::function<void(const std::string &)> stdout_callback = nullptr;
   if (verbose) {
     stdout_callback = [&tool_name](const std::string &chunk) {
@@ -480,6 +492,21 @@ bool execute_tool(const std::string &command,
       while (std::getline(ss, line)) {
         if (!line.empty()) {
           logger::print_action("Output", line);
+        }
+      }
+    };
+  } else if (show_progress) {
+    // Parse build output for progress display
+    stdout_callback = [&progress](const std::string &chunk) {
+      std::string line;
+      std::istringstream ss(chunk);
+      while (std::getline(ss, line)) {
+        if (progress.parse_line(line)) {
+          // Clear current line and show new progress
+          logger::clear_line();
+          logger::compiling_file(progress.get_current_file());
+          logger::progress_bar(progress.get_current_step(),
+                               progress.get_total_steps(), true);
         }
       }
     };
@@ -503,6 +530,13 @@ bool execute_tool(const std::string &command,
   process_result result =
       execute_process(command, args, working_dir, stdout_callback,
                       stderr_callback, timeout_seconds);
+
+  // Clear progress bar line if we were showing progress
+  if (show_progress && progress.has_progress()) {
+    logger::clear_line();
+    // Print newline to move past the progress bar
+    fmt::print("\n");
+  }
 
   // Always show output/errors for failed commands regardless of verbose mode
   if (!result.success) {
@@ -712,35 +746,15 @@ bool is_command_available(const std::string &command, int timeout_seconds) {
         execute_process(command, args, "", nullptr, nullptr, timeout_seconds);
 
     if (result.success) {
-      logger::print_verbose("Command '" + command + "' is available (" +
-                            result.stdout_output.substr(0, 50) +
-                            (result.stdout_output.length() > 50 ? "..." : "") +
-                            ")");
+      logger::print_verbose("Command '" + command + "' is available");
       return true;
     } else {
-      if (result.exit_code == -1) {
-        logger::print_verbose("Command '" + command +
-                              "' failed: Process execution error");
-      } else {
-        logger::print_verbose(
-            "Command '" + command +
-            "' failed with exit code: " + std::to_string(result.exit_code));
-      }
-
-      if (!result.stderr_output.empty()) {
-        logger::print_verbose(
-            "Error output: " + result.stderr_output.substr(0, 100) +
-            (result.stderr_output.length() > 100 ? "..." : ""));
-      }
-
+      // Just return false silently - command not found is expected for optional tools
+      // Caller can log if needed
       return false;
     }
-  } catch (const std::exception &ex) {
-    logger::print_verbose("Exception checking command '" + command +
-                          "': " + ex.what());
-    return false;
   } catch (...) {
-    logger::print_verbose("Unknown exception checking command: " + command);
+    // Silently return false - command not available
     return false;
   }
 }
