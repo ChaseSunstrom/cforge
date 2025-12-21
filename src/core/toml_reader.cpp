@@ -5,6 +5,7 @@
 
 #include "core/toml_reader.hpp"
 #include "cforge/log.hpp"
+#include "core/types.h"
 
 #include <filesystem>
 #include <fstream>

@@ -39,9 +39,11 @@ CForge provides a comprehensive set of commands for building, testing, and manag
 |--------------|------------------------------------------|------------------------------------|
 | `add`        | Add a dependency to the project          | `cforge add fmt`                   |
 | `remove`     | Remove a dependency                      | `cforge remove spdlog`             |
-| `update`     | Update dependencies                      | `cforge update`                    |
+| `search`     | Search package registry                  | `cforge search json`               |
+| `info`       | Show package details                     | `cforge info spdlog`               |
+| `update`     | Update cforge or packages                | `cforge update --self`             |
 | `lock`       | Lock dependency versions                 | `cforge lock`                      |
-| `list`       | List variants, configs, or targets       | `cforge list variants`             |
+| `list`       | List dependencies or projects            | `cforge list`                      |
 | `ide`        | Generate IDE project files               | `cforge ide vscode`                |
 | `vcpkg`      | Manage vcpkg integration                 | `cforge vcpkg install`             |
 
@@ -332,20 +334,64 @@ cforge deps --update
 cforge deps --check
 ```
 
+### search
+
+Search the cforge package registry.
+
+```bash
+# Search for packages
+cforge search json
+
+# Search for logging libraries
+cforge search log
+```
+
+### info
+
+Get detailed information about a package.
+
+```bash
+# Show package info
+cforge info spdlog
+
+# Show available versions
+cforge info fmt --versions
+```
+
 ### add / remove
 
 Manage dependencies in cforge.toml.
 
 ```bash
-# Add a vcpkg dependency
+# Add from registry (default)
 cforge add fmt
 
-# Add with version
-cforge add "spdlog@1.12.0"
+# Add with specific version
+cforge add fmt@11.1.4
+
+# Add with features
+cforge add spdlog --features async
+
+# Add from Git
+cforge add mylib --git https://github.com/user/mylib --tag v1.0
+
+# Add from vcpkg
+cforge add boost --vcpkg
 
 # Remove a dependency
 cforge remove spdlog
 ```
+
+**Options:**
+| Option | Description |
+|--------|-------------|
+| `@version` | Specify version (e.g., `fmt@11.1.4`) |
+| `--git <url>` | Add as Git dependency |
+| `--tag <tag>` | Git tag (with --git) |
+| `--branch <name>` | Git branch (with --git) |
+| `--vcpkg` | Add as vcpkg package |
+| `--features <list>` | Comma-separated features |
+| `--header-only` | Mark as header-only library |
 
 ### package
 

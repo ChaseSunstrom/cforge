@@ -5,6 +5,7 @@
 
 #include "core/config_resolver.hpp"
 #include "cforge/log.hpp"
+#include "core/types.h"
 
 #include <algorithm>
 #include <cctype>

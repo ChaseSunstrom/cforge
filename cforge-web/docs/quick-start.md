@@ -58,12 +58,21 @@ my_project/
 [project]
 name = "my_project"
 version = "1.0.0"
-type = "executable"
+binary_type = "executable"
 cpp_standard = "17"
 
 [build]
-source_dir = "src"
-include_dir = "include"
+source_dirs = ["src"]
+include_dirs = ["include"]
+
+[build.config.debug]
+optimize = "debug"
+debug_info = true
+warnings = "all"
+
+[build.config.release]
+optimize = "speed"
+lto = true
 ```
 
 ## Build & Run
@@ -100,15 +109,21 @@ Edit `cforge.toml` to add dependencies:
 
 ```toml
 [dependencies]
-fmt = { version = "10.1.0", source = "vcpkg" }
-spdlog = { version = "1.12.0", source = "vcpkg" }
+fmt = "11.1.4"
+spdlog = "1.12.0"
 ```
 
 Or use the CLI:
 
 ```bash
-cforge add fmt
-cforge add spdlog
+# Add from registry
+cforge add fmt@11.1.4
+
+# Search for packages
+cforge search json
+
+# Add from vcpkg
+cforge add boost --vcpkg
 ```
 
 Then rebuild:
@@ -117,7 +132,7 @@ Then rebuild:
 cforge build
 ```
 
-CForge will automatically install dependencies via vcpkg.
+CForge will automatically download and build dependencies.
 
 ## Running Tests
 

@@ -188,30 +188,66 @@ flags = ["-Wall", "-Wextra", "-fPIC"]
 
 ### Build Configurations
 
-Define build configurations with specific compiler flags and defines:
+Define build configurations with portable compiler options:
 
 ```toml
 [build.config.debug]
-defines = ["DEBUG=1", "_DEBUG"]
-flags = ["DEBUG_INFO", "NO_OPT"]
+optimize = "debug"
+debug_info = true
+warnings = "all"
+sanitizers = ["address"]
+defines = ["DEBUG=1"]
 
 [build.config.release]
+optimize = "speed"
+warnings = "all"
+lto = true
 defines = ["NDEBUG=1"]
-flags = ["OPTIMIZE", "LTO"]
 
 [build.config.relwithdebinfo]
+optimize = "speed"
+debug_info = true
 defines = ["NDEBUG=1"]
-flags = ["OPTIMIZE", "DEBUG_INFO"]
 ```
 
-### Available Flags
+### Portable Compiler Flags
 
-Abstract flags that translate to compiler-specific options:
+CForge provides portable build options that automatically translate to the correct flags for each compiler:
 
-| Flag | Description | MSVC | GCC/Clang |
-|------|-------------|------|-----------|
-| `DEBUG_INFO` | Debug symbols | `/Zi` | `-g` |
-| `NO_OPT` | Disable optimization | `/Od` | `-O0` |
-| `OPTIMIZE` | Full optimization | `/O2` | `-O3` |
-| `LTO` | Link-time optimization | `/GL` | `-flto` |
-| `UNICODE` | Unicode support | `/DUNICODE` | `-DUNICODE` |
+| Option | Values | Description |
+|--------|--------|-------------|
+| `optimize` | `"none"`, `"debug"`, `"size"`, `"speed"`, `"aggressive"` | Optimization level |
+| `warnings` | `"none"`, `"default"`, `"all"`, `"strict"`, `"pedantic"` | Warning level |
+| `debug_info` | `true` / `false` | Include debug symbols |
+| `sanitizers` | `["address", "undefined", "thread", "leak"]` | Runtime sanitizers |
+| `lto` | `true` / `false` | Link-time optimization |
+| `exceptions` | `true` / `false` | C++ exceptions |
+| `rtti` | `true` / `false` | Runtime type info |
+| `hardening` | `"none"`, `"basic"`, `"full"` | Security hardening |
+| `stdlib` | `"default"`, `"libc++"`, `"libstdc++"` | Standard library |
+| `visibility` | `"default"`, `"hidden"` | Symbol visibility |
+
+### Flag Translation
+
+| Portable | MSVC | GCC/Clang |
+|----------|------|-----------|
+| `optimize = "none"` | `/Od` | `-O0` |
+| `optimize = "debug"` | `/Od` | `-Og` |
+| `optimize = "size"` | `/O1 /Os` | `-Os` |
+| `optimize = "speed"` | `/O2` | `-O2` |
+| `optimize = "aggressive"` | `/Ox` | `-O3` |
+| `warnings = "all"` | `/W4` | `-Wall -Wextra` |
+| `warnings = "strict"` | `/W4 /WX` | `-Wall -Wextra -Werror` |
+| `warnings = "pedantic"` | `/W4 /WX /permissive-` | `-Wall -Wextra -Wpedantic -Werror` |
+| `lto = true` | `/GL` + `/LTCG` | `-flto` |
+| `debug_info = true` | `/Zi` | `-g` |
+| `sanitizers = ["address"]` | `/fsanitize=address` | `-fsanitize=address` |
+| `hardening = "basic"` | `/GS /sdl` | `-fstack-protector-strong -D_FORTIFY_SOURCE=2` |
+| `hardening = "full"` | `/GS /sdl /GUARD:CF` | `-fstack-protector-all -D_FORTIFY_SOURCE=2 -fPIE` |
+
+These portable options can be used in:
+- `[build.config.<name>]` - Per-configuration settings
+- `[platform.<name>]` - Per-platform settings
+- `[compiler.<name>]` - Per-compiler settings
+
+Raw compiler flags can still be used alongside portable options with the `flags` array.

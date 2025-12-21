@@ -1,7 +1,7 @@
 {
   "id": "build-variants",
   "title": "Build Variants",
-  "description": "🚩 Build Variants",
+  "description": "Build Variants",
   "source": "@site/docs/build-variants.md",
   "sourceDirName": ".",
   "slug": "/build-variants",

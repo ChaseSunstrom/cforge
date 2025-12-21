@@ -70,7 +70,7 @@ cforge version
 
 Expected output:
 ```
-cforge 1.5.0
+cforge 3.0.1
 ```
 
 ## Shell Completions

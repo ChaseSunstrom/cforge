@@ -1,27 +1,32 @@
 [project]
 name = "cforge"
-version = "3.0.0"
+version = "3.0.1"
 description = "A C/C++ build tool with dependency management"
 cpp_standard = "17"
 binary_type = "executable"
 authors = ["Chase Sunstrom <casunstrom@gmail.com>"]
 homepage = "https://github.com/ChaseSunstrom/cforge"
 repository = "https://github.com/ChaseSunstrom/cforge.git"
-license = "MIT"
+license = "Polyform Noncommercial 1.0.0"
 
 [build]
 build_type = "Debug"
 directory = "build"
 source_dirs = ["src"]
 include_dirs = ["include"]
+export_compile_commands = true
 
 [build.config.debug]
-defines = ["DEBUG=1", "FMT_HEADER_ONLY=ON", "FMT_UNICODE=0", "CMAKE_EXPORT_COMPILE_COMMANDS=ON"]
-flags = ["DEBUG_INFO", "NO_OPT"]
+optimize = "debug"
+debug_info = true
+warnings = "all"
+defines = ["DEBUG=1", "FMT_UNICODE=0"]
 
 [build.config.release]
-defines = ["NDEBUG=1", "FMT_HEADER_ONLY=ON", "FMT_UNICODE=0", "CMAKE_EXPORT_COMPILE_COMMANDS=ON"]
-flags = ["OPTIMIZE"]
+optimize = "agressive"
+warnings = "all"
+lto = true
+defines = ["NDEBUG=1", "FMT_UNICODE=0"]
 
 [package]
 enabled = true

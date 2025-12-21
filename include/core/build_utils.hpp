@@ -7,10 +7,13 @@
 
 #include "cforge/log.hpp"
 #include "core/constants.h"
+#include "core/platform.hpp"
 #include "core/process_utils.hpp"
 #include "core/toml_reader.hpp"
+#include "core/types.h"
 
 #include <filesystem>
+#include <fstream>
 #include <string>
 #include <vector>
 
@@ -37,13 +40,7 @@ inline bool is_multi_config_generator(const std::string &generator) {
  * @param gen Generator name to check
  * @return true if generator is supported by CMake
  */
-inline bool is_generator_valid(const std::string &gen) {
-  process_result pr =
-      execute_process("cmake", {"--help"}, "", nullptr, nullptr, 10);
-  if (!pr.success)
-    return true; // Assume valid if we can't check
-  return pr.stdout_output.find(gen) != std::string::npos;
-}
+bool is_generator_valid(const std::string &gen);
 
 /**
  * @brief Get the appropriate CMake generator for the current platform
@@ -58,34 +55,7 @@ inline bool is_generator_valid(const std::string &gen) {
  *
  * @return CMake generator string
  */
-inline std::string get_cmake_generator() {
-#ifdef _WIN32
-  // Prefer Ninja Multi-Config if available and supported
-  if (is_command_available("ninja", 15) &&
-      is_generator_valid("Ninja Multi-Config")) {
-    logger::print_verbose("Using Ninja Multi-Config generator");
-    return "Ninja Multi-Config";
-  }
-
-  // Try Visual Studio 17 2022
-  if (is_generator_valid("Visual Studio 17 2022")) {
-    logger::print_verbose("Using Visual Studio 17 2022 generator");
-    return "Visual Studio 17 2022";
-  }
-
-  // Fallback to Visual Studio 16 2019 if available
-  if (is_generator_valid("Visual Studio 16 2019")) {
-    logger::print_verbose("Using Visual Studio 16 2019 generator");
-    return "Visual Studio 16 2019";
-  }
-
-  // Last resort: Ninja Multi-Config
-  logger::print_verbose("Falling back to Ninja Multi-Config generator");
-  return "Ninja Multi-Config";
-#else
-  return "Unix Makefiles";
-#endif
-}
+std::string get_cmake_generator();
 
 /**
  * @brief Get the build directory path for a given configuration
@@ -98,33 +68,9 @@ inline std::string get_cmake_generator() {
  * @param create_if_missing Create directory if it doesn't exist
  * @return Build directory path
  */
-inline std::filesystem::path
+std::filesystem::path
 get_build_dir_for_config(const std::string &base_dir, const std::string &config,
-                         bool create_if_missing = true) {
-  std::filesystem::path build_path;
-
-  // For multi-config generators, use single build directory
-  std::string generator = get_cmake_generator();
-  if (is_multi_config_generator(generator) || config.empty()) {
-    build_path = base_dir;
-  } else {
-    // Transform config name to lowercase for directory naming
-    std::string config_lower = string_to_lower(config);
-    build_path = base_dir + "-" + config_lower;
-  }
-
-  // Create directory if requested and doesn't exist
-  if (create_if_missing && !std::filesystem::exists(build_path)) {
-    try {
-      std::filesystem::create_directories(build_path);
-    } catch (const std::exception &e) {
-      logger::print_warning("Failed to create build directory: " +
-                            std::string(e.what()));
-    }
-  }
-
-  return build_path;
-}
+                         bool create_if_missing = true);
 
 /**
  * @brief Get build configuration from various sources
@@ -141,53 +87,9 @@ get_build_dir_for_config(const std::string &base_dir, const std::string &config,
  * @param project_config TOML reader for project config
  * @return Build configuration string
  */
-inline std::string get_build_config(const char *explicit_config, int arg_count,
-                                    char *const *args,
-                                    const toml_reader *project_config) {
-  // Priority 1: Direct configuration argument
-  if (explicit_config != nullptr && strlen(explicit_config) > 0) {
-    logger::print_verbose("Using build configuration from direct argument: " +
-                          std::string(explicit_config));
-    return std::string(explicit_config);
-  }
-
-  // Priority 2: Command line argument
-  if (arg_count > 0 && args != nullptr) {
-    for (int i = 0; i < arg_count; ++i) {
-      if (args[i] == nullptr)
-        continue;
-      std::string arg = args[i];
-      if (arg == "--config" || arg == "-c") {
-        if (i + 1 < arg_count && args[i + 1] != nullptr) {
-          std::string config = args[i + 1];
-          logger::print_verbose(
-              "Using build configuration from command line: " + config);
-          return config;
-        }
-      } else if (arg.length() > 9 && arg.substr(0, 9) == "--config=") {
-        std::string config = arg.substr(9);
-        logger::print_verbose("Using build configuration from command line: " +
-                              config);
-        return config;
-      }
-    }
-  }
-
-  // Priority 3: Configuration from cforge.toml
-  if (project_config != nullptr) {
-    std::string config = project_config->get_string("build.build_type", "");
-    if (!config.empty()) {
-      logger::print_verbose("Using build configuration from cforge.toml: " +
-                            config);
-      return config;
-    }
-  }
-
-  // Priority 4: Default to Release
-  logger::print_verbose(
-      "No build configuration specified, defaulting to Release");
-  return "Release";
-}
+std::string get_build_config(const char *explicit_config, cforge_int_t arg_count,
+                             char *const *args,
+                             const toml_reader *project_config);
 
 /**
  * @brief Find the project output binary path
@@ -199,31 +101,10 @@ inline std::string get_build_config(const char *explicit_config, int arg_count,
  * static_library)
  * @return Path to the binary, or empty if not found
  */
-inline std::filesystem::path
+std::filesystem::path
 find_project_binary(const std::filesystem::path &build_dir,
                     const std::string &project_name, const std::string &config,
-                    const std::string &binary_type = "executable") {
-  (void)binary_type; // Reserved for future use
-  std::vector<std::filesystem::path> search_paths;
-
-  // Common output locations
-  search_paths.push_back(build_dir / config / project_name);
-  search_paths.push_back(build_dir / config /
-                         (project_name + ".exe")); // Windows
-  search_paths.push_back(build_dir / "bin" / config / project_name);
-  search_paths.push_back(build_dir / "bin" / config /
-                         (project_name + ".exe")); // Windows
-  search_paths.push_back(build_dir / project_name);
-  search_paths.push_back(build_dir / (project_name + ".exe")); // Windows
-
-  for (const auto &path : search_paths) {
-    if (std::filesystem::exists(path)) {
-      return path;
-    }
-  }
-
-  return {};
-}
+                    const std::string &binary_type = "executable");
 
 /**
  * @brief Ensure CMake is configured for a project
@@ -235,30 +116,10 @@ find_project_binary(const std::filesystem::path &build_dir,
  * @param extra_args Additional CMake arguments
  * @return true if configuration succeeded
  */
-inline bool
-ensure_cmake_configured(const std::filesystem::path &project_dir,
-                        const std::filesystem::path &build_dir,
-                        const std::string &config, bool verbose,
-                        const std::vector<std::string> &extra_args = {}) {
-
-  std::vector<std::string> cmake_args = {"-B", build_dir.string(),
-                                         "-S", project_dir.string(),
-                                         "-G", get_cmake_generator()};
-
-  // Add config for multi-config generators
-  std::string generator = get_cmake_generator();
-  if (!is_multi_config_generator(generator)) {
-    cmake_args.push_back("-DCMAKE_BUILD_TYPE=" + config);
-  }
-
-  // Add any extra arguments
-  for (const auto &arg : extra_args) {
-    cmake_args.push_back(arg);
-  }
-
-  return execute_tool("cmake", cmake_args, project_dir.string(), "CMake",
-                      verbose, 120);
-}
+bool ensure_cmake_configured(const std::filesystem::path &project_dir,
+                             const std::filesystem::path &build_dir,
+                             const std::string &config, bool verbose,
+                             const std::vector<std::string> &extra_args = {});
 
 /**
  * @brief Run CMake build for a project
@@ -270,25 +131,81 @@ ensure_cmake_configured(const std::filesystem::path &project_dir,
  * @param verbose Verbose output
  * @return true if build succeeded
  */
-inline bool run_cmake_build(const std::filesystem::path &build_dir,
-                            const std::string &config,
-                            const std::string &target = "", int num_jobs = 0,
-                            bool verbose = false) {
+bool run_cmake_build(const std::filesystem::path &build_dir,
+                     const std::string &config,
+                     const std::string &target = "", cforge_int_t num_jobs = 0,
+                     bool verbose = false);
 
-  std::vector<std::string> build_args = {"--build", build_dir.string(),
-                                         "--config", config};
+// =============================================================================
+// Smart Rebuild Utilities
+// =============================================================================
 
-  if (!target.empty()) {
-    build_args.push_back("--target");
-    build_args.push_back(target);
-  }
+/**
+ * @brief Check if a file is newer than another file
+ *
+ * @param source Source file to check
+ * @param target Target file to compare against
+ * @return true if source is newer than target, or if target doesn't exist
+ */
+bool is_file_newer(const std::filesystem::path &source,
+                   const std::filesystem::path &target);
 
-  if (num_jobs > 0) {
-    build_args.push_back("-j");
-    build_args.push_back(std::to_string(num_jobs));
-  }
+/**
+ * @brief Check if CMakeLists.txt needs regeneration from cforge.toml
+ *
+ * @param project_dir Project directory containing cforge.toml
+ * @return true if CMakeLists.txt needs to be regenerated
+ */
+bool needs_cmakelists_regeneration(const std::filesystem::path &project_dir);
 
-  return execute_tool("cmake", build_args, "", "CMake Build", verbose, 600);
-}
+/**
+ * @brief Check if CMake reconfiguration is needed
+ *
+ * @param project_dir Project directory
+ * @param build_dir Build directory
+ * @return true if CMake needs to be reconfigured
+ */
+bool needs_cmake_reconfigure(const std::filesystem::path &project_dir,
+                             const std::filesystem::path &build_dir);
+
+/**
+ * @brief Result of prepare_project_for_build
+ */
+struct build_preparation_result {
+  bool success = false;           ///< True if preparation succeeded
+  bool cmakelists_regenerated = false;  ///< True if CMakeLists.txt was regenerated
+  bool cmake_reconfigured = false;      ///< True if CMake was reconfigured
+  std::string error_message;      ///< Error message if failed
+};
+
+// Forward declaration - implemented in workspace.cpp
+bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
+                                   const toml_reader &project_config,
+                                   bool verbose);
+
+/**
+ * @brief Prepare a project for building with smart rebuild detection
+ *
+ * This function implements the smart rebuild pipeline:
+ * 1. Check if CMakeLists.txt needs regeneration from cforge.toml
+ * 2. Regenerate if needed (using generate_cmakelists_from_toml)
+ * 3. Check if CMake needs reconfiguration
+ * 4. Reconfigure if needed
+ *
+ * @param project_dir Project directory
+ * @param build_dir Build directory
+ * @param config Build configuration (Debug, Release, etc.)
+ * @param verbose Verbose output
+ * @param force_regenerate Force CMakeLists.txt regeneration
+ * @param force_reconfigure Force CMake reconfiguration
+ * @return build_preparation_result with status information
+ */
+build_preparation_result
+prepare_project_for_build(const std::filesystem::path &project_dir,
+                          const std::filesystem::path &build_dir,
+                          const std::string &config,
+                          bool verbose,
+                          bool force_regenerate = false,
+                          bool force_reconfigure = false);
 
 } // namespace cforge

@@ -6,6 +6,8 @@
 #ifndef CFORGE_REGISTRY_HPP
 #define CFORGE_REGISTRY_HPP
 
+#include "core/types.h"
+
 #include <filesystem>
 #include <map>
 #include <optional>
@@ -218,7 +220,7 @@ public:
    * @return Vector of matching package names
    */
   std::vector<std::string> search(const std::string &query,
-                                  size_t limit = 20) const;
+                                  cforge_size_t limit = 20) const;
 
   /**
    * @brief Get package information

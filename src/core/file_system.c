@@ -259,7 +259,7 @@ static cforge_fs_error_t remove_dir_recursive(cforge_cstring_t dir_path) {
 #ifdef _WIN32
   WIN32_FIND_DATAA find_data;
   HANDLE find_handle;
-  char path[MAX_PATH];
+  cforge_char_t path[MAX_PATH];
 
   // Create a search pattern
   snprintf(path, MAX_PATH, "%s\\*", dir_path);
@@ -310,7 +310,7 @@ static cforge_fs_error_t remove_dir_recursive(cforge_cstring_t dir_path) {
   }
 
   struct dirent *entry;
-  char path[PATH_MAX];
+  cforge_char_t path[PATH_MAX];
 
   while ((entry = readdir(dir)) != NULL) {
     // Skip "." and ".."
@@ -399,7 +399,7 @@ cforge_fs_error_t cforge_read_file(const cforge_path_t *path,
 
   // Get file size
   fseek(file, 0, SEEK_END);
-  long file_size = ftell(file);
+  cforge_long_t file_size = ftell(file);
   fseek(file, 0, SEEK_SET);
 
   if (file_size < 0) {

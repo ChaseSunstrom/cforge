@@ -6,8 +6,8 @@ slug: /intro
 
 # CForge
 
-![Version](https://img.shields.io/badge/beta-1.5.0-blue.svg)
-![License](https://img.shields.io/badge/license-MIT-green.svg)
+![Version](https://img.shields.io/badge/version-3.0.1-blue.svg)
+![License](https://img.shields.io/badge/license-PolyForm%20NC-green.svg)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)
 
 **A modern TOML-based build system for C/C++ with CMake & vcpkg integration.**
@@ -22,10 +22,12 @@ This project is currently in **BETA**. Features may be incomplete, contain bugs,
 
 ### Build System
 - **Simple TOML Configuration** - Replace complex CMakeLists.txt with readable TOML
+- **Portable Compiler Flags** - Write once, works on MSVC, GCC, and Clang
 - **Cargo-Style Output** - Beautiful colored output with build timing
 - **Multi-Platform** - Windows, macOS, and Linux support
 - **Cross-Compilation** - Android, iOS, Raspberry Pi, WebAssembly toolchains
 - **Workspaces** - Manage monorepos with automatic dependency resolution
+- **Lock Files** - Reproducible builds with exact dependency versions
 
 ### Dependency Management
 - **vcpkg Integration** - First-class support for vcpkg packages
@@ -62,11 +64,21 @@ This project is currently in **BETA**. Features may be incomplete, contain bugs,
 [project]
 name = "my_app"
 version = "1.0.0"
-type = "executable"
+binary_type = "executable"
+cpp_standard = "17"
+
+[build.config.debug]
+optimize = "debug"
+debug_info = true
+warnings = "all"
+
+[build.config.release]
+optimize = "speed"
+lto = true
 
 [dependencies]
-fmt = { version = "10.1.0", source = "vcpkg" }
-spdlog = { version = "1.12.0", source = "vcpkg" }
+fmt = "11.1.4"
+spdlog = "1.12.0"
 ```
 
 **Build & Run:**

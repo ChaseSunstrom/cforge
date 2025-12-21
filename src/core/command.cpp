@@ -9,8 +9,6 @@
 #include "core/command.h"
 #include "core/commands.hpp"
 
-using namespace cforge; // Add namespace for logger
-
 // Function to check if the current directory is a workspace
 bool cforge_is_workspace_dir(void) {
   // Check if workspace file exists

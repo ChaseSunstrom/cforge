@@ -7,6 +7,7 @@
 #include "cforge/log.hpp"
 #include "core/process_utils.hpp"
 #include "core/toml_reader.hpp"
+#include "core/types.h"
 #include <algorithm>
 #include <chrono>
 #include <cstdlib>
@@ -14,19 +15,12 @@
 #include <regex>
 #include <sstream>
 
-#ifdef _WIN32
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#endif
-
-
 namespace cforge {
 
 // Index repository URL
 
 // Cache validity duration (24 hours)
-static const int CACHE_VALIDITY_HOURS = 24;
+static const cforge_int_t CACHE_VALIDITY_HOURS = 24;
 
 std::string registry::get_index_url() { return INDEX_REPO_URL; }
 
@@ -144,7 +138,7 @@ bool registry::update(bool force) {
 }
 
 std::vector<std::string> registry::search(const std::string &query,
-                                          size_t limit) const {
+                                          cforge_size_t limit) const {
   std::vector<std::string> results;
   std::filesystem::path packages_dir = index_dir_ / "packages";
 
@@ -225,7 +219,7 @@ std::vector<std::string> registry::search(const std::string &query,
             [](const auto &a, const auto &b) { return a.second > b.second; });
 
   // Extract names up to limit
-  for (size_t i = 0; i < std::min(limit, scored_results.size()); ++i) {
+  for (cforge_size_t i = 0; i < std::min(limit, scored_results.size()); ++i) {
     results.push_back(scored_results[i].first);
   }
 
@@ -239,8 +233,7 @@ std::optional<package_info> registry::get_package(const std::string &name) const
 std::string registry::pattern_to_regex(const std::string &pattern) {
   // Convert pattern like "v{version}" to regex like "^v([0-9]+\\.[0-9]+\\.?[0-9]*)$"
   std::string regex_str = "^";
-  size_t pos = 0;
-  size_t version_pos = pattern.find("{version}");
+  cforge_size_t version_pos = pattern.find("{version}");
 
   if (version_pos == std::string::npos) {
     // No {version} placeholder, treat whole pattern as version
@@ -248,7 +241,7 @@ std::string registry::pattern_to_regex(const std::string &pattern) {
   }
 
   // Escape everything before {version}
-  for (size_t i = 0; i < version_pos; ++i) {
+  for (cforge_size_t i = 0; i < version_pos; ++i) {
     char c = pattern[i];
     if (c == '.' || c == '*' || c == '+' || c == '?' || c == '^' ||
         c == '$' || c == '[' || c == ']' || c == '(' || c == ')' ||
@@ -262,7 +255,7 @@ std::string registry::pattern_to_regex(const std::string &pattern) {
   regex_str += "([0-9]+(?:\\.[0-9]+)*)";
 
   // Escape everything after {version}
-  for (size_t i = version_pos + 9; i < pattern.size(); ++i) {
+  for (cforge_size_t i = version_pos + 9; i < pattern.size(); ++i) {
     char c = pattern[i];
     if (c == '.' || c == '*' || c == '+' || c == '?' || c == '^' ||
         c == '$' || c == '[' || c == ']' || c == '(' || c == ')' ||
@@ -279,7 +272,7 @@ std::string registry::pattern_to_regex(const std::string &pattern) {
 std::string registry::version_to_tag(const std::string &version,
                                       const std::string &pattern) {
   std::string tag = pattern;
-  size_t pos = tag.find("{version}");
+  cforge_size_t pos = tag.find("{version}");
   if (pos != std::string::npos) {
     tag.replace(pos, 9, version);
   }
@@ -326,7 +319,7 @@ registry::fetch_git_tags(const std::string &repo_url,
 
   while (std::getline(iss, line)) {
     // Find the tag name after refs/tags/
-    size_t tag_pos = line.find("refs/tags/");
+    cforge_size_t tag_pos = line.find("refs/tags/");
     if (tag_pos == std::string::npos) {
       continue;
     }
@@ -365,7 +358,7 @@ registry::fetch_git_tags(const std::string &repo_url,
             });
 
   // Limit number of versions
-  if (versions.size() > static_cast<size_t>(config.max_versions)) {
+  if (versions.size() > static_cast<cforge_size_t>(config.max_versions)) {
     versions.resize(config.max_versions);
   }
 
@@ -400,7 +393,7 @@ registry::load_version_cache(const std::string &name) const {
 
   std::string line;
   while (std::getline(file, line)) {
-    size_t tab_pos = line.find('\t');
+    cforge_size_t tab_pos = line.find('\t');
     if (tab_pos != std::string::npos) {
       package_version ver;
       ver.version = line.substr(0, tab_pos);
@@ -539,18 +532,16 @@ registry::load_package_file(const std::string &name) const {
     std::string line;
     package_version current_ver;
     bool in_version = false;
-    bool has_explicit_versions = false;
 
     while (std::getline(file, line)) {
       // Trim whitespace
-      size_t start = line.find_first_not_of(" \t");
+      cforge_size_t start = line.find_first_not_of(" \t");
       if (start == std::string::npos) {
         continue;
       }
       line = line.substr(start);
 
       if (line.find("[[versions]]") == 0) {
-        has_explicit_versions = true;
         if (in_version && !current_ver.version.empty()) {
           info.versions.push_back(current_ver);
         }
@@ -565,7 +556,7 @@ registry::load_package_file(const std::string &name) const {
           in_version = false;
         } else {
           // Parse version fields
-          size_t eq_pos = line.find('=');
+          cforge_size_t eq_pos = line.find('=');
           if (eq_pos != std::string::npos) {
             std::string key = line.substr(0, eq_pos);
             std::string value = line.substr(eq_pos + 1);
@@ -661,7 +652,7 @@ bool registry::version_matches(const std::string &version,
   }
 
   // Check for wildcard
-  size_t wildcard_pos = spec.find('*');
+  cforge_size_t wildcard_pos = spec.find('*');
   if (wildcard_pos != std::string::npos) {
     // Get the prefix before the wildcard
     std::string prefix = spec.substr(0, wildcard_pos);
@@ -685,7 +676,7 @@ bool registry::version_matches(const std::string &version,
     }
 
     // Compare parts
-    for (size_t i = 0; i < spec_parts.size(); ++i) {
+    for (cforge_size_t i = 0; i < spec_parts.size(); ++i) {
       if (ver_parts[i] != spec_parts[i]) {
         return false;
       }
@@ -702,11 +693,11 @@ int registry::compare_versions(const std::string &v1, const std::string &v2) {
   auto parts1 = parse_version(v1);
   auto parts2 = parse_version(v2);
 
-  size_t max_parts = std::max(parts1.size(), parts2.size());
+  cforge_size_t max_parts = std::max(parts1.size(), parts2.size());
   parts1.resize(max_parts, 0);
   parts2.resize(max_parts, 0);
 
-  for (size_t i = 0; i < max_parts; ++i) {
+  for (cforge_size_t i = 0; i < max_parts; ++i) {
     if (parts1[i] < parts2[i]) {
       return -1;
     }
@@ -726,7 +717,7 @@ std::vector<int> registry::parse_version(const std::string &version) {
   while (std::getline(ss, part, '.')) {
     try {
       // Handle versions like "3.11.3-rc1" by stripping suffix
-      size_t dash = part.find('-');
+      cforge_size_t dash = part.find('-');
       if (dash != std::string::npos) {
         part = part.substr(0, dash);
       }
