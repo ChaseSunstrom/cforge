@@ -1695,10 +1695,29 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
         cmakelists << "    target_compile_definitions(${PROJECT_NAME} PUBLIC " << def << ")\n";
       }
 
-      // Platform flags
+      // Platform flags - separate MSVC-style flags from GCC-style flags
       auto plat_flags = project_config.get_string_array(prefix + ".flags");
+      std::vector<std::string> msvc_flags, gcc_flags;
       for (const auto &flag : plat_flags) {
-        cmakelists << "    target_compile_options(${PROJECT_NAME} PUBLIC " << flag << ")\n";
+        if (!flag.empty() && flag[0] == '/') {
+          msvc_flags.push_back(flag);
+        } else {
+          gcc_flags.push_back(flag);
+        }
+      }
+      if (!msvc_flags.empty()) {
+        cmakelists << "    if(MSVC)\n";
+        for (const auto &flag : msvc_flags) {
+          cmakelists << "        target_compile_options(${PROJECT_NAME} PUBLIC " << flag << ")\n";
+        }
+        cmakelists << "    endif()\n";
+      }
+      if (!gcc_flags.empty()) {
+        cmakelists << "    if(NOT MSVC)\n";
+        for (const auto &flag : gcc_flags) {
+          cmakelists << "        target_compile_options(${PROJECT_NAME} PUBLIC " << flag << ")\n";
+        }
+        cmakelists << "    endif()\n";
       }
 
       // Platform links
@@ -2005,6 +2024,13 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
         cmakelists << "    " << target << "\n";
       }
     }
+    // Add additional libraries from build.libraries
+    if (project_config.has_key("build.libraries")) {
+      auto libraries = project_config.get_string_array("build.libraries");
+      for (const auto &lib : libraries) {
+        cmakelists << "    " << lib << "\n";
+      }
+    }
     cmakelists << ")\n\n";
   } else {
     cmakelists << "target_link_libraries(${PROJECT_NAME} PUBLIC\n";
@@ -2030,15 +2056,14 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
         cmakelists << "    " << target << "\n";
       }
     }
-    cmakelists << ")\n\n";
-  }
-
-  // Add additional libraries
-  if (project_config.has_key("build.libraries")) {
-    auto libraries = project_config.get_string_array("build.libraries");
-    for (const auto &lib : libraries) {
-      cmakelists << "    " << lib << "\n";
+    // Add additional libraries from build.libraries
+    if (project_config.has_key("build.libraries")) {
+      auto libraries = project_config.get_string_array("build.libraries");
+      for (const auto &lib : libraries) {
+        cmakelists << "    " << lib << "\n";
+      }
     }
+    cmakelists << ")\n\n";
   }
 
   // Handle workspace project dependencies linking
@@ -2086,8 +2111,13 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
         std::string("platform.") + cforge_platform + ".links";
     if (project_config.has_key(plat_links_key)) {
       auto plat_links = project_config.get_string_array(plat_links_key);
-      for (const auto &lib : plat_links) {
-        cmakelists << "    " << lib << "\n";
+      if (!plat_links.empty()) {
+        cmakelists << "# Platform-specific links\n";
+        cmakelists << "target_link_libraries(${PROJECT_NAME} PUBLIC\n";
+        for (const auto &lib : plat_links) {
+          cmakelists << "    " << lib << "\n";
+        }
+        cmakelists << ")\n";
       }
     }
   }

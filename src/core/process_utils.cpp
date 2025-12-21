@@ -662,6 +662,49 @@ bool execute_tool(const std::string &command,
           }
         }
       }
+
+      // Final fallback: if we still haven't shown any errors, show raw stderr/stdout
+      // This ensures the user always sees SOMETHING when a command fails
+      if (!printed_error_header) {
+        fmt::print(fg(fmt::color::crimson) | fmt::emphasis::bold,
+                   "→ Command failed (exit code {}):\n", result.exit_code);
+
+        // Show stderr first (most likely to contain error info)
+        if (!result.stderr_output.empty()) {
+          fmt::print(fg(fmt::color::light_pink), "  stderr:\n");
+          std::istringstream stderr_stream(result.stderr_output);
+          std::string line;
+          int line_count = 0;
+          while (std::getline(stderr_stream, line) && line_count < 20) {
+            if (!line.empty()) {
+              fmt::print(fg(fmt::color::light_pink), "    {}\n", line);
+              line_count++;
+            }
+          }
+          if (line_count >= 20) {
+            fmt::print(fg(fmt::color::gray), "    ... (output truncated)\n");
+          }
+        }
+
+        // Show last few lines of stdout if stderr was empty
+        if (result.stderr_output.empty() && !result.stdout_output.empty()) {
+          fmt::print(fg(fmt::color::light_pink), "  stdout:\n");
+          std::istringstream stdout_stream(result.stdout_output);
+          std::string line;
+          std::vector<std::string> last_lines;
+          while (std::getline(stdout_stream, line)) {
+            if (!line.empty()) {
+              last_lines.push_back(line);
+              if (last_lines.size() > 20) {
+                last_lines.erase(last_lines.begin());
+              }
+            }
+          }
+          for (const auto& l : last_lines) {
+            fmt::print(fg(fmt::color::light_pink), "    {}\n", l);
+          }
+        }
+      }
     }
   }
 
