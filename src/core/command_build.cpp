@@ -365,6 +365,179 @@ bool clone_git_dependencies(const std::filesystem::path &project_dir,
 }
 
 /**
+ * @brief Expand placeholders in a setup command
+ *
+ * Placeholders:
+ * - {package_dir}: Path to the package directory
+ * - {version}: Package version
+ * - {option:name}: Value of option 'name' from setup_options
+ *
+ * @param command Command template with placeholders
+ * @param package_dir Package directory path
+ * @param version Package version
+ * @param options Setup options map
+ * @return Expanded command string
+ */
+static std::string expand_setup_command(
+    const std::string &command,
+    const std::filesystem::path &package_dir,
+    const std::string &version,
+    const std::map<std::string, std::string> &options) {
+
+  std::string result = command;
+
+  // Replace {package_dir}
+  size_t pos;
+  while ((pos = result.find("{package_dir}")) != std::string::npos) {
+    result.replace(pos, 13, package_dir.string());
+  }
+
+  // Replace {version}
+  while ((pos = result.find("{version}")) != std::string::npos) {
+    result.replace(pos, 9, version);
+  }
+
+  // Replace {option:name} placeholders
+  size_t start = 0;
+  while ((start = result.find("{option:", start)) != std::string::npos) {
+    size_t end = result.find("}", start);
+    if (end == std::string::npos) break;
+
+    std::string option_name = result.substr(start + 8, end - start - 8);
+    std::string value;
+
+    auto it = options.find(option_name);
+    if (it != options.end()) {
+      value = it->second;
+    } else {
+      // Option not found, leave empty
+      logger::print_warning("Setup option '" + option_name + "' not found, using empty value");
+    }
+
+    result.replace(start, end - start + 1, value);
+    start += value.length();
+  }
+
+  return result;
+}
+
+/**
+ * @brief Run setup commands for a package
+ *
+ * @param pkg Package info from registry
+ * @param package_dir Package directory
+ * @param version Package version
+ * @param setup_options Merged options (defaults + user overrides)
+ * @param verbose Verbose output
+ * @return true if setup succeeded or was skipped
+ */
+static bool run_package_setup(
+    const package_info &pkg,
+    const std::filesystem::path &package_dir,
+    const std::string &version,
+    const std::map<std::string, std::string> &setup_options,
+    bool verbose) {
+
+  if (!pkg.setup.has_setup()) {
+    return true;  // No setup needed
+  }
+
+  // Determine platform-specific commands
+  std::vector<std::string> commands = pkg.setup.commands;
+  std::vector<std::string> required_tools = pkg.setup.required_tools;
+
+#ifdef _WIN32
+  if (!pkg.setup.windows.commands.empty()) {
+    commands = pkg.setup.windows.commands;
+  }
+  if (!pkg.setup.windows.required_tools.empty()) {
+    required_tools = pkg.setup.windows.required_tools;
+  }
+#elif __APPLE__
+  if (!pkg.setup.macos.commands.empty()) {
+    commands = pkg.setup.macos.commands;
+  }
+  if (!pkg.setup.macos.required_tools.empty()) {
+    required_tools = pkg.setup.macos.required_tools;
+  }
+#else
+  if (!pkg.setup.linux.commands.empty()) {
+    commands = pkg.setup.linux.commands;
+  }
+  if (!pkg.setup.linux.required_tools.empty()) {
+    required_tools = pkg.setup.linux.required_tools;
+  }
+#endif
+
+  if (commands.empty()) {
+    return true;  // No commands to run
+  }
+
+  // Check if outputs already exist (skip setup if all exist)
+  if (!pkg.setup.outputs.empty()) {
+    bool all_exist = true;
+    for (const auto &output : pkg.setup.outputs) {
+      std::filesystem::path output_path = package_dir / output;
+      if (!std::filesystem::exists(output_path)) {
+        all_exist = false;
+        break;
+      }
+    }
+    if (all_exist) {
+      logger::print_verbose("Setup outputs already exist for '" + pkg.name + "', skipping");
+      return true;
+    }
+  }
+
+  // Check required tools
+  for (const auto &tool : required_tools) {
+    if (!is_command_available(tool, 5)) {
+      logger::print_error("Required tool '" + tool + "' not found for package '" + pkg.name + "' setup");
+      logger::print_error("Please install '" + tool + "' and ensure it's in your PATH");
+      return false;
+    }
+  }
+
+  logger::print_action("Setting up", pkg.name);
+
+  // Determine working directory
+  std::filesystem::path workdir = package_dir;
+  if (!pkg.setup.workdir.empty() && pkg.setup.workdir != ".") {
+    workdir = package_dir / pkg.setup.workdir;
+  }
+
+  // Run each command
+  for (const auto &cmd_template : commands) {
+    std::string cmd = expand_setup_command(cmd_template, package_dir, version, setup_options);
+
+    logger::print_verbose("Running setup command: " + cmd);
+
+    // Parse command into program and arguments
+    // Simple parsing: first token is program, rest are arguments
+    std::istringstream iss(cmd);
+    std::string program;
+    iss >> program;
+
+    std::vector<std::string> args;
+    std::string arg;
+    while (iss >> arg) {
+      args.push_back(arg);
+    }
+
+    bool result = execute_tool(program, args, workdir.string(),
+                               "Setup for " + pkg.name, verbose, 300);
+
+    if (!result) {
+      logger::print_error("Setup command failed for package '" + pkg.name + "': " + cmd);
+      return false;
+    }
+  }
+
+  logger::print_action("Finished", "setup for " + pkg.name);
+  return true;
+}
+
+/**
  * @brief Resolve and clone index (registry) dependencies for a project
  *
  * This function reads the [dependencies] section, identifies packages that
@@ -401,13 +574,20 @@ bool resolve_index_dependencies(const std::filesystem::path &project_dir,
     std::filesystem::create_directories(deps_path);
   }
 
+  // Structure to hold index dependency info with user options
+  struct index_dep_entry {
+    std::string name;
+    std::string version;
+    std::map<std::string, std::string> options;  // User-specified setup options
+  };
+
   // Get all dependency keys - look for entries that are index dependencies
   // An index dependency is specified as: name = "version" or name = { version = "..." }
   // without git/vcpkg/system/project flags
   auto dep_keys = project_config.get_table_keys("dependencies");
   logger::print_verbose("resolve_index_dependencies: Found " + std::to_string(dep_keys.size()) + " keys in [dependencies]");
 
-  std::vector<std::pair<std::string, std::string>> index_deps; // name -> version
+  std::vector<index_dep_entry> index_deps;
 
   for (const auto &dep : dep_keys) {
     logger::print_verbose("  Checking key: " + dep);
@@ -427,7 +607,7 @@ bool resolve_index_dependencies(const std::filesystem::path &project_dir,
     if (!version.empty()) {
       // Simple format: dep = "version"
       logger::print_verbose("    Found index dep: " + dep + " = " + version);
-      index_deps.push_back({dep, version});
+      index_deps.push_back({dep, version, {}});
       continue;
     }
 
@@ -444,7 +624,16 @@ bool resolve_index_dependencies(const std::filesystem::path &project_dir,
     if (!has_git && !has_vcpkg && !has_system && !has_project && !version.empty()) {
       // This is an index dependency
       logger::print_verbose("    Found index dep (table): " + dep + " = " + version);
-      index_deps.push_back({dep, version});
+
+      // Get user-specified options (e.g., glad = { version = "*", options = { api = "gl:core=3.3" } })
+      std::map<std::string, std::string> user_options;
+      std::string options_key = dep_key + ".options";
+      if (project_config.has_key(options_key)) {
+        user_options = project_config.get_string_map(options_key);
+        logger::print_verbose("    User options: " + std::to_string(user_options.size()) + " found");
+      }
+
+      index_deps.push_back({dep, version, user_options});
     } else {
       logger::print_verbose("    Skipping (no version or has source indicator)");
     }
@@ -483,7 +672,11 @@ bool resolve_index_dependencies(const std::filesystem::path &project_dir,
   bool all_success = true;
   bool deps_changed = false;  // Track if any deps were cloned/updated
 
-  for (const auto &[name, version_spec] : index_deps) {
+  for (const auto &dep_entry : index_deps) {
+    const std::string &name = dep_entry.name;
+    const std::string &version_spec = dep_entry.version;
+    const auto &user_options = dep_entry.options;
+
     // Get package info from registry
     auto pkg_opt = reg.get_package(name);
     if (!pkg_opt) {
@@ -558,13 +751,29 @@ bool resolve_index_dependencies(const std::filesystem::path &project_dir,
       continue;
     }
 
+    logger::print_action("Downloaded", name + "@" + resolved_version);
+
+    // Run setup commands if the package has any
+    if (pkg.setup.has_setup()) {
+      // Merge default options with user-specified options
+      std::map<std::string, std::string> merged_options = pkg.setup.defaults;
+      for (const auto &[key, value] : user_options) {
+        merged_options[key] = value;
+      }
+
+      if (!run_package_setup(pkg, dep_path, resolved_version, merged_options, verbose)) {
+        logger::print_error("Setup failed for package '" + name + "'");
+        all_success = false;
+        // Don't continue - the package is cloned but setup failed
+        // Store hash anyway so we can retry setup on next build
+      }
+    }
+
     // Store hash and version
     std::string current_hash = dependency_hash::calculate_directory_hash(dep_path);
     dep_hashes.set_hash(name, current_hash);
     dep_hashes.set_version(name, resolved_version);
     deps_changed = true;  // Mark that deps changed
-
-    logger::print_action("Downloaded", name + "@" + resolved_version);
   }
 
   // If any deps were cloned/updated, clear the cforge.toml hash to force CMakeLists.txt regeneration

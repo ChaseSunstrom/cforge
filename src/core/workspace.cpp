@@ -814,8 +814,24 @@ void configure_index_dependencies_phase1(const std::filesystem::path &project_di
     cmakelists << "include_directories(\"${CMAKE_CURRENT_SOURCE_DIR}/" << deps_dir << "/" << dep << "/" << include_dir << "\")\n";
 
     // Check if package has CMakeLists.txt - if so, add_subdirectory
-    if (std::filesystem::exists(pkg_path / "CMakeLists.txt")) {
-      cmakelists << "add_subdirectory(\"${CMAKE_CURRENT_SOURCE_DIR}/" << deps_dir << "/" << dep << "\"";
+    // First check cmake_subdir if specified, then fall back to root
+    std::string cmake_subdir;
+    if (pkg_info && !pkg_info->integration.cmake_subdir.empty()) {
+      cmake_subdir = pkg_info->integration.cmake_subdir;
+    }
+
+    std::filesystem::path cmake_path;
+    if (!cmake_subdir.empty()) {
+      cmake_path = pkg_path / cmake_subdir / "CMakeLists.txt";
+    } else {
+      cmake_path = pkg_path / "CMakeLists.txt";
+    }
+
+    if (std::filesystem::exists(cmake_path)) {
+      std::string subdir_path = cmake_subdir.empty() ?
+          (deps_dir + "/" + dep) :
+          (deps_dir + "/" + dep + "/" + cmake_subdir);
+      cmakelists << "add_subdirectory(\"${CMAKE_CURRENT_SOURCE_DIR}/" << subdir_path << "\"";
       cmakelists << " \"${CMAKE_BINARY_DIR}/_deps/" << dep << "\")\n";
     }
 
@@ -864,9 +880,22 @@ void configure_index_dependencies_phase2(const std::filesystem::path &project_di
       cmake_target = dep + "::" + dep;
     }
 
+    // Check if package has CMakeLists.txt - check cmake_subdir first, then root
+    std::string cmake_subdir;
+    if (pkg_info && !pkg_info->integration.cmake_subdir.empty()) {
+      cmake_subdir = pkg_info->integration.cmake_subdir;
+    }
+
+    std::filesystem::path cmake_path;
+    if (!cmake_subdir.empty()) {
+      cmake_path = pkg_path / cmake_subdir / "CMakeLists.txt";
+    } else {
+      cmake_path = pkg_path / "CMakeLists.txt";
+    }
+
     // Link if package has CMakeLists.txt (even for header-only, target_link_libraries
     // propagates include directories for INTERFACE targets)
-    if (std::filesystem::exists(pkg_path / "CMakeLists.txt") && !cmake_target.empty()) {
+    if (std::filesystem::exists(cmake_path) && !cmake_target.empty()) {
       targets_to_link.push_back(cmake_target);
     }
   }
@@ -978,6 +1007,140 @@ void configure_index_dependencies_fetchcontent_phase1(
       cmakelists << deps_to_fetch[i];
     }
     cmakelists << ")\n\n";
+
+    // Run setup commands for packages that need them
+    for (const auto &dep : index_deps) {
+      auto pkg_info = reg.get_package(dep.name);
+      if (!pkg_info || !pkg_info->setup.has_setup()) {
+        continue;
+      }
+
+      cmakelists << "# Setup commands for " << dep.name << "\n";
+
+      // Get source directory for the fetched package
+      std::string source_dir_var = dep.name + "_SOURCE_DIR";
+
+      // Check if outputs already exist
+      if (!pkg_info->setup.outputs.empty()) {
+        cmakelists << "set(_" << dep.name << "_setup_needed TRUE)\n";
+        for (const auto &output : pkg_info->setup.outputs) {
+          cmakelists << "if(EXISTS \"${" << source_dir_var << "}/" << output << "\")\n";
+          cmakelists << "  set(_" << dep.name << "_setup_needed FALSE)\n";
+          cmakelists << "endif()\n";
+        }
+        cmakelists << "if(_" << dep.name << "_setup_needed)\n";
+      }
+
+      // Determine platform-specific commands
+      cmakelists << "if(WIN32)\n";
+      auto win_cmds = pkg_info->setup.windows.commands.empty() ?
+                      pkg_info->setup.commands : pkg_info->setup.windows.commands;
+      for (const auto &cmd : win_cmds) {
+        // Replace placeholders
+        std::string cmake_cmd = cmd;
+        // Replace {package_dir} with CMake variable
+        size_t pos;
+        while ((pos = cmake_cmd.find("{package_dir}")) != std::string::npos) {
+          cmake_cmd.replace(pos, 13, "${" + source_dir_var + "}");
+        }
+        // Replace {option:name} placeholders with CMake defaults
+        size_t start = 0;
+        while ((start = cmake_cmd.find("{option:", start)) != std::string::npos) {
+          size_t end = cmake_cmd.find("}", start);
+          if (end == std::string::npos) break;
+          std::string option_name = cmake_cmd.substr(start + 8, end - start - 8);
+          // Use default value from package
+          std::string default_val;
+          auto it = pkg_info->setup.defaults.find(option_name);
+          if (it != pkg_info->setup.defaults.end()) {
+            default_val = it->second;
+          }
+          cmake_cmd.replace(start, end - start + 1, default_val);
+          start += default_val.length();
+        }
+
+        cmakelists << "  execute_process(\n";
+        cmakelists << "    COMMAND " << cmake_cmd << "\n";
+        cmakelists << "    WORKING_DIRECTORY \"${" << source_dir_var << "}\"\n";
+        cmakelists << "    RESULT_VARIABLE _setup_result\n";
+        cmakelists << "  )\n";
+        cmakelists << "  if(NOT _setup_result EQUAL 0)\n";
+        cmakelists << "    message(FATAL_ERROR \"Setup failed for " << dep.name << ": ${_setup_result}\")\n";
+        cmakelists << "  endif()\n";
+      }
+
+      cmakelists << "elseif(APPLE)\n";
+      auto mac_cmds = pkg_info->setup.macos.commands.empty() ?
+                      pkg_info->setup.commands : pkg_info->setup.macos.commands;
+      for (const auto &cmd : mac_cmds) {
+        std::string cmake_cmd = cmd;
+        size_t pos;
+        while ((pos = cmake_cmd.find("{package_dir}")) != std::string::npos) {
+          cmake_cmd.replace(pos, 13, "${" + source_dir_var + "}");
+        }
+        size_t start = 0;
+        while ((start = cmake_cmd.find("{option:", start)) != std::string::npos) {
+          size_t end = cmake_cmd.find("}", start);
+          if (end == std::string::npos) break;
+          std::string option_name = cmake_cmd.substr(start + 8, end - start - 8);
+          std::string default_val;
+          auto it = pkg_info->setup.defaults.find(option_name);
+          if (it != pkg_info->setup.defaults.end()) {
+            default_val = it->second;
+          }
+          cmake_cmd.replace(start, end - start + 1, default_val);
+          start += default_val.length();
+        }
+
+        cmakelists << "  execute_process(\n";
+        cmakelists << "    COMMAND " << cmake_cmd << "\n";
+        cmakelists << "    WORKING_DIRECTORY \"${" << source_dir_var << "}\"\n";
+        cmakelists << "    RESULT_VARIABLE _setup_result\n";
+        cmakelists << "  )\n";
+        cmakelists << "  if(NOT _setup_result EQUAL 0)\n";
+        cmakelists << "    message(FATAL_ERROR \"Setup failed for " << dep.name << ": ${_setup_result}\")\n";
+        cmakelists << "  endif()\n";
+      }
+
+      cmakelists << "else()\n";  // Linux
+      auto linux_cmds = pkg_info->setup.linux.commands.empty() ?
+                        pkg_info->setup.commands : pkg_info->setup.linux.commands;
+      for (const auto &cmd : linux_cmds) {
+        std::string cmake_cmd = cmd;
+        size_t pos;
+        while ((pos = cmake_cmd.find("{package_dir}")) != std::string::npos) {
+          cmake_cmd.replace(pos, 13, "${" + source_dir_var + "}");
+        }
+        size_t start = 0;
+        while ((start = cmake_cmd.find("{option:", start)) != std::string::npos) {
+          size_t end = cmake_cmd.find("}", start);
+          if (end == std::string::npos) break;
+          std::string option_name = cmake_cmd.substr(start + 8, end - start - 8);
+          std::string default_val;
+          auto it = pkg_info->setup.defaults.find(option_name);
+          if (it != pkg_info->setup.defaults.end()) {
+            default_val = it->second;
+          }
+          cmake_cmd.replace(start, end - start + 1, default_val);
+          start += default_val.length();
+        }
+
+        cmakelists << "  execute_process(\n";
+        cmakelists << "    COMMAND " << cmake_cmd << "\n";
+        cmakelists << "    WORKING_DIRECTORY \"${" << source_dir_var << "}\"\n";
+        cmakelists << "    RESULT_VARIABLE _setup_result\n";
+        cmakelists << "  )\n";
+        cmakelists << "  if(NOT _setup_result EQUAL 0)\n";
+        cmakelists << "    message(FATAL_ERROR \"Setup failed for " << dep.name << ": ${_setup_result}\")\n";
+        cmakelists << "  endif()\n";
+      }
+      cmakelists << "endif()\n";
+
+      if (!pkg_info->setup.outputs.empty()) {
+        cmakelists << "endif()\n";  // Close _setup_needed check
+      }
+      cmakelists << "\n";
+    }
   }
 }
 

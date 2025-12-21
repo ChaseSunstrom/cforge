@@ -510,6 +510,29 @@ registry::load_package_file(const std::string &name) const {
     info.features[feature_name] = feat;
   }
 
+  // Setup commands (for packages requiring generation/build steps)
+  if (reader.has_key("setup")) {
+    info.setup.commands = reader.get_string_array("setup.commands");
+    info.setup.required_tools = reader.get_string_array("setup.requires");
+    info.setup.workdir = reader.get_string("setup.workdir", ".");
+    info.setup.outputs = reader.get_string_array("setup.outputs");
+    info.setup.defaults = reader.get_string_map("setup.defaults");
+
+    // Platform-specific overrides
+    if (reader.has_key("setup.windows")) {
+      info.setup.windows.commands = reader.get_string_array("setup.windows.commands");
+      info.setup.windows.required_tools = reader.get_string_array("setup.windows.requires");
+    }
+    if (reader.has_key("setup.linux")) {
+      info.setup.linux.commands = reader.get_string_array("setup.linux.commands");
+      info.setup.linux.required_tools = reader.get_string_array("setup.linux.requires");
+    }
+    if (reader.has_key("setup.macos")) {
+      info.setup.macos.commands = reader.get_string_array("setup.macos.commands");
+      info.setup.macos.required_tools = reader.get_string_array("setup.macos.requires");
+    }
+  }
+
   // First try to load explicit [[versions]] from file
   std::ifstream file(pkg_file);
   if (file) {
@@ -770,6 +793,15 @@ registry::resolve_dependency(const dependency_spec &spec) const {
           resolved.cmake_options[it->second.cmake_option] = "ON";
         }
       }
+    }
+
+    // Copy setup configuration
+    resolved.setup = pkg->setup;
+
+    // Merge setup options: start with defaults, then override with user options
+    resolved.setup_options = pkg->setup.defaults;
+    for (const auto &[key, value] : spec.setup_options) {
+      resolved.setup_options[key] = value;
     }
 
     break;

@@ -60,6 +60,32 @@ struct tag_config {
 };
 
 /**
+ * @brief Platform-specific setup commands
+ */
+struct platform_setup {
+  std::vector<std::string> commands;        // Commands to run on this platform
+  std::vector<std::string> required_tools;  // Required tools on this platform
+};
+
+/**
+ * @brief Setup configuration for packages requiring generation/build steps
+ */
+struct package_setup {
+  std::vector<std::string> commands;        // Commands to run after fetching
+  std::vector<std::string> required_tools;  // Required tools (e.g., ["python", "cmake"])
+  std::string workdir;                      // Working directory (relative to package root)
+  std::vector<std::string> outputs;         // Output files that indicate setup is complete
+  std::map<std::string, std::string> defaults;  // Default option values
+
+  // Platform-specific overrides
+  platform_setup windows;
+  platform_setup linux;
+  platform_setup macos;
+
+  bool has_setup() const { return !commands.empty(); }
+};
+
+/**
  * @brief Package integration info
  */
 struct package_integration {
@@ -87,6 +113,7 @@ struct package_info {
   bool verified = false;
 
   package_integration integration;
+  package_setup setup;  // Setup commands for packages requiring generation
   std::map<std::string, package_feature> features;
   std::vector<std::string> default_features;
   std::vector<package_version> versions;
@@ -127,10 +154,12 @@ struct resolved_dependency {
   bool link = true;
   std::vector<std::string> features;
   std::map<std::string, std::string> cmake_options;
+  std::map<std::string, std::string> setup_options;  // Merged defaults + user options
 
   // Resolved from registry
   std::string cmake_target;
   std::string include_dir;
+  package_setup setup;  // Setup configuration from registry
 };
 
 /**
@@ -154,6 +183,7 @@ struct dependency_spec {
   bool link = true;
   bool default_features = true;
   std::vector<std::string> features;
+  std::map<std::string, std::string> setup_options;  // User options for setup commands
 };
 
 /**

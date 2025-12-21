@@ -16,6 +16,7 @@ build-debug/
 build-release/
 cforge/
 cforge-index/
+cmake*/
 
 # CMake build files
 CMakeFiles/
@@ -68,3 +69,5 @@ CMakeCache.txt
 
 .claude/
 .cache/
+
+nul
