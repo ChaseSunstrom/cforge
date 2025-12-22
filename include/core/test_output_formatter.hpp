@@ -13,34 +13,34 @@ namespace cforge {
 /**
  * @brief Output formatter for test results
  *
- * Provides Cargo/Rust-style formatted output for tests with colors,
+ * Provides CARGO/Rust-style formatted output for tests with colors,
  * source context, and detailed failure information.
  */
-class TestOutputFormatter {
+class test_output_formatter {
 public:
   /**
    * @brief Output style options
    */
-  enum class Style {
-    Cargo,  // Rust/Cargo style (default)
-    Native  // Pass through framework native output
+  enum class style {
+    CARGO,  // Rust/CARGO style (default)
+    NATIVE  // Pass through framework native output
   };
 
   /**
    * @brief Construct formatter with specified style
    * @param style Output style to use
    */
-  explicit TestOutputFormatter(Style style = Style::Cargo);
+  explicit test_output_formatter(style style = style::CARGO);
 
   /**
    * @brief Set output style
    */
-  void set_style(Style style) { m_style = style; }
+  void set_style(style style) { m_style = style; }
 
   /**
    * @brief Get current output style
    */
-  Style get_style() const { return m_style; }
+  style get_style() const { return m_style; }
 
   // === Formatting Methods (return strings) ===
 
@@ -49,7 +49,7 @@ public:
    * @param total_tests Total number of tests to run
    * @return Formatted string
    */
-  std::string format_run_start(int total_tests);
+  std::string format_run_start(cforge_int_t total_tests);
 
   /**
    * @brief Format test build start
@@ -58,7 +58,7 @@ public:
    * @return Formatted string
    */
   std::string format_build_start(const std::string &target_name,
-                                  TestFramework framework);
+                                  test_framework framework);
 
   /**
    * @brief Format test execution start
@@ -72,21 +72,21 @@ public:
    * @param result The test result
    * @return Formatted string
    */
-  std::string format_test_result(const TestResult &result);
+  std::string format_test_result(const test_result &result);
 
   /**
    * @brief Format detailed failure information
    * @param result The failed test result
    * @return Formatted string with source context
    */
-  std::string format_failure_details(const TestResult &result);
+  std::string format_failure_details(const test_result &result);
 
   /**
    * @brief Format final summary
    * @param summary Test run summary
    * @return Formatted string
    */
-  std::string format_summary(const TestSummary &summary);
+  std::string format_summary(const test_summary &summary);
 
   /**
    * @brief Format test list
@@ -100,13 +100,13 @@ public:
   /**
    * @brief Print test run start header
    */
-  void print_run_start(int total_tests);
+  void print_run_start(cforge_int_t total_tests);
 
   /**
    * @brief Print test build start
    */
   void print_build_start(const std::string &target_name,
-                         TestFramework framework);
+                         test_framework framework);
 
   /**
    * @brief Print test execution start
@@ -116,22 +116,22 @@ public:
   /**
    * @brief Print individual test result
    */
-  void print_test_result(const TestResult &result);
+  void print_test_result(const test_result &result);
 
   /**
    * @brief Print detailed failure information
    */
-  void print_failure_details(const TestResult &result);
+  void print_failure_details(const test_result &result);
 
   /**
    * @brief Print all failure details for failed tests
    */
-  void print_all_failures(const std::vector<TestResult> &results);
+  void print_all_failures(const std::vector<test_result> &results);
 
   /**
    * @brief Print final summary
    */
-  void print_summary(const TestSummary &summary);
+  void print_summary(const test_summary &summary);
 
   /**
    * @brief Print test list
@@ -144,7 +144,7 @@ public:
   void print_native_output(const std::string &output);
 
 private:
-  Style m_style;
+  style m_style;
 
   /**
    * @brief Read source line from file for context
@@ -152,7 +152,7 @@ private:
    * @param line_number Line number to read (1-based)
    * @return Source line content, or empty if unavailable
    */
-  std::string read_source_line(const std::string &file_path, int line_number);
+  std::string read_source_line(const std::string &file_path, cforge_int_t line_number);
 
   /**
    * @brief Shorten path for display
@@ -160,7 +160,7 @@ private:
    * @param max_length Maximum display length
    * @return Shortened path
    */
-  std::string shorten_path(const std::string &path, size_t max_length = 50);
+  std::string shorten_path(const std::string &path, cforge_size_t max_length = 50);
 
   /**
    * @brief Format duration for display

@@ -89,6 +89,7 @@ FetchContent_Declare(
     GIT_SHALLOW TRUE
 )
 
+# Fetch packages without setup commands
 FetchContent_MakeAvailable(fmt tomlplusplus)
 
 # Add source files

@@ -151,7 +151,7 @@ std::vector<std::string> registry::search(const std::string &query,
                  ::tolower);
 
   // Score-based search results
-  std::vector<std::pair<std::string, int>> scored_results;
+  std::vector<std::pair<std::string, cforge_int_t>> scored_results;
 
   // Iterate through all package directories
   for (const auto &letter_dir :
@@ -171,7 +171,7 @@ std::vector<std::string> registry::search(const std::string &query,
       std::transform(pkg_name_lower.begin(), pkg_name_lower.end(),
                      pkg_name_lower.begin(), ::tolower);
 
-      int score = 0;
+      cforge_int_t score = 0;
 
       // Exact match
       if (pkg_name_lower == query_lower) {
@@ -220,7 +220,7 @@ std::vector<std::string> registry::search(const std::string &query,
 
   // Extract names up to limit
   for (cforge_size_t i = 0; i < std::min(limit, scored_results.size()); ++i) {
-    results.push_back(scored_results[i].first);
+    results.emplace_back(scored_results[i].first);
   }
 
   return results;
@@ -347,7 +347,7 @@ registry::fetch_git_tags(const std::string &repo_url,
       package_version ver;
       ver.version = match[1].str();
       ver.tag = tag;
-      versions.push_back(ver);
+      versions.emplace_back(ver);
     }
   }
 
@@ -398,7 +398,7 @@ registry::load_version_cache(const std::string &name) const {
       package_version ver;
       ver.version = line.substr(0, tab_pos);
       ver.tag = line.substr(tab_pos + 1);
-      versions.push_back(ver);
+      versions.emplace_back(ver);
     }
   }
 
@@ -543,7 +543,7 @@ registry::load_package_file(const std::string &name) const {
 
       if (line.find("[[versions]]") == 0) {
         if (in_version && !current_ver.version.empty()) {
-          info.versions.push_back(current_ver);
+          info.versions.emplace_back(current_ver);
         }
         current_ver = package_version();
         in_version = true;
@@ -551,7 +551,7 @@ registry::load_package_file(const std::string &name) const {
         if (line[0] == '[' && line.find("[[") != 0) {
           // New section, save current version
           if (!current_ver.version.empty()) {
-            info.versions.push_back(current_ver);
+            info.versions.emplace_back(current_ver);
           }
           in_version = false;
         } else {
@@ -590,7 +590,7 @@ registry::load_package_file(const std::string &name) const {
 
     // Don't forget the last version
     if (in_version && !current_ver.version.empty()) {
-      info.versions.push_back(current_ver);
+      info.versions.emplace_back(current_ver);
     }
 
     // If no explicit versions and auto-discover is enabled, fetch from Git
@@ -689,7 +689,7 @@ bool registry::version_matches(const std::string &version,
   return version == spec;
 }
 
-int registry::compare_versions(const std::string &v1, const std::string &v2) {
+cforge_int_t registry::compare_versions(const std::string &v1, const std::string &v2) {
   auto parts1 = parse_version(v1);
   auto parts2 = parse_version(v2);
 
@@ -709,8 +709,8 @@ int registry::compare_versions(const std::string &v1, const std::string &v2) {
   return 0;
 }
 
-std::vector<int> registry::parse_version(const std::string &version) {
-  std::vector<int> parts;
+std::vector<cforge_int_t> registry::parse_version(const std::string &version) {
+  std::vector<cforge_int_t> parts;
   std::stringstream ss(version);
   std::string part;
 
@@ -721,9 +721,9 @@ std::vector<int> registry::parse_version(const std::string &version) {
       if (dash != std::string::npos) {
         part = part.substr(0, dash);
       }
-      parts.push_back(std::stoi(part));
+      parts.emplace_back(std::stoi(part));
     } catch (...) {
-      parts.push_back(0);
+      parts.emplace_back(0);
     }
   }
 
@@ -771,7 +771,7 @@ registry::resolve_dependency(const dependency_spec &spec) const {
       for (const auto &feat : pkg->default_features) {
         if (std::find(resolved.features.begin(), resolved.features.end(),
                       feat) == resolved.features.end()) {
-          resolved.features.push_back(feat);
+          resolved.features.emplace_back(feat);
         }
       }
     }
@@ -839,7 +839,7 @@ std::vector<std::string> registry::list_packages() const {
     for (const auto &pkg_file :
          std::filesystem::directory_iterator(letter_dir.path())) {
       if (pkg_file.path().extension() == ".toml") {
-        packages.push_back(pkg_file.path().stem().string());
+        packages.emplace_back(pkg_file.path().stem().string());
       }
     }
   }
@@ -947,7 +947,7 @@ parse_dependencies(const std::filesystem::path &config_path) {
       spec.features = reader.get_string_array(prefix + ".features");
     }
 
-    deps.push_back(spec);
+    deps.emplace_back(spec);
   }
 
   return deps;

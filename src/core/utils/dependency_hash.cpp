@@ -197,7 +197,7 @@ std::string dependency_hash::calculate_directory_hash(
   std::vector<std::filesystem::path> entries;
   for (const auto &entry :
        std::filesystem::recursive_directory_iterator(dir_path)) {
-    entries.push_back(entry.path());
+    entries.emplace_back(entry.path());
   }
   std::sort(entries.begin(), entries.end());
 

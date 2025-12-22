@@ -207,7 +207,7 @@ void logger::cleaning(const std::string &target) {
 // Build progress display (Rust-style)
 
 
-void logger::compiling_file(const std::string &file, double duration_secs) {
+void logger::compiling_file(const std::string &file, cforge_double_t duration_secs) {
   if (s_verbosity == log_verbosity::VERBOSITY_QUIET)
     return;
 
@@ -232,19 +232,19 @@ void logger::compiling_file(const std::string &file, double duration_secs) {
   print_status_line(action, message, fmt::color::green);
 }
 
-void logger::progress_bar(int current, int total, bool in_place) {
+void logger::progress_bar(cforge_int_t current, cforge_int_t total, bool in_place) {
   if (s_verbosity == log_verbosity::VERBOSITY_QUIET)
     return;
   if (total <= 0)
     return;
 
-  const int bar_width = 20;
-  double progress = static_cast<double>(current) / static_cast<double>(total);
-  int filled = static_cast<int>(progress * bar_width);
+  const cforge_int_t bar_width = 20;
+  cforge_double_t progress = static_cast<cforge_double_t>(current) / static_cast<cforge_double_t>(total);
+  cforge_int_t filled = static_cast<cforge_int_t>(progress * bar_width);
 
   // Build the bar with Unicode block characters
   std::string bar;
-  for (int i = 0; i < bar_width; ++i) {
+  for (cforge_int_t i = 0; i < bar_width; ++i) {
     if (i < filled) {
       bar += "\xe2\x96\x88"; // Full block
     } else {
@@ -252,7 +252,7 @@ void logger::progress_bar(int current, int total, bool in_place) {
     }
   }
 
-  int percent = static_cast<int>(progress * 100);
+  cforge_int_t percent = static_cast<cforge_int_t>(progress * 100);
 
   if (in_place) {
     // Use carriage return to update in place
@@ -274,8 +274,8 @@ void logger::clear_line() {
 }
 
 void logger::print_timing_summary(
-    double total_duration,
-    const std::vector<std::pair<std::string, double>> &slowest_files) {
+    cforge_double_t total_duration,
+    const std::vector<std::pair<std::string, cforge_double_t>> &slowest_files) {
   if (s_verbosity == log_verbosity::VERBOSITY_QUIET)
     return;
 

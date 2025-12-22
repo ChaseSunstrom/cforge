@@ -98,7 +98,7 @@ public:
 
       // Parse key-value pairs within dependency section
       if (in_dependency) {
-        size_t eq_pos = line.find('=');
+        cforge_size_t eq_pos = line.find('=');
         if (eq_pos != std::string::npos) {
           std::string key = trim(line.substr(0, eq_pos));
           std::string value = trim(line.substr(eq_pos + 1));
@@ -314,10 +314,10 @@ private:
   std::map<std::string, locked_dependency> dependencies_;
 
   static std::string trim(const std::string &str) {
-    size_t start = str.find_first_not_of(" \t\r\n");
+    cforge_size_t start = str.find_first_not_of(" \t\r\n");
     if (start == std::string::npos)
       return "";
-    size_t end = str.find_last_not_of(" \t\r\n");
+    cforge_size_t end = str.find_last_not_of(" \t\r\n");
     return str.substr(start, end - start + 1);
   }
 
@@ -399,7 +399,7 @@ inline bool update_lockfile(const std::filesystem::path &project_dir,
     for (const auto &dep : vcpkg_deps) {
       // vcpkg deps might have version suffix like "fmt:x64-windows"
       std::string name = dep;
-      size_t colon = dep.find(':');
+      cforge_size_t colon = dep.find(':');
       if (colon != std::string::npos) {
         name = dep.substr(0, colon);
       }
@@ -577,7 +577,7 @@ inline bool generate_lockfile_from_config(const std::filesystem::path &project_d
       // If no explicit tag, use tag pattern
       if (git_tag.empty() && !pkg_info->tags.pattern.empty()) {
         git_tag = pkg_info->tags.pattern;
-        size_t pos = git_tag.find("{version}");
+        cforge_size_t pos = git_tag.find("{version}");
         if (pos != std::string::npos) {
           git_tag.replace(pos, 9, resolved_version);
         }

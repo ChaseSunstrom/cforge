@@ -136,9 +136,9 @@ bool run_cmake_build(const std::filesystem::path &build_dir,
                      const std::string &target = "", cforge_int_t num_jobs = 0,
                      bool verbose = false);
 
-// =============================================================================
+
 // Smart Rebuild Utilities
-// =============================================================================
+
 
 /**
  * @brief Check if a file is newer than another file

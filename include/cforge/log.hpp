@@ -2,7 +2,7 @@
  * @file log.hpp
  * @brief Cargo-style logging utilities for cforge
  *
- * Output format matches Rust's Cargo:
+ * Output format matches Rust's CARGO:
  *   - 12-character right-aligned status word (colored)
  *   - Message follows in default color
  *   - No emojis, no brackets
@@ -62,16 +62,16 @@ enum class log_verbosity {
  * @class logger
  * @brief Static class providing Cargo-style logging functionality
  *
- * All output follows Cargo's format:
+ * All output follows CARGO's format:
  *   {status:>12} {message}
  *
  * Where status is a colored action word like "Compiling", "Building", etc.
  */
 class logger {
 public:
-  // ============================================================
+
   // Configuration
-  // ============================================================
+
 
   /**
    * @brief Sets the global verbosity level for logging
@@ -85,9 +85,8 @@ public:
    */
   static log_verbosity get_verbosity();
 
-  // ============================================================
-  // Cargo-style status messages (right-aligned status word)
-  // ============================================================
+  // CARGO-style status messages (right-aligned status word)
+
 
   /**
    * @brief Print a status message with custom action word
@@ -104,7 +103,7 @@ public:
   /**
    * @brief Print a cyan status message (info/progress)
    *
-   * Common actions: "Checking", "Fetching", "Updating", "Running"
+   * Common actions: "Checking", "Fetching", "Updating", "RUNNING"
    */
   static void print_status(const std::string &message);
 
@@ -130,9 +129,7 @@ public:
    */
   static void print_verbose(const std::string &message);
 
-  // ============================================================
-  // Specific action helpers (Cargo-style)
-  // ============================================================
+  // Specific action helpers (CARGO-style)
 
   /**
    * @brief Print "Compiling {target}"
@@ -145,7 +142,7 @@ public:
   static void building(const std::string &target);
 
   /**
-   * @brief Print "Running {command}"
+   * @brief Print "RUNNING {command}"
    */
   static void running(const std::string &command);
 
@@ -214,9 +211,9 @@ public:
    */
   static void cleaning(const std::string &target);
 
-  // ============================================================
+
   // Build progress display (Rust-style)
-  // ============================================================
+
 
   /**
    * @brief Print "Compiling {file}" with optional timing
@@ -224,7 +221,7 @@ public:
    * @param duration_secs Optional duration in seconds (for completed files)
    */
   static void compiling_file(const std::string &file,
-                             double duration_secs = -1.0);
+                             cforge_double_t duration_secs = -1.0);
 
   /**
    * @brief Display a progress bar
@@ -245,12 +242,12 @@ public:
    * @param slowest_files Vector of (filename, duration) pairs for slowest files
    */
   static void print_timing_summary(
-      double total_duration,
-      const std::vector<std::pair<std::string, double>> &slowest_files);
+      cforge_double_t total_duration,
+      const std::vector<std::pair<std::string, cforge_double_t>> &slowest_files);
 
-  // ============================================================
+
   // Legacy compatibility (maps to new style)
-  // ============================================================
+
 
   /**
    * @brief Print a header/banner (simplified, no box drawing)
@@ -275,7 +272,7 @@ public:
 private:
   static log_verbosity s_verbosity;
 
-  // Status width for right-alignment (Cargo uses 12)
+  // Status width for right-alignment (CARGO uses 12)
   static constexpr int STATUS_WIDTH = 12;
 
   /**

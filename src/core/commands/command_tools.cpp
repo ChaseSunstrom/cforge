@@ -19,9 +19,9 @@ namespace fs = std::filesystem;
 
 namespace {
 
-// ============================================================
+
 // Helper Functions
-// ============================================================
+
 
 /**
  * @brief Find all source files in a directory
@@ -106,9 +106,9 @@ std::string find_clang_tidy() {
   return "";
 }
 
-// ============================================================
+
 // Shell Completion Generators
-// ============================================================
+
 
 std::string generate_bash_completions() {
   return R"(# cforge bash completion script
@@ -383,9 +383,9 @@ complete -c cforge -n '__fish_seen_subcommand_from lint' -l checks -d 'Checks to
 
 } // anonymous namespace
 
-// ============================================================
+
 // Command Implementations
-// ============================================================
+
 
 /**
  * @brief Handle the 'fmt' command for code formatting

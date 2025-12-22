@@ -1,5 +1,7 @@
 #pragma once
 
+#include "types.h"
+
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
@@ -119,7 +121,7 @@ private:
    * @param size Size of data in bytes
    * @return 64-bit hash value
    */
-  static uint64_t fnv1a_hash(const void *data, size_t size);
+  static uint64_t fnv1a_hash(const void *data, cforge_size_t size);
 
   /**
    * @brief Convert 64-bit hash to hex string
@@ -143,10 +145,10 @@ private:
    * @brief Trim whitespace from string
    */
   static std::string trim(const std::string &str) {
-    size_t start = str.find_first_not_of(" \t\r\n");
+    cforge_size_t start = str.find_first_not_of(" \t\r\n");
     if (start == std::string::npos)
       return "";
-    size_t end = str.find_last_not_of(" \t\r\n");
+    cforge_size_t end = str.find_last_not_of(" \t\r\n");
     return str.substr(start, end - start + 1);
   }
 };

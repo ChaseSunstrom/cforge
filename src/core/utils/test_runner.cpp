@@ -30,16 +30,16 @@ static std::string to_cmake_path(const fs::path &path) {
 // Constructor / Destructor
 // ============================================================================
 
-TestRunner::TestRunner(const fs::path &project_dir, const toml_reader &config)
+test_runner::test_runner(const fs::path &project_dir, const toml_reader &config)
     : m_project_dir(project_dir), m_project_config(config) {}
 
-TestRunner::~TestRunner() = default;
+test_runner::~test_runner() = default;
 
 // ============================================================================
 // Configuration Loading
 // ============================================================================
 
-bool TestRunner::load_config() {
+bool test_runner::load_config() {
   // Load [test] section defaults
   m_test_config.directory = m_project_config.get_string("test.directory", "tests");
   m_test_config.default_timeout =
@@ -60,20 +60,20 @@ bool TestRunner::load_config() {
   m_test_config.default_framework = string_to_test_framework(fw_str);
 
   // Load framework-specific configs
-  load_framework_config(TestFramework::GTest, "test.gtest");
-  load_framework_config(TestFramework::Catch2, "test.catch2");
-  load_framework_config(TestFramework::Doctest, "test.doctest");
-  load_framework_config(TestFramework::BoostTest, "test.boost");
+  load_framework_config(test_framework::GTest, "test.gtest");
+  load_framework_config(test_framework::Catch2, "test.catch2");
+  load_framework_config(test_framework::Doctest, "test.doctest");
+  load_framework_config(test_framework::BoostTest, "test.boost");
 
   return true;
 }
 
-void TestRunner::load_framework_config(TestFramework fw, const std::string &section) {
+void test_runner::load_framework_config(test_framework fw, const std::string &section) {
   if (!m_project_config.has_key(section)) {
     return;
   }
 
-  TestConfig::FrameworkConfig fc;
+  test_config::FrameworkConfig fc;
   fc.fetch = m_project_config.get_bool(section + ".fetch", true);
   fc.version = m_project_config.get_string(section + ".version", "");
 
@@ -92,8 +92,8 @@ void TestRunner::load_framework_config(TestFramework fw, const std::string &sect
 // Target Discovery
 // ============================================================================
 
-std::vector<TestTarget> TestRunner::discover_targets() {
-  std::vector<TestTarget> targets;
+std::vector<test_target> test_runner::discover_targets() {
+  std::vector<test_target> targets;
 
   // Load explicit targets first (always)
   if (m_test_config.discovery_mode == "explicit" ||
@@ -127,12 +127,12 @@ std::vector<TestTarget> TestRunner::discover_targets() {
   return targets;
 }
 
-std::vector<TestTarget> TestRunner::load_explicit_targets() {
-  std::vector<TestTarget> targets;
+std::vector<test_target> test_runner::load_explicit_targets() {
+  std::vector<test_target> targets;
 
   auto target_tables = m_project_config.get_table_array("test.targets");
   for (const auto &table : target_tables) {
-    TestTarget target;
+    test_target target;
     target.name = table.get_string("name", "");
     if (target.name.empty()) {
       logger::print_warning("[[test.targets]] entry missing 'name', skipping");
@@ -155,7 +155,7 @@ std::vector<TestTarget> TestRunner::load_explicit_targets() {
     target.source_files = expand_globs(target.sources, m_project_dir);
 
     // Detect framework from sources if auto
-    if (target.framework == TestFramework::Auto && !target.source_files.empty()) {
+    if (target.framework == test_framework::Auto && !target.source_files.empty()) {
       target.framework = detect_framework(target.source_files.front());
     }
 
@@ -169,8 +169,8 @@ std::vector<TestTarget> TestRunner::load_explicit_targets() {
   return targets;
 }
 
-std::vector<TestTarget> TestRunner::auto_discover_targets() {
-  std::vector<TestTarget> targets;
+std::vector<test_target> test_runner::auto_discover_targets() {
+  std::vector<test_target> targets;
 
   fs::path test_dir = m_project_dir / m_test_config.directory;
   if (!fs::exists(test_dir) || !fs::is_directory(test_dir)) {
@@ -202,7 +202,7 @@ std::vector<TestTarget> TestRunner::auto_discover_targets() {
   // Create one target per directory (or single target for flat structure)
   if (files_by_dir.size() == 1 && files_by_dir.begin()->first == ".") {
     // Flat structure - single target
-    TestTarget target;
+    test_target target;
     target.name = "tests";
     target.source_files = test_files;
     target.timeout_seconds = m_test_config.default_timeout;
@@ -214,7 +214,7 @@ std::vector<TestTarget> TestRunner::auto_discover_targets() {
   } else {
     // Multiple directories - one target per directory
     for (const auto &[dir, files] : files_by_dir) {
-      TestTarget target;
+      test_target target;
       target.name = "test_" + dir.string();
       // Replace path separators with underscores
       std::replace(target.name.begin(), target.name.end(), '/', '_');
@@ -231,7 +231,7 @@ std::vector<TestTarget> TestRunner::auto_discover_targets() {
   return targets;
 }
 
-std::vector<fs::path> TestRunner::expand_globs(
+std::vector<fs::path> test_runner::expand_globs(
     const std::vector<std::string> &patterns, const fs::path &base_dir) {
   std::vector<fs::path> result;
 
@@ -294,7 +294,7 @@ std::vector<fs::path> TestRunner::expand_globs(
 // Framework Detection
 // ============================================================================
 
-TestFramework TestRunner::detect_framework(const fs::path &source_file) {
+test_framework test_runner::detect_framework(const fs::path &source_file) {
   std::ifstream file(source_file);
   if (!file) {
     return m_test_config.default_framework;
@@ -305,12 +305,12 @@ TestFramework TestRunner::detect_framework(const fs::path &source_file) {
   std::string content = ss.str();
 
   // Try each adapter
-  std::vector<TestFramework> frameworks = {
-    TestFramework::GTest,
-    TestFramework::Catch2,
-    TestFramework::Doctest,
-    TestFramework::BoostTest,
-    TestFramework::Builtin
+  std::vector<test_framework> frameworks = {
+    test_framework::GTest,
+    test_framework::Catch2,
+    test_framework::Doctest,
+    test_framework::BoostTest,
+    test_framework::Builtin
   };
 
   for (auto fw : frameworks) {
@@ -323,9 +323,9 @@ TestFramework TestRunner::detect_framework(const fs::path &source_file) {
   return m_test_config.default_framework;
 }
 
-ITestFrameworkAdapter *TestRunner::get_adapter(TestFramework fw) {
-  if (fw == TestFramework::Auto) {
-    fw = TestFramework::Builtin;
+i_test_framework_adapter *test_runner::get_adapter(test_framework fw) {
+  if (fw == test_framework::Auto) {
+    fw = test_framework::Builtin;
   }
 
   auto it = m_adapters.find(fw);
@@ -343,14 +343,14 @@ ITestFrameworkAdapter *TestRunner::get_adapter(TestFramework fw) {
 // CMake Generation
 // ============================================================================
 
-bool TestRunner::generate_test_cmake(const TestTarget &target) {
+bool test_runner::generate_test_cmake(const test_target &target) {
   fs::path build_dir = m_project_dir / "build" / "tests" / target.name;
   fs::create_directories(build_dir);
 
   fs::path cmake_file = build_dir / "CMakeLists.txt";
   std::ofstream out(cmake_file);
   if (!out) {
-    m_error = "Failed to create " + cmake_file.string();
+    m_error = "FAILED to create " + cmake_file.string();
     return false;
   }
 
@@ -362,7 +362,7 @@ bool TestRunner::generate_test_cmake(const TestTarget &target) {
   }
 
   // Get framework config
-  TestConfig::FrameworkConfig fw_config;
+  test_config::FrameworkConfig fw_config;
   auto it = m_test_config.framework_configs.find(target.framework);
   if (it != m_test_config.framework_configs.end()) {
     fw_config = it->second;
@@ -442,11 +442,11 @@ bool TestRunner::generate_test_cmake(const TestTarget &target) {
   }
 
   // Add CTest integration for GTest
-  if (target.framework == TestFramework::GTest) {
+  if (target.framework == test_framework::GTest) {
     out << "# CTest integration\n"
         << "include(GoogleTest)\n"
         << "gtest_discover_tests(${PROJECT_NAME})\n";
-  } else if (target.framework == TestFramework::Catch2) {
+  } else if (target.framework == test_framework::Catch2) {
     out << "# CTest integration\n"
         << "include(Catch)\n"
         << "catch_discover_tests(${PROJECT_NAME})\n";
@@ -455,7 +455,7 @@ bool TestRunner::generate_test_cmake(const TestTarget &target) {
   return true;
 }
 
-bool TestRunner::should_auto_link_project() const {
+bool test_runner::should_auto_link_project() const {
   if (!m_test_config.auto_link_project) {
     return false;
   }
@@ -465,7 +465,7 @@ bool TestRunner::should_auto_link_project() const {
           type == "shared_library" || type == "static" || type == "shared");
 }
 
-std::string TestRunner::get_project_link_target() const {
+std::string test_runner::get_project_link_target() const {
   std::string name = m_project_config.get_string("project.name", "");
   if (name.empty()) {
     return "";
@@ -477,7 +477,7 @@ std::string TestRunner::get_project_link_target() const {
 // Building
 // ============================================================================
 
-bool TestRunner::configure_cmake(const TestTarget &target,
+bool test_runner::configure_cmake(const test_target &target,
                                   const std::string &build_config) {
   fs::path build_dir = m_project_dir / "build" / "tests" / target.name;
 
@@ -503,13 +503,13 @@ bool TestRunner::configure_cmake(const TestTarget &target,
     m_error = "CMake configuration failed";
     if (!result.stderr_output.empty()) {
       // Just show the key error, not the full output
-      logger::print_error("Failed to configure " + target.name);
+      logger::print_error("FAILED to configure " + target.name);
     }
   }
   return result.success;
 }
 
-bool TestRunner::build_target(const TestTarget &target,
+bool test_runner::build_target(const test_target &target,
                                const std::string &build_config) {
   fs::path build_dir = m_project_dir / "build" / "tests" / target.name;
 
@@ -523,13 +523,13 @@ bool TestRunner::build_target(const TestTarget &target,
   if (!result.success) {
     m_error = "Build failed";
     if (!result.stderr_output.empty()) {
-      logger::print_error("Failed to build " + target.name);
+      logger::print_error("FAILED to build " + target.name);
     }
   }
   return result.success;
 }
 
-bool TestRunner::build_tests(const std::string &config, [[maybe_unused]] bool verbose) {
+bool test_runner::build_tests(const std::string &config, [[maybe_unused]] bool verbose) {
   // Discover targets if not already done
   if (m_test_config.targets.empty()) {
     discover_targets();
@@ -543,7 +543,7 @@ bool TestRunner::build_tests(const std::string &config, [[maybe_unused]] bool ve
 
     // Generate CMakeLists.txt
     if (!generate_test_cmake(target)) {
-      logger::print_error("Failed to generate CMake for " + target.name);
+      logger::print_error("FAILED to generate CMake for " + target.name);
       all_success = false;
       continue;
     }
@@ -568,7 +568,7 @@ bool TestRunner::build_tests(const std::string &config, [[maybe_unused]] bool ve
 // Test Execution
 // ============================================================================
 
-fs::path TestRunner::find_test_executable(const TestTarget &target,
+fs::path test_runner::find_test_executable(const test_target &target,
                                            const std::string &build_config) {
   fs::path build_dir = m_project_dir / "build" / "tests" / target.name;
 
@@ -591,15 +591,15 @@ fs::path TestRunner::find_test_executable(const TestTarget &target,
   return {};
 }
 
-std::vector<TestResult> TestRunner::run_target(const TestTarget &target,
-                                                const TestRunOptions &options) {
-  std::vector<TestResult> results;
+std::vector<test_result> test_runner::run_target(const test_target &target,
+                                                const test_run_options &options) {
+  std::vector<test_result> results;
 
   fs::path exe = find_test_executable(target, options.build_config);
   if (exe.empty()) {
-    TestResult error_result;
+    test_result error_result;
     error_result.name = target.name;
-    error_result.status = TestStatus::Failed;
+    error_result.status = test_status::FAILED;
     error_result.failure_message = "Test executable not found";
     results.push_back(error_result);
     return results;
@@ -608,9 +608,9 @@ std::vector<TestResult> TestRunner::run_target(const TestTarget &target,
   // Get adapter
   auto *adapter = get_adapter(target.framework);
   if (!adapter) {
-    TestResult error_result;
+    test_result error_result;
     error_result.name = target.name;
-    error_result.status = TestStatus::Failed;
+    error_result.status = test_status::FAILED;
     error_result.failure_message = "No adapter for framework";
     results.push_back(error_result);
     return results;
@@ -643,9 +643,9 @@ std::vector<TestResult> TestRunner::run_target(const TestTarget &target,
     // Just print native output, create summary result
     std::cout << combined_output << std::endl;
 
-    TestResult summary;
+    test_result summary;
     summary.name = target.name;
-    summary.status = proc_result.success ? TestStatus::Passed : TestStatus::Failed;
+    summary.status = proc_result.success ? test_status::PASSED : test_status::FAILED;
     results.push_back(summary);
   } else {
     // Parse output into individual results
@@ -653,9 +653,9 @@ std::vector<TestResult> TestRunner::run_target(const TestTarget &target,
 
     // If parsing returned nothing, create a summary result
     if (results.empty()) {
-      TestResult summary;
+      test_result summary;
       summary.name = target.name;
-      summary.status = proc_result.success ? TestStatus::Passed : TestStatus::Failed;
+      summary.status = proc_result.success ? test_status::PASSED : test_status::FAILED;
       if (!proc_result.success) {
         summary.failure_message = "Test execution failed";
         summary.notes.push_back("Exit code: " + std::to_string(proc_result.exit_code));
@@ -667,8 +667,8 @@ std::vector<TestResult> TestRunner::run_target(const TestTarget &target,
   return results;
 }
 
-TestSummary TestRunner::run_tests(const TestRunOptions &options) {
-  TestSummary summary;
+test_summary test_runner::run_tests(const test_run_options &options) {
+  test_summary summary;
   m_results.clear();
 
   auto start_time = std::chrono::steady_clock::now();
@@ -694,17 +694,17 @@ TestSummary TestRunner::run_tests(const TestRunOptions &options) {
   for (const auto &result : m_results) {
     summary.total++;
     switch (result.status) {
-      case TestStatus::Passed:
+      case test_status::PASSED:
         summary.passed++;
         break;
-      case TestStatus::Failed:
+      case test_status::FAILED:
         summary.failed++;
         summary.failed_tests.push_back(result.name);
         break;
-      case TestStatus::Skipped:
+      case test_status::SKIPPED:
         summary.skipped++;
         break;
-      case TestStatus::Timeout:
+      case test_status::TIMEOUT:
         summary.timeout++;
         summary.failed_tests.push_back(result.name + " (timeout)");
         break;
@@ -721,7 +721,7 @@ TestSummary TestRunner::run_tests(const TestRunOptions &options) {
   return summary;
 }
 
-std::vector<std::string> TestRunner::list_tests() {
+std::vector<std::string> test_runner::list_tests() {
   std::vector<std::string> all_tests;
 
   // Make sure targets are discovered

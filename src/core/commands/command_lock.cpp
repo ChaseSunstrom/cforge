@@ -72,15 +72,19 @@ cforge_int_t cforge_cmd_lock(const cforge_context_t *ctx) {
   std::filesystem::path config_path;
 
   if (is_workspace) {
-    config_path = current_dir / WORKSPACE_FILE;
+    config_path = cforge::get_workspace_config_path(current_dir);
+    if (config_path.empty()) {
+      cforge::logger::print_error("No workspace configuration found in current directory");
+      cforge::logger::print_error("Run 'cforge init' to create a new project");
+      return 1;
+    }
   } else {
     config_path = current_dir / CFORGE_FILE;
-  }
-
-  if (!std::filesystem::exists(config_path)) {
-    cforge::logger::print_error("No cforge project found in current directory");
-    cforge::logger::print_error("Run 'cforge init' to create a new project");
-    return 1;
+    if (!std::filesystem::exists(config_path)) {
+      cforge::logger::print_error("No cforge project found in current directory");
+      cforge::logger::print_error("Run 'cforge init' to create a new project");
+      return 1;
+    }
   }
 
   // Handle --clean option

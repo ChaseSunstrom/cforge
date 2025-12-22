@@ -5,6 +5,8 @@
 
 #pragma once
 
+#include "types.h"
+
 #include <filesystem>
 #include <map>
 #include <set>
@@ -28,7 +30,7 @@ struct include_analysis_result {
   std::vector<circular_chain> chains; ///< All circular dependency chains found
   std::map<std::string, std::vector<std::string>>
       include_graph; ///< Full include graph
-  int total_files_analyzed = 0;
+  cforge_int_t total_files_analyzed = 0;
   bool has_cycles = false;
 };
 

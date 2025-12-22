@@ -10,6 +10,7 @@
 #include "core/process_utils.hpp"
 #include "core/toml_reader.hpp"
 
+#include <toml++/toml.hpp>
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -145,7 +146,7 @@ get_script_interpreter(const std::filesystem::path &script_path) {
 inline bool execute_script(const std::filesystem::path &script_path,
                            const std::filesystem::path &working_dir,
                            script_phase phase, bool verbose = false,
-                           int timeout = 300) {
+                           cforge_int_t timeout = 300) {
   std::filesystem::path full_path = script_path;
 
   // Make path absolute if relative
@@ -172,7 +173,7 @@ inline bool execute_script(const std::filesystem::path &script_path,
     command = full_path.string();
   } else if (interpreter.find(' ') != std::string::npos) {
     // Interpreter with arguments (e.g., "cmd /c" or "powershell -File")
-    size_t space_pos = interpreter.find(' ');
+    cforge_size_t space_pos = interpreter.find(' ');
     command = interpreter.substr(0, space_pos);
     std::string interp_args = interpreter.substr(space_pos + 1);
 
@@ -180,13 +181,13 @@ inline bool execute_script(const std::filesystem::path &script_path,
     std::istringstream iss(interp_args);
     std::string arg;
     while (iss >> arg) {
-      args.push_back(arg);
+      args.emplace_back(arg);
     }
-    args.push_back(full_path.string());
+    args.emplace_back(full_path.string());
   } else {
     // Simple interpreter
     command = interpreter;
-    args.push_back(full_path.string());
+    args.emplace_back(full_path.string());
   }
 
   bool success = execute_tool(command, args, working_dir.string(),
@@ -239,6 +240,33 @@ inline bool run_phase_scripts(const std::filesystem::path &config_path,
 }
 
 /**
+ * @brief Get the correct config path for a project or workspace
+ * Checks for unified format (cforge.toml with [workspace]) first for workspaces
+ */
+inline std::filesystem::path get_script_config_path(
+    const std::filesystem::path &project_dir, bool is_workspace) {
+  if (!is_workspace) {
+    return project_dir / CFORGE_FILE;
+  }
+
+  // For workspaces, check unified format first
+  std::filesystem::path unified_path = project_dir / CFORGE_FILE;
+  if (std::filesystem::exists(unified_path)) {
+    try {
+      auto config = toml::parse_file(unified_path.string());
+      if (config.contains("workspace")) {
+        return unified_path;
+      }
+    } catch (...) {
+      // Fall through to legacy
+    }
+  }
+
+  // Fall back to legacy workspace file
+  return project_dir / WORKSPACE_FILE;
+}
+
+/**
  * @brief Run pre-build scripts for a project or workspace
  *
  * @param project_dir Project or workspace directory
@@ -248,8 +276,7 @@ inline bool run_phase_scripts(const std::filesystem::path &config_path,
  */
 inline bool run_pre_build_scripts(const std::filesystem::path &project_dir,
                                   bool is_workspace, bool verbose = false) {
-  std::filesystem::path config_path =
-      project_dir / (is_workspace ? WORKSPACE_FILE : CFORGE_FILE);
+  std::filesystem::path config_path = get_script_config_path(project_dir, is_workspace);
   return run_phase_scripts(config_path, project_dir, script_phase::PRE_BUILD,
                            verbose);
 }
@@ -264,8 +291,7 @@ inline bool run_pre_build_scripts(const std::filesystem::path &project_dir,
  */
 inline bool run_post_build_scripts(const std::filesystem::path &project_dir,
                                    bool is_workspace, bool verbose = false) {
-  std::filesystem::path config_path =
-      project_dir / (is_workspace ? WORKSPACE_FILE : CFORGE_FILE);
+  std::filesystem::path config_path = get_script_config_path(project_dir, is_workspace);
   return run_phase_scripts(config_path, project_dir, script_phase::POST_BUILD,
                            verbose);
 }

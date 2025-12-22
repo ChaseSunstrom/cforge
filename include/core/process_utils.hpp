@@ -31,7 +31,7 @@
 namespace cforge {
 
 struct process_result {
-  int exit_code;
+  cforge_int_t exit_code;
   std::string stdout_output;
   std::string stderr_output;
   bool success;
@@ -53,7 +53,7 @@ process_result execute_process(
     const std::string &working_dir = "",
     std::function<void(const std::string &)> stdout_callback = nullptr,
     std::function<void(const std::string &)> stderr_callback = nullptr,
-    int timeout_seconds = 5);
+    cforge_int_t timeout_seconds = 5);
 
 /**
  * @brief Convert a string to lowercase
@@ -78,7 +78,7 @@ bool execute_tool(const std::string &command,
                   const std::vector<std::string> &args = {},
                   const std::string &working_dir = "",
                   const std::string &command_name = "", bool verbose = false,
-                  int timeout_seconds = 60);
+                  cforge_int_t timeout_seconds = 60);
 
 /**
  * @brief Check if a command is available in the PATH

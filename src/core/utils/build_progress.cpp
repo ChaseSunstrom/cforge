@@ -56,7 +56,7 @@ bool build_progress::parse_ninja_progress(const std::string &line) {
       timing.duration_seconds =
           std::chrono::duration<double>(timing.end_time - timing.start_time)
               .count();
-      timings_.push_back(timing);
+      timings_.emplace_back(timing);
     }
 
     current_step_ = new_step;
@@ -97,7 +97,7 @@ bool build_progress::parse_make_progress(const std::string &line) {
       timing.duration_seconds =
           std::chrono::duration<double>(timing.end_time - timing.start_time)
               .count();
-      timings_.push_back(timing);
+      timings_.emplace_back(timing);
     }
 
     current_step_ = new_step;
@@ -135,7 +135,7 @@ bool build_progress::parse_msbuild_progress(const std::string &line) {
       timing.duration_seconds =
           std::chrono::duration<double>(timing.end_time - timing.start_time)
               .count();
-      timings_.push_back(timing);
+      timings_.emplace_back(timing);
     }
 
     current_step_++;
@@ -248,7 +248,7 @@ void build_progress::file_finished(const std::string &filename) {
   timing.duration_seconds =
       std::chrono::duration<double>(timing.end_time - timing.start_time)
           .count();
-  timings_.push_back(timing);
+  timings_.emplace_back(timing);
 }
 
 void display_progress_bar(cforge_int_t current, cforge_int_t total, cforge_int_t width,

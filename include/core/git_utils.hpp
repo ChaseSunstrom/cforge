@@ -22,7 +22,7 @@ struct git_result {
   bool success = false;
   std::string output;
   std::string error;
-  int exit_code = -1;
+  cforge_int_t exit_code = -1;
 };
 
 /**
@@ -35,7 +35,7 @@ struct git_clone_options {
   std::string commit;   // Commit to checkout (optional)
   bool shallow = false; // Use shallow clone (--depth 1)
   bool quiet = true;    // Suppress Git output
-  int timeout = 120;    // Timeout in seconds
+  cforge_int_t timeout = 120;    // Timeout in seconds
 };
 
 /**
@@ -63,7 +63,7 @@ inline bool is_git_repository(const std::filesystem::path &dir) {
  */
 inline git_result git_execute(const std::vector<std::string> &args,
                               const std::string &working_dir = "",
-                              int timeout = 60) {
+                              cforge_int_t timeout = 60) {
   git_result result;
 
   process_result pr =
@@ -91,25 +91,25 @@ inline git_result git_clone(const std::string &url,
   std::vector<std::string> args = {"clone"};
 
   if (options.shallow) {
-    args.push_back("--depth");
-    args.push_back("1");
+    args.emplace_back("--depth");
+    args.emplace_back("1");
   }
 
   if (options.quiet) {
-    args.push_back("--quiet");
+    args.emplace_back("--quiet");
   }
 
   // If we have a specific branch/tag, use it during clone
   if (!options.branch.empty()) {
-    args.push_back("--branch");
-    args.push_back(options.branch);
+    args.emplace_back("--branch");
+    args.emplace_back(options.branch);
   } else if (!options.tag.empty()) {
-    args.push_back("--branch");
-    args.push_back(options.tag);
+    args.emplace_back("--branch");
+    args.emplace_back(options.tag);
   }
 
-  args.push_back(url);
-  args.push_back(dest.string());
+  args.emplace_back(url);
+  args.emplace_back(dest.string());
 
   return git_execute(args, "", options.timeout);
 }
@@ -133,9 +133,9 @@ inline git_result git_checkout(const std::filesystem::path &repo_dir,
 
   std::vector<std::string> args = {"checkout"};
   if (quiet) {
-    args.push_back("--quiet");
+    args.emplace_back("--quiet");
   }
-  args.push_back(ref);
+  args.emplace_back(ref);
 
   git_result result = git_execute(args, repo_dir.string());
 
@@ -167,11 +167,11 @@ inline git_result git_fetch(const std::filesystem::path &repo_dir,
   std::vector<std::string> args = {"fetch"};
 
   if (fetch_tags) {
-    args.push_back("--tags");
+    args.emplace_back("--tags");
   }
 
   if (quiet) {
-    args.push_back("--quiet");
+    args.emplace_back("--quiet");
   }
 
   return git_execute(args, repo_dir.string(), 120);
@@ -189,7 +189,7 @@ inline git_result git_pull(const std::filesystem::path &repo_dir,
   std::vector<std::string> args = {"pull"};
 
   if (quiet) {
-    args.push_back("--quiet");
+    args.emplace_back("--quiet");
   }
 
   return git_execute(args, repo_dir.string(), 120);

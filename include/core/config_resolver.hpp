@@ -22,23 +22,23 @@ namespace cforge {
 /**
  * @brief Enumeration of supported platforms
  */
-enum class Platform {
-  Windows,
-  Linux,
-  MacOS,
-  Unknown
+enum class platform {
+  WINDOWS,
+  LINUX,
+  MACOS,
+  UNKNOWN
 };
 
 /**
  * @brief Enumeration of supported compilers
  */
-enum class Compiler {
+enum class compiler {
   MSVC,
   GCC,
-  Clang,
-  AppleClang,
-  MinGW,
-  Unknown
+  CLANG,
+  APPLE_CLANG,
+  MINGW,
+  UNKNOWN
 };
 
 /**
@@ -57,41 +57,41 @@ struct resolved_config {
  * @brief Get the current platform
  * @return The detected platform
  */
-Platform get_current_platform();
+platform get_current_platform();
 
 /**
  * @brief Get the platform name as a string
  * @param platform The platform enum value
  * @return The platform name (lowercase)
  */
-std::string platform_to_string(Platform platform);
+std::string platform_to_string(platform platform);
 
 /**
  * @brief Parse a platform string to enum
  * @param str The platform string (case-insensitive)
  * @return The platform enum value
  */
-Platform string_to_platform(const std::string &str);
+platform string_to_platform(const std::string &str);
 
 /**
  * @brief Get the current compiler based on environment/detection
  * @return The detected compiler
  */
-Compiler detect_compiler();
+compiler detect_compiler();
 
 /**
  * @brief Get the compiler name as a string
  * @param compiler The compiler enum value
  * @return The compiler name (lowercase with underscores)
  */
-std::string compiler_to_string(Compiler compiler);
+std::string compiler_to_string(compiler compiler);
 
 /**
  * @brief Parse a compiler string to enum
  * @param str The compiler string (case-insensitive)
  * @return The compiler enum value
  */
-Compiler string_to_compiler(const std::string &str);
+compiler string_to_compiler(const std::string &str);
 
 /**
  * @brief Check if a platform list contains the current platform
@@ -125,13 +125,13 @@ public:
    * @brief Set the target platform (defaults to current platform)
    * @param platform The target platform
    */
-  void set_platform(Platform platform);
+  void set_platform(platform platform);
 
   /**
    * @brief Set the target compiler (defaults to detected compiler)
    * @param compiler The target compiler
    */
-  void set_compiler(Compiler compiler);
+  void set_compiler(compiler compiler);
 
   /**
    * @brief Resolve defines for a given build configuration
@@ -183,17 +183,17 @@ public:
   /**
    * @brief Get the current platform
    */
-  Platform get_platform() const { return platform_; }
+  platform get_platform() const { return platform_; }
 
   /**
    * @brief Get the current compiler
    */
-  Compiler get_compiler() const { return compiler_; }
+  compiler get_compiler() const { return compiler_; }
 
 private:
   const toml_reader &config_;
-  Platform platform_;
-  Compiler compiler_;
+  platform platform_;
+  compiler compiler_;
 
   /**
    * @brief Merge string arrays (append unique values)

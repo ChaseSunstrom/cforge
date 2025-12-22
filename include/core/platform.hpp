@@ -15,9 +15,9 @@
 namespace cforge {
 namespace platform {
 
-// =============================================================================
+
 // Compile-time Platform Detection
-// =============================================================================
+
 
 #if defined(_WIN32) || defined(_WIN64)
   inline constexpr bool is_windows = true;
@@ -43,9 +43,9 @@ namespace platform {
 // Unix-like platforms (Linux + macOS)
 inline constexpr bool is_unix = is_linux || is_macos;
 
-// =============================================================================
+
 // Compile-time Compiler Detection
-// =============================================================================
+
 
 #if defined(_MSC_VER) && !defined(__clang__)
   inline constexpr bool is_msvc = true;
@@ -77,9 +77,9 @@ inline constexpr bool is_unix = is_linux || is_macos;
   inline constexpr bool is_gcc = false;
 #endif
 
-// =============================================================================
+
 // Platform Name Strings
-// =============================================================================
+
 
 /**
  * @brief Get the current platform name as a string
@@ -115,9 +115,9 @@ inline std::string get_compiler_name() {
     }
 }
 
-// =============================================================================
+
 // Platform-specific Path Utilities
-// =============================================================================
+
 
 /**
  * @brief Get the path separator for the current platform
@@ -169,9 +169,9 @@ inline constexpr const char* static_library_extension() {
     }
 }
 
-// =============================================================================
+
 // Visual Studio Detection (Windows only)
-// =============================================================================
+
 
 /**
  * @brief Get common Visual Studio installation paths
@@ -194,9 +194,9 @@ inline std::vector<std::string> get_visual_studio_paths() {
     };
 }
 
-// =============================================================================
+
 // Doxygen Detection
-// =============================================================================
+
 
 /**
  * @brief Get common Doxygen installation paths for the current platform
@@ -223,9 +223,9 @@ inline std::vector<std::string> get_doxygen_paths() {
     }
 }
 
-// =============================================================================
+
 // Terminal Emulator Detection (Linux)
-// =============================================================================
+
 
 /**
  * @brief Get terminal emulator commands in preference order (Linux)
@@ -275,9 +275,9 @@ inline std::string build_terminal_command(const std::string& cmd,
     }
 }
 
-// =============================================================================
+
 // CMake Generator Detection
-// =============================================================================
+
 
 /**
  * @brief Get the default CMake generator for the current platform

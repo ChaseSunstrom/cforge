@@ -322,9 +322,24 @@ static bool regenerate_cmake_files(const std::filesystem::path &project_dir,
  * @return cforge_int_t Exit code (0 for success)
  */
 cforge_int_t cforge_cmd_clean(const cforge_context_t *ctx) {
-  // Check for cforge::workspaceclean
+  // Check for workspace clean - support both unified format and legacy format
   std::filesystem::path current_dir(ctx->working_dir);
-  if (std::filesystem::exists(current_dir / WORKSPACE_FILE)) {
+  bool is_workspace = false;
+
+  // Check unified format first (cforge.toml with [workspace] section)
+  std::filesystem::path unified_config = current_dir / CFORGE_FILE;
+  if (std::filesystem::exists(unified_config)) {
+    cforge::toml_reader config;
+    if (config.load(unified_config.string()) && config.has_key("workspace")) {
+      is_workspace = true;
+    }
+  }
+  // Fall back to legacy format
+  if (!is_workspace && std::filesystem::exists(current_dir / WORKSPACE_FILE)) {
+    is_workspace = true;
+  }
+
+  if (is_workspace) {
     // Workspace cleaning: only clean root cforge::workspacebuild outputs
     cforge::logger::cleaning("cforge::workspacebuild outputs");
     // Parse clean arguments

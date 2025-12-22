@@ -117,6 +117,7 @@ spdlog = "1.12.0"
 | `cforge run` | Build and run the project |
 | `cforge clean` | Clean build artifacts |
 | `cforge install` | Install project to system |
+| `cforge circular` | Check for circular dependencies | 
 
 ### Dependencies
 

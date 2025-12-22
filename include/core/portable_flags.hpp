@@ -4,7 +4,7 @@
  *
  * This module provides an abstraction layer for compiler flags, allowing users
  * to specify intent-based options (like "optimize = speed") that automatically
- * translate to the correct flags for each compiler (MSVC, GCC, Clang).
+ * translate to the correct flags for each compiler (MSVC, GCC, CLANG).
  */
 
 #pragma once

@@ -4,6 +4,8 @@
  */
 
 #include <stdio.h>
+#include <filesystem>
+#include <toml++/toml.hpp>
 
 #include "cforge/log.hpp"
 #include "core/command.h"
@@ -11,7 +13,19 @@
 
 // Function to check if the current directory is a workspace
 bool cforge_is_workspace_dir(void) {
-  // Check if workspace file exists
+  // First priority: Check for cforge.toml with [workspace] section
+  if (std::filesystem::exists(CFORGE_FILE)) {
+    try {
+      auto config = toml::parse_file(CFORGE_FILE);
+      if (config.contains("workspace")) {
+        return true;
+      }
+    } catch (...) {
+      // Fall through to legacy check
+    }
+  }
+
+  // Fall back to legacy cforge.workspace.toml
   return access(WORKSPACE_FILE, F_OK) == 0;
 }
 

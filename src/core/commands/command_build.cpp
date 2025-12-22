@@ -713,7 +713,9 @@ bool resolve_index_dependencies(const std::filesystem::path &project_dir,
 
     // Check if already exists and up to date
     std::string stored_version = dep_hashes.get_version(name);
-    bool version_changed = resolved_version != stored_version;
+    // Only consider version changed if we have a stored version and it differs
+    // If no stored version but directory exists, assume it's correct (avoid unnecessary updates)
+    bool version_changed = !stored_version.empty() && resolved_version != stored_version;
 
     if (std::filesystem::exists(dep_path)) {
       if (version_changed) {
@@ -727,6 +729,12 @@ bool resolve_index_dependencies(const std::filesystem::path &project_dir,
           continue;
         }
       } else {
+        // Directory exists and either version matches or no stored version - skip
+        if (stored_version.empty()) {
+          // Store the version for future reference so we don't recheck next time
+          dep_hashes.set_version(name, resolved_version);
+          deps_changed = true;  // Need to save the lock file
+        }
         cforge::logger::print_verbose("Package '" + name + "' already at version " + resolved_version);
         continue;
       }
@@ -1831,9 +1839,6 @@ cforge_int_t cforge_cmd_build(const cforge_context_t *ctx) {
     std::filesystem::current_path(workspace_dir);
 
     // Load workspace configuration
-    cforge::toml_reader ws_cfg;
-    ws_cfg.load((workspace_dir / WORKSPACE_FILE).string());
-
     cforge::workspace ws;
     if (!ws.load(workspace_dir)) {
       cforge::logger::print_error("Failed to load workspace");
@@ -1891,7 +1896,14 @@ cforge_int_t cforge_cmd_build(const cforge_context_t *ctx) {
       std::filesystem::current_path(workspace_dir);
     }
 
-    // STEP 2: Generate cforge::workspaceand project CMakeLists.txt AFTER dependencies are resolved
+    // STEP 2: Generate workspace and project CMakeLists.txt AFTER dependencies are resolved
+    auto ws_config_path = cforge::get_workspace_config_path(workspace_dir);
+    if (ws_config_path.empty()) {
+      cforge::logger::print_error("No workspace configuration found");
+      std::filesystem::current_path(original_cwd);
+      return 1;
+    }
+    cforge::toml_reader ws_cfg(toml::parse_file(ws_config_path.string()));
     if (!cforge::generate_workspace_cmakelists(workspace_dir, ws_cfg, verbose)) {
       cforge::logger::print_error("Failed to generate cforge::workspaceCMakeLists.txt");
       std::filesystem::current_path(original_cwd);

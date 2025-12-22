@@ -21,7 +21,7 @@
 #define DEFAULT_OBJ_DIR "obj"
 #define VCPKG_DEFAULT_DIR "~/.vcpkg"
 #define CMAKE_MIN_VERSION "3.15"
-#define WORKSPACE_FILE "cforge.workspace.toml"
+#define WORKSPACE_FILE "cforge.workspace.toml" // <-- Deprecated
 
 #ifdef _MSC_VER
 #pragma warning(disable : 4996)

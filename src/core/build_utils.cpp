@@ -130,14 +130,14 @@ find_project_binary(const std::filesystem::path &build_dir,
   std::vector<std::filesystem::path> search_paths;
 
   // Common output locations
-  search_paths.push_back(build_dir / config / project_name);
-  search_paths.push_back(build_dir / config /
+  search_paths.emplace_back(build_dir / config / project_name);
+  search_paths.emplace_back(build_dir / config /
                          (project_name + ".exe")); // Windows
-  search_paths.push_back(build_dir / "bin" / config / project_name);
-  search_paths.push_back(build_dir / "bin" / config /
+  search_paths.emplace_back(build_dir / "bin" / config / project_name);
+  search_paths.emplace_back(build_dir / "bin" / config /
                          (project_name + ".exe")); // Windows
-  search_paths.push_back(build_dir / project_name);
-  search_paths.push_back(build_dir / (project_name + ".exe")); // Windows
+  search_paths.emplace_back(build_dir / project_name);
+  search_paths.emplace_back(build_dir / (project_name + ".exe")); // Windows
 
   for (const auto &path : search_paths) {
     if (std::filesystem::exists(path)) {

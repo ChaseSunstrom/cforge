@@ -5,6 +5,8 @@
 
 #pragma once
 
+#include "types.h"
+
 #include <chrono>
 #include <functional>
 #include <mutex>
@@ -20,7 +22,7 @@ struct file_timing {
   std::string filename;
   std::chrono::steady_clock::time_point start_time;
   std::chrono::steady_clock::time_point end_time;
-  double duration_seconds = 0.0;
+  cforge_double_t duration_seconds = 0.0;
 };
 
 /**
@@ -50,17 +52,17 @@ public:
   /**
    * @brief Get the current progress as a fraction (0.0 to 1.0)
    */
-  double get_progress() const;
+  cforge_double_t get_progress() const;
 
   /**
    * @brief Get current step number
    */
-  int get_current_step() const;
+  cforge_int_t get_current_step() const;
 
   /**
    * @brief Get total steps
    */
-  int get_total_steps() const;
+  cforge_int_t get_total_steps() const;
 
   /**
    * @brief Check if progress information is available
@@ -76,7 +78,7 @@ public:
    * @brief Get the slowest files (sorted by duration, descending)
    * @param count Maximum number of files to return
    */
-  std::vector<file_timing> get_slowest_files(size_t count = 5) const;
+  std::vector<file_timing> get_slowest_files(cforge_size_t count = 5) const;
 
   /**
    * @brief Called when a file starts compiling
@@ -91,8 +93,8 @@ public:
 private:
   mutable std::mutex mutex_;
   std::string current_file_;
-  int current_step_ = 0;
-  int total_steps_ = 0;
+  cforge_int_t current_step_ = 0;
+  cforge_int_t total_steps_ = 0;
   bool has_progress_ = false;
 
   std::vector<file_timing> timings_;
@@ -126,7 +128,7 @@ private:
  * @param width Width of the progress bar in characters
  * @param show_percentage Whether to show percentage
  */
-void display_progress_bar(int current, int total, int width = 20,
+void display_progress_bar(cforge_int_t current, cforge_int_t total, cforge_int_t width = 20,
                           bool show_percentage = true);
 
 /**

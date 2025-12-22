@@ -3,7 +3,7 @@
  * @brief Implementation of the 'test' command to run project tests
  *
  * Supports multiple test frameworks (GTest, Catch2, doctest, Boost.Test, Builtin)
- * with Cargo/Rust-style output formatting by default.
+ * with CARGO/Rust-style output formatting by default.
  * Supports workspace-level test execution across all projects.
  */
 
@@ -157,8 +157,8 @@ TestOptions parse_test_options(const cforge_context_t *ctx) {
  */
 cforge_int_t run_tests_for_project(const std::filesystem::path &project_dir,
                           const TestOptions &opts,
-                          cforge::TestSummary &summary_out,
-                          std::vector<cforge::TestResult> &results_out) {
+                          cforge::test_summary &summary_out,
+                          std::vector<cforge::test_result> &results_out) {
   namespace fs = std::filesystem;
 
   // Load project configuration
@@ -189,7 +189,7 @@ cforge_int_t run_tests_for_project(const std::filesystem::path &project_dir,
   ensure_test_framework_header(tests_dir);
 
   // Create test runner
-  cforge::TestRunner runner(project_dir, cfg);
+  cforge::test_runner runner(project_dir, cfg);
   if (!runner.load_config()) {
     cforge::logger::print_error("Failed to load test configuration for " + project_name);
     return 1;
@@ -205,13 +205,13 @@ cforge_int_t run_tests_for_project(const std::filesystem::path &project_dir,
   // List mode
   if (opts.list_only) {
     auto tests = runner.list_tests();
-    cforge::TestOutputFormatter formatter(cforge::TestOutputFormatter::Style::Cargo);
+    cforge::test_output_formatter formatter(cforge::test_output_formatter::style::CARGO);
     formatter.print_test_list(tests);
     return 0;
   }
 
   // Run tests
-  cforge::TestRunOptions run_opts;
+  cforge::test_run_options run_opts;
   run_opts.build_config = opts.build_config;
   run_opts.filter = opts.filter;
   run_opts.native_output = opts.native_output;
@@ -281,15 +281,15 @@ cforge_int_t cforge_cmd_test(const cforge_context_t *ctx) {
     auto projects = ws.get_projects();
 
     // Aggregate results across all projects
-    cforge::TestSummary total_summary{};
-    std::vector<cforge::TestResult> all_results;
+    cforge::test_summary total_summary{};
+    std::vector<cforge::test_result> all_results;
     cforge_int_t projects_tested = 0;
     cforge_int_t projects_failed = 0;
 
     // Create formatter for output
-    cforge::TestOutputFormatter formatter(
-        opts.native_output ? cforge::TestOutputFormatter::Style::Native
-                           : cforge::TestOutputFormatter::Style::Cargo);
+    cforge::test_output_formatter formatter(
+        opts.native_output ? cforge::test_output_formatter::style::NATIVE
+                           : cforge::test_output_formatter::style::CARGO);
 
     for (const auto &project_name : build_order) {
       // Find the project
@@ -322,8 +322,8 @@ cforge_int_t cforge_cmd_test(const cforge_context_t *ctx) {
 
       cforge::logger::print_action("Testing", project.name);
 
-      cforge::TestSummary project_summary{};
-      std::vector<cforge::TestResult> project_results;
+      cforge::test_summary project_summary{};
+      std::vector<cforge::test_result> project_results;
 
       cforge_int_t result = run_tests_for_project(project.path, opts, project_summary, project_results);
 
@@ -405,16 +405,16 @@ cforge_int_t cforge_cmd_test(const cforge_context_t *ctx) {
   ensure_test_framework_header(tests_dir);
 
   // Create test runner
-  cforge::TestRunner runner(project_dir, cfg);
+  cforge::test_runner runner(project_dir, cfg);
   if (!runner.load_config()) {
     cforge::logger::print_error("Failed to load test configuration");
     return 1;
   }
 
   // Create output formatter
-  cforge::TestOutputFormatter formatter(
-      opts.native_output ? cforge::TestOutputFormatter::Style::Native
-                         : cforge::TestOutputFormatter::Style::Cargo);
+  cforge::test_output_formatter formatter(
+      opts.native_output ? cforge::test_output_formatter::style::NATIVE
+                         : cforge::test_output_formatter::style::CARGO);
 
   // Discover test targets
   auto targets = runner.discover_targets();
@@ -433,7 +433,7 @@ cforge_int_t cforge_cmd_test(const cforge_context_t *ctx) {
   }
 
   // Run tests
-  cforge::TestRunOptions run_opts;
+  cforge::test_run_options run_opts;
   run_opts.build_config = opts.build_config;
   run_opts.filter = opts.filter;
   run_opts.native_output = opts.native_output;
@@ -444,7 +444,7 @@ cforge_int_t cforge_cmd_test(const cforge_context_t *ctx) {
   run_opts.timeout_override = opts.timeout;
 
   // Execute tests
-  cforge::TestSummary summary = runner.run_tests(run_opts);
+  cforge::test_summary summary = runner.run_tests(run_opts);
   const auto &results = runner.get_results();
 
   // Print results (unless native output, which prints as it runs)

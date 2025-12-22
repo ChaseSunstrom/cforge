@@ -133,7 +133,7 @@ toml_reader::get_string_array(const std::string &key) const {
     auto array = value.as_array();
     for (const auto &val : *array) {
       if (val.is_string()) {
-        result.push_back(val.as_string()->get());
+        result.emplace_back(val.as_string()->get());
       }
     }
     return result;
@@ -178,7 +178,7 @@ toml_reader::get_table_keys(const std::string &table_name) const {
 
     // Get all keys in the table
     for (const auto &[key, _] : *table) {
-      result.push_back(std::string(key.str()));
+      result.emplace_back(std::string(key.str()));
     }
 
     return result;
@@ -200,7 +200,7 @@ toml_reader::get_tables(const std::string &prefix) const {
       if (value.is_table()) {
         std::string table_name = std::string(key.str());
         if (prefix.empty() || table_name.find(prefix) == 0) {
-          result.push_back(table_name);
+          result.emplace_back(table_name);
         }
       }
     }

@@ -20,92 +20,92 @@ static std::string to_lower(const std::string &str) {
   return result;
 }
 
-Platform get_current_platform() {
+platform get_current_platform() {
 #if defined(_WIN32) || defined(_WIN64)
-  return Platform::Windows;
+  return platform::WINDOWS;
 #elif defined(__APPLE__) && defined(__MACH__)
-  return Platform::MacOS;
+  return platform::MACOS;
 #elif defined(__linux__)
-  return Platform::Linux;
+  return platform::LINUX;
 #else
-  return Platform::Unknown;
+  return platform::UNKNOWN;
 #endif
 }
 
-std::string platform_to_string(Platform platform) {
+std::string platform_to_string(platform platform) {
   switch (platform) {
-  case Platform::Windows:
+  case platform::WINDOWS:
     return "windows";
-  case Platform::Linux:
+  case platform::LINUX:
     return "linux";
-  case Platform::MacOS:
+  case platform::MACOS:
     return "macos";
   default:
     return "unknown";
   }
 }
 
-Platform string_to_platform(const std::string &str) {
+platform string_to_platform(const std::string &str) {
   std::string lower = to_lower(str);
   if (lower == "windows" || lower == "win32" || lower == "win64") {
-    return Platform::Windows;
+    return platform::WINDOWS;
   } else if (lower == "linux") {
-    return Platform::Linux;
+    return platform::LINUX;
   } else if (lower == "macos" || lower == "darwin" || lower == "apple" || lower == "osx") {
-    return Platform::MacOS;
+    return platform::MACOS;
   }
-  return Platform::Unknown;
+  return platform::UNKNOWN;
 }
 
-Compiler detect_compiler() {
+compiler detect_compiler() {
 #if defined(_MSC_VER) && !defined(__clang__)
-  return Compiler::MSVC;
+  return compiler::MSVC;
 #elif defined(__MINGW32__) || defined(__MINGW64__)
-  return Compiler::MinGW;
+  return compiler::MINGW;
 #elif defined(__clang__)
   #if defined(__apple_build_version__)
-    return Compiler::AppleClang;
+    return compiler::APPLE_CLANG;
   #else
-    return Compiler::Clang;
+    return compiler::CLANG;
   #endif
 #elif defined(__GNUC__)
-  return Compiler::GCC;
+  return compiler::GCC;
 #else
-  return Compiler::Unknown;
+  return compiler::UNKNOWN;
 #endif
 }
 
-std::string compiler_to_string(Compiler compiler) {
+std::string compiler_to_string(compiler compiler) {
   switch (compiler) {
-  case Compiler::MSVC:
+  case compiler::MSVC:
     return "msvc";
-  case Compiler::GCC:
+  case compiler::GCC:
     return "gcc";
-  case Compiler::Clang:
+  case compiler::CLANG:
     return "clang";
-  case Compiler::AppleClang:
+  case compiler::APPLE_CLANG:
     return "apple_clang";
-  case Compiler::MinGW:
+  case compiler::MINGW:
     return "mingw";
   default:
     return "unknown";
   }
 }
 
-Compiler string_to_compiler(const std::string &str) {
+compiler string_to_compiler(const std::string &str) {
   std::string lower = to_lower(str);
   if (lower == "msvc" || lower == "cl" || lower == "visual studio") {
-    return Compiler::MSVC;
+    return compiler::MSVC;
   } else if (lower == "gcc" || lower == "gnu") {
-    return Compiler::GCC;
+    return compiler::GCC;
   } else if (lower == "clang" || lower == "llvm") {
-    return Compiler::Clang;
+    return compiler::CLANG;
   } else if (lower == "apple_clang" || lower == "appleclang" || lower == "apple-clang") {
-    return Compiler::AppleClang;
+    return compiler::APPLE_CLANG;
   } else if (lower == "mingw" || lower == "mingw32" || lower == "mingw64") {
-    return Compiler::MinGW;
+    return compiler::MINGW;
   }
-  return Compiler::Unknown;
+  return compiler::UNKNOWN;
 }
 
 bool matches_current_platform(const std::vector<std::string> &platforms) {
@@ -113,7 +113,7 @@ bool matches_current_platform(const std::vector<std::string> &platforms) {
     return true; // No restriction means all platforms
   }
 
-  Platform current = get_current_platform();
+  platform current = get_current_platform();
   for (const auto &p : platforms) {
     if (string_to_platform(p) == current) {
       return true;
@@ -128,11 +128,11 @@ config_resolver::config_resolver(const toml_reader &config)
     : config_(config), platform_(get_current_platform()),
       compiler_(detect_compiler()) {}
 
-void config_resolver::set_platform(Platform platform) {
+void config_resolver::set_platform(platform platform) {
   platform_ = platform;
 }
 
-void config_resolver::set_compiler(Compiler compiler) {
+void config_resolver::set_compiler(compiler compiler) {
   compiler_ = compiler;
 }
 
@@ -161,13 +161,13 @@ config_resolver::resolve_defines(const std::string &build_config) const {
   // 1. Base defines
   merge_arrays(result, get_section_array("build.defines"));
 
-  // 2. Platform-specific defines
+  // 2. platform-specific defines
   merge_arrays(result, get_section_array("platform." + platform_str + ".defines"));
 
-  // 3. Compiler-specific defines
+  // 3. compiler-specific defines
   merge_arrays(result, get_section_array("compiler." + compiler_str + ".defines"));
 
-  // 4. Platform+Compiler nested defines
+  // 4. platform+compiler nested defines
   merge_arrays(result, get_section_array("platform." + platform_str +
                                          ".compiler." + compiler_str + ".defines"));
 
@@ -195,13 +195,13 @@ config_resolver::resolve_flags(const std::string &build_config) const {
   // 1. Base flags
   merge_arrays(result, get_section_array("build.flags"));
 
-  // 2. Platform-specific flags
+  // 2. platform-specific flags
   merge_arrays(result, get_section_array("platform." + platform_str + ".flags"));
 
-  // 3. Compiler-specific flags
+  // 3. compiler-specific flags
   merge_arrays(result, get_section_array("compiler." + compiler_str + ".flags"));
 
-  // 4. Platform+Compiler nested flags
+  // 4. platform+compiler nested flags
   merge_arrays(result, get_section_array("platform." + platform_str +
                                          ".compiler." + compiler_str + ".flags"));
 
@@ -225,13 +225,13 @@ std::vector<std::string> config_resolver::resolve_links() const {
   // 1. Base links
   merge_arrays(result, get_section_array("build.links"));
 
-  // 2. Platform-specific links
+  // 2. platform-specific links
   merge_arrays(result, get_section_array("platform." + platform_str + ".links"));
 
-  // 3. Compiler-specific links
+  // 3. compiler-specific links
   merge_arrays(result, get_section_array("compiler." + compiler_str + ".links"));
 
-  // 4. Platform+Compiler nested links
+  // 4. platform+compiler nested links
   merge_arrays(result, get_section_array("platform." + platform_str +
                                          ".compiler." + compiler_str + ".links"));
 
@@ -242,19 +242,19 @@ std::vector<std::string> config_resolver::resolve_frameworks() const {
   std::vector<std::string> result;
 
   // Frameworks are macOS only
-  if (platform_ != Platform::MacOS) {
+  if (platform_ != platform::MACOS) {
     return result;
   }
 
   std::string compiler_str = compiler_to_string(compiler_);
 
-  // 1. Platform-specific frameworks
+  // 1. platform-specific frameworks
   merge_arrays(result, get_section_array("platform.macos.frameworks"));
 
-  // 2. Compiler-specific frameworks (rare but possible)
+  // 2. compiler-specific frameworks (rare but possible)
   merge_arrays(result, get_section_array("compiler." + compiler_str + ".frameworks"));
 
-  // 3. Platform+Compiler nested frameworks
+  // 3. platform+compiler nested frameworks
   merge_arrays(result, get_section_array("platform.macos.compiler." +
                                          compiler_str + ".frameworks"));
 

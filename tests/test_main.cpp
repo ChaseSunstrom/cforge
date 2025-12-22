@@ -94,7 +94,7 @@ int main(int argc, char** argv) {
   std::vector<std::string> test_filters;
   // Positional args: first is category (optional), rest are test names
   for (int i = 1; i < argc; ++i) {
-    if (i == 1) category = argv[i]; else test_filters.push_back(argv[i]);
+    if (i == 1) category = argv[i]; else test_filters.emplace_back(argv[i]);
   }
   int failures = 0;
   size_t run_count = 0;

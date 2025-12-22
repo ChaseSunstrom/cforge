@@ -31,7 +31,7 @@ split_project_list(const std::string &project_list) {
     std::string project = project_list.substr(start, end - start);
     // Add to result if not empty
     if (!project.empty()) {
-      result.push_back(project);
+      result.emplace_back(project);
     }
     start = end + 1;
   }
@@ -39,7 +39,7 @@ split_project_list(const std::string &project_list) {
   // Add the last part
   std::string last_project = project_list.substr(start);
   if (!last_project.empty()) {
-    result.push_back(last_project);
+    result.emplace_back(last_project);
   }
 
   return result;
@@ -197,9 +197,9 @@ public:
   workspace_project get_startup_project() const;
   bool set_startup_project(const std::string &project_name);
 
-  bool build_all(const std::string &config, int num_jobs, bool verbose) const;
+  bool build_all(const std::string &config, cforge_int_t num_jobs, bool verbose) const;
   bool build_project(const std::string &project_name, const std::string &config,
-                     int num_jobs, bool verbose,
+                     cforge_int_t num_jobs, bool verbose,
                      const std::string &target = "") const;
 
   bool run_startup_project(const std::vector<std::string> &args,
@@ -305,5 +305,15 @@ void configure_index_dependencies_fetchcontent_phase2(
     const std::filesystem::path &project_dir,
     const toml_reader &project_config,
     std::ofstream &cmakelists);
+
+/**
+ * @brief Get the workspace configuration file path
+ * Checks for unified format (cforge.toml with [workspace] section) first,
+ * then falls back to legacy format (cforge.workspace.toml)
+ *
+ * @param workspace_path Workspace directory
+ * @return std::filesystem::path Path to workspace config, empty if not found
+ */
+std::filesystem::path get_workspace_config_path(const std::filesystem::path &workspace_path);
 
 } // namespace cforge

@@ -402,8 +402,12 @@ cforge_int_t cforge_cmd_run(const cforge_context_t *ctx) {
       std::filesystem::path ws_cmake = project_dir / "CMakeLists.txt";
       if (!std::filesystem::exists(ws_cmake)) {
         cforge::logger::print_verbose("Generating workspace CMakeLists.txt for run");
-        cforge::toml_reader ws_cfg(
-            toml::parse_file((project_dir / WORKSPACE_FILE).string()));
+        auto ws_config_path = cforge::get_workspace_config_path(project_dir);
+        if (ws_config_path.empty()) {
+          cforge::logger::print_error("No workspace configuration found");
+          return 1;
+        }
+        cforge::toml_reader ws_cfg(toml::parse_file(ws_config_path.string()));
         if (!cforge::generate_workspace_cmakelists(project_dir, ws_cfg, verbose)) {
           cforge::logger::print_error("failed to generate workspace CMakeLists.txt");
           return 1;
@@ -450,7 +454,11 @@ cforge_int_t cforge_cmd_run(const cforge_context_t *ctx) {
       } else {
         cforge::logger::print_action("Skipping", "workspace build as requested");
       }
-      std::filesystem::path workspace_file = project_dir / WORKSPACE_FILE;
+      auto workspace_file = cforge::get_workspace_config_path(project_dir);
+      if (workspace_file.empty()) {
+        cforge::logger::print_error("No workspace configuration found");
+        return 1;
+      }
       cforge::toml_reader workspace_config(toml::parse_file(workspace_file.string()));
       if (config.empty()) {
         config = workspace_config.get_string("workspace.build_type", "Debug");

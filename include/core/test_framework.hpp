@@ -5,6 +5,8 @@
 
 #pragma once
 
+#include "types.h"
+
 #include <chrono>
 #include <filesystem>
 #include <functional>
@@ -19,7 +21,7 @@ namespace cforge {
 /**
  * @brief Supported test frameworks
  */
-enum class TestFramework {
+enum class test_framework {
   Auto,      // Auto-detect from source
   Builtin,   // cforge's simple TEST() macro
   GTest,     // Google Test
@@ -31,23 +33,23 @@ enum class TestFramework {
 /**
  * @brief Test execution status
  */
-enum class TestStatus {
-  Pending,   // Not yet run
-  Running,   // Currently executing
-  Passed,    // Test passed
-  Failed,    // Test failed
-  Skipped,   // Test was skipped
-  Timeout    // Test timed out
+enum class test_status {
+  PENDING,   // Not yet run
+  RUNNING,   // Currently executing
+  PASSED,    // Test passed
+  FAILED,    // Test failed
+  SKIPPED,   // Test was skipped
+  TIMEOUT    // Test timed out
 };
 
 /**
  * @brief Individual test result
  */
-struct TestResult {
+struct test_result {
   std::string name;           // Full test name (e.g., "Math.Addition")
   std::string suite;          // Test suite/group name (e.g., "Math")
   std::string test_name;      // Individual test name (e.g., "Addition")
-  TestStatus status = TestStatus::Pending;
+  test_status status = test_status::PENDING;
   std::chrono::milliseconds duration{0};
 
   // Source location (for failures)
@@ -70,10 +72,10 @@ struct TestResult {
 /**
  * @brief Test target configuration (from cforge.toml)
  */
-struct TestTarget {
+struct test_target {
   std::string name;
   std::vector<std::string> sources;       // Glob patterns
-  TestFramework framework = TestFramework::Auto;
+  test_framework framework = test_framework::Auto;
   int timeout_seconds = 300;
   std::vector<std::string> dependencies;  // Link dependencies
   std::vector<std::string> defines;
@@ -88,9 +90,9 @@ struct TestTarget {
 /**
  * @brief Global test configuration (from [test] section)
  */
-struct TestConfig {
+struct test_config {
   std::filesystem::path directory{"tests"};
-  TestFramework default_framework = TestFramework::Auto;
+  test_framework default_framework = test_framework::Auto;
   int default_timeout = 300;
   int jobs = 0;  // 0 = auto-detect
   bool auto_link_project = true;
@@ -103,16 +105,16 @@ struct TestConfig {
     std::string version;
     std::map<std::string, std::string> options;
   };
-  std::map<TestFramework, FrameworkConfig> framework_configs;
+  std::map<test_framework, FrameworkConfig> framework_configs;
 
   // Discovered/explicit targets
-  std::vector<TestTarget> targets;
+  std::vector<test_target> targets;
 };
 
 /**
  * @brief Test run summary statistics
  */
-struct TestSummary {
+struct test_summary {
   int total = 0;
   int passed = 0;
   int failed = 0;
@@ -120,26 +122,26 @@ struct TestSummary {
   int timeout = 0;
   std::chrono::milliseconds total_duration{0};
 
-  // Failed test names for summary
+  // FAILED test names for summary
   std::vector<std::string> failed_tests;
 };
 
 /**
  * @brief Convert TestFramework enum to string
  */
-inline std::string test_framework_to_string(TestFramework fw) {
+inline std::string test_framework_to_string(test_framework fw) {
   switch (fw) {
-  case TestFramework::Auto:
+  case test_framework::Auto:
     return "auto";
-  case TestFramework::Builtin:
+  case test_framework::Builtin:
     return "builtin";
-  case TestFramework::GTest:
+  case test_framework::GTest:
     return "gtest";
-  case TestFramework::Catch2:
+  case test_framework::Catch2:
     return "catch2";
-  case TestFramework::Doctest:
+  case test_framework::Doctest:
     return "doctest";
-  case TestFramework::BoostTest:
+  case test_framework::BoostTest:
     return "boost";
   default:
     return "unknown";
@@ -149,38 +151,38 @@ inline std::string test_framework_to_string(TestFramework fw) {
 /**
  * @brief Convert string to TestFramework enum
  */
-inline TestFramework string_to_test_framework(const std::string &str) {
+inline test_framework string_to_test_framework(const std::string &str) {
   if (str == "auto")
-    return TestFramework::Auto;
+    return test_framework::Auto;
   if (str == "builtin" || str == "cforge")
-    return TestFramework::Builtin;
+    return test_framework::Builtin;
   if (str == "gtest" || str == "googletest" || str == "google")
-    return TestFramework::GTest;
+    return test_framework::GTest;
   if (str == "catch2" || str == "catch")
-    return TestFramework::Catch2;
+    return test_framework::Catch2;
   if (str == "doctest")
-    return TestFramework::Doctest;
+    return test_framework::Doctest;
   if (str == "boost" || str == "boost_test" || str == "boosttest")
-    return TestFramework::BoostTest;
-  return TestFramework::Auto;
+    return test_framework::BoostTest;
+  return test_framework::Auto;
 }
 
 /**
  * @brief Convert TestStatus enum to string
  */
-inline std::string test_status_to_string(TestStatus status) {
+inline std::string test_status_to_string(test_status status) {
   switch (status) {
-  case TestStatus::Pending:
+  case test_status::PENDING:
     return "pending";
-  case TestStatus::Running:
+  case test_status::RUNNING:
     return "running";
-  case TestStatus::Passed:
+  case test_status::PASSED:
     return "ok";
-  case TestStatus::Failed:
+  case test_status::FAILED:
     return "FAILED";
-  case TestStatus::Skipped:
+  case test_status::SKIPPED:
     return "skipped";
-  case TestStatus::Timeout:
+  case test_status::TIMEOUT:
     return "TIMEOUT";
   default:
     return "unknown";
@@ -190,14 +192,14 @@ inline std::string test_status_to_string(TestStatus status) {
 /**
  * @brief Abstract interface for framework-specific operations
  */
-class ITestFrameworkAdapter {
+class i_test_framework_adapter {
 public:
-  virtual ~ITestFrameworkAdapter() = default;
+  virtual ~i_test_framework_adapter() = default;
 
   /**
    * @brief Get the framework type this adapter handles
    */
-  virtual TestFramework get_framework() const = 0;
+  virtual test_framework get_framework() const = 0;
 
   /**
    * @brief Detect if source file uses this framework
@@ -212,7 +214,7 @@ public:
    * @return CMake code as string
    */
   virtual std::string
-  generate_cmake_setup(const TestConfig::FrameworkConfig &config) const = 0;
+  generate_cmake_setup(const test_config::FrameworkConfig &config) const = 0;
 
   /**
    * @brief Get the CMake target name to link against
@@ -225,7 +227,7 @@ public:
    * @param output Raw output from test execution
    * @return Vector of test results
    */
-  virtual std::vector<TestResult>
+  virtual std::vector<test_result>
   parse_output(const std::string &output) const = 0;
 
   /**

@@ -22,49 +22,49 @@ namespace fs = std::filesystem;
 // Constructor
 // ============================================================================
 
-TestOutputFormatter::TestOutputFormatter(Style style) : m_style(style) {}
+test_output_formatter::test_output_formatter(style style) : m_style(style) {}
 
 // ============================================================================
 // Formatting Methods (return strings)
 // ============================================================================
 
-std::string TestOutputFormatter::format_run_start(cforge_int_t total_tests) {
+std::string test_output_formatter::format_run_start(cforge_int_t total_tests) {
   std::ostringstream ss;
   ss << "\nrunning " << total_tests << " tests\n";
   return ss.str();
 }
 
-std::string TestOutputFormatter::format_build_start(const std::string &target_name,
-                                                     TestFramework framework) {
+std::string test_output_formatter::format_build_start(const std::string &target_name,
+                                                     test_framework framework) {
   std::ostringstream ss;
   ss << "    Building test " << target_name
      << " (" << test_framework_to_string(framework) << ")\n";
   return ss.str();
 }
 
-std::string TestOutputFormatter::format_execution_start(
+std::string test_output_formatter::format_execution_start(
     const std::string &executable_path) {
   std::ostringstream ss;
   ss << "     Running " << shorten_path(executable_path) << "\n";
   return ss.str();
 }
 
-std::string TestOutputFormatter::format_test_result(const TestResult &result) {
+std::string test_output_formatter::format_test_result(const test_result &result) {
   std::ostringstream ss;
 
   ss << "test " << result.name << " ... ";
 
   switch (result.status) {
-    case TestStatus::Passed:
+    case test_status::PASSED:
       ss << "ok";
       break;
-    case TestStatus::Failed:
+    case test_status::FAILED:
       ss << "FAILED";
       break;
-    case TestStatus::Skipped:
+    case test_status::SKIPPED:
       ss << "ignored";
       break;
-    case TestStatus::Timeout:
+    case test_status::TIMEOUT:
       ss << "TIMEOUT";
       break;
     default:
@@ -80,8 +80,8 @@ std::string TestOutputFormatter::format_test_result(const TestResult &result) {
   return ss.str();
 }
 
-std::string TestOutputFormatter::format_failure_details(const TestResult &result) {
-  if (result.status != TestStatus::Failed && result.status != TestStatus::Timeout) {
+std::string test_output_formatter::format_failure_details(const test_result &result) {
+  if (result.status != test_status::FAILED && result.status != test_status::TIMEOUT) {
     return "";
   }
 
@@ -165,7 +165,7 @@ std::string TestOutputFormatter::format_failure_details(const TestResult &result
   return ss.str();
 }
 
-std::string TestOutputFormatter::format_summary(const TestSummary &summary) {
+std::string test_output_formatter::format_summary(const test_summary &summary) {
   std::ostringstream ss;
 
   // Summary line
@@ -200,7 +200,7 @@ std::string TestOutputFormatter::format_summary(const TestSummary &summary) {
   return ss.str();
 }
 
-std::string TestOutputFormatter::format_test_list(
+std::string test_output_formatter::format_test_list(
     const std::vector<std::string> &tests) {
   auto grouped = group_tests_by_suite(tests);
 
@@ -229,37 +229,37 @@ std::string TestOutputFormatter::format_test_list(
 // Printing Methods (output with colors)
 // ============================================================================
 
-void TestOutputFormatter::print_run_start(cforge_int_t total_tests) {
+void test_output_formatter::print_run_start(cforge_int_t total_tests) {
   fmt::print("\nrunning {} tests\n", total_tests);
 }
 
-void TestOutputFormatter::print_build_start(const std::string &target_name,
-                                             TestFramework framework) {
+void test_output_formatter::print_build_start(const std::string &target_name,
+                                             test_framework framework) {
   fmt::print(fmt::emphasis::bold | fg(fmt::color::green),
              "    Building");
   fmt::print(" test {} ({})\n", target_name, test_framework_to_string(framework));
 }
 
-void TestOutputFormatter::print_execution_start(const std::string &executable_path) {
+void test_output_formatter::print_execution_start(const std::string &executable_path) {
   fmt::print(fmt::emphasis::bold | fg(fmt::color::green),
              "     Running");
   fmt::print(" {}\n", shorten_path(executable_path));
 }
 
-void TestOutputFormatter::print_test_result(const TestResult &result) {
+void test_output_formatter::print_test_result(const test_result &result) {
   fmt::print("test {} ... ", result.name);
 
   switch (result.status) {
-    case TestStatus::Passed:
+    case test_status::PASSED:
       fmt::print(fg(fmt::color::green), "ok");
       break;
-    case TestStatus::Failed:
+    case test_status::FAILED:
       fmt::print(fmt::emphasis::bold | fg(fmt::color::red), "FAILED");
       break;
-    case TestStatus::Skipped:
+    case test_status::SKIPPED:
       fmt::print(fg(fmt::color::yellow), "ignored");
       break;
-    case TestStatus::Timeout:
+    case test_status::TIMEOUT:
       fmt::print(fmt::emphasis::bold | fg(fmt::color::red), "TIMEOUT");
       break;
     default:
@@ -274,8 +274,8 @@ void TestOutputFormatter::print_test_result(const TestResult &result) {
   fmt::print("\n");
 }
 
-void TestOutputFormatter::print_failure_details(const TestResult &result) {
-  if (result.status != TestStatus::Failed && result.status != TestStatus::Timeout) {
+void test_output_formatter::print_failure_details(const test_result &result) {
+  if (result.status != test_status::FAILED && result.status != test_status::TIMEOUT) {
     return;
   }
 
@@ -357,10 +357,10 @@ void TestOutputFormatter::print_failure_details(const TestResult &result) {
   }
 }
 
-void TestOutputFormatter::print_all_failures(const std::vector<TestResult> &results) {
+void test_output_formatter::print_all_failures(const std::vector<test_result> &results) {
   bool has_failures = false;
   for (const auto &result : results) {
-    if (result.status == TestStatus::Failed || result.status == TestStatus::Timeout) {
+    if (result.status == test_status::FAILED || result.status == test_status::TIMEOUT) {
       has_failures = true;
       break;
     }
@@ -376,7 +376,7 @@ void TestOutputFormatter::print_all_failures(const std::vector<TestResult> &resu
   }
 }
 
-void TestOutputFormatter::print_summary(const TestSummary &summary) {
+void test_output_formatter::print_summary(const test_summary &summary) {
   // List failed tests
   if (!summary.failed_tests.empty()) {
     fmt::print("\n");
@@ -416,7 +416,7 @@ void TestOutputFormatter::print_summary(const TestSummary &summary) {
   fmt::print("; finished in {}\n", format_duration(summary.total_duration));
 }
 
-void TestOutputFormatter::print_test_list(const std::vector<std::string> &tests) {
+void test_output_formatter::print_test_list(const std::vector<std::string> &tests) {
   auto grouped = group_tests_by_suite(tests);
 
   fmt::print("\n");
@@ -439,7 +439,7 @@ void TestOutputFormatter::print_test_list(const std::vector<std::string> &tests)
   fmt::print("\nTotal: {} tests\n", tests.size());
 }
 
-void TestOutputFormatter::print_native_output(const std::string &output) {
+void test_output_formatter::print_native_output(const std::string &output) {
   fmt::print("{}", output);
 }
 
@@ -447,7 +447,7 @@ void TestOutputFormatter::print_native_output(const std::string &output) {
 // Helper Methods
 // ============================================================================
 
-std::string TestOutputFormatter::read_source_line(const std::string &file_path,
+std::string test_output_formatter::read_source_line(const std::string &file_path,
                                                    cforge_int_t line_number) {
   if (line_number <= 0) return "";
 
@@ -471,7 +471,7 @@ std::string TestOutputFormatter::read_source_line(const std::string &file_path,
   return "";
 }
 
-std::string TestOutputFormatter::shorten_path(const std::string &path,
+std::string test_output_formatter::shorten_path(const std::string &path,
                                                cforge_size_t max_length) {
   if (path.length() <= max_length) {
     return path;
@@ -497,7 +497,7 @@ std::string TestOutputFormatter::shorten_path(const std::string &path,
   return "..." + path.substr(path.length() - max_length + 3);
 }
 
-std::string TestOutputFormatter::format_duration(std::chrono::milliseconds duration) {
+std::string test_output_formatter::format_duration(std::chrono::milliseconds duration) {
   auto ms = duration.count();
 
   if (ms < 1000) {
@@ -517,7 +517,7 @@ std::string TestOutputFormatter::format_duration(std::chrono::milliseconds durat
 }
 
 std::map<std::string, std::vector<std::string>>
-TestOutputFormatter::group_tests_by_suite(const std::vector<std::string> &tests) {
+test_output_formatter::group_tests_by_suite(const std::vector<std::string> &tests) {
   std::map<std::string, std::vector<std::string>> grouped;
 
   for (const auto &test : tests) {

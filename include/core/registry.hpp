@@ -45,7 +45,7 @@ struct package_feature {
 struct package_version {
   std::string version;
   std::string tag;
-  int min_cpp = 11;
+  cforge_int_t min_cpp = 11;
   std::string checksum;
   bool yanked = false;
   std::string yanked_reason;
@@ -58,7 +58,7 @@ struct tag_config {
   std::string pattern = "{version}";  // Pattern like "v{version}", "{version}", "release-{version}"
   std::string version_regex;           // Regex to extract version from tag (auto-generated from pattern)
   std::vector<std::string> exclude;    // Tags to exclude (e.g., "nightly", "beta")
-  int max_versions = 50;               // Maximum versions to cache
+  cforge_int_t max_versions = 50;               // Maximum versions to cache
 };
 
 /**
@@ -79,7 +79,7 @@ struct package_setup {
   std::vector<std::string> outputs;         // Output files that indicate setup is complete
   std::map<std::string, std::string> defaults;  // Default option values
 
-  // Platform-specific overrides
+  // platform-specific overrides
   platform_setup windows;
   platform_setup linux;
   platform_setup macos;

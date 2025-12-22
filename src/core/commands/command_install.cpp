@@ -148,9 +148,13 @@ cforge_int_t cforge_cmd_install(const cforge_context_t *ctx) {
     cforge::logger::finished("workspace build");
     // Now install projects from build artifacts
     cforge::logger::installing("workspace projects from " + project_source);
-    // Load workspace.toml and determine main startup project
-    cforge::toml_reader ws_cfg(
-        toml::parse_file((source_path / WORKSPACE_FILE).string()));
+    // Load workspace config and determine main startup project
+    auto ws_config_path = cforge::get_workspace_config_path(source_path);
+    if (ws_config_path.empty()) {
+      cforge::logger::print_error("No workspace configuration found");
+      return 1;
+    }
+    cforge::toml_reader ws_cfg(toml::parse_file(ws_config_path.string()));
     std::string main_project = ws_cfg.get_string("workspace.main_project", "");
     // Get sorted project list
     auto names = cforge::get_workspace_projects(source_path);

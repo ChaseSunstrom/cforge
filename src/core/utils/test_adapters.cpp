@@ -14,7 +14,7 @@ namespace cforge {
 // Built-in Test Framework Adapter
 // ============================================================================
 
-bool BuiltinTestAdapter::detect_from_source(const std::string &source_content) const {
+bool builtin_test_adapter::detect_from_source(const std::string &source_content) const {
   // Look for cforge's test_framework.h or TEST() macro with int return
   std::regex include_regex(R"(#include\s*[<"]test_framework\.h[">])");
   std::regex test_macro_regex(R"(\bTEST\s*\(\s*\w+\s*(?:,\s*\w+\s*)?\)\s*\{)");
@@ -26,19 +26,19 @@ bool BuiltinTestAdapter::detect_from_source(const std::string &source_content) c
           source_content.find("doctest") == std::string::npos);
 }
 
-std::string BuiltinTestAdapter::generate_cmake_setup(
-    const TestConfig::FrameworkConfig &) const {
+std::string builtin_test_adapter::generate_cmake_setup(
+    const test_config::FrameworkConfig &) const {
   // Built-in framework doesn't need any CMake setup
   return "";
 }
 
-std::string BuiltinTestAdapter::get_cmake_target() const {
+std::string builtin_test_adapter::get_cmake_target() const {
   return ""; // No additional target needed
 }
 
-std::vector<TestResult> BuiltinTestAdapter::parse_output(
+std::vector<test_result> builtin_test_adapter::parse_output(
     const std::string &output) const {
-  std::vector<TestResult> results;
+  std::vector<test_result> results;
 
   // Parse: [RUN] TestName
   //        [PASS] TestName or [FAIL] TestName
@@ -49,7 +49,7 @@ std::vector<TestResult> BuiltinTestAdapter::parse_output(
 
   std::istringstream stream(output);
   std::string line;
-  std::map<std::string, TestResult> test_map;
+  std::map<std::string, test_result> test_map;
   std::string current_test;
 
   while (std::getline(stream, line)) {
@@ -57,9 +57,9 @@ std::vector<TestResult> BuiltinTestAdapter::parse_output(
 
     if (std::regex_search(line, match, run_regex)) {
       current_test = match[1].str();
-      TestResult result;
+      test_result result;
       result.name = current_test;
-      result.status = TestStatus::Running;
+      result.status = test_status::RUNNING;
 
       // Parse suite.test format
       auto dot = current_test.find('.');
@@ -73,12 +73,12 @@ std::vector<TestResult> BuiltinTestAdapter::parse_output(
     } else if (std::regex_search(line, match, pass_regex)) {
       std::string name = match[1].str();
       if (test_map.count(name)) {
-        test_map[name].status = TestStatus::Passed;
+        test_map[name].status = test_status::PASSED;
       }
     } else if (std::regex_search(line, match, fail_regex)) {
       std::string name = match[1].str();
       if (test_map.count(name)) {
-        test_map[name].status = TestStatus::Failed;
+        test_map[name].status = test_status::FAILED;
       }
     } else if (std::regex_search(line, match, assert_regex)) {
       if (!current_test.empty() && test_map.count(current_test)) {
@@ -96,20 +96,20 @@ std::vector<TestResult> BuiltinTestAdapter::parse_output(
   return results;
 }
 
-std::vector<std::string> BuiltinTestAdapter::get_list_args() const {
+std::vector<std::string> builtin_test_adapter::get_list_args() const {
   return {"--list"};
 }
 
-std::vector<std::string> BuiltinTestAdapter::get_filter_args(
+std::vector<std::string> builtin_test_adapter::get_filter_args(
     const std::string &filter) const {
   return {filter};
 }
 
-std::vector<std::string> BuiltinTestAdapter::get_verbose_args() const {
+std::vector<std::string> builtin_test_adapter::get_verbose_args() const {
   return {};
 }
 
-std::vector<std::string> BuiltinTestAdapter::parse_test_list(
+std::vector<std::string> builtin_test_adapter::parse_test_list(
     const std::string &output) const {
   std::vector<std::string> tests;
   std::istringstream stream(output);
@@ -131,7 +131,7 @@ std::vector<std::string> BuiltinTestAdapter::parse_test_list(
 // Google Test Adapter
 // ============================================================================
 
-bool GTestAdapter::detect_from_source(const std::string &source_content) const {
+bool gtest_adapter::detect_from_source(const std::string &source_content) const {
   // Look for gtest includes or macros
   std::regex include_regex(R"(#include\s*[<"]gtest/gtest\.h[">])");
   std::regex test_macro_regex(R"(\bTEST(_F|_P)?\s*\()");
@@ -143,8 +143,8 @@ bool GTestAdapter::detect_from_source(const std::string &source_content) const {
           source_content.find("gtest") != std::string::npos);
 }
 
-std::string GTestAdapter::generate_cmake_setup(
-    const TestConfig::FrameworkConfig &config) const {
+std::string gtest_adapter::generate_cmake_setup(
+    const test_config::FrameworkConfig &config) const {
   std::ostringstream ss;
 
   if (config.fetch) {
@@ -176,13 +176,13 @@ std::string GTestAdapter::generate_cmake_setup(
   return ss.str();
 }
 
-std::string GTestAdapter::get_cmake_target() const {
+std::string gtest_adapter::get_cmake_target() const {
   return "GTest::gtest_main";
 }
 
-std::vector<TestResult> GTestAdapter::parse_output(
+std::vector<test_result> gtest_adapter::parse_output(
     const std::string &output) const {
-  std::vector<TestResult> results;
+  std::vector<test_result> results;
 
   // Parse GTest output format
   // [ RUN      ] Suite.TestName
@@ -200,7 +200,7 @@ std::vector<TestResult> GTestAdapter::parse_output(
 
   std::istringstream stream(output);
   std::string line;
-  std::map<std::string, TestResult> test_map;
+  std::map<std::string, test_result> test_map;
   std::string current_test;
 
   while (std::getline(stream, line)) {
@@ -208,9 +208,9 @@ std::vector<TestResult> GTestAdapter::parse_output(
 
     if (std::regex_search(line, match, run_regex)) {
       current_test = match[1].str();
-      TestResult result;
+      test_result result;
       result.name = current_test;
-      result.status = TestStatus::Running;
+      result.status = test_status::RUNNING;
 
       auto dot = current_test.find('.');
       if (dot != std::string::npos) {
@@ -223,19 +223,19 @@ std::vector<TestResult> GTestAdapter::parse_output(
     } else if (std::regex_search(line, match, ok_regex)) {
       std::string name = match[1].str();
       if (test_map.count(name)) {
-        test_map[name].status = TestStatus::Passed;
+        test_map[name].status = test_status::PASSED;
         test_map[name].duration = std::chrono::milliseconds(std::stoi(match[2].str()));
       }
     } else if (std::regex_search(line, match, fail_regex)) {
       std::string name = match[1].str();
       if (test_map.count(name)) {
-        test_map[name].status = TestStatus::Failed;
+        test_map[name].status = test_status::FAILED;
         test_map[name].duration = std::chrono::milliseconds(std::stoi(match[2].str()));
       }
     } else if (std::regex_search(line, match, skip_regex)) {
       std::string name = match[1].str();
       if (test_map.count(name)) {
-        test_map[name].status = TestStatus::Skipped;
+        test_map[name].status = test_status::SKIPPED;
       }
     } else if (std::regex_search(line, match, failure_loc_regex)) {
       if (!current_test.empty() && test_map.count(current_test)) {
@@ -260,20 +260,20 @@ std::vector<TestResult> GTestAdapter::parse_output(
   return results;
 }
 
-std::vector<std::string> GTestAdapter::get_list_args() const {
+std::vector<std::string> gtest_adapter::get_list_args() const {
   return {"--gtest_list_tests"};
 }
 
-std::vector<std::string> GTestAdapter::get_filter_args(
+std::vector<std::string> gtest_adapter::get_filter_args(
     const std::string &filter) const {
   return {"--gtest_filter=" + filter};
 }
 
-std::vector<std::string> GTestAdapter::get_verbose_args() const {
+std::vector<std::string> gtest_adapter::get_verbose_args() const {
   return {"--gtest_print_time=1"};
 }
 
-std::vector<std::string> GTestAdapter::parse_test_list(
+std::vector<std::string> gtest_adapter::parse_test_list(
     const std::string &output) const {
   std::vector<std::string> tests;
   std::istringstream stream(output);
@@ -308,7 +308,7 @@ std::vector<std::string> GTestAdapter::parse_test_list(
 // Catch2 Adapter
 // ============================================================================
 
-bool Catch2Adapter::detect_from_source(const std::string &source_content) const {
+bool catch2_adapter::detect_from_source(const std::string &source_content) const {
   std::regex include_regex(R"(#include\s*[<"]catch2?/catch[^>]*[">])");
   std::regex test_case_regex(R"(\bTEST_CASE\s*\()");
   std::regex scenario_regex(R"(\bSCENARIO\s*\()");
@@ -318,8 +318,8 @@ bool Catch2Adapter::detect_from_source(const std::string &source_content) const 
          std::regex_search(source_content, scenario_regex);
 }
 
-std::string Catch2Adapter::generate_cmake_setup(
-    const TestConfig::FrameworkConfig &config) const {
+std::string catch2_adapter::generate_cmake_setup(
+    const test_config::FrameworkConfig &config) const {
   std::ostringstream ss;
 
   if (config.fetch) {
@@ -343,13 +343,13 @@ std::string Catch2Adapter::generate_cmake_setup(
   return ss.str();
 }
 
-std::string Catch2Adapter::get_cmake_target() const {
+std::string catch2_adapter::get_cmake_target() const {
   return "Catch2::Catch2WithMain";
 }
 
-std::vector<TestResult> Catch2Adapter::parse_output(
+std::vector<test_result> catch2_adapter::parse_output(
     const std::string &output) const {
-  std::vector<TestResult> results;
+  std::vector<test_result> results;
 
   // Parse Catch2 console output
   // Test case start: test_name
@@ -363,7 +363,7 @@ std::vector<TestResult> Catch2Adapter::parse_output(
   // Catch2 verbose output: file:line: FAILED:
   std::istringstream stream(output);
   std::string line;
-  TestResult current_result;
+  test_result current_result;
   bool in_test = false;
 
   while (std::getline(stream, line)) {
@@ -373,11 +373,11 @@ std::vector<TestResult> Catch2Adapter::parse_output(
     if (line.find("---------------") != std::string::npos) {
       // Section separator
       if (in_test && !current_result.name.empty()) {
-        if (current_result.status == TestStatus::Running) {
-          current_result.status = TestStatus::Passed;
+        if (current_result.status == test_status::RUNNING) {
+          current_result.status = test_status::PASSED;
         }
         results.push_back(current_result);
-        current_result = TestResult();
+        current_result = test_result();
       }
       in_test = false;
     } else if (std::regex_search(line, match, assertion_regex)) {
@@ -386,7 +386,7 @@ std::vector<TestResult> Catch2Adapter::parse_output(
       std::string result_str = match[3].str();
 
       if (result_str == "FAILED") {
-        current_result.status = TestStatus::Failed;
+        current_result.status = test_status::FAILED;
       }
       in_test = true;
     } else if (std::regex_search(line, match, require_regex)) {
@@ -396,8 +396,8 @@ std::vector<TestResult> Catch2Adapter::parse_output(
 
   // Push last test if any
   if (!current_result.name.empty()) {
-    if (current_result.status == TestStatus::Running) {
-      current_result.status = TestStatus::Passed;
+    if (current_result.status == test_status::RUNNING) {
+      current_result.status = test_status::PASSED;
     }
     results.push_back(current_result);
   }
@@ -405,20 +405,20 @@ std::vector<TestResult> Catch2Adapter::parse_output(
   return results;
 }
 
-std::vector<std::string> Catch2Adapter::get_list_args() const {
+std::vector<std::string> catch2_adapter::get_list_args() const {
   return {"--list-tests"};
 }
 
-std::vector<std::string> Catch2Adapter::get_filter_args(
+std::vector<std::string> catch2_adapter::get_filter_args(
     const std::string &filter) const {
   return {filter};
 }
 
-std::vector<std::string> Catch2Adapter::get_verbose_args() const {
+std::vector<std::string> catch2_adapter::get_verbose_args() const {
   return {"-s", "-d", "yes"};  // -s for success, -d for durations
 }
 
-std::vector<std::string> Catch2Adapter::parse_test_list(
+std::vector<std::string> catch2_adapter::parse_test_list(
     const std::string &output) const {
   std::vector<std::string> tests;
   std::istringstream stream(output);
@@ -441,7 +441,7 @@ std::vector<std::string> Catch2Adapter::parse_test_list(
 // doctest Adapter
 // ============================================================================
 
-bool DoctestAdapter::detect_from_source(const std::string &source_content) const {
+bool doctest_adapter::detect_from_source(const std::string &source_content) const {
   std::regex include_regex(R"(#include\s*[<"]doctest/doctest\.h[">])");
   std::regex doctest_regex(R"(#define\s+DOCTEST_CONFIG_IMPLEMENT)");
 
@@ -449,8 +449,8 @@ bool DoctestAdapter::detect_from_source(const std::string &source_content) const
          std::regex_search(source_content, doctest_regex);
 }
 
-std::string DoctestAdapter::generate_cmake_setup(
-    const TestConfig::FrameworkConfig &config) const {
+std::string doctest_adapter::generate_cmake_setup(
+    const test_config::FrameworkConfig &config) const {
   std::ostringstream ss;
 
   if (config.fetch) {
@@ -473,13 +473,13 @@ std::string DoctestAdapter::generate_cmake_setup(
   return ss.str();
 }
 
-std::string DoctestAdapter::get_cmake_target() const {
+std::string doctest_adapter::get_cmake_target() const {
   return "doctest::doctest";
 }
 
-std::vector<TestResult> DoctestAdapter::parse_output(
+std::vector<test_result> doctest_adapter::parse_output(
     const std::string &output) const {
-  std::vector<TestResult> results;
+  std::vector<test_result> results;
 
   // doctest output format is similar to Catch2
   // [doctest] Test case file:line PASSED | FAILED
@@ -490,7 +490,7 @@ std::vector<TestResult> DoctestAdapter::parse_output(
 
   std::istringstream stream(output);
   std::string line;
-  TestResult current_result;
+  test_result current_result;
 
   while (std::getline(stream, line)) {
     std::smatch match;
@@ -499,15 +499,15 @@ std::vector<TestResult> DoctestAdapter::parse_output(
       if (!current_result.name.empty()) {
         results.push_back(current_result);
       }
-      current_result = TestResult();
+      current_result = test_result();
       current_result.name = match[1].str();
-      current_result.status = TestStatus::Running;
+      current_result.status = test_status::RUNNING;
     } else if (std::regex_search(line, pass_regex)) {
-      if (current_result.status == TestStatus::Running) {
-        current_result.status = TestStatus::Passed;
+      if (current_result.status == test_status::RUNNING) {
+        current_result.status = test_status::PASSED;
       }
     } else if (std::regex_search(line, fail_regex)) {
-      current_result.status = TestStatus::Failed;
+      current_result.status = test_status::FAILED;
     } else if (std::regex_search(line, match, loc_regex)) {
       current_result.file_path = match[1].str();
       current_result.line_number = std::stoi(match[2].str());
@@ -521,20 +521,20 @@ std::vector<TestResult> DoctestAdapter::parse_output(
   return results;
 }
 
-std::vector<std::string> DoctestAdapter::get_list_args() const {
+std::vector<std::string> doctest_adapter::get_list_args() const {
   return {"--list-test-cases"};
 }
 
-std::vector<std::string> DoctestAdapter::get_filter_args(
+std::vector<std::string> doctest_adapter::get_filter_args(
     const std::string &filter) const {
   return {"--test-case=" + filter};
 }
 
-std::vector<std::string> DoctestAdapter::get_verbose_args() const {
+std::vector<std::string> doctest_adapter::get_verbose_args() const {
   return {"--success=true", "--duration=true"};
 }
 
-std::vector<std::string> DoctestAdapter::parse_test_list(
+std::vector<std::string> doctest_adapter::parse_test_list(
     const std::string &output) const {
   std::vector<std::string> tests;
   std::istringstream stream(output);
@@ -555,7 +555,7 @@ std::vector<std::string> DoctestAdapter::parse_test_list(
 // Boost.Test Adapter
 // ============================================================================
 
-bool BoostTestAdapter::detect_from_source(const std::string &source_content) const {
+bool bost_test_adapter::detect_from_source(const std::string &source_content) const {
   std::regex include_regex(R"(#include\s*[<"]boost/test/[^>]+[">])");
   std::regex test_regex(R"(\bBOOST_AUTO_TEST_CASE\s*\()");
   std::regex suite_regex(R"(\bBOOST_AUTO_TEST_SUITE\s*\()");
@@ -565,8 +565,8 @@ bool BoostTestAdapter::detect_from_source(const std::string &source_content) con
          std::regex_search(source_content, suite_regex);
 }
 
-std::string BoostTestAdapter::generate_cmake_setup(
-    const TestConfig::FrameworkConfig &) const {
+std::string bost_test_adapter::generate_cmake_setup(
+    const test_config::FrameworkConfig &) const {
   std::ostringstream ss;
 
   // Boost.Test is typically installed, not fetched
@@ -576,16 +576,16 @@ std::string BoostTestAdapter::generate_cmake_setup(
   return ss.str();
 }
 
-std::string BoostTestAdapter::get_cmake_target() const {
+std::string bost_test_adapter::get_cmake_target() const {
   return "Boost::unit_test_framework";
 }
 
-std::vector<TestResult> BoostTestAdapter::parse_output(
+std::vector<test_result> bost_test_adapter::parse_output(
     const std::string &output) const {
-  std::vector<TestResult> results;
+  std::vector<test_result> results;
 
   // Boost.Test output format:
-  // Running X test cases...
+  // RUNNING X test cases...
   // file(line): error: in "test_name": check ... failed
   // *** No errors detected
   // *** X failures detected
@@ -596,7 +596,7 @@ std::vector<TestResult> BoostTestAdapter::parse_output(
 
   std::istringstream stream(output);
   std::string line;
-  std::map<std::string, TestResult> test_map;
+  std::map<std::string, test_result> test_map;
 
   while (std::getline(stream, line)) {
     std::smatch match;
@@ -604,12 +604,12 @@ std::vector<TestResult> BoostTestAdapter::parse_output(
     if (std::regex_search(line, match, error_regex)) {
       std::string test_name = match[4].str();
       if (!test_map.count(test_name)) {
-        TestResult result;
+        test_result result;
         result.name = test_name;
         result.test_name = test_name;
         test_map[test_name] = result;
       }
-      test_map[test_name].status = TestStatus::Failed;
+      test_map[test_name].status = test_status::FAILED;
       test_map[test_name].file_path = match[1].str();
       test_map[test_name].line_number = std::stoi(match[2].str());
       test_map[test_name].failure_message = match[5].str();
@@ -623,20 +623,20 @@ std::vector<TestResult> BoostTestAdapter::parse_output(
   return results;
 }
 
-std::vector<std::string> BoostTestAdapter::get_list_args() const {
+std::vector<std::string> bost_test_adapter::get_list_args() const {
   return {"--list_content"};
 }
 
-std::vector<std::string> BoostTestAdapter::get_filter_args(
+std::vector<std::string> bost_test_adapter::get_filter_args(
     const std::string &filter) const {
   return {"--run_test=" + filter};
 }
 
-std::vector<std::string> BoostTestAdapter::get_verbose_args() const {
+std::vector<std::string> bost_test_adapter::get_verbose_args() const {
   return {"--log_level=test_suite", "--report_level=detailed"};
 }
 
-std::vector<std::string> BoostTestAdapter::parse_test_list(
+std::vector<std::string> bost_test_adapter::parse_test_list(
     const std::string &output) const {
   std::vector<std::string> tests;
   std::istringstream stream(output);
@@ -665,20 +665,20 @@ std::vector<std::string> BoostTestAdapter::parse_test_list(
 // Factory Function
 // ============================================================================
 
-std::unique_ptr<ITestFrameworkAdapter> create_adapter(TestFramework fw) {
+std::unique_ptr<i_test_framework_adapter> create_adapter(test_framework fw) {
   switch (fw) {
-  case TestFramework::Builtin:
-    return std::make_unique<BuiltinTestAdapter>();
-  case TestFramework::GTest:
-    return std::make_unique<GTestAdapter>();
-  case TestFramework::Catch2:
-    return std::make_unique<Catch2Adapter>();
-  case TestFramework::Doctest:
-    return std::make_unique<DoctestAdapter>();
-  case TestFramework::BoostTest:
-    return std::make_unique<BoostTestAdapter>();
+  case test_framework::Builtin:
+    return std::make_unique<builtin_test_adapter>();
+  case test_framework::GTest:
+    return std::make_unique<gtest_adapter>();
+  case test_framework::Catch2:
+    return std::make_unique<catch2_adapter>();
+  case test_framework::Doctest:
+    return std::make_unique<doctest_adapter>();
+  case test_framework::BoostTest:
+    return std::make_unique<bost_test_adapter>();
   default:
-    return std::make_unique<BuiltinTestAdapter>();
+    return std::make_unique<builtin_test_adapter>();
   }
 }
 

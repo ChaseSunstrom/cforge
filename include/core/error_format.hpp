@@ -27,10 +27,10 @@ enum class diagnostic_level { ERROR, WARNING, NOTE, HELP };
 struct fix_suggestion {
   std::string description;   // Human-readable description of the fix
   std::string replacement;   // The suggested replacement text
-  int start_line = 0;        // Line where fix starts (0 = same as error)
-  int start_column = 0;      // Column where fix starts
-  int end_line = 0;          // Line where fix ends
-  int end_column = 0;        // Column where fix ends
+  cforge_int_t start_line = 0;        // Line where fix starts (0 = same as error)
+  cforge_int_t start_column = 0;      // Column where fix starts
+  cforge_int_t end_line = 0;          // Line where fix ends
+  cforge_int_t end_column = 0;        // Column where fix ends
   bool is_insertion = false; // True if this is an insertion, not a replacement
 };
 
@@ -42,13 +42,13 @@ struct diagnostic {
   std::string code;
   std::string message;
   std::string file_path;
-  int line_number;
-  int column_number;
+  cforge_int_t line_number;
+  cforge_int_t column_number;
   std::string line_content;
   std::string help_text;          // Legacy help text field
   std::vector<std::string> notes; // Additional notes/context
   std::string help;               // New help message field
-  int occurrence_count =
+  cforge_int_t occurrence_count =
       1; // For deduplication - how many times this error occurred
   std::vector<fix_suggestion> fixes; // Suggested fixes for this error
 };
@@ -57,13 +57,13 @@ struct diagnostic {
  * @brief Structure for error/warning summary statistics
  */
 struct error_summary {
-  int total_errors = 0;
-  int total_warnings = 0;
-  int total_notes = 0;
-  int compiler_errors = 0;
-  int linker_errors = 0;
-  int cmake_errors = 0;
-  int template_errors = 0;
+  cforge_int_t total_errors = 0;
+  cforge_int_t total_warnings = 0;
+  cforge_int_t total_notes = 0;
+  cforge_int_t compiler_errors = 0;
+  cforge_int_t linker_errors = 0;
+  cforge_int_t cmake_errors = 0;
+  cforge_int_t template_errors = 0;
   std::vector<std::pair<std::string, int>>
       error_categories; // (category, count)
 };
@@ -325,7 +325,7 @@ std::string format_error_summary(const error_summary &summary);
 /**
  * @brief Suggest libraries for common undefined symbols
  *
- * Maps common Windows API functions to their required .lib files
+ * Maps common WINDOWS API functions to their required .lib files
  * and common Unix symbols to their libraries.
  *
  * @param symbol The undefined symbol name

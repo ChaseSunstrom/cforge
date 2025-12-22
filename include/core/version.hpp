@@ -28,9 +28,9 @@ namespace cforge {
  * @brief Parsed semantic version
  */
 struct semver {
-  int major = 0;
-  int minor = 0;
-  int patch = 0;
+  cforge_int_t major = 0;
+  cforge_int_t minor = 0;
+  cforge_int_t patch = 0;
   std::string prerelease; // e.g., "beta", "rc1"
   std::string build;      // Build metadata
 
@@ -54,21 +54,21 @@ struct semver {
     }
 
     // Extract build metadata (+...)
-    size_t build_pos = str.find('+');
+    cforge_size_t build_pos = str.find('+');
     if (build_pos != std::string::npos) {
       v.build = str.substr(build_pos + 1);
       str = str.substr(0, build_pos);
     }
 
     // Extract prerelease (-...)
-    size_t pre_pos = str.find('-');
+    cforge_size_t pre_pos = str.find('-');
     if (pre_pos != std::string::npos) {
       v.prerelease = str.substr(pre_pos + 1);
       str = str.substr(0, pre_pos);
     }
 
     // Parse major.minor.patch
-    std::vector<int> parts;
+    std::vector<cforge_int_t> parts;
     std::stringstream ss(str);
     std::string part;
 
@@ -76,9 +76,9 @@ struct semver {
       try {
         // Handle wildcards
         if (part == "*" || part == "x" || part == "X") {
-          parts.push_back(-1); // -1 indicates wildcard
+          parts.emplace_back(-1); // -1 indicates wildcard
         } else {
-          parts.push_back(std::stoi(part));
+          parts.emplace_back(std::stoi(part));
         }
       } catch (...) {
         return std::nullopt;
@@ -118,7 +118,7 @@ struct semver {
    * @brief Compare two versions
    * @return -1 if this < other, 0 if equal, 1 if this > other
    */
-  int compare(const semver &other) const {
+  cforge_int_t compare(const semver &other) const {
     if (major != other.major)
       return major < other.major ? -1 : 1;
     if (minor != other.minor)
@@ -237,7 +237,7 @@ public:
       part.erase(part.find_last_not_of(" \t") + 1);
 
       if (!part.empty()) {
-        parts.push_back(part);
+        parts.emplace_back(part);
       }
     }
 
@@ -246,7 +246,7 @@ public:
       if (!constraint) {
         return std::nullopt;
       }
-      req.constraints_.push_back(*constraint);
+      req.constraints_.emplace_back(*constraint);
     }
 
     return req;
@@ -405,7 +405,7 @@ get_git_tags(const std::filesystem::path &repo_dir) {
       line.erase(0, line.find_first_not_of(" \t\r\n"));
       line.erase(line.find_last_not_of(" \t\r\n") + 1);
       if (!line.empty()) {
-        tags.push_back(line);
+        tags.emplace_back(line);
       }
     }
   }

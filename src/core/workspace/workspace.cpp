@@ -79,9 +79,9 @@ get_build_dir_for_config(const std::string &base_dir,
 
 static bool run_cmake_configure(const std::vector<std::string> &cmake_args,
                                 const std::string &build_dir, bool verbose) {
-  // Set a longer timeout for Windows
+  // Set a longer timeout for WINDOWS
 #ifdef _WIN32
-  cforge_int_t timeout = 180; // 3 minutes for Windows
+  cforge_int_t timeout = 180; // 3 minutes for WINDOWS
 #else
   cforge_int_t timeout = 120; // 2 minutes for other platforms
 #endif
@@ -250,11 +250,13 @@ bool workspace::set_startup_project(const std::string &project_name) {
   startup_project_ = project_name;
 
   // Update the workspace configuration file
-  std::filesystem::path config_path = workspace_path_ / WORKSPACE_FILE;
-  workspace_config config;
-  if (config.load(config_path.string())) {
-    config.set_startup_project(project_name);
-    config.save(config_path.string());
+  std::filesystem::path config_path = get_workspace_config_path(workspace_path_);
+  if (!config_path.empty()) {
+    workspace_config config;
+    if (config.load(config_path.string())) {
+      config.set_startup_project(project_name);
+      config.save(config_path.string());
+    }
   }
 
   return true;
@@ -307,7 +309,7 @@ find_project_executable(const std::filesystem::path &project_path,
   };
 
 #ifdef _WIN32
-  // Add .exe extension for Windows
+  // Add .exe extension for WINDOWS
   for (auto &pattern : executable_patterns) {
     pattern += ".exe";
   }
@@ -937,7 +939,9 @@ void configure_index_dependencies_fetchcontent_phase1(
   cmakelists << "# Index dependencies via FetchContent\n";
   cmakelists << "include(FetchContent)\n\n";
 
-  std::vector<std::string> deps_to_fetch;
+  // Separate packages: those with setup commands need special handling
+  std::vector<std::string> deps_without_setup;
+  std::vector<std::pair<index_dep_info, std::optional<package_info>>> deps_with_setup;
 
   for (const auto &dep : index_deps) {
     // Get package info from registry
@@ -998,151 +1002,168 @@ void configure_index_dependencies_fetchcontent_phase1(
     cmakelists << "    GIT_SHALLOW TRUE\n";
     cmakelists << ")\n\n";
 
-    deps_to_fetch.push_back(dep.name);
+    // Categorize: packages with setup need FetchContent_Populate, others use MakeAvailable
+    if (pkg_info->setup.has_setup()) {
+      deps_with_setup.push_back({dep, pkg_info});
+    } else {
+      deps_without_setup.push_back(dep.name);
+    }
   }
 
-  // FetchContent_MakeAvailable for all dependencies
-  if (!deps_to_fetch.empty()) {
+  // FetchContent_MakeAvailable for packages WITHOUT setup commands
+  if (!deps_without_setup.empty()) {
+    cmakelists << "# Fetch packages without setup commands\n";
     cmakelists << "FetchContent_MakeAvailable(";
-    for (cforge_size_t i = 0; i < deps_to_fetch.size(); ++i) {
+    for (cforge_size_t i = 0; i < deps_without_setup.size(); ++i) {
       if (i > 0) cmakelists << " ";
-      cmakelists << deps_to_fetch[i];
+      cmakelists << deps_without_setup[i];
     }
     cmakelists << ")\n\n";
+  }
 
-    // Run setup commands for packages that need them
-    for (const auto &dep : index_deps) {
-      auto pkg_info = reg.get_package(dep.name);
-      if (!pkg_info || !pkg_info->setup.has_setup()) {
-        continue;
-      }
+  // Handle packages WITH setup commands: Populate -> Setup -> add_subdirectory
+  for (const auto &[dep, pkg_info_opt] : deps_with_setup) {
+    if (!pkg_info_opt) continue;
+    const auto &pkg_info = *pkg_info_opt;
 
-      cmakelists << "# Setup commands for " << dep.name << "\n";
+    cmakelists << "# Handle " << dep.name << " with setup commands\n";
+    cmakelists << "FetchContent_GetProperties(" << dep.name << ")\n";
+    cmakelists << "if(NOT " << dep.name << "_POPULATED)\n";
+    cmakelists << "  FetchContent_Populate(" << dep.name << ")\n";
 
-      // Get source directory for the fetched package
-      std::string source_dir_var = dep.name + "_SOURCE_DIR";
+    std::string source_dir_var = dep.name + "_SOURCE_DIR";
 
-      // Check if outputs already exist
-      if (!pkg_info->setup.outputs.empty()) {
-        cmakelists << "set(_" << dep.name << "_setup_needed TRUE)\n";
-        for (const auto &output : pkg_info->setup.outputs) {
-          cmakelists << "if(EXISTS \"${" << source_dir_var << "}/" << output << "\")\n";
-          cmakelists << "  set(_" << dep.name << "_setup_needed FALSE)\n";
-          cmakelists << "endif()\n";
-        }
-        cmakelists << "if(_" << dep.name << "_setup_needed)\n";
-      }
-
-      // Determine platform-specific commands
-      cmakelists << "if(WIN32)\n";
-      auto win_cmds = pkg_info->setup.windows.commands.empty() ?
-                      pkg_info->setup.commands : pkg_info->setup.windows.commands;
-      for (const auto &cmd : win_cmds) {
-        // Replace placeholders
-        std::string cmake_cmd = cmd;
-        // Replace {package_dir} with CMake variable
-        cforge_size_t pos;
-        while ((pos = cmake_cmd.find("{package_dir}")) != std::string::npos) {
-          cmake_cmd.replace(pos, 13, "${" + source_dir_var + "}");
-        }
-        // Replace {option:name} placeholders with CMake defaults
-        cforge_size_t start = 0;
-        while ((start = cmake_cmd.find("{option:", start)) != std::string::npos) {
-          cforge_size_t end = cmake_cmd.find("}", start);
-          if (end == std::string::npos) break;
-          std::string option_name = cmake_cmd.substr(start + 8, end - start - 8);
-          // Use default value from package
-          std::string default_val;
-          auto it = pkg_info->setup.defaults.find(option_name);
-          if (it != pkg_info->setup.defaults.end()) {
-            default_val = it->second;
-          }
-          cmake_cmd.replace(start, end - start + 1, default_val);
-          start += default_val.length();
-        }
-
-        cmakelists << "  execute_process(\n";
-        cmakelists << "    COMMAND " << cmake_cmd << "\n";
-        cmakelists << "    WORKING_DIRECTORY \"${" << source_dir_var << "}\"\n";
-        cmakelists << "    RESULT_VARIABLE _setup_result\n";
-        cmakelists << "  )\n";
-        cmakelists << "  if(NOT _setup_result EQUAL 0)\n";
-        cmakelists << "    message(FATAL_ERROR \"Setup failed for " << dep.name << ": ${_setup_result}\")\n";
+    // Check if ALL outputs already exist - only skip setup if all outputs are present
+    if (!pkg_info.setup.outputs.empty()) {
+      cmakelists << "  set(_" << dep.name << "_setup_needed FALSE)\n";
+      for (const auto &output : pkg_info.setup.outputs) {
+        cmakelists << "  if(NOT EXISTS \"${" << source_dir_var << "}/" << output << "\")\n";
+        cmakelists << "    set(_" << dep.name << "_setup_needed TRUE)\n";
         cmakelists << "  endif()\n";
       }
-
-      cmakelists << "elseif(APPLE)\n";
-      auto mac_cmds = pkg_info->setup.macos.commands.empty() ?
-                      pkg_info->setup.commands : pkg_info->setup.macos.commands;
-      for (const auto &cmd : mac_cmds) {
-        std::string cmake_cmd = cmd;
-        cforge_size_t pos;
-        while ((pos = cmake_cmd.find("{package_dir}")) != std::string::npos) {
-          cmake_cmd.replace(pos, 13, "${" + source_dir_var + "}");
-        }
-        cforge_size_t start = 0;
-        while ((start = cmake_cmd.find("{option:", start)) != std::string::npos) {
-          cforge_size_t end = cmake_cmd.find("}", start);
-          if (end == std::string::npos) break;
-          std::string option_name = cmake_cmd.substr(start + 8, end - start - 8);
-          std::string default_val;
-          auto it = pkg_info->setup.defaults.find(option_name);
-          if (it != pkg_info->setup.defaults.end()) {
-            default_val = it->second;
-          }
-          cmake_cmd.replace(start, end - start + 1, default_val);
-          start += default_val.length();
-        }
-
-        cmakelists << "  execute_process(\n";
-        cmakelists << "    COMMAND " << cmake_cmd << "\n";
-        cmakelists << "    WORKING_DIRECTORY \"${" << source_dir_var << "}\"\n";
-        cmakelists << "    RESULT_VARIABLE _setup_result\n";
-        cmakelists << "  )\n";
-        cmakelists << "  if(NOT _setup_result EQUAL 0)\n";
-        cmakelists << "    message(FATAL_ERROR \"Setup failed for " << dep.name << ": ${_setup_result}\")\n";
-        cmakelists << "  endif()\n";
-      }
-
-      cmakelists << "else()\n";  // Linux
-      auto linux_cmds = pkg_info->setup.linux.commands.empty() ?
-                        pkg_info->setup.commands : pkg_info->setup.linux.commands;
-      for (const auto &cmd : linux_cmds) {
-        std::string cmake_cmd = cmd;
-        cforge_size_t pos;
-        while ((pos = cmake_cmd.find("{package_dir}")) != std::string::npos) {
-          cmake_cmd.replace(pos, 13, "${" + source_dir_var + "}");
-        }
-        cforge_size_t start = 0;
-        while ((start = cmake_cmd.find("{option:", start)) != std::string::npos) {
-          cforge_size_t end = cmake_cmd.find("}", start);
-          if (end == std::string::npos) break;
-          std::string option_name = cmake_cmd.substr(start + 8, end - start - 8);
-          std::string default_val;
-          auto it = pkg_info->setup.defaults.find(option_name);
-          if (it != pkg_info->setup.defaults.end()) {
-            default_val = it->second;
-          }
-          cmake_cmd.replace(start, end - start + 1, default_val);
-          start += default_val.length();
-        }
-
-        cmakelists << "  execute_process(\n";
-        cmakelists << "    COMMAND " << cmake_cmd << "\n";
-        cmakelists << "    WORKING_DIRECTORY \"${" << source_dir_var << "}\"\n";
-        cmakelists << "    RESULT_VARIABLE _setup_result\n";
-        cmakelists << "  )\n";
-        cmakelists << "  if(NOT _setup_result EQUAL 0)\n";
-        cmakelists << "    message(FATAL_ERROR \"Setup failed for " << dep.name << ": ${_setup_result}\")\n";
-        cmakelists << "  endif()\n";
-      }
-      cmakelists << "endif()\n";
-
-      if (!pkg_info->setup.outputs.empty()) {
-        cmakelists << "endif()\n";  // Close _setup_needed check
-      }
-      cmakelists << "\n";
+      cmakelists << "  if(_" << dep.name << "_setup_needed)\n";
     }
+
+    // Determine platform-specific commands
+    cmakelists << "  if(WIN32)\n";
+    auto win_cmds = pkg_info.setup.windows.commands.empty() ?
+                    pkg_info.setup.commands : pkg_info.setup.windows.commands;
+    for (const auto &cmd : win_cmds) {
+      std::string cmake_cmd = cmd;
+      cforge_size_t pos;
+      while ((pos = cmake_cmd.find("{package_dir}")) != std::string::npos) {
+        cmake_cmd.replace(pos, 13, "${" + source_dir_var + "}");
+      }
+      cforge_size_t start = 0;
+      while ((start = cmake_cmd.find("{option:", start)) != std::string::npos) {
+        cforge_size_t end = cmake_cmd.find("}", start);
+        if (end == std::string::npos) break;
+        std::string option_name = cmake_cmd.substr(start + 8, end - start - 8);
+        std::string default_val;
+        auto it = pkg_info.setup.defaults.find(option_name);
+        if (it != pkg_info.setup.defaults.end()) {
+          default_val = it->second;
+        }
+        cmake_cmd.replace(start, end - start + 1, default_val);
+        start += default_val.length();
+      }
+
+      cmakelists << "    execute_process(\n";
+      cmakelists << "      COMMAND " << cmake_cmd << "\n";
+      cmakelists << "      WORKING_DIRECTORY \"${" << source_dir_var << "}\"\n";
+      cmakelists << "      RESULT_VARIABLE _setup_result\n";
+      cmakelists << "      OUTPUT_VARIABLE _setup_output\n";
+      cmakelists << "      ERROR_VARIABLE _setup_error\n";
+      cmakelists << "    )\n";
+      cmakelists << "    if(NOT _setup_result EQUAL 0)\n";
+      cmakelists << "      message(FATAL_ERROR \"Setup failed for " << dep.name << ": ${_setup_result}\\nOutput: ${_setup_output}\\nError: ${_setup_error}\")\n";
+      cmakelists << "    endif()\n";
+    }
+
+    cmakelists << "  elseif(APPLE)\n";
+    auto mac_cmds = pkg_info.setup.macos.commands.empty() ?
+                    pkg_info.setup.commands : pkg_info.setup.macos.commands;
+    for (const auto &cmd : mac_cmds) {
+      std::string cmake_cmd = cmd;
+      cforge_size_t pos;
+      while ((pos = cmake_cmd.find("{package_dir}")) != std::string::npos) {
+        cmake_cmd.replace(pos, 13, "${" + source_dir_var + "}");
+      }
+      cforge_size_t start = 0;
+      while ((start = cmake_cmd.find("{option:", start)) != std::string::npos) {
+        cforge_size_t end = cmake_cmd.find("}", start);
+        if (end == std::string::npos) break;
+        std::string option_name = cmake_cmd.substr(start + 8, end - start - 8);
+        std::string default_val;
+        auto it = pkg_info.setup.defaults.find(option_name);
+        if (it != pkg_info.setup.defaults.end()) {
+          default_val = it->second;
+        }
+        cmake_cmd.replace(start, end - start + 1, default_val);
+        start += default_val.length();
+      }
+
+      cmakelists << "    execute_process(\n";
+      cmakelists << "      COMMAND " << cmake_cmd << "\n";
+      cmakelists << "      WORKING_DIRECTORY \"${" << source_dir_var << "}\"\n";
+      cmakelists << "      RESULT_VARIABLE _setup_result\n";
+      cmakelists << "      OUTPUT_VARIABLE _setup_output\n";
+      cmakelists << "      ERROR_VARIABLE _setup_error\n";
+      cmakelists << "    )\n";
+      cmakelists << "    if(NOT _setup_result EQUAL 0)\n";
+      cmakelists << "      message(FATAL_ERROR \"Setup failed for " << dep.name << ": ${_setup_result}\\nOutput: ${_setup_output}\\nError: ${_setup_error}\")\n";
+      cmakelists << "    endif()\n";
+    }
+
+    cmakelists << "  else()\n";  // LINUX
+    auto linux_cmds = pkg_info.setup.linux.commands.empty() ?
+                      pkg_info.setup.commands : pkg_info.setup.linux.commands;
+    for (const auto &cmd : linux_cmds) {
+      std::string cmake_cmd = cmd;
+      cforge_size_t pos;
+      while ((pos = cmake_cmd.find("{package_dir}")) != std::string::npos) {
+        cmake_cmd.replace(pos, 13, "${" + source_dir_var + "}");
+      }
+      cforge_size_t start = 0;
+      while ((start = cmake_cmd.find("{option:", start)) != std::string::npos) {
+        cforge_size_t end = cmake_cmd.find("}", start);
+        if (end == std::string::npos) break;
+        std::string option_name = cmake_cmd.substr(start + 8, end - start - 8);
+        std::string default_val;
+        auto it = pkg_info.setup.defaults.find(option_name);
+        if (it != pkg_info.setup.defaults.end()) {
+          default_val = it->second;
+        }
+        cmake_cmd.replace(start, end - start + 1, default_val);
+        start += default_val.length();
+      }
+
+      cmakelists << "    execute_process(\n";
+      cmakelists << "      COMMAND " << cmake_cmd << "\n";
+      cmakelists << "      WORKING_DIRECTORY \"${" << source_dir_var << "}\"\n";
+      cmakelists << "      RESULT_VARIABLE _setup_result\n";
+      cmakelists << "      OUTPUT_VARIABLE _setup_output\n";
+      cmakelists << "      ERROR_VARIABLE _setup_error\n";
+      cmakelists << "    )\n";
+      cmakelists << "    if(NOT _setup_result EQUAL 0)\n";
+      cmakelists << "      message(FATAL_ERROR \"Setup failed for " << dep.name << ": ${_setup_result}\\nOutput: ${_setup_output}\\nError: ${_setup_error}\")\n";
+      cmakelists << "    endif()\n";
+    }
+    cmakelists << "  endif()\n";
+
+    if (!pkg_info.setup.outputs.empty()) {
+      cmakelists << "  endif()\n";  // Close _setup_needed check
+    }
+
+    // Now add_subdirectory after setup is complete
+    std::string cmake_subdir = pkg_info.integration.cmake_subdir;
+    if (!cmake_subdir.empty()) {
+      cmakelists << "  add_subdirectory(\"${" << source_dir_var << "}/" << cmake_subdir << "\" \"${" << dep.name << "_BINARY_DIR}\")\n";
+    } else {
+      cmakelists << "  add_subdirectory(\"${" << source_dir_var << "}\" \"${" << dep.name << "_BINARY_DIR}\")\n";
+    }
+
+    cmakelists << "endif()\n\n";
   }
 }
 
@@ -1274,7 +1295,7 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
   // Check if we're in a workspace
   auto [is_workspace, workspace_dir] = is_in_workspace(project_dir);
 
-  // Platform override: read [platform.<plat>] in cforge.toml
+  // platform override: read [platform.<plat>] in cforge.toml
   std::string cforge_platform;
 #if defined(_WIN32)
   cforge_platform = "windows";
@@ -1405,8 +1426,8 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
     cmakelists << "set(CMAKE_C_EXTENSIONS OFF)\n\n";
   }
 
-  // Platform detection
-  cmakelists << "# Platform detection\n";
+  // platform detection
+  cmakelists << "# platform detection\n";
   cmakelists << "if(WIN32)\n";
   cmakelists << "    set(CFORGE_PLATFORM \"windows\")\n";
   cmakelists << "elseif(APPLE)\n";
@@ -1415,8 +1436,8 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
   cmakelists << "    set(CFORGE_PLATFORM \"linux\")\n";
   cmakelists << "endif()\n\n";
 
-  // Compiler detection
-  cmakelists << "# Compiler detection\n";
+  // compiler detection
+  cmakelists << "# compiler detection\n";
   cmakelists << "if(MSVC AND NOT CMAKE_CXX_COMPILER_ID STREQUAL \"Clang\")\n";
   cmakelists << "    set(CFORGE_COMPILER \"msvc\")\n";
   cmakelists << "elseif(MINGW)\n";
@@ -1432,7 +1453,7 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
   cmakelists << "else()\n";
   cmakelists << "    set(CFORGE_COMPILER \"unknown\")\n";
   cmakelists << "endif()\n";
-  cmakelists << "message(STATUS \"Platform: ${CFORGE_PLATFORM}, Compiler: ${CFORGE_COMPILER}\")\n\n";
+  cmakelists << "message(STATUS \"platform: ${CFORGE_PLATFORM}, compiler: ${CFORGE_COMPILER}\")\n\n";
 
   // CMake options from [build] section
   cmake_options cmake_opts = parse_cmake_options(project_config);
@@ -1532,7 +1553,9 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
   if (binary_type == "executable") {
     cmakelists << "add_executable(${PROJECT_NAME} ${SOURCES})\n\n";
   } else if (binary_type == "shared_lib") {
-    cmakelists << "add_library(${PROJECT_NAME} SHARED ${SOURCES})\n\n";
+    cmakelists << "add_library(${PROJECT_NAME} SHARED ${SOURCES})\n";
+    // Enable automatic symbol export for WINDOWS DLLs (creates .lib import library)
+    cmakelists << "set_target_properties(${PROJECT_NAME} PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)\n\n";
   } else if (binary_type == "static_lib") {
     cmakelists << "add_library(${PROJECT_NAME} STATIC ${SOURCES})\n\n";
   } else if (binary_type == "header_only") {
@@ -1674,7 +1697,7 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
     }
   }
 
-  // Platform-specific configuration
+  // platform-specific configuration
   std::vector<std::string> platforms = {"windows", "linux", "macos"};
   bool has_platform_config = false;
   for (const auto &plat : platforms) {
@@ -1685,7 +1708,7 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
   }
 
   if (has_platform_config) {
-    cmakelists << "# Platform-specific configuration\n";
+    cmakelists << "# platform-specific configuration\n";
     for (const auto &plat : platforms) {
       std::string prefix = "platform." + plat;
       if (!project_config.has_key(prefix + ".defines") &&
@@ -1697,13 +1720,13 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
 
       cmakelists << "if(CFORGE_PLATFORM STREQUAL \"" << plat << "\")\n";
 
-      // Platform defines
+      // platform defines
       auto plat_defines = project_config.get_string_array(prefix + ".defines");
       for (const auto &def : plat_defines) {
         cmakelists << "    target_compile_definitions(${PROJECT_NAME} PUBLIC " << def << ")\n";
       }
 
-      // Platform flags - separate MSVC-style flags from GCC-style flags
+      // platform flags - separate MSVC-style flags from GCC-style flags
       auto plat_flags = project_config.get_string_array(prefix + ".flags");
       std::vector<std::string> msvc_flags, gcc_flags;
       for (const auto &flag : plat_flags) {
@@ -1728,7 +1751,7 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
         cmakelists << "    endif()\n";
       }
 
-      // Platform links
+      // platform links
       auto plat_links = project_config.get_string_array(prefix + ".links");
       for (const auto &link : plat_links) {
         cmakelists << "    target_link_libraries(${PROJECT_NAME} PUBLIC " << link << ")\n";
@@ -1747,7 +1770,7 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
     cmakelists << "\n";
   }
 
-  // Compiler-specific configuration
+  // compiler-specific configuration
   std::vector<std::string> compilers = {"msvc", "gcc", "clang", "apple_clang", "mingw"};
   bool has_compiler_config = false;
   for (const auto &comp : compilers) {
@@ -1758,7 +1781,7 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
   }
 
   if (has_compiler_config) {
-    cmakelists << "# Compiler-specific configuration\n";
+    cmakelists << "# compiler-specific configuration\n";
     for (const auto &comp : compilers) {
       std::string prefix = "compiler." + comp;
       if (!project_config.has_key(prefix + ".defines") &&
@@ -1769,19 +1792,19 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
 
       cmakelists << "if(CFORGE_COMPILER STREQUAL \"" << comp << "\")\n";
 
-      // Compiler defines
+      // compiler defines
       auto comp_defines = project_config.get_string_array(prefix + ".defines");
       for (const auto &def : comp_defines) {
         cmakelists << "    target_compile_definitions(${PROJECT_NAME} PUBLIC " << def << ")\n";
       }
 
-      // Compiler flags
+      // compiler flags
       auto comp_flags = project_config.get_string_array(prefix + ".flags");
       for (const auto &flag : comp_flags) {
         cmakelists << "    target_compile_options(${PROJECT_NAME} PUBLIC " << flag << ")\n";
       }
 
-      // Compiler links
+      // compiler links
       auto comp_links = project_config.get_string_array(prefix + ".links");
       for (const auto &link : comp_links) {
         cmakelists << "    target_link_libraries(${PROJECT_NAME} PUBLIC " << link << ")\n";
@@ -1792,7 +1815,7 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
     cmakelists << "\n";
   }
 
-  // Platform + Compiler nested configuration
+  // platform + compiler nested configuration
   for (const auto &plat : platforms) {
     for (const auto &comp : compilers) {
       std::string prefix = "platform." + plat + ".compiler." + comp;
@@ -1802,7 +1825,7 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
         continue;
       }
 
-      cmakelists << "# Platform+Compiler: " << plat << " + " << comp << "\n";
+      cmakelists << "# platform+compiler: " << plat << " + " << comp << "\n";
       cmakelists << "if(CFORGE_PLATFORM STREQUAL \"" << plat << "\" AND CFORGE_COMPILER STREQUAL \"" << comp << "\")\n";
 
       auto nested_defines = project_config.get_string_array(prefix + ".defines");
@@ -1924,14 +1947,14 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
     }
   }
 
-  // Platform-specific defines
+  // platform-specific defines
   {
     std::string plat_defs_key =
         std::string("platform.") + cforge_platform + ".defines";
     if (project_config.has_key(plat_defs_key)) {
       auto plat_defs = project_config.get_string_array(plat_defs_key);
       if (!plat_defs.empty()) {
-        cmakelists << "# Platform-specific defines for " << cforge_platform
+        cmakelists << "# platform-specific defines for " << cforge_platform
                    << "\n";
         for (const auto &d : plat_defs) {
           if (binary_type == "header_only") {
@@ -2194,14 +2217,14 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
     }
   }
 
-  // Platform-specific links
+  // platform-specific links
   {
     std::string plat_links_key =
         std::string("platform.") + cforge_platform + ".links";
     if (project_config.has_key(plat_links_key)) {
       auto plat_links = project_config.get_string_array(plat_links_key);
       if (!plat_links.empty()) {
-        cmakelists << "# Platform-specific links\n";
+        cmakelists << "# platform-specific links\n";
         cmakelists << "target_link_libraries(${PROJECT_NAME} PUBLIC\n";
         for (const auto &lib : plat_links) {
           cmakelists << "    " << lib << "\n";
@@ -2212,7 +2235,7 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
   }
 
   // Add compiler options
-  cmakelists << "# Compiler options\n";
+  cmakelists << "# compiler options\n";
   if (binary_type == "header_only") {
     // Header-only libraries don't have compile options
     cmakelists << "# No compile options for header-only libraries\n\n";
@@ -2257,7 +2280,7 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
     cmakelists << "        COMPONENT Runtime\n";
     cmakelists << ")\n\n";
 
-    // Install PDB files for Windows Debug builds
+    // Install PDB files for WINDOWS Debug builds
     cmakelists << "if(MSVC AND CMAKE_BUILD_TYPE STREQUAL \"Debug\")\n";
     cmakelists << "    install(FILES \"$<TARGET_PDB_FILE:${PROJECT_NAME}>\"\n";
     cmakelists << "            DESTINATION ${CMAKE_INSTALL_BINDIR}\n";
@@ -3185,8 +3208,7 @@ bool generate_workspace_cmakelists(const std::filesystem::path &workspace_dir,
     return true;
   }
 
-  logger::print_action("Generating", "workspace CMakeLists.txt from " +
-                                         std::string(WORKSPACE_FILE));
+  logger::print_action("Generating", "workspace CMakeLists.txt from " + hash_key);
 
   // Create CMakeLists.txt if needed
   std::ofstream cmakelists(cmakelists_path);
@@ -3412,7 +3434,7 @@ bool workspace_config::load(const std::string &workspace_file) {
           if (project_path.find(':') == std::string::npos ||
               (project_path.length() > 1 && project_path[1] == ':' &&
                (project_path[2] == '\\' || project_path[2] == '/'))) {
-            // Simple path or Windows absolute path - treat as member
+            // Simple path or WINDOWS absolute path - treat as member
             workspace_project project;
             project.path = workspace_dir / project_path;
             project.name = std::filesystem::path(project_path).filename().string();
@@ -3433,7 +3455,7 @@ bool workspace_config::load(const std::string &workspace_file) {
             if (end == 1 && project_path.length() > 2 &&
                 (project_path[end + 1] == '\\' ||
                  project_path[end + 1] == '/')) {
-              // Skip colon in Windows drive letter
+              // Skip colon in WINDOWS drive letter
               start = end + 1;
               continue;
             }
@@ -3692,6 +3714,31 @@ std::vector<std::string> workspace::get_build_order() const {
     visit(project.name);
   }
   return build_order;
+}
+
+std::filesystem::path get_workspace_config_path(const std::filesystem::path &workspace_path) {
+  // First priority: Check for cforge.toml with [workspace] section
+  std::filesystem::path unified_config_path = workspace_path / CFORGE_FILE;
+  std::filesystem::path legacy_config_path = workspace_path / WORKSPACE_FILE;
+
+  if (std::filesystem::exists(unified_config_path)) {
+    try {
+      auto test_config = toml::parse_file(unified_config_path.string());
+      if (test_config.contains("workspace")) {
+        return unified_config_path;
+      }
+    } catch (...) {
+      // Fall through to legacy check
+    }
+  }
+
+  // Fall back to legacy cforge.workspace.toml
+  if (std::filesystem::exists(legacy_config_path)) {
+    return legacy_config_path;
+  }
+
+  // Return empty path if neither exists
+  return {};
 }
 
 } // namespace cforge
