@@ -344,10 +344,11 @@ i_test_framework_adapter *test_runner::get_adapter(test_framework fw) {
 // ============================================================================
 
 bool test_runner::generate_test_cmake(const test_target &target) {
-  fs::path build_dir = m_project_dir / "build" / "tests" / target.name;
-  fs::create_directories(build_dir);
+  // Use .cforge directory to keep generated files hidden
+  fs::path gen_dir = m_project_dir / ".cforge" / "tests" / target.name;
+  fs::create_directories(gen_dir);
 
-  fs::path cmake_file = build_dir / "CMakeLists.txt";
+  fs::path cmake_file = gen_dir / "CMakeLists.txt";
   std::ofstream out(cmake_file);
   if (!out) {
     m_error = "FAILED to create " + cmake_file.string();
@@ -479,10 +480,12 @@ std::string test_runner::get_project_link_target() const {
 
 bool test_runner::configure_cmake(const test_target &target,
                                   const std::string &build_config) {
-  fs::path build_dir = m_project_dir / "build" / "tests" / target.name;
+  // Source is in .cforge, build output goes to .cforge as well
+  fs::path gen_dir = m_project_dir / ".cforge" / "tests" / target.name;
+  fs::path build_dir = gen_dir / "build";
 
   std::vector<std::string> args = {
-    "-S", to_cmake_path(build_dir),
+    "-S", to_cmake_path(gen_dir),
     "-B", to_cmake_path(build_dir),
     "-DCMAKE_BUILD_TYPE=" + build_config
   };
@@ -511,7 +514,7 @@ bool test_runner::configure_cmake(const test_target &target,
 
 bool test_runner::build_target(const test_target &target,
                                const std::string &build_config) {
-  fs::path build_dir = m_project_dir / "build" / "tests" / target.name;
+  fs::path build_dir = m_project_dir / ".cforge" / "tests" / target.name / "build";
 
   std::vector<std::string> args = {
     "--build", to_cmake_path(build_dir),
@@ -570,7 +573,7 @@ bool test_runner::build_tests(const std::string &config, [[maybe_unused]] bool v
 
 fs::path test_runner::find_test_executable(const test_target &target,
                                            const std::string &build_config) {
-  fs::path build_dir = m_project_dir / "build" / "tests" / target.name;
+  fs::path build_dir = m_project_dir / ".cforge" / "tests" / target.name / "build";
 
   // Check various possible locations
   std::vector<fs::path> candidates = {

@@ -73,7 +73,7 @@ error: fatal error: 'fmt/core.h' file not found
    |          ^~~~~~~~~~~~
    |
    = help: install the 'fmt' package:
-     cforge add fmt
+     cforge deps add fmt
 ```
 
 ### Template Errors
@@ -113,7 +113,7 @@ cforge vcpkg search json  # might be 'nlohmann-json'
 **Solution:**
 ```bash
 # Check dependency tree
-cforge tree
+cforge deps tree
 
 # Lock to specific version in cforge.toml
 [dependencies]
@@ -123,8 +123,11 @@ fmt = { version = "10.1.0", source = "vcpkg" }
 ### Update dependencies
 
 ```bash
-# Update all dependencies
-cforge deps --update
+# Update package registry
+cforge deps update
+
+# Check for outdated packages
+cforge deps outdated
 
 # Force rebuild
 cforge clean && cforge build
@@ -199,7 +202,13 @@ cforge list variants
 cforge list targets
 
 # Show dependency tree
-cforge tree
+cforge deps tree
+
+# List dependencies
+cforge deps list
+
+# Check for outdated dependencies
+cforge deps outdated
 
 # Check project configuration
 cforge list

@@ -117,13 +117,16 @@ Or use the CLI:
 
 ```bash
 # Add from registry
-cforge add fmt@11.1.4
+cforge deps add fmt@11.1.4
 
 # Search for packages
-cforge search json
+cforge deps search json
 
 # Add from vcpkg
-cforge add boost --vcpkg
+cforge deps add boost --vcpkg
+
+# Check for outdated dependencies
+cforge deps outdated
 ```
 
 Then rebuild:

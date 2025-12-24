@@ -474,7 +474,7 @@ std::string doctest_adapter::generate_cmake_setup(
 }
 
 std::string doctest_adapter::get_cmake_target() const {
-  return "doctest::doctest";
+  return "doctest::doctest_with_main";
 }
 
 std::vector<test_result> doctest_adapter::parse_output(

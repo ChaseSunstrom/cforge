@@ -17,8 +17,9 @@ const FeatureList = [
     title: 'Integrated Dependency Management',
     description: (
       <>
-        First-class support for vcpkg, Conan, Git submodules, and system libraries.
-        Declare dependencies once, CForge handles the rest.
+        Unified `cforge deps` command for all dependency operations.
+        Built-in registry, vcpkg, Git, and system library support.
+        Check for outdated packages with `deps outdated`.
       </>
     ),
     icon: '📦',
@@ -77,8 +78,9 @@ const FeatureList = [
     title: 'Testing & Benchmarks',
     description: (
       <>
-        Integrated CTest support for unit testing. Run Google Benchmark
-        and other benchmark frameworks with cforge bench.
+        Integrated CTest support with Catch2, GTest, and doctest.
+        Run benchmarks with Google Benchmark, nanobench, or Catch2.
+        Auto-discovery of test and benchmark files.
       </>
     ),
     icon: '🧪',

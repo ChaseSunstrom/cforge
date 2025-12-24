@@ -140,10 +140,10 @@ function DeveloperToolsSection() {
           </div>
           <div className="col col--3">
             <div className={styles.toolCard}>
-              <div className={styles.toolIcon}>tree</div>
-              <h4>Dependency Tree</h4>
-              <p>Visualize dependencies</p>
-              <code>cforge tree</code>
+              <div className={styles.toolIcon}>deps</div>
+              <h4>Dependency Management</h4>
+              <p>Add, remove, check outdated</p>
+              <code>cforge deps</code>
             </div>
           </div>
           <div className="col col--3">

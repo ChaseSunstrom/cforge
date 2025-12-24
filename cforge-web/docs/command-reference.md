@@ -17,7 +17,7 @@ CForge provides a comprehensive set of commands for building, testing, and manag
 | `run`        | Run built executable                     | `cforge run -- arg1 arg2`          |
 | `test`       | Execute tests (CTest integration)        | `cforge test --filter MyTest`      |
 | `install`    | Install project binaries                 | `cforge install --prefix /usr/local`|
-| `deps`       | Manage dependencies                      | `cforge deps --update`             |
+| `deps`       | Manage dependencies                      | `cforge deps add fmt`              |
 | `package`    | Package project binaries                 | `cforge package --type zip`        |
 
 ## Developer Tools
@@ -29,21 +29,31 @@ CForge provides a comprehensive set of commands for building, testing, and manag
 | `watch`       | Watch files and rebuild on changes      | `cforge watch --run`               |
 | `doc`         | Generate documentation with Doxygen     | `cforge doc --open`                |
 | `bench`       | Run benchmarks                          | `cforge bench --filter BM_*`       |
-| `tree`        | Display dependency tree                 | `cforge tree --depth 3`            |
 | `new`         | Generate code from templates            | `cforge new class MyClass`         |
 | `completions` | Generate shell completions              | `cforge completions bash`          |
+
+## Dependency Management
+
+All dependency operations use the unified `cforge deps` command:
+
+| Subcommand     | Description                              | Example                                |
+|----------------|------------------------------------------|----------------------------------------|
+| `deps add`     | Add a dependency to the project          | `cforge deps add fmt@11.1.4`           |
+| `deps remove`  | Remove a dependency                      | `cforge deps remove spdlog`            |
+| `deps search`  | Search package registry                  | `cforge deps search json`              |
+| `deps info`    | Show package details                     | `cforge deps info spdlog --versions`   |
+| `deps list`    | List current dependencies                | `cforge deps list`                     |
+| `deps tree`    | Display dependency tree                  | `cforge deps tree --depth 3`           |
+| `deps lock`    | Manage lock file                         | `cforge deps lock --verify`            |
+| `deps update`  | Update package registry                  | `cforge deps update`                   |
+| `deps outdated`| Show outdated dependencies               | `cforge deps outdated`                 |
 
 ## Project Management
 
 | Command      | Description                              | Example                            |
 |--------------|------------------------------------------|------------------------------------|
-| `add`        | Add a dependency to the project          | `cforge add fmt`                   |
-| `remove`     | Remove a dependency                      | `cforge remove spdlog`             |
-| `search`     | Search package registry                  | `cforge search json`               |
-| `info`       | Show package details                     | `cforge info spdlog`               |
-| `update`     | Update cforge or packages                | `cforge update --self`             |
-| `lock`       | Lock dependency versions                 | `cforge lock`                      |
-| `list`       | List dependencies or projects            | `cforge list`                      |
+| `update`     | Update cforge itself                     | `cforge update --self`             |
+| `list`       | List project information                 | `cforge list`                      |
 | `ide`        | Generate IDE project files               | `cforge ide vscode`                |
 | `vcpkg`      | Manage vcpkg integration                 | `cforge vcpkg install`             |
 
@@ -239,27 +249,27 @@ cforge bench --csv
 cforge bench --no-build
 ```
 
-### tree
+### deps tree
 
 Display the project's dependency tree.
 
 ```bash
 # Show dependency tree
-cforge tree
+cforge deps tree
 
 # Limit depth
-cforge tree --depth 2
+cforge deps tree --depth 2
 
 # Show all details
-cforge tree -v
+cforge deps tree -v
 ```
 
 **Output:**
 ```
 my_app v1.0.0
-├── fmt (10.1.0) [vcpkg]
-├── spdlog (1.12.0) [vcpkg]
-│   └── fmt (10.1.0) [vcpkg]
+├── fmt (10.1.0) [index]
+├── spdlog (1.12.0) [index]
+│   └── fmt (10.1.0) [index]
 └── my_lib (local) [project]
 ```
 
@@ -321,65 +331,68 @@ cforge ide xcode
 
 ### deps
 
-Manage project dependencies.
+Unified dependency management command. All dependency operations use `cforge deps <subcommand>`.
 
 ```bash
-# Show dependencies
-cforge deps
+# Show all deps subcommands
+cforge deps --help
 
-# Update all dependencies
-cforge deps --update
+# List current dependencies
+cforge deps list
 
-# Check for outdated
-cforge deps --check
+# Check for outdated dependencies
+cforge deps outdated
+
+# Update package registry
+cforge deps update
 ```
 
-### search
+### deps search
 
 Search the cforge package registry.
 
 ```bash
 # Search for packages
-cforge search json
+cforge deps search json
 
 # Search for logging libraries
-cforge search log
+cforge deps search log
 ```
 
-### info
+### deps info
 
 Get detailed information about a package.
 
 ```bash
 # Show package info
-cforge info spdlog
+cforge deps info spdlog
 
 # Show available versions
-cforge info fmt --versions
+cforge deps info fmt --versions
 ```
 
-### add / remove
+### deps add / deps remove
 
 Manage dependencies in cforge.toml.
 
 ```bash
 # Add from registry (default)
-cforge add fmt
+cforge deps add fmt
 
 # Add with specific version
-cforge add fmt@11.1.4
+cforge deps add fmt@11.1.4
 
 # Add with features
-cforge add spdlog --features async
+cforge deps add spdlog --features async
 
 # Add from Git
-cforge add mylib --git https://github.com/user/mylib --tag v1.0
+cforge deps add mylib --git https://github.com/user/mylib --tag v1.0
 
 # Add from vcpkg
-cforge add boost --vcpkg
+cforge deps add boost --vcpkg
 
 # Remove a dependency
-cforge remove spdlog
+cforge deps remove spdlog
 ```
 
 **Options:**
@@ -392,6 +405,43 @@ cforge remove spdlog
 | `--vcpkg` | Add as vcpkg package |
 | `--features <list>` | Comma-separated features |
 | `--header-only` | Mark as header-only library |
+
+### deps outdated
+
+Check for dependencies with newer versions available.
+
+```bash
+# Show outdated dependencies
+cforge deps outdated
+```
+
+**Output:**
+```
+Package         Current    Latest     Source
+--------------  ---------  ---------  ------
+fmt             11.1.4     12.1.0     index
+spdlog          1.12.0     1.15.0     index
+
+Found 2 outdated package(s)
+```
+
+### deps lock
+
+Manage dependency lock file for reproducible builds.
+
+```bash
+# Generate/update lock file
+cforge deps lock
+
+# Verify dependencies match lock
+cforge deps lock --verify
+
+# Force regeneration
+cforge deps lock --force
+
+# Remove lock file
+cforge deps lock --clean
+```
 
 ### package
 

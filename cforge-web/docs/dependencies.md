@@ -9,20 +9,26 @@ CForge supports a unified dependency configuration with multiple sources. Depend
 
 ### Package Registry (Index Dependencies)
 
-CForge has a built-in package registry similar to Cargo. Search and add packages easily:
+CForge has a built-in package registry similar to Cargo. All dependency operations are unified under the `deps` command:
 
 ```bash
 # Search for packages
-cforge search json
+cforge deps search json
 
 # Get package info
-cforge info spdlog --versions
+cforge deps info spdlog --versions
 
 # Add a package (defaults to registry)
-cforge add fmt@11.1.4
+cforge deps add fmt@11.1.4
 
 # Add with specific features
-cforge add spdlog@1.15.0 --features async,stdout
+cforge deps add spdlog@1.15.0 --features async,stdout
+
+# Check for outdated dependencies
+cforge deps outdated
+
+# List current dependencies
+cforge deps list
 ```
 
 Registry dependencies in `cforge.toml`:
@@ -77,7 +83,7 @@ shallow = true
 Or use the CLI:
 
 ```bash
-cforge add fmt --git https://github.com/fmtlib/fmt.git --tag 11.1.4
+cforge deps add fmt --git https://github.com/fmtlib/fmt.git --tag 11.1.4
 ```
 
 #### Git Dependency Options
@@ -111,7 +117,7 @@ openssl = { vcpkg = true, features = ["ssl", "crypto"] }
 Or use the CLI:
 
 ```bash
-cforge add boost --vcpkg
+cforge deps add boost --vcpkg
 cforge vcpkg install openssl
 ```
 
@@ -234,13 +240,13 @@ Ensure reproducible builds with lock files:
 
 ```bash
 # Generate/update lock file
-cforge lock
+cforge deps lock
 
 # Verify dependencies match lock file
-cforge lock --verify
+cforge deps lock --verify
 
 # Force regeneration
-cforge lock --force
+cforge deps lock --force
 ```
 
 The lock file (`cforge.lock`) records the exact versions of all dependencies, ensuring consistent builds across different machines and times.
@@ -248,8 +254,11 @@ The lock file (`cforge.lock`) records the exact versions of all dependencies, en
 ### Updating Dependencies
 
 ```bash
-# Update all packages from registry
-cforge update --packages
+# Update package registry index
+cforge deps update
+
+# Check for outdated dependencies
+cforge deps outdated
 
 # Update cforge itself
 cforge update --self
@@ -260,7 +269,7 @@ cforge update --self
 Visualize your project's dependencies:
 
 ```bash
-cforge tree
+cforge deps tree
 ```
 
 Output (with colors):
@@ -283,19 +292,41 @@ Dependencies are color-coded by type:
 
 ### Managing Dependencies
 
+All dependency operations use the unified `cforge deps` command:
+
 ```bash
 # Add a registry dependency
-cforge add fmt@11.1.4
+cforge deps add fmt@11.1.4
 
 # Add a git dependency
-cforge add fmt --git https://github.com/fmtlib/fmt.git --tag 11.1.4
+cforge deps add fmt --git https://github.com/fmtlib/fmt.git --tag 11.1.4
 
 # Add a vcpkg dependency
-cforge add boost --vcpkg
+cforge deps add boost --vcpkg
 
 # Remove a dependency
-cforge remove fmt
+cforge deps remove fmt
 
-# Update all dependencies
+# List all dependencies
+cforge deps list
+
+# Check for outdated dependencies
+cforge deps outdated
+
+# Update package registry index
 cforge deps update
 ```
+
+#### Available Subcommands
+
+| Subcommand | Description |
+|------------|-------------|
+| `deps add <pkg>` | Add a dependency |
+| `deps remove <pkg>` | Remove a dependency |
+| `deps list` | List current dependencies |
+| `deps tree` | Visualize dependency tree |
+| `deps search <query>` | Search package registry |
+| `deps info <pkg>` | Show package details |
+| `deps lock` | Manage lock file |
+| `deps update` | Update registry index |
+| `deps outdated` | Show outdated dependencies |

@@ -69,5 +69,6 @@ CMakeCache.txt
 
 .claude/
 .cache/
+.cforge/
 
 nul

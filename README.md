@@ -26,7 +26,7 @@ cforge run
 
 - **Simple TOML configuration** - No CMake syntax required
 - **Portable compiler flags** - Write once, works on MSVC, GCC, and Clang
-- **Package registry** - Search and install packages with `cforge add <package>`
+- **Package registry** - Search and install packages with `cforge deps add <package>`
 - **Multiple dependency sources** - Registry, Git, vcpkg, and system libraries
 - **Workspaces** - Manage multi-project repositories
 - **Cross-compilation** - Android, iOS, Raspberry Pi, WebAssembly
@@ -123,15 +123,15 @@ spdlog = "1.12.0"
 
 | Command | Description |
 |---------|-------------|
-| `cforge add <pkg>` | Add a dependency |
-| `cforge remove <pkg>` | Remove a dependency |
-| `cforge search <query>` | Search package registry |
-| `cforge info <pkg>` | Show package details |
-| `cforge deps` | Manage Git dependencies |
-| `cforge list` | List dependencies or projects |
-| `cforge tree` | Visualize dependency tree |
-| `cforge lock` | Manage lock file for reproducible builds |
-| `cforge update` | Update cforge or package registry |
+| `cforge deps add <pkg>` | Add a dependency |
+| `cforge deps remove <pkg>` | Remove a dependency |
+| `cforge deps search <query>` | Search package registry |
+| `cforge deps info <pkg>` | Show package details |
+| `cforge deps list` | List current dependencies |
+| `cforge deps tree` | Visualize dependency tree |
+| `cforge deps lock` | Manage lock file for reproducible builds |
+| `cforge deps update` | Update package registry |
+| `cforge deps outdated` | Show dependencies with newer versions |
 
 ### Testing & Quality
 
@@ -237,11 +237,12 @@ json = "3.11.2"
 ```
 
 ```bash
-cforge add fmt                         # Add from registry
-cforge add fmt@11.1.4                  # Specific version
-cforge add spdlog --features async     # With features
-cforge search json                     # Search packages
-cforge info nlohmann_json              # Package details
+cforge deps add fmt                    # Add from registry
+cforge deps add fmt@11.1.4             # Specific version
+cforge deps add spdlog --features async # With features
+cforge deps search json                # Search packages
+cforge deps info nlohmann_json         # Package details
+cforge deps outdated                   # Check for updates
 ```
 
 ### Git Dependencies
@@ -253,10 +254,7 @@ tag = "v1.89.9"
 ```
 
 ```bash
-cforge add mylib --git https://github.com/user/mylib --tag v1.0
-cforge deps fetch                      # Update all Git deps
-cforge deps checkout                   # Checkout configured refs
-cforge deps list                       # List Git dependencies
+cforge deps add mylib --git https://github.com/user/mylib --tag v1.0
 ```
 
 ### vcpkg Dependencies
@@ -267,7 +265,7 @@ curl = { version = "7.80.0", features = ["ssl"] }
 ```
 
 ```bash
-cforge add boost --vcpkg
+cforge deps add boost --vcpkg
 ```
 
 ### System Dependencies
@@ -285,10 +283,10 @@ package = "gtk+-3.0"
 ### Lock Files
 
 ```bash
-cforge lock                            # Generate/update lock file
-cforge lock --verify                   # Verify deps match lock
-cforge lock --force                    # Force regeneration
-cforge lock --clean                    # Remove lock file
+cforge deps lock                       # Generate/update lock file
+cforge deps lock --verify              # Verify deps match lock
+cforge deps lock --force               # Force regeneration
+cforge deps lock --clean               # Remove lock file
 ```
 
 Commit `cforge.lock` to version control for reproducible builds.
@@ -296,10 +294,10 @@ Commit `cforge.lock` to version control for reproducible builds.
 ### Dependency Tree
 
 ```bash
-cforge tree                            # Show dependency tree
-cforge tree -a                         # Include transitive deps
-cforge tree -d 2                       # Limit depth
-cforge tree -i                         # Inverted (show dependents)
+cforge deps tree                       # Show dependency tree
+cforge deps tree -a                    # Include transitive deps
+cforge deps tree -d 2                  # Limit depth
+cforge deps tree -i                    # Inverted (show dependents)
 ```
 
 ---
@@ -410,7 +408,8 @@ cforge test -v                         # Verbose output
 ```toml
 [benchmark]
 directory = "bench"
-target = "my_benchmarks"
+framework = "google"       # google, nanobench, catch2
+auto_link_project = true   # Link project library
 ```
 
 ```bash
@@ -419,9 +418,15 @@ cforge bench --filter 'BM_Sort'        # Run matching benchmarks
 cforge bench --no-build                # Skip rebuild
 cforge bench --json > results.json     # JSON output
 cforge bench --csv                     # CSV output
+cforge bench -c Release                # Build configuration
 ```
 
-Benchmarks run in Release mode by default.
+Supported frameworks:
+- **Google Benchmark** - Industry-standard microbenchmarking
+- **nanobench** - Header-only, easy to integrate
+- **Catch2 BENCHMARK** - Use Catch2's built-in benchmarking
+
+Benchmarks run in Release mode by default for accurate timing. Files with 'bench' or 'perf' in the name are auto-discovered.
 
 ---
 
@@ -608,9 +613,10 @@ cforge update --packages               # Refresh package registry
 ### Build fails with missing dependencies
 
 ```bash
-cforge deps fetch                      # Fetch Git dependencies
-cforge tree                            # Visualize dependency tree
-cforge lock --verify                   # Check lock file
+cforge deps list                       # List current dependencies
+cforge deps tree                       # Visualize dependency tree
+cforge deps lock --verify              # Check lock file
+cforge deps outdated                   # Check for newer versions
 ```
 
 ### Clean rebuild
