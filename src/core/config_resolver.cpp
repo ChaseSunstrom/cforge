@@ -278,6 +278,47 @@ config_resolver::resolve_cmake_args(const std::string &build_config) const {
   return result;
 }
 
+linker_options
+config_resolver::resolve_linker_options(const std::string &build_config) const {
+  linker_options result;
+  std::string platform_str = platform_to_string(platform_);
+  std::string compiler_str = compiler_to_string(compiler_);
+  std::string config_lower = to_lower(build_config);
+
+  // 1. Base linker options from [linker]
+  if (config_.has_key("linker")) {
+    merge_linker_options(result, parse_linker_options(config_, "linker"));
+  }
+
+  // 2. Platform-specific linker options from [linker.platform.<name>]
+  std::string platform_section = "linker.platform." + platform_str;
+  if (config_.has_key(platform_section)) {
+    merge_linker_options(result, parse_linker_options(config_, platform_section));
+  }
+
+  // 3. Compiler-specific linker options from [linker.compiler.<name>]
+  std::string compiler_section = "linker.compiler." + compiler_str;
+  if (config_.has_key(compiler_section)) {
+    merge_linker_options(result, parse_linker_options(config_, compiler_section));
+  }
+
+  // 4. Platform+Compiler nested linker options from [linker.platform.<plat>.compiler.<comp>]
+  std::string nested_section = "linker.platform." + platform_str + ".compiler." + compiler_str;
+  if (config_.has_key(nested_section)) {
+    merge_linker_options(result, parse_linker_options(config_, nested_section));
+  }
+
+  // 5. Build config linker options from [linker.config.<name>]
+  if (!build_config.empty()) {
+    std::string config_section = "linker.config." + config_lower;
+    if (config_.has_key(config_section)) {
+      merge_linker_options(result, parse_linker_options(config_, config_section));
+    }
+  }
+
+  return result;
+}
+
 resolved_config config_resolver::resolve(const std::string &build_config) const {
   resolved_config cfg;
   cfg.defines = resolve_defines(build_config);
@@ -285,6 +326,7 @@ resolved_config config_resolver::resolve(const std::string &build_config) const 
   cfg.links = resolve_links();
   cfg.frameworks = resolve_frameworks();
   cfg.cmake_args = resolve_cmake_args(build_config);
+  cfg.linker = resolve_linker_options(build_config);
   return cfg;
 }
 

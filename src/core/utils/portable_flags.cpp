@@ -17,6 +17,16 @@ bool portable_options::has_any() const {
          !stdlib.empty() || !hardening.empty() || !visibility.empty();
 }
 
+bool linker_options::has_any() const {
+  return !flags.empty() || !library_dirs.empty() || strip || dead_code_strip ||
+         !linker.empty() || !rpath.empty() || static_runtime ||
+         allow_undefined || map_file || !scripts.empty() || !def_file.empty() ||
+         !version_script.empty() || !exported_symbols.empty() ||
+         !unexported_symbols.empty() || !order_file.empty() ||
+         !subsystem.empty() || !entry_point.empty() || !install_name.empty() ||
+         whole_archive || pie || !relro.empty();
+}
+
 bool cmake_options::has_any() const {
   return export_compile_commands || position_independent_code ||
          interprocedural_optimization || visibility_hidden ||
@@ -46,6 +56,79 @@ portable_options parse_portable_options(const toml_reader &config,
   opts.sanitizers = config.get_string_array(section + ".sanitizers");
 
   return opts;
+}
+
+linker_options parse_linker_options(const toml_reader &config,
+                                    const std::string &section) {
+  linker_options opts;
+
+  // Parse array options
+  opts.flags = config.get_string_array(section + ".flags");
+  opts.library_dirs = config.get_string_array(section + ".library_dirs");
+  opts.rpath = config.get_string_array(section + ".rpath");
+  opts.scripts = config.get_string_array(section + ".scripts");
+
+  // Parse boolean options
+  opts.strip = config.get_bool(section + ".strip", false);
+  opts.dead_code_strip = config.get_bool(section + ".dead_code_strip", false);
+  opts.static_runtime = config.get_bool(section + ".static_runtime", false);
+  opts.allow_undefined = config.get_bool(section + ".allow_undefined", false);
+  opts.map_file = config.get_bool(section + ".map_file", false);
+  opts.whole_archive = config.get_bool(section + ".whole_archive", false);
+  opts.pie = config.get_bool(section + ".pie", false);
+
+  // Parse string options
+  opts.linker = config.get_string(section + ".linker", "");
+  opts.def_file = config.get_string(section + ".def_file", "");
+  opts.version_script = config.get_string(section + ".version_script", "");
+  opts.exported_symbols = config.get_string(section + ".exported_symbols", "");
+  opts.unexported_symbols = config.get_string(section + ".unexported_symbols", "");
+  opts.order_file = config.get_string(section + ".order_file", "");
+  opts.subsystem = config.get_string(section + ".subsystem", "");
+  opts.entry_point = config.get_string(section + ".entry_point", "");
+  opts.install_name = config.get_string(section + ".install_name", "");
+  opts.relro = config.get_string(section + ".relro", "");
+
+  return opts;
+}
+
+// Helper to merge string arrays (append unique values)
+static void merge_string_arrays(std::vector<std::string> &target,
+                                const std::vector<std::string> &source) {
+  for (const auto &item : source) {
+    if (std::find(target.begin(), target.end(), item) == target.end()) {
+      target.push_back(item);
+    }
+  }
+}
+
+void merge_linker_options(linker_options &target, const linker_options &source) {
+  // Merge arrays (append unique values)
+  merge_string_arrays(target.flags, source.flags);
+  merge_string_arrays(target.library_dirs, source.library_dirs);
+  merge_string_arrays(target.rpath, source.rpath);
+  merge_string_arrays(target.scripts, source.scripts);
+
+  // Merge booleans (source overrides if true)
+  if (source.strip) target.strip = true;
+  if (source.dead_code_strip) target.dead_code_strip = true;
+  if (source.static_runtime) target.static_runtime = true;
+  if (source.allow_undefined) target.allow_undefined = true;
+  if (source.map_file) target.map_file = true;
+  if (source.whole_archive) target.whole_archive = true;
+  if (source.pie) target.pie = true;
+
+  // Merge strings (source overrides if non-empty)
+  if (!source.linker.empty()) target.linker = source.linker;
+  if (!source.def_file.empty()) target.def_file = source.def_file;
+  if (!source.version_script.empty()) target.version_script = source.version_script;
+  if (!source.exported_symbols.empty()) target.exported_symbols = source.exported_symbols;
+  if (!source.unexported_symbols.empty()) target.unexported_symbols = source.unexported_symbols;
+  if (!source.order_file.empty()) target.order_file = source.order_file;
+  if (!source.subsystem.empty()) target.subsystem = source.subsystem;
+  if (!source.entry_point.empty()) target.entry_point = source.entry_point;
+  if (!source.install_name.empty()) target.install_name = source.install_name;
+  if (!source.relro.empty()) target.relro = source.relro;
 }
 
 cmake_options parse_cmake_options(const toml_reader &config) {
@@ -441,6 +524,263 @@ std::vector<std::string> translate_to_clang_link(const portable_options &opts) {
   return flags;
 }
 
+std::vector<std::string> translate_linker_to_msvc(const linker_options &opts) {
+  std::vector<std::string> flags;
+
+  // Add raw flags first
+  for (const auto &flag : opts.flags) {
+    flags.push_back(flag);
+  }
+
+  // Library directories
+  for (const auto &dir : opts.library_dirs) {
+    flags.push_back("/LIBPATH:" + dir);
+  }
+
+  // Strip symbols (no debug info in release)
+  // MSVC doesn't have a direct strip equivalent - handled by not generating PDB
+
+  // Dead code stripping
+  if (opts.dead_code_strip) {
+    flags.push_back("/OPT:REF");
+    flags.push_back("/OPT:ICF");
+  }
+
+  // Static runtime
+  // Note: This is typically handled by CMAKE_MSVC_RUNTIME_LIBRARY
+  // but we can force it with linker flags if needed
+
+  // Generate map file
+  if (opts.map_file) {
+    flags.push_back("/MAP");
+  }
+
+  // Module definition file
+  if (!opts.def_file.empty()) {
+    flags.push_back("/DEF:" + opts.def_file);
+  }
+
+  // Windows subsystem
+  if (opts.subsystem == "windows") {
+    flags.push_back("/SUBSYSTEM:WINDOWS");
+  } else if (opts.subsystem == "console") {
+    flags.push_back("/SUBSYSTEM:CONSOLE");
+  }
+
+  // Entry point
+  if (!opts.entry_point.empty()) {
+    flags.push_back("/ENTRY:" + opts.entry_point);
+  }
+
+  // Whole archive (force include all symbols)
+  if (opts.whole_archive) {
+    flags.push_back("/WHOLEARCHIVE");
+  }
+
+  return flags;
+}
+
+std::vector<std::string> translate_linker_to_gcc(const linker_options &opts) {
+  std::vector<std::string> flags;
+
+  // Add raw flags first
+  for (const auto &flag : opts.flags) {
+    flags.push_back(flag);
+  }
+
+  // Library directories
+  for (const auto &dir : opts.library_dirs) {
+    flags.push_back("-L" + dir);
+  }
+
+  // Preferred linker
+  if (opts.linker == "lld") {
+    flags.push_back("-fuse-ld=lld");
+  } else if (opts.linker == "gold") {
+    flags.push_back("-fuse-ld=gold");
+  } else if (opts.linker == "mold") {
+    flags.push_back("-fuse-ld=mold");
+  } else if (opts.linker == "bfd") {
+    flags.push_back("-fuse-ld=bfd");
+  }
+
+  // Strip symbols
+  if (opts.strip) {
+    flags.push_back("-s");
+  }
+
+  // Dead code stripping
+  if (opts.dead_code_strip) {
+    flags.push_back("-Wl,--gc-sections");
+  }
+
+  // rpath
+  for (const auto &path : opts.rpath) {
+    flags.push_back("-Wl,-rpath," + path);
+  }
+
+  // Static runtime
+  if (opts.static_runtime) {
+    flags.push_back("-static-libgcc");
+    flags.push_back("-static-libstdc++");
+  }
+
+  // Allow undefined symbols
+  if (opts.allow_undefined) {
+    flags.push_back("-Wl,--allow-shlib-undefined");
+  } else {
+    flags.push_back("-Wl,--no-undefined");
+  }
+
+  // Generate map file
+  if (opts.map_file) {
+    flags.push_back("-Wl,-Map,output.map");
+  }
+
+  // Linker scripts
+  for (const auto &script : opts.scripts) {
+    flags.push_back("-T" + script);
+  }
+
+  // Version script
+  if (!opts.version_script.empty()) {
+    flags.push_back("-Wl,--version-script=" + opts.version_script);
+  }
+
+  // Exported symbols (use version script approach on Linux)
+  if (!opts.exported_symbols.empty()) {
+    flags.push_back("-Wl,--version-script=" + opts.exported_symbols);
+  }
+
+  // Whole archive
+  if (opts.whole_archive) {
+    flags.push_back("-Wl,--whole-archive");
+  }
+
+  // PIE
+  if (opts.pie) {
+    flags.push_back("-pie");
+  }
+
+  // RELRO
+  if (opts.relro == "full") {
+    flags.push_back("-Wl,-z,relro,-z,now");
+  } else if (opts.relro == "partial") {
+    flags.push_back("-Wl,-z,relro");
+  }
+
+  return flags;
+}
+
+std::vector<std::string> translate_linker_to_clang(const linker_options &opts) {
+  std::vector<std::string> flags;
+
+  // Add raw flags first
+  for (const auto &flag : opts.flags) {
+    flags.push_back(flag);
+  }
+
+  // Library directories
+  for (const auto &dir : opts.library_dirs) {
+    flags.push_back("-L" + dir);
+  }
+
+  // Preferred linker
+  if (opts.linker == "lld") {
+    flags.push_back("-fuse-ld=lld");
+  } else if (opts.linker == "gold") {
+    flags.push_back("-fuse-ld=gold");
+  } else if (opts.linker == "mold") {
+    flags.push_back("-fuse-ld=mold");
+  } else if (opts.linker == "bfd") {
+    flags.push_back("-fuse-ld=bfd");
+  }
+
+  // Strip symbols
+  if (opts.strip) {
+    flags.push_back("-s");
+  }
+
+  // Dead code stripping
+  if (opts.dead_code_strip) {
+    flags.push_back("-Wl,--gc-sections");
+  }
+
+  // rpath
+  for (const auto &path : opts.rpath) {
+    flags.push_back("-Wl,-rpath," + path);
+  }
+
+  // Static runtime
+  if (opts.static_runtime) {
+    flags.push_back("-static-libgcc");
+    flags.push_back("-static-libstdc++");
+  }
+
+  // Allow undefined symbols
+  if (opts.allow_undefined) {
+    flags.push_back("-Wl,--allow-shlib-undefined");
+  }
+
+  // Generate map file
+  if (opts.map_file) {
+    flags.push_back("-Wl,-Map,output.map");
+  }
+
+  // Linker scripts
+  for (const auto &script : opts.scripts) {
+    flags.push_back("-T" + script);
+  }
+
+  // Version script
+  if (!opts.version_script.empty()) {
+    flags.push_back("-Wl,--version-script=" + opts.version_script);
+  }
+
+  // macOS install name
+  if (!opts.install_name.empty()) {
+    flags.push_back("-install_name");
+    flags.push_back(opts.install_name);
+  }
+
+  // macOS exported symbols list
+  if (!opts.exported_symbols.empty()) {
+    flags.push_back("-exported_symbols_list");
+    flags.push_back(opts.exported_symbols);
+  }
+
+  // macOS unexported symbols list
+  if (!opts.unexported_symbols.empty()) {
+    flags.push_back("-unexported_symbols_list");
+    flags.push_back(opts.unexported_symbols);
+  }
+
+  // macOS order file
+  if (!opts.order_file.empty()) {
+    flags.push_back("-order_file");
+    flags.push_back(opts.order_file);
+  }
+
+  // Whole archive
+  if (opts.whole_archive) {
+    flags.push_back("-Wl,--whole-archive");
+  }
+
+  // PIE
+  if (opts.pie) {
+    flags.push_back("-pie");
+  }
+
+  // RELRO
+  if (opts.relro == "full") {
+    flags.push_back("-Wl,-z,relro,-z,now");
+  } else if (opts.relro == "partial") {
+    flags.push_back("-Wl,-z,relro");
+  }
+
+  return flags;
+}
+
 std::string join_flags(const std::vector<std::string> &flags) {
   std::ostringstream oss;
   for (cforge_size_t i = 0; i < flags.size(); ++i) {
@@ -580,6 +920,73 @@ generate_config_portable_flags_cmake(const std::string &config_name,
   cmake << "# " << config_name << " configuration flags\n";
   cmake << "if(CMAKE_BUILD_TYPE STREQUAL \"" << config_name << "\")\n";
   cmake << generate_portable_flags_cmake(opts, target_name, "    ");
+  cmake << "endif()\n\n";
+
+  return cmake.str();
+}
+
+std::string generate_linker_flags_cmake(const linker_options &opts,
+                                        const std::string &target_name,
+                                        const std::string &indent) {
+  if (!opts.has_any()) {
+    return "";
+  }
+
+  std::ostringstream cmake;
+
+  auto msvc_flags = translate_linker_to_msvc(opts);
+  auto gcc_flags = translate_linker_to_gcc(opts);
+  auto clang_flags = translate_linker_to_clang(opts);
+
+  cmake << indent << "# Portable linker flags\n";
+  cmake << indent
+        << "if(MSVC AND NOT CMAKE_CXX_COMPILER_ID STREQUAL \"Clang\")\n";
+
+  if (!msvc_flags.empty()) {
+    cmake << indent << "    target_link_options(" << target_name << " PRIVATE";
+    for (const auto &flag : msvc_flags) {
+      cmake << " \"" << flag << "\"";
+    }
+    cmake << ")\n";
+  }
+
+  cmake << indent << "elseif(CMAKE_CXX_COMPILER_ID STREQUAL \"GNU\")\n";
+
+  if (!gcc_flags.empty()) {
+    cmake << indent << "    target_link_options(" << target_name << " PRIVATE";
+    for (const auto &flag : gcc_flags) {
+      cmake << " \"" << flag << "\"";
+    }
+    cmake << ")\n";
+  }
+
+  cmake << indent << "elseif(CMAKE_CXX_COMPILER_ID MATCHES \"Clang\")\n";
+
+  if (!clang_flags.empty()) {
+    cmake << indent << "    target_link_options(" << target_name << " PRIVATE";
+    for (const auto &flag : clang_flags) {
+      cmake << " \"" << flag << "\"";
+    }
+    cmake << ")\n";
+  }
+
+  cmake << indent << "endif()\n";
+
+  return cmake.str();
+}
+
+std::string generate_config_linker_flags_cmake(const std::string &config_name,
+                                               const linker_options &opts,
+                                               const std::string &target_name) {
+  if (!opts.has_any()) {
+    return "";
+  }
+
+  std::ostringstream cmake;
+
+  cmake << "# " << config_name << " configuration linker flags\n";
+  cmake << "if(CMAKE_BUILD_TYPE STREQUAL \"" << config_name << "\")\n";
+  cmake << generate_linker_flags_cmake(opts, target_name, "    ");
   cmake << "endif()\n\n";
 
   return cmake.str();

@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "core/toml_reader.hpp"
+#include "core/portable_flags.hpp"
 
 namespace cforge {
 
@@ -51,6 +52,7 @@ struct resolved_config {
   std::vector<std::string> frameworks;  // macOS only
   std::vector<std::string> cmake_args;
   std::map<std::string, std::string> cmake_options;
+  linker_options linker;  // Resolved linker options
 };
 
 /**
@@ -165,6 +167,17 @@ public:
    * @return Merged list of CMake arguments
    */
   std::vector<std::string> resolve_cmake_args(const std::string &build_config = "") const;
+
+  /**
+   * @brief Resolve linker options for a given build configuration
+   *
+   * Merges linker options from multiple sources with priority:
+   * linker < linker.platform < linker.compiler < linker.platform.compiler < linker.config
+   *
+   * @param build_config The build configuration name
+   * @return Merged linker options
+   */
+  linker_options resolve_linker_options(const std::string &build_config = "") const;
 
   /**
    * @brief Get a fully resolved configuration

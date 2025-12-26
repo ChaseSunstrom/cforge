@@ -1,7 +1,7 @@
 {
   "id": "testing",
-  "title": "Testing",
-  "description": "🧪 Testing",
+  "title": "Testing & Benchmarking",
+  "description": "Testing",
   "source": "@site/docs/testing.md",
   "sourceDirName": ".",
   "slug": "/testing",
@@ -13,7 +13,7 @@
   "version": "current",
   "frontMatter": {
     "id": "testing",
-    "title": "Testing"
+    "title": "Testing & Benchmarking"
   },
   "sidebar": "sidebar",
   "previous": {

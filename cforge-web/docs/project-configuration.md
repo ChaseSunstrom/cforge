@@ -251,3 +251,113 @@ These portable options can be used in:
 - `[compiler.<name>]` - Per-compiler settings
 
 Raw compiler flags can still be used alongside portable options with the `flags` array.
+
+### Linker Configuration
+
+CForge provides comprehensive linker configuration through the `[linker]` section. Options can be specified globally or for specific platforms, compilers, and build configurations.
+
+```toml
+# Global linker options
+[linker]
+flags = ["-Wl,--as-needed"]     # Raw linker flags
+library_dirs = ["lib", "vendor/lib"]  # Library search paths
+scripts = ["memory.ld"]          # Linker scripts (GCC/Clang)
+strip = false                    # Strip symbols from binary
+dead_code_strip = false          # Remove unused code sections
+linker = "default"               # Preferred linker: default, lld, gold, mold, bfd
+rpath = ["$ORIGIN", "$ORIGIN/../lib"]  # Runtime library search paths
+static_runtime = false           # Static link C++ runtime
+allow_undefined = false          # Allow undefined symbols
+map_file = false                 # Generate map file
+pie = false                      # Position independent executable
+relro = "none"                   # RELRO: none, partial, full
+
+# Platform-specific linker options
+[linker.platform.windows]
+flags = ["/DEBUG"]
+subsystem = "console"            # windows or console
+entry_point = "main"             # Entry point override
+def_file = "exports.def"         # Module definition file
+
+[linker.platform.linux]
+flags = ["-Wl,--no-undefined"]
+linker = "mold"                  # Use mold for faster linking
+scripts = ["layout.ld"]          # Custom memory layout
+version_script = "version.map"   # Symbol version script
+relro = "full"                   # Full RELRO for security
+
+[linker.platform.macos]
+install_name = "@rpath/libfoo.dylib"  # dylib install name
+exported_symbols = "exports.txt"      # Exported symbols list
+unexported_symbols = "hidden.txt"     # Hidden symbols list
+order_file = "symbols.order"          # Symbol ordering
+
+# Compiler-specific linker options
+[linker.compiler.gcc]
+flags = ["-Wl,--gc-sections"]
+static_runtime = true
+
+[linker.compiler.msvc]
+dead_code_strip = true           # /OPT:REF /OPT:ICF
+
+# Platform+Compiler combined
+[linker.platform.linux.compiler.clang]
+linker = "lld"
+
+# Build configuration specific
+[linker.config.release]
+strip = true
+dead_code_strip = true
+
+[linker.config.debug]
+map_file = true
+```
+
+### Linker Options Reference
+
+| Option | Values | Description |
+|--------|--------|-------------|
+| `flags` | `[...]` | Raw linker flags passed directly |
+| `library_dirs` | `[...]` | Library search directories |
+| `scripts` | `[...]` | Linker scripts (GCC/Clang: `-T`) |
+| `strip` | `true` / `false` | Strip symbols from binary |
+| `dead_code_strip` | `true` / `false` | Remove unused code sections |
+| `linker` | `"default"`, `"lld"`, `"gold"`, `"mold"`, `"bfd"` | Preferred linker |
+| `rpath` | `[...]` | Runtime library search paths |
+| `static_runtime` | `true` / `false` | Static link C++ runtime |
+| `allow_undefined` | `true` / `false` | Allow undefined symbols |
+| `map_file` | `true` / `false` | Generate linker map file |
+| `def_file` | `"path"` | Module definition file (MSVC) |
+| `version_script` | `"path"` | Symbol version script (Linux) |
+| `exported_symbols` | `"path"` | Exported symbols file (macOS) |
+| `unexported_symbols` | `"path"` | Unexported symbols file (macOS) |
+| `order_file` | `"path"` | Symbol ordering file (macOS) |
+| `subsystem` | `"console"`, `"windows"` | Windows subsystem |
+| `entry_point` | `"name"` | Entry point override |
+| `install_name` | `"path"` | macOS dylib install name |
+| `whole_archive` | `true` / `false` | Force include all symbols |
+| `pie` | `true` / `false` | Position independent executable |
+| `relro` | `"none"`, `"partial"`, `"full"` | RELRO security hardening |
+
+### Linker Flag Translation
+
+| Portable | MSVC | GCC/Clang |
+|----------|------|-----------|
+| `strip = true` | (no debug PDB) | `-s` |
+| `dead_code_strip = true` | `/OPT:REF /OPT:ICF` | `-Wl,--gc-sections` |
+| `scripts = ["x.ld"]` | N/A | `-Tx.ld` |
+| `linker = "lld"` | (uses lld-link) | `-fuse-ld=lld` |
+| `linker = "mold"` | N/A | `-fuse-ld=mold` |
+| `static_runtime = true` | (CMAKE_MSVC_RUNTIME_LIBRARY) | `-static-libgcc -static-libstdc++` |
+| `pie = true` | N/A | `-pie` |
+| `relro = "full"` | N/A | `-Wl,-z,relro,-z,now` |
+| `map_file = true` | `/MAP` | `-Wl,-Map,output.map` |
+| `exported_symbols` | N/A | `-exported_symbols_list` (macOS) |
+| `order_file` | N/A | `-order_file` (macOS) |
+
+Linker options follow the same priority order as other configuration:
+1. `[linker]` - Base (lowest priority)
+2. `[linker.platform.<name>]` - Platform-specific
+3. `[linker.compiler.<name>]` - Compiler-specific
+4. `[linker.platform.<name>.compiler.<name>]` - Combined
+5. `[linker.config.<name>]` - Build configuration (highest priority)

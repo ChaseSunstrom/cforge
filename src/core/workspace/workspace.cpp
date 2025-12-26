@@ -14,6 +14,11 @@
 #include "core/toml_reader.hpp"
 #include "core/types.h"
 
+// Forward declare from build_utils.hpp to avoid platform namespace conflict
+namespace cforge {
+  std::string get_cmake_generator();
+}
+
 #include <algorithm>
 #include <fstream>
 #include <functional>
@@ -24,26 +29,25 @@
 
 namespace cforge {
 
-static std::string get_cmake_generator() {
-#ifdef _WIN32
-  // Check if Ninja is available - prefer it if it is
-  if (is_command_available("ninja", 15)) {
-    logger::print_verbose(
-        "Ninja is available, using Ninja Multi-Config generator");
-    return "Ninja Multi-Config";
+// Helper to get generator for a project, respecting cmake.generator config
+static std::string get_project_generator(const toml_reader &project_config) {
+  // Check if project has a specific generator configured
+  if (project_config.has_key("cmake.generator")) {
+    std::string gen = project_config.get_string("cmake.generator", "");
+    if (!gen.empty()) {
+      logger::print_verbose("Using CMake generator from project config: " + gen);
+      return gen;
+    }
   }
 
-  logger::print_verbose(
-      "Ninja not found, falling back to Visual Studio generator");
-  return "Visual Studio 17 2022";
-#else
-  return "Unix Makefiles";
-#endif
+  // Fall back to default generator detection
+  return get_cmake_generator();
 }
 
 static std::filesystem::path
 get_build_dir_for_config(const std::string &base_dir,
-                         const std::string &config) {
+                         const std::string &config,
+                         const std::string &generator = "") {
   // If config is empty, use the base directory
   if (config.empty()) {
     return base_dir;
@@ -54,9 +58,13 @@ get_build_dir_for_config(const std::string &base_dir,
   std::transform(config_lower.begin(), config_lower.end(), config_lower.begin(),
                  ::tolower);
 
-  // For Ninja Multi-Config, we don't append the config to the build directory
-  std::string generator = get_cmake_generator();
-  if (generator.find("Ninja Multi-Config") != std::string::npos) {
+  // Determine the generator to use
+  std::string gen = generator.empty() ? get_cmake_generator() : generator;
+
+  // For multi-config generators, we don't append the config to the build directory
+  if (gen.find("Multi-Config") != std::string::npos ||
+      gen.find("Visual Studio") != std::string::npos ||
+      gen.find("Xcode") != std::string::npos) {
     // Create the build directory if it doesn't exist
     std::filesystem::path build_path(base_dir);
     if (!std::filesystem::exists(build_path)) {
@@ -1315,9 +1323,10 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
   // Get the right build directory for the configuration
   std::string build_config =
       project_config.get_string("build.build_type", "Debug");
+  std::string generator = get_project_generator(project_config);
   std::filesystem::path build_base_dir = project_dir / "build";
   std::filesystem::path build_dir =
-      get_build_dir_for_config(build_base_dir.string(), build_config);
+      get_build_dir_for_config(build_base_dir.string(), build_config, generator);
 
   // Create build directory if it doesn't exist
   if (!std::filesystem::exists(build_dir)) {
@@ -1361,6 +1370,13 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
   cmakelists << "# Project configuration\n";
   cmakelists << "project(" << project_name << " VERSION " << project_version
              << " LANGUAGES " << (c_standard.empty() ? "" : "C ") <<  (cpp_standard.empty() ? "" : "CXX ") << ")\n\n";
+
+  // Include implicit system directories in compile_commands.json for IDE support
+  cmakelists << "# Include compiler's implicit include directories in compile_commands.json\n";
+  cmakelists << "# This helps clangd and other tools find standard library headers\n";
+  cmakelists << "if(CMAKE_EXPORT_COMPILE_COMMANDS)\n";
+  cmakelists << "  set(CMAKE_CXX_STANDARD_INCLUDE_DIRECTORIES ${CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES})\n";
+  cmakelists << "endif()\n\n";
 
   // CMake module paths
   if (project_config.has_key("cmake.module_paths")) {
@@ -1923,6 +1939,104 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
           cmakelists << "if(CFORGE_COMPILER STREQUAL \"" << comp << "\")\n";
           cmakelists << generate_portable_flags_cmake(opts, "${PROJECT_NAME}", "    ");
           cmakelists << "endif()\n\n";
+        }
+      }
+    }
+  }
+
+  // Portable linker options from [linker] section and sub-sections
+  if (binary_type != "header_only") {
+    // Check if we have any linker configuration
+    bool has_linker_config = project_config.has_key("linker");
+    if (!has_linker_config) {
+      // Also check platform/compiler specific sections
+      for (const auto &plat : platforms) {
+        if (project_config.has_key("linker.platform." + plat)) {
+          has_linker_config = true;
+          break;
+        }
+      }
+    }
+    if (!has_linker_config) {
+      for (const auto &comp : compilers) {
+        if (project_config.has_key("linker.compiler." + comp)) {
+          has_linker_config = true;
+          break;
+        }
+      }
+    }
+    if (!has_linker_config) {
+      std::vector<std::string> configs = {"debug", "release", "relwithdebinfo", "minsizerel"};
+      for (const auto &cfg : configs) {
+        if (project_config.has_key("linker.config." + cfg)) {
+          has_linker_config = true;
+          break;
+        }
+      }
+    }
+
+    if (has_linker_config) {
+      cmakelists << "# Portable linker options\n";
+
+      // Global linker options from [linker]
+      linker_options base_linker = parse_linker_options(project_config, "linker");
+      if (base_linker.has_any()) {
+        cmakelists << generate_linker_flags_cmake(base_linker, "${PROJECT_NAME}", "");
+      }
+
+      // Platform-specific linker options from [linker.platform.<name>]
+      for (const auto &plat : platforms) {
+        std::string section = "linker.platform." + plat;
+        if (project_config.has_key(section)) {
+          linker_options plat_linker = parse_linker_options(project_config, section);
+          if (plat_linker.has_any()) {
+            cmakelists << "if(CFORGE_PLATFORM STREQUAL \"" << plat << "\")\n";
+            cmakelists << generate_linker_flags_cmake(plat_linker, "${PROJECT_NAME}", "    ");
+            cmakelists << "endif()\n\n";
+          }
+        }
+      }
+
+      // Compiler-specific linker options from [linker.compiler.<name>]
+      for (const auto &comp : compilers) {
+        std::string section = "linker.compiler." + comp;
+        if (project_config.has_key(section)) {
+          linker_options comp_linker = parse_linker_options(project_config, section);
+          if (comp_linker.has_any()) {
+            cmakelists << "if(CFORGE_COMPILER STREQUAL \"" << comp << "\")\n";
+            cmakelists << generate_linker_flags_cmake(comp_linker, "${PROJECT_NAME}", "    ");
+            cmakelists << "endif()\n\n";
+          }
+        }
+      }
+
+      // Platform+Compiler nested linker options
+      for (const auto &plat : platforms) {
+        for (const auto &comp : compilers) {
+          std::string section = "linker.platform." + plat + ".compiler." + comp;
+          if (project_config.has_key(section)) {
+            linker_options nested_linker = parse_linker_options(project_config, section);
+            if (nested_linker.has_any()) {
+              cmakelists << "if(CFORGE_PLATFORM STREQUAL \"" << plat << "\" AND CFORGE_COMPILER STREQUAL \"" << comp << "\")\n";
+              cmakelists << generate_linker_flags_cmake(nested_linker, "${PROJECT_NAME}", "    ");
+              cmakelists << "endif()\n\n";
+            }
+          }
+        }
+      }
+
+      // Config-specific linker options from [linker.config.<name>]
+      std::vector<std::string> configs = {"debug", "release", "relwithdebinfo", "minsizerel"};
+      for (const auto &cfg : configs) {
+        std::string section = "linker.config." + cfg;
+        if (project_config.has_key(section)) {
+          linker_options cfg_linker = parse_linker_options(project_config, section);
+          if (cfg_linker.has_any()) {
+            // Capitalize first letter for CMake build type
+            std::string cmake_cfg = cfg;
+            cmake_cfg[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(cmake_cfg[0])));
+            cmakelists << generate_config_linker_flags_cmake(cmake_cfg, cfg_linker, "${PROJECT_NAME}");
+          }
         }
       }
     }
@@ -2590,22 +2704,21 @@ bool workspace::build_all(const std::string &config, cforge_int_t num_jobs,
     std::filesystem::path cmake_path = project.path / "CMakeLists.txt";
     std::filesystem::path config_path = project.path / CFORGE_FILE;
 
+    // Load project config to get generator and other settings
+    toml_reader project_config;
+    bool has_project_config = false;
+    if (std::filesystem::exists(config_path)) {
+      has_project_config = project_config.load(config_path.string());
+    }
+
     if (!std::filesystem::exists(cmake_path)) {
-      if (std::filesystem::exists(config_path)) {
+      if (has_project_config) {
         // Try to generate CMakeLists.txt from cforge.toml
-        toml_reader project_config;
-        if (project_config.load(config_path.string())) {
-          if (!generate_cmakelists_from_toml(project.path, project_config,
-                                             verbose)) {
-            logger::print_error(
-                "Failed to generate CMakeLists.txt for project: " +
-                project.name);
-            all_success = false;
-            continue;
-          }
-        } else {
-          logger::print_error("Failed to load cforge.toml for project: " +
-                              project.name);
+        if (!generate_cmakelists_from_toml(project.path, project_config,
+                                           verbose)) {
+          logger::print_error(
+              "Failed to generate CMakeLists.txt for project: " +
+              project.name);
           all_success = false;
           continue;
         }
@@ -2617,10 +2730,26 @@ bool workspace::build_all(const std::string &config, cforge_int_t num_jobs,
       }
     }
 
+    // Determine generator - respect project's cmake.generator setting
+    std::string generator = get_project_generator(project_config);
+    bool is_multi_config = generator.find("Multi-Config") != std::string::npos ||
+                           generator.find("Visual Studio") != std::string::npos ||
+                           generator.find("Xcode") != std::string::npos;
+
     // Generate CMake options with dependency linking
     std::vector<std::string> cmake_args = {"-S", project.path.string(), "-B",
                                            build_dir.string(),
-                                           "-DCMAKE_BUILD_TYPE=" + config};
+                                           "-G", generator};
+
+    // Add build type for non-multi-config generators
+    if (!is_multi_config) {
+      cmake_args.push_back("-DCMAKE_BUILD_TYPE=" + config);
+    }
+
+    // Add export_compile_commands if enabled in project config
+    if (has_project_config && project_config.get_bool("build.export_compile_commands", false)) {
+      cmake_args.push_back("-DCMAKE_EXPORT_COMPILE_COMMANDS=ON");
+    }
 
     // Add dependency linking options
     std::vector<std::string> link_options =
@@ -2646,8 +2775,13 @@ bool workspace::build_all(const std::string &config, cforge_int_t num_jobs,
     }
 
     // Build the project
-    std::vector<std::string> build_args = {"--build", build_dir.string(),
-                                           "--config", config};
+    std::vector<std::string> build_args = {"--build", build_dir.string()};
+
+    // Add config for multi-config generators
+    if (is_multi_config) {
+      build_args.push_back("--config");
+      build_args.push_back(config);
+    }
 
     // Set parallel jobs for build
     if (num_jobs > 0) {
@@ -2722,9 +2856,12 @@ bool workspace::build_project(const std::string &project_name,
       base_build_dir = "build";
     }
 
+    // Determine generator - respect project's cmake.generator setting
+    std::string generator = get_project_generator(project_config);
+
     // Get the config-specific build directory
     std::filesystem::path build_dir =
-        get_build_dir_for_config(base_build_dir, config);
+        get_build_dir_for_config(base_build_dir, config, generator);
 
     // If build dir doesn't exist, create it
     if (!std::filesystem::exists(build_dir)) {
@@ -2760,11 +2897,19 @@ bool workspace::build_project(const std::string &project_name,
     cmake_args.push_back("-B");
     cmake_args.push_back(build_dir.string());
     cmake_args.push_back("-G");
-    cmake_args.push_back(get_cmake_generator());
+    cmake_args.push_back(generator);
 
     // Add build type for non-multi-config generators
-    if (get_cmake_generator().find("Multi-Config") == std::string::npos) {
+    bool is_multi_config = generator.find("Multi-Config") != std::string::npos ||
+                           generator.find("Visual Studio") != std::string::npos ||
+                           generator.find("Xcode") != std::string::npos;
+    if (!is_multi_config) {
       cmake_args.push_back("-DCMAKE_BUILD_TYPE=" + config);
+    }
+
+    // Add export_compile_commands if enabled in project config
+    if (project_config.get_bool("build.export_compile_commands", false)) {
+      cmake_args.push_back("-DCMAKE_EXPORT_COMPILE_COMMANDS=ON");
     }
 
     // Add extra arguments from cforge.toml if available
@@ -2791,7 +2936,7 @@ bool workspace::build_project(const std::string &project_name,
     build_args.push_back(build_dir.string());
 
     // Add config for multi-config generators
-    if (get_cmake_generator().find("Multi-Config") != std::string::npos) {
+    if (is_multi_config) {
       build_args.push_back("--config");
       build_args.push_back(config);
     }
@@ -3229,6 +3374,14 @@ bool generate_workspace_cmakelists(const std::filesystem::path &workspace_dir,
   // Workspace configuration
   cmakelists << "# Workspace configuration\n";
   cmakelists << "project(" << workspace_name << " LANGUAGES CXX)\n\n";
+
+  // Include implicit system directories in compile_commands.json for IDE support
+  cmakelists << "# Include compiler's implicit include directories in compile_commands.json\n";
+  cmakelists << "# This helps clangd and other tools find standard library headers\n";
+  cmakelists << "if(CMAKE_EXPORT_COMPILE_COMMANDS)\n";
+  cmakelists << "  set(CMAKE_CXX_STANDARD_INCLUDE_DIRECTORIES ${CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES})\n";
+  cmakelists << "endif()\n\n";
+
   // Set C++ standard for the entire workspace
   std::string cpp_std =
       workspace_config.get_string("workspace.cpp_standard", "17");

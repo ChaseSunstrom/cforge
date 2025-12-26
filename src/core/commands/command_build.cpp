@@ -1931,10 +1931,37 @@ cforge_int_t cforge_cmd_build(const cforge_context_t *ctx) {
       } catch (...) {
       }
     }
-    // Configure cforge::workspaceCMake
+
+    // Get generator from workspace config, fall back to auto-detection
+    std::string generator;
+    if (ws_cfg.has_key("cmake.generator")) {
+      generator = ws_cfg.get_string("cmake.generator", "");
+    }
+    if (generator.empty()) {
+      generator = cforge::get_cmake_generator();
+    }
+    cforge::logger::print_verbose("Using CMake generator: " + generator);
+
+    // Check if multi-config generator
+    bool is_multi_config = generator.find("Multi-Config") != std::string::npos ||
+                           generator.find("Visual Studio") != std::string::npos ||
+                           generator.find("Xcode") != std::string::npos;
+
+    // Configure workspace CMake
     std::vector<std::string> cmake_args = {"-S", workspace_dir.string(), "-B",
                                            build_dir.string(),
-                                           "-DCMAKE_BUILD_TYPE=" + config_name};
+                                           "-G", generator};
+
+    // Add build type for non-multi-config generators
+    if (!is_multi_config) {
+      cmake_args.push_back("-DCMAKE_BUILD_TYPE=" + config_name);
+    }
+
+    // Add export_compile_commands if enabled
+    if (ws_cfg.get_bool("build.export_compile_commands", false)) {
+      cmake_args.push_back("-DCMAKE_EXPORT_COMPILE_COMMANDS=ON");
+    }
+
     if (verbose)
       cmake_args.push_back("--debug-output");
     if (!run_cmake_configure(cmake_args, build_dir.string(),
@@ -1946,8 +1973,13 @@ cforge_int_t cforge_cmd_build(const cforge_context_t *ctx) {
     }
 
     // STEP 4: Build single target or entire workspace
-    std::vector<std::string> build_args = {"--build", build_dir.string(),
-                                           "--config", config_name};
+    std::vector<std::string> build_args = {"--build", build_dir.string()};
+
+    // Add config for multi-config generators
+    if (is_multi_config) {
+      build_args.push_back("--config");
+      build_args.push_back(config_name);
+    }
     if (num_jobs > 0) {
       build_args.push_back("--parallel");
       build_args.push_back(std::to_string(num_jobs));

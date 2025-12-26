@@ -67,6 +67,84 @@ struct portable_options {
 };
 
 /**
+ * @brief Portable linker options that map to linker-specific flags
+ *
+ * These options can be specified in:
+ * - [linker] section (global)
+ * - [linker.platform.<name>] sections (per-platform)
+ * - [linker.compiler.<name>] sections (per-compiler)
+ * - [linker.platform.<name>.compiler.<name>] sections (combined)
+ * - [linker.config.<name>] sections (per-configuration)
+ */
+struct linker_options {
+  // Raw linker flags (passed directly to linker)
+  std::vector<std::string> flags;
+
+  // Library search directories (-L / /LIBPATH:)
+  std::vector<std::string> library_dirs;
+
+  // Strip symbols from binary: true/false
+  bool strip = false;
+
+  // Remove unused code sections (--gc-sections / /OPT:REF)
+  bool dead_code_strip = false;
+
+  // Preferred linker: "default", "lld", "gold", "mold", "bfd"
+  std::string linker;
+
+  // Runtime library search paths (rpath)
+  std::vector<std::string> rpath;
+
+  // Use static C/C++ runtime: true/false
+  bool static_runtime = false;
+
+  // Allow undefined symbols: true/false (default false)
+  bool allow_undefined = false;
+
+  // Generate map file: true/false
+  bool map_file = false;
+
+  // Linker scripts (GCC/Clang: -T, multiple allowed)
+  std::vector<std::string> scripts;
+
+  // Module definition file (MSVC: /DEF:)
+  std::string def_file;
+
+  // Symbol version script (Linux: --version-script)
+  std::string version_script;
+
+  // Exported symbols file (macOS: -exported_symbols_list)
+  std::string exported_symbols;
+
+  // Unexported symbols file (macOS: -unexported_symbols_list)
+  std::string unexported_symbols;
+
+  // Order file for symbol ordering (macOS: -order_file)
+  std::string order_file;
+
+  // Windows subsystem: "console", "windows"
+  std::string subsystem;
+
+  // Windows entry point override
+  std::string entry_point;
+
+  // macOS install name for dylibs
+  std::string install_name;
+
+  // Whole archive linking (force include all symbols)
+  bool whole_archive = false;
+
+  // Position independent executable (PIE)
+  bool pie = false;
+
+  // Relocation read-only (RELRO): "none", "partial", "full"
+  std::string relro;
+
+  // Check if any options are set
+  bool has_any() const;
+};
+
+/**
  * @brief CMake-level options from [build] section
  */
 struct cmake_options {
@@ -118,6 +196,32 @@ portable_options parse_portable_options(const toml_reader &config,
 cmake_options parse_cmake_options(const toml_reader &config);
 
 /**
+ * @brief Parse linker options from a TOML section
+ *
+ * Can parse from any section that may contain linker options:
+ * - "linker" (global)
+ * - "linker.platform.windows", "linker.platform.linux", etc.
+ * - "linker.compiler.msvc", "linker.compiler.gcc", etc.
+ * - "linker.config.debug", "linker.config.release", etc.
+ *
+ * @param config TOML reader instance
+ * @param section Section path (e.g., "linker.platform.linux")
+ * @return Parsed linker options
+ */
+linker_options parse_linker_options(const toml_reader &config,
+                                    const std::string &section);
+
+/**
+ * @brief Merge two linker_options structs (source into target)
+ *
+ * Arrays are appended (unique values only), strings/bools override if set.
+ *
+ * @param target Target options to merge into
+ * @param source Source options to merge from
+ */
+void merge_linker_options(linker_options &target, const linker_options &source);
+
+/**
  * @brief Translate portable options to MSVC flags
  *
  * @param opts Portable options
@@ -166,6 +270,30 @@ std::vector<std::string> translate_to_clang(const portable_options &opts);
 std::vector<std::string> translate_to_clang_link(const portable_options &opts);
 
 /**
+ * @brief Translate linker options to MSVC linker flags
+ *
+ * @param opts Linker options
+ * @return Vector of MSVC linker flags
+ */
+std::vector<std::string> translate_linker_to_msvc(const linker_options &opts);
+
+/**
+ * @brief Translate linker options to GCC linker flags
+ *
+ * @param opts Linker options
+ * @return Vector of GCC linker flags
+ */
+std::vector<std::string> translate_linker_to_gcc(const linker_options &opts);
+
+/**
+ * @brief Translate linker options to Clang linker flags
+ *
+ * @param opts Linker options
+ * @return Vector of Clang linker flags
+ */
+std::vector<std::string> translate_linker_to_clang(const linker_options &opts);
+
+/**
  * @brief Generate CMake code for portable options
  *
  * Generates compiler-agnostic CMake code that applies the correct flags
@@ -212,5 +340,34 @@ generate_config_portable_flags_cmake(const std::string &config_name,
  * @return Space-separated string
  */
 std::string join_flags(const std::vector<std::string> &flags);
+
+/**
+ * @brief Generate CMake code for linker options
+ *
+ * Generates compiler-agnostic CMake code that applies the correct linker flags
+ * based on the detected compiler.
+ *
+ * @param opts Linker options
+ * @param target_name CMake target name (use ${PROJECT_NAME} for main target)
+ * @param indent Indentation string (default: "")
+ * @return CMake code string
+ */
+std::string generate_linker_flags_cmake(const linker_options &opts,
+                                        const std::string &target_name,
+                                        const std::string &indent = "");
+
+/**
+ * @brief Generate CMake code for configuration-specific linker options
+ *
+ * Wraps the linker flags in CMAKE_BUILD_TYPE conditionals.
+ *
+ * @param config_name Configuration name (e.g., "Debug", "Release")
+ * @param opts Linker options for this configuration
+ * @param target_name CMake target name
+ * @return CMake code string
+ */
+std::string generate_config_linker_flags_cmake(const std::string &config_name,
+                                               const linker_options &opts,
+                                               const std::string &target_name);
 
 } // namespace cforge
