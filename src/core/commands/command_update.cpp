@@ -77,7 +77,10 @@ cforge_int_t cforge_cmd_update(const cforge_context_t *ctx) {
         install_path = installer_instance.get_default_install_path();
       }
     }
-    cforge::logger::print_action("Install path", install_path);
+    // Log the actual install location (not just the base path)
+    std::filesystem::path install_bin_dir =
+        std::filesystem::path(install_path) / "installed" / "cforge" / "bin";
+    cforge::logger::print_action("Install path", install_bin_dir.string());
 
     // Prepare temporary clone directory
     std::filesystem::path temp_dir =
@@ -188,9 +191,7 @@ cforge_int_t cforge_cmd_update(const cforge_context_t *ctx) {
     cforge::logger::print_verbose("Found built executable: " + built_exe.string());
 
     // Install the binary to the same location as `cforge install`
-    // This is: <platform_path>/installed/cforge/bin/
-    std::filesystem::path install_bin_dir =
-        std::filesystem::path(install_path) / "installed" / "cforge" / "bin";
+    // install_bin_dir was already set earlier for logging
     std::filesystem::create_directories(install_bin_dir);
 
 #ifdef _WIN32
