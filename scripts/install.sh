@@ -20,7 +20,8 @@ BOLD='\033[1m'
 NC='\033[0m' # No Color
 
 # Default installation paths
-DEFAULT_PREFIX="$HOME/.local"
+# Install to ~/.local/cforge to match `cforge install` and `cforge update --self`
+DEFAULT_PREFIX="$HOME/.local/cforge"
 PREFIX="${PREFIX:-$DEFAULT_PREFIX}"
 ADD_TO_PATH=true
 VERBOSE=false
@@ -63,9 +64,9 @@ Options:
     -h, --help           Show this help message
 
 Examples:
-    $0                           # Install to ~/.local
-    $0 --prefix /usr/local       # Install to /usr/local (may need sudo)
-    $0 --prefix ~/bin --no-path  # Install to ~/bin, don't modify PATH
+    $0                           # Install to ~/.local/cforge
+    $0 --prefix /opt/cforge      # Install to /opt/cforge (may need sudo)
+    $0 --no-path                 # Install without modifying PATH
 
 One-liner installation:
     curl -fsSL https://raw.githubusercontent.com/ChaseSunstrom/cforge/master/scripts/install.sh | bash
@@ -311,9 +312,11 @@ build_cforge() {
 
 # Install cforge
 install_cforge() {
-    installing "to $PREFIX"
+    # Install to same location as `cforge install` and `cforge update --self`
+    local install_dir="$PREFIX/installed/cforge/bin"
+    installing "to $install_dir"
 
-    mkdir -p "$PREFIX/bin"
+    mkdir -p "$install_dir"
 
     # Find the built binary
     local binary
@@ -329,10 +332,15 @@ install_cforge() {
         exit 1
     fi
 
-    cp "$binary" "$PREFIX/bin/cforge"
-    chmod +x "$PREFIX/bin/cforge"
+    cp "$binary" "$install_dir/cforge"
+    chmod +x "$install_dir/cforge"
 
-    success "installed cforge to $PREFIX/bin/cforge"
+    # Also create symlink in ~/.local/bin for convenience
+    mkdir -p "$HOME/.local/bin"
+    ln -sf "$install_dir/cforge" "$HOME/.local/bin/cforge"
+
+    success "installed cforge to $install_dir/cforge"
+    success "created symlink at $HOME/.local/bin/cforge"
 }
 
 # Add to PATH
@@ -341,7 +349,8 @@ add_to_path() {
         return
     fi
 
-    local bin_dir="$PREFIX/bin"
+    # Add ~/.local/bin to PATH (where the symlink is)
+    local bin_dir="$HOME/.local/bin"
 
     # Check if already in PATH
     if [[ ":$PATH:" == *":$bin_dir:"* ]]; then
@@ -396,13 +405,15 @@ add_to_path() {
 verify_installation() {
     print_status "Verifying" "installation" "$CYAN"
 
-    if [[ -x "$PREFIX/bin/cforge" ]]; then
+    local install_dir="$PREFIX/installed/cforge/bin"
+    if [[ -x "$install_dir/cforge" ]]; then
         local version
-        version=$("$PREFIX/bin/cforge" version 2>/dev/null || echo "unknown")
+        version=$("$install_dir/cforge" version 2>/dev/null || echo "unknown")
         success "cforge installed successfully!"
         echo ""
         echo "  Version:  $version"
-        echo "  Location: $PREFIX/bin/cforge"
+        echo "  Location: $install_dir/cforge"
+        echo "  Symlink:  $HOME/.local/bin/cforge"
         echo ""
         echo "Get started:"
         echo "  cforge init my_project    # Create a new project"

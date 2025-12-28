@@ -6,6 +6,12 @@ cmake_minimum_required(VERSION 3.15)
 # Project configuration
 project(cforge VERSION 3.0.1 LANGUAGES CXX )
 
+# Include compiler's implicit include directories in compile_commands.json
+# This helps clangd and other tools find standard library headers
+if(CMAKE_EXPORT_COMPILE_COMMANDS)
+  set(CMAKE_CXX_STANDARD_INCLUDE_DIRECTORIES ${CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES})
+endif()
+
 # Set source directory
 set(SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
 
@@ -19,7 +25,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# Platform detection
+# platform detection
 if(WIN32)
     set(CFORGE_PLATFORM "windows")
 elseif(APPLE)
@@ -28,7 +34,7 @@ else()
     set(CFORGE_PLATFORM "linux")
 endif()
 
-# Compiler detection
+# compiler detection
 if(MSVC AND NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     set(CFORGE_COMPILER "msvc")
 elseif(MINGW)
@@ -44,7 +50,10 @@ elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
 else()
     set(CFORGE_COMPILER "unknown")
 endif()
-message(STATUS "Platform: ${CFORGE_PLATFORM}, Compiler: ${CFORGE_COMPILER}")
+message(STATUS "platform: ${CFORGE_PLATFORM}, compiler: ${CFORGE_COMPILER}")
+
+# CMake options
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Build configurations
 if(NOT CMAKE_BUILD_TYPE)
@@ -86,6 +95,7 @@ FetchContent_Declare(
     GIT_SHALLOW TRUE
 )
 
+# Fetch packages without setup commands
 FetchContent_MakeAvailable(fmt tomlplusplus)
 
 # Add source files
@@ -120,6 +130,34 @@ target_link_libraries(${PROJECT_NAME} PUBLIC
     tomlplusplus::tomlplusplus
 )
 
+# Portable compiler flags per configuration
+# Debug configuration flags
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    # Portable compiler flags
+    if(MSVC AND NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+        target_compile_options(${PROJECT_NAME} PRIVATE /Od /W4 /Zi /EHsc /GR)
+    elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        target_compile_options(${PROJECT_NAME} PRIVATE -Og -Wall -Wextra -g -fdiagnostics-color=always)
+    elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        target_compile_options(${PROJECT_NAME} PRIVATE -Og -Wall -Wextra -g -fcolor-diagnostics)
+    endif()
+endif()
+
+# Release configuration flags
+if(CMAKE_BUILD_TYPE STREQUAL "Release")
+    # Portable compiler flags
+    if(MSVC AND NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+        target_compile_options(${PROJECT_NAME} PRIVATE /W4 /GL /EHsc /GR)
+        target_link_options(${PROJECT_NAME} PRIVATE /LTCG)
+    elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra -flto -fdiagnostics-color=always)
+        target_link_options(${PROJECT_NAME} PRIVATE -flto)
+    elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra -flto -fcolor-diagnostics)
+        target_link_options(${PROJECT_NAME} PRIVATE -flto)
+    endif()
+endif()
+
 # Definitions for config 'Debug'
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
   target_compile_definitions(${PROJECT_NAME} PUBLIC DEBUG=1)
@@ -130,7 +168,7 @@ endif()
 target_link_libraries(${PROJECT_NAME} PUBLIC
 )
 
-# Compiler options
+# compiler options
 if(MSVC)
     target_compile_options(${PROJECT_NAME} PRIVATE /W4)
 else()
