@@ -46,9 +46,6 @@ else()
 endif()
 message(STATUS "Platform: ${CFORGE_PLATFORM}, Compiler: ${CFORGE_COMPILER}")
 
-# CMake options
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-
 # Build configurations
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "Debug")
@@ -89,7 +86,6 @@ FetchContent_Declare(
     GIT_SHALLOW TRUE
 )
 
-# Fetch packages without setup commands
 FetchContent_MakeAvailable(fmt tomlplusplus)
 
 # Add source files
@@ -123,34 +119,6 @@ target_link_libraries(${PROJECT_NAME} PUBLIC
     fmt::fmt
     tomlplusplus::tomlplusplus
 )
-
-# Portable compiler flags per configuration
-# Debug configuration flags
-if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    # Portable compiler flags
-    if(MSVC AND NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-        target_compile_options(${PROJECT_NAME} PRIVATE /Od /W4 /Zi /EHsc /GR)
-    elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-        target_compile_options(${PROJECT_NAME} PRIVATE -Og -Wall -Wextra -g -fdiagnostics-color=always)
-    elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-        target_compile_options(${PROJECT_NAME} PRIVATE -Og -Wall -Wextra -g -fcolor-diagnostics)
-    endif()
-endif()
-
-# Release configuration flags
-if(CMAKE_BUILD_TYPE STREQUAL "Release")
-    # Portable compiler flags
-    if(MSVC AND NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-        target_compile_options(${PROJECT_NAME} PRIVATE /W4 /GL /EHsc /GR)
-        target_link_options(${PROJECT_NAME} PRIVATE /LTCG)
-    elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-        target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra -flto -fdiagnostics-color=always)
-        target_link_options(${PROJECT_NAME} PRIVATE -flto)
-    elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-        target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra -flto -fcolor-diagnostics)
-        target_link_options(${PROJECT_NAME} PRIVATE -flto)
-    endif()
-endif()
 
 # Definitions for config 'Debug'
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
