@@ -315,12 +315,6 @@ bool installer::install_project(const std::string &project_path,
           "-B", build_dir.string(),
           "-DCMAKE_BUILD_TYPE=Release"};
 
-      // Use Ninja if available
-      if (is_command_available("ninja")) {
-        cmake_args.push_back("-G");
-        cmake_args.push_back("Ninja");
-      }
-
       build_success = execute_tool(
           "cmake", cmake_args, project_dir.string(), "CMake Configure",
           logger::get_verbosity() == log_verbosity::VERBOSITY_VERBOSE, 120);
