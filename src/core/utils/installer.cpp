@@ -309,18 +309,29 @@ bool installer::install_project(const std::string &project_path,
     if (has_cmake) {
       // Build the project with CMake
       logger::print_status("Building project in Release mode");
-      std::vector<std::string> cmake_args = {"..", "-G", "Ninja",
-                                             "-DCMAKE_BUILD_TYPE=Release"};
+      std::filesystem::path build_dir = project_dir / "build";
+      std::vector<std::string> cmake_args = {
+          "-S", project_dir.string(),
+          "-B", build_dir.string(),
+          "-DCMAKE_BUILD_TYPE=Release"};
+
+      // Use Ninja if available
+      if (is_command_available("ninja")) {
+        cmake_args.push_back("-G");
+        cmake_args.push_back("Ninja");
+      }
+
       build_success = execute_tool(
           "cmake", cmake_args, project_dir.string(), "CMake Configure",
           logger::get_verbosity() == log_verbosity::VERBOSITY_VERBOSE, 120);
 
       if (build_success) {
-        // Build the project with Ninja
-        logger::print_status("Building project in Release mode");
-        std::vector<std::string> ninja_args = {};
+        // Build the project
+        std::vector<std::string> build_args = {
+            "--build", build_dir.string(),
+            "--config", "Release"};
         build_success = execute_tool(
-            "ninja", ninja_args, project_dir.string(), "Ninja Build",
+            "cmake", build_args, project_dir.string(), "CMake Build",
             logger::get_verbosity() == log_verbosity::VERBOSITY_VERBOSE, 300);
       }
     } else {
