@@ -50,6 +50,7 @@ cforge_int_t cforge_cmd_install(const cforge_context_t *ctx) {
   [[maybe_unused]] bool have_to = false;
   std::string build_config;
   std::string env_var;
+  bool skip_build = false;
 
   if (ctx->args.args) {
     for (cforge_int_t i = 0; i < ctx->args.arg_count; ++i) {
@@ -67,6 +68,9 @@ cforge_int_t cforge_cmd_install(const cforge_context_t *ctx) {
       if (arg == "--add-to-path") {
         add_to_path = true;
         cforge::logger::print_action("Option", "will add to PATH environment variable");
+      } else if (arg == "--no-build") {
+        skip_build = true;
+        cforge::logger::print_action("Option", "skipping build, using existing binaries");
       } else if (arg == "--from" && i + 1 < ctx->args.arg_count) {
         project_source = ctx->args.args[++i];
         have_from = true;
@@ -117,35 +121,39 @@ cforge_int_t cforge_cmd_install(const cforge_context_t *ctx) {
   auto install_proj = [&](const std::string &proj_dir) {
     installer_instance.install_project(proj_dir, install_path, add_to_path,
                                        project_name_override, build_config,
-                                       env_var);
+                                       env_var, skip_build);
   };
 
   if (is_workspace) {
-    cforge::logger::print_action("Building", "workspace before installation");
-    // Build the workspace
-    cforge_context_t build_ctx;
-    memset(&build_ctx, 0, sizeof(build_ctx));
-    // Use same working dir and config
-    snprintf(build_ctx.working_dir, sizeof(build_ctx.working_dir), "%s",
-             ctx->working_dir);
-    build_ctx.args.command = strdup("build");
-    if (!build_config.empty()) {
-      build_ctx.args.config = strdup(build_config.c_str());
+    if (!skip_build) {
+      cforge::logger::print_action("Building", "workspace before installation");
+      // Build the workspace
+      cforge_context_t build_ctx;
+      memset(&build_ctx, 0, sizeof(build_ctx));
+      // Use same working dir and config
+      snprintf(build_ctx.working_dir, sizeof(build_ctx.working_dir), "%s",
+               ctx->working_dir);
+      build_ctx.args.command = strdup("build");
+      if (!build_config.empty()) {
+        build_ctx.args.config = strdup(build_config.c_str());
+      }
+      if (cforge::logger::get_verbosity() == cforge::log_verbosity::VERBOSITY_VERBOSE) {
+        build_ctx.args.verbosity = strdup("verbose");
+      }
+      cforge_int_t build_res = cforge_cmd_build(&build_ctx);
+      free((void *)build_ctx.args.command);
+      if (build_ctx.args.config)
+        free((void *)build_ctx.args.config);
+      if (build_ctx.args.verbosity)
+        free((void *)build_ctx.args.verbosity);
+      if (build_res != 0) {
+        cforge::logger::print_error("Workspace build failed");
+        return build_res;
+      }
+      cforge::logger::finished("workspace build");
+    } else {
+      cforge::logger::print_action("Skipping", "workspace build (--no-build specified)");
     }
-    if (cforge::logger::get_verbosity() == cforge::log_verbosity::VERBOSITY_VERBOSE) {
-      build_ctx.args.verbosity = strdup("verbose");
-    }
-    cforge_int_t build_res = cforge_cmd_build(&build_ctx);
-    free((void *)build_ctx.args.command);
-    if (build_ctx.args.config)
-      free((void *)build_ctx.args.config);
-    if (build_ctx.args.verbosity)
-      free((void *)build_ctx.args.verbosity);
-    if (build_res != 0) {
-      cforge::logger::print_error("Workspace build failed");
-      return build_res;
-    }
-    cforge::logger::finished("workspace build");
     // Now install projects from build artifacts
     cforge::logger::installing("workspace projects from " + project_source);
     // Load workspace config and determine main startup project
@@ -205,7 +213,7 @@ cforge_int_t cforge_cmd_install(const cforge_context_t *ctx) {
       cforge::logger::print_verbose("Installing project from: " + source);
       bool success = installer_instance.install_project(
           source, install_path, add_to_path, project_name_override,
-          build_config, env_var);
+          build_config, env_var, skip_build);
       if (needs_cleanup) {
         try {
           std::filesystem::remove_all(source);

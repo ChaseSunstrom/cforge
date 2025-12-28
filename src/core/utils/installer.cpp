@@ -177,7 +177,8 @@ bool installer::install_project(const std::string &project_path,
                                 [[maybe_unused]] bool add_to_path,
                                 const std::string &project_name_override,
                                 const std::string &build_config,
-                                [[maybe_unused]] const std::string &env_var) {
+                                [[maybe_unused]] const std::string &env_var,
+                                bool skip_build) {
   // Report project source in verbose mode to avoid duplication
   print_verbose("Installing project from: " + project_path);
 
@@ -274,8 +275,7 @@ bool installer::install_project(const std::string &project_path,
     }
   }
 
-  // Build the project first (verbose) or skip if in a workspace
-  print_verbose("Building project before installation");
+  // Build the project first (verbose) or skip if in a workspace or --no-build
   // Save original working directory
   std::filesystem::path original_path = std::filesystem::current_path();
   // Detect if this project is inside a workspace
@@ -293,11 +293,14 @@ bool installer::install_project(const std::string &project_path,
     cwd = cwd.parent_path();
   }
   bool build_success = true;
-  if (in_workspace) {
+  if (skip_build) {
+    print_verbose("Skipping build (--no-build specified)");
+  } else if (in_workspace) {
     print_verbose(
         "Detected workspace at " + workspace_root.string() +
         "; skipping per-project build and using workspace build artifacts");
   } else {
+    print_verbose("Building project before installation");
     // Change to project directory for build
     std::filesystem::current_path(project_dir);
     // Check if there's a CMakeLists.txt file
@@ -911,7 +914,18 @@ std::string installer::get_platform_specific_path() const {
   }
   return "C:\\Program Files\\cforge";
 #else
-  // On Unix-like systems, use /usr/local
+  // On Unix-like systems, use ~/.local/cforge (user-writable, no sudo required)
+  const char *home_dir = getenv("HOME");
+  if (!home_dir) {
+    struct passwd *pw = getpwuid(getuid());
+    if (pw) {
+      home_dir = pw->pw_dir;
+    }
+  }
+  if (home_dir) {
+    return std::string(home_dir) + "/.local/cforge";
+  }
+  // Fallback if HOME is not set
   return "/usr/local/cforge";
 #endif
 }
@@ -1186,24 +1200,38 @@ bool installer::create_executable_links(
     return false;
   }
 
-  // Create symlink in /usr/local/bin only for cforge itself, not for installed
-  // projects
+  // Create symlink in ~/.local/bin for cforge itself (user-writable, no sudo required)
   if (exe_path.filename().string() == "cforge") {
     try {
-      std::filesystem::path usr_local_bin("/usr/local/bin");
-      if (std::filesystem::exists(usr_local_bin)) {
-        std::filesystem::path link_path = usr_local_bin / "cforge";
+      // Get home directory
+      const char *home_dir = getenv("HOME");
+      if (!home_dir) {
+        struct passwd *pw = getpwuid(getuid());
+        if (pw) {
+          home_dir = pw->pw_dir;
+        }
+      }
+
+      if (home_dir) {
+        std::filesystem::path local_bin = std::filesystem::path(home_dir) / ".local" / "bin";
+
+        // Create ~/.local/bin if it doesn't exist
+        if (!std::filesystem::exists(local_bin)) {
+          std::filesystem::create_directories(local_bin);
+        }
+
+        std::filesystem::path link_path = local_bin / "cforge";
 
         // Remove existing symlink if it exists
-        if (std::filesystem::exists(link_path)) {
+        if (std::filesystem::exists(link_path) || std::filesystem::is_symlink(link_path)) {
           std::filesystem::remove(link_path);
         }
 
         std::filesystem::create_symlink(exe_path, link_path);
-        print_verbose("Created symlink in /usr/local/bin");
+        print_verbose("Created symlink in ~/.local/bin");
       }
     } catch (const std::exception &ex) {
-      logger::print_warning("Failed to create symlink in /usr/local/bin: " +
+      logger::print_warning("Failed to create symlink in ~/.local/bin: " +
                             std::string(ex.what()));
     }
   }

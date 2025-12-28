@@ -57,6 +57,7 @@ public:
    * installing
    * @param build_config Build configuration for the project
    * @param env_var Environment variable to set for the project
+   * @param skip_build If true, skip building and use existing binaries
    * @return True if installation was successful
    */
   bool install_project(const std::string &project_path,
@@ -64,7 +65,8 @@ public:
                        bool add_to_path = false,
                        const std::string &project_name_override = "",
                        const std::string &build_config = "",
-                       const std::string &env_var = "");
+                       const std::string &env_var = "",
+                       bool skip_build = false);
 
   /**
    * @brief Get the default installation path

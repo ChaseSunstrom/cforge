@@ -51,15 +51,10 @@ get_build_dir_for_config(const std::string &base_dir, const std::string &config,
                          bool create_if_missing) {
   std::filesystem::path build_path;
 
-  // For multi-config generators, use single build directory
-  std::string generator = get_cmake_generator();
-  if (is_multi_config_generator(generator) || config.empty()) {
-    build_path = base_dir;
-  } else {
-    // Transform config name to lowercase for directory naming
-    std::string config_lower = string_to_lower(config);
-    build_path = base_dir + "-" + config_lower;
-  }
+  // Always use a single build directory for consistency across platforms
+  // The config is passed to CMake via CMAKE_BUILD_TYPE for single-config generators
+  (void)config; // Config is used during cmake configure, not for directory naming
+  build_path = base_dir;
 
   // Create directory if requested and doesn't exist
   if (create_if_missing && !std::filesystem::exists(build_path)) {
