@@ -4,10 +4,59 @@
   <Extern href="vsshlids.h"/>
 
   <Commands package="guidCforgePackage">
+
+    <!-- ==================== MENUS ==================== -->
+    <Menus>
+      <!-- Main cforge menu under Tools -->
+      <Menu guid="guidCforgeMenuGroup" id="CforgeMenu" priority="0x0100" type="Menu">
+        <Parent guid="guidCforgeMenuGroup" id="CforgeMenuGroup"/>
+        <Strings>
+          <ButtonText>cforge</ButtonText>
+        </Strings>
+      </Menu>
+
+      <!-- cforge Toolbar -->
+      <Menu guid="guidCforgeToolbar" id="CforgeToolbar" type="Toolbar">
+        <CommandFlag>DefaultDocked</CommandFlag>
+        <Strings>
+          <ButtonText>cforge</ButtonText>
+          <CommandName>cforge Toolbar</CommandName>
+        </Strings>
+      </Menu>
+
+      <!-- Build submenu -->
+      <Menu guid="guidCforgeMenuGroup" id="BuildSubMenu" priority="0x0100" type="Menu">
+        <Parent guid="guidCforgeMenuGroup" id="CforgeBuildMenuGroup"/>
+        <Strings>
+          <ButtonText>Build</ButtonText>
+        </Strings>
+      </Menu>
+
+      <!-- Dependencies submenu -->
+      <Menu guid="guidCforgeMenuGroup" id="DepsSubMenu" priority="0x0100" type="Menu">
+        <Parent guid="guidCforgeMenuGroup" id="CforgeDependencyMenuGroup"/>
+        <Strings>
+          <ButtonText>Dependencies</ButtonText>
+        </Strings>
+      </Menu>
+
+      <!-- Add New submenu -->
+      <Menu guid="guidCforgeMenuGroup" id="AddNewSubMenu" priority="0x0100" type="Menu">
+        <Parent guid="guidCforgeMenuGroup" id="CforgeProjectMenuGroup"/>
+        <Strings>
+          <ButtonText>Add New</ButtonText>
+        </Strings>
+      </Menu>
+    </Menus>
+
+    <!-- ==================== GROUPS ==================== -->
     <Groups>
+      <!-- Top-level menu group in Tools menu -->
       <Group guid="guidCforgeMenuGroup" id="CforgeMenuGroup" priority="0x0600">
         <Parent guid="guidSHLMainMenu" id="IDM_VS_MENU_TOOLS"/>
       </Group>
+
+      <!-- Subgroups within cforge menu -->
       <Group guid="guidCforgeMenuGroup" id="CforgeBuildMenuGroup" priority="0x0100">
         <Parent guid="guidCforgeMenuGroup" id="CforgeMenu"/>
       </Group>
@@ -17,86 +66,208 @@
       <Group guid="guidCforgeMenuGroup" id="CforgeToolMenuGroup" priority="0x0300">
         <Parent guid="guidCforgeMenuGroup" id="CforgeMenu"/>
       </Group>
+      <Group guid="guidCforgeMenuGroup" id="CforgeProjectMenuGroup" priority="0x0400">
+        <Parent guid="guidCforgeMenuGroup" id="CforgeMenu"/>
+      </Group>
+      <Group guid="guidCforgeMenuGroup" id="CforgeSettingsMenuGroup" priority="0x0500">
+        <Parent guid="guidCforgeMenuGroup" id="CforgeMenu"/>
+      </Group>
+
+      <!-- Build submenu groups -->
+      <Group guid="guidCforgeMenuGroup" id="BuildSubMenuGroup" priority="0x0100">
+        <Parent guid="guidCforgeMenuGroup" id="BuildSubMenu"/>
+      </Group>
+      <Group guid="guidCforgeMenuGroup" id="RunSubMenuGroup" priority="0x0200">
+        <Parent guid="guidCforgeMenuGroup" id="BuildSubMenu"/>
+      </Group>
+
+      <!-- Deps submenu group -->
+      <Group guid="guidCforgeMenuGroup" id="DepsSubMenuGroup" priority="0x0100">
+        <Parent guid="guidCforgeMenuGroup" id="DepsSubMenu"/>
+      </Group>
+
+      <!-- Add New submenu group -->
+      <Group guid="guidCforgeMenuGroup" id="AddNewSubMenuGroup" priority="0x0100">
+        <Parent guid="guidCforgeMenuGroup" id="AddNewSubMenu"/>
+      </Group>
+
+      <!-- Toolbar groups -->
+      <Group guid="guidCforgeToolbar" id="CforgeToolbarBuildGroup" priority="0x0100">
+        <Parent guid="guidCforgeToolbar" id="CforgeToolbar"/>
+      </Group>
+      <Group guid="guidCforgeToolbar" id="CforgeToolbarRunGroup" priority="0x0200">
+        <Parent guid="guidCforgeToolbar" id="CforgeToolbar"/>
+      </Group>
+      <Group guid="guidCforgeToolbar" id="CforgeToolbarTestGroup" priority="0x0300">
+        <Parent guid="guidCforgeToolbar" id="CforgeToolbar"/>
+      </Group>
+
+      <!-- Context menu group for Solution Explorer -->
+      <Group guid="guidCforgeMenuGroup" id="CforgeContextMenuGroup" priority="0x0600">
+        <Parent guid="guidSHLMainMenu" id="IDM_VS_CTXT_ITEMNODE"/>
+      </Group>
+
+      <!-- View > Other Windows menu group for cforge Explorer -->
+      <Group guid="guidCforgeMenuGroup" id="CforgeViewMenuGroup" priority="0x9000">
+        <Parent guid="guidSHLMainMenu" id="IDM_VS_CSCD_WINDOWS"/>
+      </Group>
     </Groups>
 
-    <Menus>
-      <Menu guid="guidCforgeMenuGroup" id="CforgeMenu" priority="0x0100" type="Menu">
-        <Parent guid="guidCforgeMenuGroup" id="CforgeMenuGroup"/>
-        <Strings>
-          <ButtonText>cforge</ButtonText>
-        </Strings>
-      </Menu>
-    </Menus>
-
+    <!-- ==================== BUTTONS ==================== -->
     <Buttons>
-      <!-- Build Commands -->
+
+      <!-- ========== BUILD COMMANDS ========== -->
       <Button guid="guidCforgeMenuGroup" id="BuildCommandId" priority="0x0100" type="Button">
-        <Parent guid="guidCforgeMenuGroup" id="CforgeBuildMenuGroup"/>
+        <Parent guid="guidCforgeMenuGroup" id="BuildSubMenuGroup"/>
+        <Icon guid="guidSHLMainMenu" id="22"/>
         <Strings>
           <ButtonText>Build (Debug)</ButtonText>
-          <ToolTipText>Build project in Debug configuration</ToolTipText>
+          <ToolTipText>Build project in Debug configuration (Ctrl+Shift+B)</ToolTipText>
         </Strings>
       </Button>
+
       <Button guid="guidCforgeMenuGroup" id="BuildReleaseCommandId" priority="0x0101" type="Button">
-        <Parent guid="guidCforgeMenuGroup" id="CforgeBuildMenuGroup"/>
+        <Parent guid="guidCforgeMenuGroup" id="BuildSubMenuGroup"/>
         <Strings>
           <ButtonText>Build (Release)</ButtonText>
           <ToolTipText>Build project in Release configuration</ToolTipText>
         </Strings>
       </Button>
-      <Button guid="guidCforgeMenuGroup" id="CleanCommandId" priority="0x0102" type="Button">
-        <Parent guid="guidCforgeMenuGroup" id="CforgeBuildMenuGroup"/>
+
+      <Button guid="guidCforgeMenuGroup" id="RebuildCommandId" priority="0x0102" type="Button">
+        <Parent guid="guidCforgeMenuGroup" id="BuildSubMenuGroup"/>
+        <Strings>
+          <ButtonText>Rebuild</ButtonText>
+          <ToolTipText>Clean and rebuild the project</ToolTipText>
+        </Strings>
+      </Button>
+
+      <Button guid="guidCforgeMenuGroup" id="CleanCommandId" priority="0x0103" type="Button">
+        <Parent guid="guidCforgeMenuGroup" id="BuildSubMenuGroup"/>
         <Strings>
           <ButtonText>Clean</ButtonText>
           <ToolTipText>Clean build artifacts</ToolTipText>
         </Strings>
       </Button>
-      <Button guid="guidCforgeMenuGroup" id="RunCommandId" priority="0x0103" type="Button">
-        <Parent guid="guidCforgeMenuGroup" id="CforgeBuildMenuGroup"/>
+
+      <Button guid="guidCforgeMenuGroup" id="RunCommandId" priority="0x0110" type="Button">
+        <Parent guid="guidCforgeMenuGroup" id="RunSubMenuGroup"/>
+        <Icon guid="guidSHLMainMenu" id="14"/>
         <Strings>
-          <ButtonText>Run</ButtonText>
-          <ToolTipText>Build and run the executable</ToolTipText>
-        </Strings>
-      </Button>
-      <Button guid="guidCforgeMenuGroup" id="TestCommandId" priority="0x0104" type="Button">
-        <Parent guid="guidCforgeMenuGroup" id="CforgeBuildMenuGroup"/>
-        <Strings>
-          <ButtonText>Run Tests</ButtonText>
-          <ToolTipText>Build and run tests</ToolTipText>
-        </Strings>
-      </Button>
-      <Button guid="guidCforgeMenuGroup" id="WatchCommandId" priority="0x0105" type="Button">
-        <Parent guid="guidCforgeMenuGroup" id="CforgeBuildMenuGroup"/>
-        <Strings>
-          <ButtonText>Watch</ButtonText>
-          <ToolTipText>Watch for file changes and rebuild</ToolTipText>
+          <ButtonText>Run (Ctrl+F5)</ButtonText>
+          <ToolTipText>Build and run the executable without debugging</ToolTipText>
         </Strings>
       </Button>
 
-      <!-- Dependency Commands -->
+      <Button guid="guidCforgeMenuGroup" id="DebugCommandId" priority="0x0111" type="Button">
+        <Parent guid="guidCforgeMenuGroup" id="RunSubMenuGroup"/>
+        <Icon guid="guidSHLMainMenu" id="15"/>
+        <Strings>
+          <ButtonText>Debug (F5)</ButtonText>
+          <ToolTipText>Build and debug the executable</ToolTipText>
+        </Strings>
+      </Button>
+
+      <Button guid="guidCforgeMenuGroup" id="TestCommandId" priority="0x0120" type="Button">
+        <Parent guid="guidCforgeMenuGroup" id="RunSubMenuGroup"/>
+        <Strings>
+          <ButtonText>Run Tests</ButtonText>
+          <ToolTipText>Build and run unit tests</ToolTipText>
+        </Strings>
+      </Button>
+
+      <Button guid="guidCforgeMenuGroup" id="BenchCommandId" priority="0x0121" type="Button">
+        <Parent guid="guidCforgeMenuGroup" id="RunSubMenuGroup"/>
+        <Strings>
+          <ButtonText>Run Benchmarks</ButtonText>
+          <ToolTipText>Build and run benchmarks</ToolTipText>
+        </Strings>
+      </Button>
+
+      <Button guid="guidCforgeMenuGroup" id="WatchCommandId" priority="0x0130" type="Button">
+        <Parent guid="guidCforgeMenuGroup" id="RunSubMenuGroup"/>
+        <Strings>
+          <ButtonText>Watch (Auto-Rebuild)</ButtonText>
+          <ToolTipText>Watch for file changes and rebuild automatically</ToolTipText>
+        </Strings>
+      </Button>
+
+      <Button guid="guidCforgeMenuGroup" id="StopWatchCommandId" priority="0x0131" type="Button">
+        <Parent guid="guidCforgeMenuGroup" id="RunSubMenuGroup"/>
+        <Strings>
+          <ButtonText>Stop Watch</ButtonText>
+          <ToolTipText>Stop the file watcher</ToolTipText>
+        </Strings>
+      </Button>
+
+      <!-- ========== DEPENDENCY COMMANDS ========== -->
       <Button guid="guidCforgeMenuGroup" id="AddDependencyCommandId" priority="0x0200" type="Button">
-        <Parent guid="guidCforgeMenuGroup" id="CforgeDependencyMenuGroup"/>
+        <Parent guid="guidCforgeMenuGroup" id="DepsSubMenuGroup"/>
+        <Icon guid="guidSHLMainMenu" id="17"/>
         <Strings>
           <ButtonText>Add Dependency...</ButtonText>
           <ToolTipText>Add a package dependency</ToolTipText>
         </Strings>
       </Button>
-      <Button guid="guidCforgeMenuGroup" id="UpdatePackagesCommandId" priority="0x0201" type="Button">
-        <Parent guid="guidCforgeMenuGroup" id="CforgeDependencyMenuGroup"/>
+
+      <Button guid="guidCforgeMenuGroup" id="RemoveDependencyCommandId" priority="0x0201" type="Button">
+        <Parent guid="guidCforgeMenuGroup" id="DepsSubMenuGroup"/>
+        <Strings>
+          <ButtonText>Remove Dependency...</ButtonText>
+          <ToolTipText>Remove a package dependency</ToolTipText>
+        </Strings>
+      </Button>
+
+      <Button guid="guidCforgeMenuGroup" id="UpdatePackagesCommandId" priority="0x0210" type="Button">
+        <Parent guid="guidCforgeMenuGroup" id="DepsSubMenuGroup"/>
         <Strings>
           <ButtonText>Update Package Registry</ButtonText>
           <ToolTipText>Update the cforge package index</ToolTipText>
         </Strings>
       </Button>
-      <Button guid="guidCforgeMenuGroup" id="OpenDependencyWindowCommandId" priority="0x0202" type="Button">
-        <Parent guid="guidCforgeMenuGroup" id="CforgeDependencyMenuGroup"/>
+
+      <Button guid="guidCforgeMenuGroup" id="DepsOutdatedCommandId" priority="0x0211" type="Button">
+        <Parent guid="guidCforgeMenuGroup" id="DepsSubMenuGroup"/>
         <Strings>
-          <ButtonText>Dependency Manager</ButtonText>
+          <ButtonText>Check for Outdated</ButtonText>
+          <ToolTipText>Check for outdated dependencies</ToolTipText>
+        </Strings>
+      </Button>
+
+      <Button guid="guidCforgeMenuGroup" id="DepsTreeCommandId" priority="0x0220" type="Button">
+        <Parent guid="guidCforgeMenuGroup" id="DepsSubMenuGroup"/>
+        <Strings>
+          <ButtonText>Show Dependency Tree</ButtonText>
+          <ToolTipText>Display the dependency tree</ToolTipText>
+        </Strings>
+      </Button>
+
+      <Button guid="guidCforgeMenuGroup" id="DepsLockCommandId" priority="0x0221" type="Button">
+        <Parent guid="guidCforgeMenuGroup" id="DepsSubMenuGroup"/>
+        <Strings>
+          <ButtonText>Generate Lock File</ButtonText>
+          <ToolTipText>Generate/update the dependency lock file</ToolTipText>
+        </Strings>
+      </Button>
+
+      <Button guid="guidCforgeMenuGroup" id="VcpkgInstallCommandId" priority="0x0230" type="Button">
+        <Parent guid="guidCforgeMenuGroup" id="DepsSubMenuGroup"/>
+        <Strings>
+          <ButtonText>vcpkg Install</ButtonText>
+          <ToolTipText>Install vcpkg dependencies</ToolTipText>
+        </Strings>
+      </Button>
+
+      <Button guid="guidCforgeMenuGroup" id="OpenDependencyWindowCommandId" priority="0x0240" type="Button">
+        <Parent guid="guidCforgeMenuGroup" id="DepsSubMenuGroup"/>
+        <Icon guid="guidSHLMainMenu" id="18"/>
+        <Strings>
+          <ButtonText>Dependency Manager...</ButtonText>
           <ToolTipText>Open the dependency manager window</ToolTipText>
         </Strings>
       </Button>
 
-      <!-- Tool Commands -->
+      <!-- ========== TOOL COMMANDS ========== -->
       <Button guid="guidCforgeMenuGroup" id="FormatCommandId" priority="0x0300" type="Button">
         <Parent guid="guidCforgeMenuGroup" id="CforgeToolMenuGroup"/>
         <Strings>
@@ -104,6 +275,7 @@
           <ToolTipText>Format code with clang-format</ToolTipText>
         </Strings>
       </Button>
+
       <Button guid="guidCforgeMenuGroup" id="LintCommandId" priority="0x0301" type="Button">
         <Parent guid="guidCforgeMenuGroup" id="CforgeToolMenuGroup"/>
         <Strings>
@@ -111,33 +283,295 @@
           <ToolTipText>Run clang-tidy static analysis</ToolTipText>
         </Strings>
       </Button>
+
+      <Button guid="guidCforgeMenuGroup" id="DocCommandId" priority="0x0310" type="Button">
+        <Parent guid="guidCforgeMenuGroup" id="CforgeToolMenuGroup"/>
+        <Strings>
+          <ButtonText>Generate Documentation</ButtonText>
+          <ToolTipText>Generate documentation with Doxygen</ToolTipText>
+        </Strings>
+      </Button>
+
+      <Button guid="guidCforgeMenuGroup" id="DoctorCommandId" priority="0x0320" type="Button">
+        <Parent guid="guidCforgeMenuGroup" id="CforgeToolMenuGroup"/>
+        <Strings>
+          <ButtonText>Run Doctor</ButtonText>
+          <ToolTipText>Run diagnostic checks for environment setup</ToolTipText>
+        </Strings>
+      </Button>
+
+      <Button guid="guidCforgeMenuGroup" id="ProjectInfoCommandId" priority="0x0321" type="Button">
+        <Parent guid="guidCforgeMenuGroup" id="CforgeToolMenuGroup"/>
+        <Strings>
+          <ButtonText>Show Project Info</ButtonText>
+          <ToolTipText>Display detailed project information</ToolTipText>
+        </Strings>
+      </Button>
+
+      <!-- ========== PROJECT/TEMPLATE COMMANDS ========== -->
+      <Button guid="guidCforgeMenuGroup" id="NewClassCommandId" priority="0x0400" type="Button">
+        <Parent guid="guidCforgeMenuGroup" id="AddNewSubMenuGroup"/>
+        <Strings>
+          <ButtonText>Class...</ButtonText>
+          <ToolTipText>Generate a new C++ class (header + implementation)</ToolTipText>
+        </Strings>
+      </Button>
+
+      <Button guid="guidCforgeMenuGroup" id="NewHeaderCommandId" priority="0x0401" type="Button">
+        <Parent guid="guidCforgeMenuGroup" id="AddNewSubMenuGroup"/>
+        <Strings>
+          <ButtonText>Header File...</ButtonText>
+          <ToolTipText>Generate a new header file</ToolTipText>
+        </Strings>
+      </Button>
+
+      <Button guid="guidCforgeMenuGroup" id="NewTestCommandId" priority="0x0402" type="Button">
+        <Parent guid="guidCforgeMenuGroup" id="AddNewSubMenuGroup"/>
+        <Strings>
+          <ButtonText>Test File...</ButtonText>
+          <ToolTipText>Generate a new test file</ToolTipText>
+        </Strings>
+      </Button>
+
+      <Button guid="guidCforgeMenuGroup" id="InitProjectCommandId" priority="0x0410" type="Button">
+        <Parent guid="guidCforgeMenuGroup" id="CforgeProjectMenuGroup"/>
+        <Strings>
+          <ButtonText>Initialize New Project...</ButtonText>
+          <ToolTipText>Initialize a new cforge project in current folder</ToolTipText>
+        </Strings>
+      </Button>
+
+      <Button guid="guidCforgeMenuGroup" id="PackageProjectCommandId" priority="0x0420" type="Button">
+        <Parent guid="guidCforgeMenuGroup" id="CforgeProjectMenuGroup"/>
+        <Strings>
+          <ButtonText>Package Project...</ButtonText>
+          <ToolTipText>Create a distributable package (ZIP, TGZ, DEB, RPM)</ToolTipText>
+        </Strings>
+      </Button>
+
+      <Button guid="guidCforgeMenuGroup" id="InstallProjectCommandId" priority="0x0421" type="Button">
+        <Parent guid="guidCforgeMenuGroup" id="CforgeProjectMenuGroup"/>
+        <Strings>
+          <ButtonText>Install to System</ButtonText>
+          <ToolTipText>Install project binaries to system paths</ToolTipText>
+        </Strings>
+      </Button>
+
+      <Button guid="guidCforgeMenuGroup" id="OpenProjectPropertiesCommandId" priority="0x0430" type="Button">
+        <Parent guid="guidCforgeMenuGroup" id="CforgeProjectMenuGroup"/>
+        <Icon guid="guidSHLMainMenu" id="19"/>
+        <Strings>
+          <ButtonText>Project Properties...</ButtonText>
+          <ToolTipText>Open project properties window</ToolTipText>
+        </Strings>
+      </Button>
+
+      <!-- ========== SETTINGS COMMANDS ========== -->
+      <Button guid="guidCforgeMenuGroup" id="OpenCforgeTomlCommandId" priority="0x0500" type="Button">
+        <Parent guid="guidCforgeMenuGroup" id="CforgeSettingsMenuGroup"/>
+        <Strings>
+          <ButtonText>Edit cforge.toml</ButtonText>
+          <ToolTipText>Open cforge.toml in editor</ToolTipText>
+        </Strings>
+      </Button>
+
+      <Button guid="guidCforgeMenuGroup" id="ConfigureToolsCommandId" priority="0x0510" type="Button">
+        <Parent guid="guidCforgeMenuGroup" id="CforgeSettingsMenuGroup"/>
+        <Strings>
+          <ButtonText>Configure Tools...</ButtonText>
+          <ToolTipText>Manage clang-format and clang-tidy versions</ToolTipText>
+        </Strings>
+      </Button>
+
+      <Button guid="guidCforgeMenuGroup" id="OpenSettingsCommandId" priority="0x0520" type="Button">
+        <Parent guid="guidCforgeMenuGroup" id="CforgeSettingsMenuGroup"/>
+        <Icon guid="guidSHLMainMenu" id="20"/>
+        <Strings>
+          <ButtonText>Extension Settings...</ButtonText>
+          <ToolTipText>Open cforge extension settings</ToolTipText>
+        </Strings>
+      </Button>
+
+      <Button guid="guidCforgeMenuGroup" id="OpenCforgeExplorerCommandId" priority="0x0001" type="Button">
+        <Parent guid="guidCforgeMenuGroup" id="CforgeBuildMenuGroup"/>
+        <Icon guid="guidSHLMainMenu" id="25"/>
+        <Strings>
+          <ButtonText>cforge Explorer</ButtonText>
+          <ToolTipText>Open the cforge Explorer panel</ToolTipText>
+        </Strings>
+      </Button>
+
+      <!-- cforge Explorer in View > Other Windows -->
+      <Button guid="guidCforgeMenuGroup" id="OpenCforgeExplorerCommandId" priority="0x0100" type="Button">
+        <Parent guid="guidCforgeMenuGroup" id="CforgeViewMenuGroup"/>
+        <Icon guid="guidSHLMainMenu" id="25"/>
+        <Strings>
+          <ButtonText>cforge Explorer</ButtonText>
+          <ToolTipText>Open the cforge Explorer panel</ToolTipText>
+        </Strings>
+      </Button>
+
+      <!-- ========== TOOLBAR BUTTONS ========== -->
+      <Button guid="guidCforgeToolbar" id="ToolbarBuildCommandId" priority="0x0100" type="Button">
+        <Parent guid="guidCforgeToolbar" id="CforgeToolbarBuildGroup"/>
+        <Icon guid="guidSHLMainMenu" id="22"/>
+        <CommandFlag>IconAndText</CommandFlag>
+        <Strings>
+          <ButtonText>Build</ButtonText>
+          <ToolTipText>Build project (Ctrl+Shift+B)</ToolTipText>
+        </Strings>
+      </Button>
+
+      <Button guid="guidCforgeToolbar" id="ToolbarCleanCommandId" priority="0x0101" type="Button">
+        <Parent guid="guidCforgeToolbar" id="CforgeToolbarBuildGroup"/>
+        <Icon guid="guidSHLMainMenu" id="23"/>
+        <Strings>
+          <ButtonText></ButtonText>
+          <ToolTipText>Clean build artifacts</ToolTipText>
+        </Strings>
+      </Button>
+
+      <Button guid="guidCforgeToolbar" id="ToolbarRunCommandId" priority="0x0200" type="Button">
+        <Parent guid="guidCforgeToolbar" id="CforgeToolbarRunGroup"/>
+        <Icon guid="guidSHLMainMenu" id="14"/>
+        <CommandFlag>IconAndText</CommandFlag>
+        <Strings>
+          <ButtonText>Run</ButtonText>
+          <ToolTipText>Run without debugging (Ctrl+F5)</ToolTipText>
+        </Strings>
+      </Button>
+
+      <Button guid="guidCforgeToolbar" id="ToolbarDebugCommandId" priority="0x0201" type="Button">
+        <Parent guid="guidCforgeToolbar" id="CforgeToolbarRunGroup"/>
+        <Icon guid="guidSHLMainMenu" id="15"/>
+        <CommandFlag>IconAndText</CommandFlag>
+        <Strings>
+          <ButtonText>Debug</ButtonText>
+          <ToolTipText>Start debugging (F5)</ToolTipText>
+        </Strings>
+      </Button>
+
+      <Button guid="guidCforgeToolbar" id="ToolbarStopCommandId" priority="0x0202" type="Button">
+        <Parent guid="guidCforgeToolbar" id="CforgeToolbarRunGroup"/>
+        <Icon guid="guidSHLMainMenu" id="16"/>
+        <Strings>
+          <ButtonText></ButtonText>
+          <ToolTipText>Stop running process</ToolTipText>
+        </Strings>
+      </Button>
+
+      <Button guid="guidCforgeToolbar" id="ToolbarTestCommandId" priority="0x0300" type="Button">
+        <Parent guid="guidCforgeToolbar" id="CforgeToolbarTestGroup"/>
+        <Icon guid="guidSHLMainMenu" id="21"/>
+        <CommandFlag>IconAndText</CommandFlag>
+        <Strings>
+          <ButtonText>Test</ButtonText>
+          <ToolTipText>Run unit tests</ToolTipText>
+        </Strings>
+      </Button>
+
+      <!-- ========== CONTEXT MENU (Right-click in Solution Explorer) ========== -->
+      <Button guid="guidCforgeMenuGroup" id="FormatCommandId" priority="0x0100" type="Button">
+        <Parent guid="guidCforgeMenuGroup" id="CforgeContextMenuGroup"/>
+        <Strings>
+          <ButtonText>Format with cforge</ButtonText>
+          <ToolTipText>Format this file with clang-format</ToolTipText>
+        </Strings>
+      </Button>
+
     </Buttons>
 
   </Commands>
 
+  <!-- Key bindings -->
+  <KeyBindings>
+    <KeyBinding guid="guidCforgeMenuGroup" id="BuildCommandId" editor="guidVSStd97" key1="B" mod1="Control Shift"/>
+  </KeyBindings>
+
+  <!-- ==================== SYMBOLS ==================== -->
   <Symbols>
     <GuidSymbol name="guidCforgePackage" value="{7a8b9c0d-1e2f-3a4b-5c6d-7e8f9a0b1c2d}" />
 
     <GuidSymbol name="guidCforgeMenuGroup" value="{7a8b9c0d-2e3f-4a5b-6c7d-8e9f0a1b2c3d}">
+      <!-- Menu/Group IDs -->
       <IDSymbol name="CforgeMenuGroup" value="0x1000"/>
       <IDSymbol name="CforgeMenu" value="0x1100"/>
       <IDSymbol name="CforgeBuildMenuGroup" value="0x1001"/>
       <IDSymbol name="CforgeDependencyMenuGroup" value="0x1002"/>
       <IDSymbol name="CforgeToolMenuGroup" value="0x1003"/>
+      <IDSymbol name="CforgeProjectMenuGroup" value="0x1004"/>
+      <IDSymbol name="CforgeSettingsMenuGroup" value="0x1005"/>
+      <IDSymbol name="CforgeContextMenuGroup" value="0x4000"/>
+      <IDSymbol name="CforgeViewMenuGroup" value="0x4001"/>
 
+      <!-- Submenus -->
+      <IDSymbol name="BuildSubMenu" value="0x1200"/>
+      <IDSymbol name="BuildSubMenuGroup" value="0x1201"/>
+      <IDSymbol name="RunSubMenuGroup" value="0x1202"/>
+      <IDSymbol name="DepsSubMenu" value="0x1300"/>
+      <IDSymbol name="DepsSubMenuGroup" value="0x1301"/>
+      <IDSymbol name="AddNewSubMenu" value="0x1400"/>
+      <IDSymbol name="AddNewSubMenuGroup" value="0x1401"/>
+
+      <!-- Build commands -->
       <IDSymbol name="BuildCommandId" value="0x0100"/>
       <IDSymbol name="BuildReleaseCommandId" value="0x0101"/>
       <IDSymbol name="CleanCommandId" value="0x0102"/>
       <IDSymbol name="RunCommandId" value="0x0103"/>
       <IDSymbol name="TestCommandId" value="0x0104"/>
       <IDSymbol name="WatchCommandId" value="0x0105"/>
+      <IDSymbol name="RebuildCommandId" value="0x0106"/>
+      <IDSymbol name="DebugCommandId" value="0x0107"/>
+      <IDSymbol name="BenchCommandId" value="0x0108"/>
+      <IDSymbol name="StopWatchCommandId" value="0x0109"/>
 
+      <!-- Dependency commands -->
       <IDSymbol name="AddDependencyCommandId" value="0x0200"/>
       <IDSymbol name="UpdatePackagesCommandId" value="0x0201"/>
       <IDSymbol name="OpenDependencyWindowCommandId" value="0x0202"/>
+      <IDSymbol name="RemoveDependencyCommandId" value="0x0203"/>
+      <IDSymbol name="DepsTreeCommandId" value="0x0204"/>
+      <IDSymbol name="DepsOutdatedCommandId" value="0x0205"/>
+      <IDSymbol name="DepsLockCommandId" value="0x0206"/>
+      <IDSymbol name="VcpkgInstallCommandId" value="0x0207"/>
 
+      <!-- Tool commands -->
       <IDSymbol name="FormatCommandId" value="0x0300"/>
       <IDSymbol name="LintCommandId" value="0x0301"/>
+      <IDSymbol name="DocCommandId" value="0x0302"/>
+      <IDSymbol name="DoctorCommandId" value="0x0303"/>
+      <IDSymbol name="ProjectInfoCommandId" value="0x0304"/>
+
+      <!-- Project/Template commands -->
+      <IDSymbol name="InitProjectCommandId" value="0x0400"/>
+      <IDSymbol name="NewClassCommandId" value="0x0401"/>
+      <IDSymbol name="NewHeaderCommandId" value="0x0402"/>
+      <IDSymbol name="NewTestCommandId" value="0x0403"/>
+      <IDSymbol name="PackageProjectCommandId" value="0x0404"/>
+      <IDSymbol name="InstallProjectCommandId" value="0x0405"/>
+      <IDSymbol name="OpenProjectPropertiesCommandId" value="0x0406"/>
+
+      <!-- Settings commands -->
+      <IDSymbol name="OpenSettingsCommandId" value="0x0500"/>
+      <IDSymbol name="ConfigureToolsCommandId" value="0x0501"/>
+      <IDSymbol name="OpenCforgeTomlCommandId" value="0x0502"/>
+
+      <!-- Tool Windows -->
+      <IDSymbol name="OpenCforgeExplorerCommandId" value="0x5005"/>
+    </GuidSymbol>
+
+    <GuidSymbol name="guidCforgeToolbar" value="{7a8b9c0d-3e4f-5a6b-7c8d-9e0f1a2b3c4d}">
+      <IDSymbol name="CforgeToolbar" value="0x2000"/>
+      <IDSymbol name="CforgeToolbarBuildGroup" value="0x2002"/>
+      <IDSymbol name="CforgeToolbarRunGroup" value="0x2003"/>
+      <IDSymbol name="CforgeToolbarTestGroup" value="0x2004"/>
+
+      <IDSymbol name="ToolbarBuildCommandId" value="0x3000"/>
+      <IDSymbol name="ToolbarRunCommandId" value="0x3001"/>
+      <IDSymbol name="ToolbarDebugCommandId" value="0x3002"/>
+      <IDSymbol name="ToolbarTestCommandId" value="0x3003"/>
+      <IDSymbol name="ToolbarCleanCommandId" value="0x3004"/>
+      <IDSymbol name="ToolbarStopCommandId" value="0x3005"/>
     </GuidSymbol>
 
   </Symbols>

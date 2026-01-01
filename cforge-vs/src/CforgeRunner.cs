@@ -18,6 +18,8 @@ namespace CforgeVS
         private static OutputWindowPane? _outputPane;
         private static ErrorListProvider? _errorListProvider;
         private static List<ErrorTask> _currentErrors = new List<ErrorTask>();
+        private static Process? _currentProcess;
+        private static Process? _watchProcess;
 
         // Regex patterns for parsing compiler errors/warnings
 
@@ -385,6 +387,72 @@ namespace CforgeVS
         }
 
         /// <summary>
+        /// Runs a cforge command and captures the output as a string.
+        /// </summary>
+        public static async Task<string?> RunAndCaptureAsync(string arguments, string? workingDirectory = null)
+        {
+            string? projectDir = workingDirectory ?? await GetProjectDirectoryAsync();
+            if (string.IsNullOrEmpty(projectDir))
+            {
+                return null;
+            }
+
+            string cforgeExe = GetCforgeExecutable();
+
+            try
+            {
+                var startInfo = new ProcessStartInfo
+                {
+                    FileName = cforgeExe,
+                    Arguments = arguments,
+                    WorkingDirectory = projectDir,
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true,
+                    StandardOutputEncoding = Encoding.UTF8,
+                    StandardErrorEncoding = Encoding.UTF8
+                };
+
+                using (var process = new Process { StartInfo = startInfo })
+                {
+                    var output = new StringBuilder();
+
+                    process.OutputDataReceived += (s, e) =>
+                    {
+                        if (e.Data != null)
+                        {
+                            string cleanLine = StripAnsiCodes(e.Data);
+                            output.AppendLine(cleanLine);
+                        }
+                    };
+
+                    process.ErrorDataReceived += (s, e) =>
+                    {
+                        if (e.Data != null)
+                        {
+                            string cleanLine = StripAnsiCodes(e.Data);
+                            output.AppendLine(cleanLine);
+                        }
+                    };
+
+                    process.Start();
+                    process.BeginOutputReadLine();
+                    process.BeginErrorReadLine();
+
+                    // .NET Framework 4.8 doesn't have WaitForExitAsync
+                    await Task.Run(() => process.WaitForExit());
+
+                    return output.ToString();
+                }
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        /// <summary>
         /// Runs an executable in Windows Terminal (or fallback to cmd.exe).
         /// </summary>
         public static async Task<bool> RunExecutableInConsoleAsync(string exePath, string? workingDirectory = null)
@@ -519,14 +587,16 @@ namespace CforgeVS
             var project = CforgeTomlParser.ParseProject(projectDir);
             if (project != null && project.Type == "executable")
             {
-                string exePath = Path.Combine(projectDir, project.OutputDir, config, project.Name + ".exe");
-                if (File.Exists(exePath))
+                // Use FindExecutable to check multiple possible paths
+                string? exePath = CforgeTomlParser.FindExecutable(projectDir, project, config);
+                if (exePath != null && File.Exists(exePath))
                 {
                     return await RunExecutableInConsoleAsync(exePath, projectDir);
                 }
                 else
                 {
-                    await pane.WriteLineAsync($"Error: Executable not found at {exePath}");
+                    string expectedPath = Path.Combine(projectDir, project.OutputDir, "bin", config, project.Name + ".exe");
+                    await pane.WriteLineAsync($"Error: Executable not found at {expectedPath}");
                     return false;
                 }
             }
@@ -624,6 +694,273 @@ namespace CforgeVS
         {
             // Remove ANSI escape sequences
             return System.Text.RegularExpressions.Regex.Replace(input, @"\x1b\[[0-9;]*m", "");
+        }
+
+        /// <summary>
+        /// Builds and then launches the debugger.
+        /// </summary>
+        public static async Task<bool> BuildAndDebugAsync(string? workingDirectory = null, string config = "Debug")
+        {
+            var pane = await GetOutputPaneAsync();
+
+            string? projectDir = workingDirectory ?? await GetProjectDirectoryAsync();
+            if (string.IsNullOrEmpty(projectDir))
+            {
+                await pane.WriteLineAsync("Error: No cforge project found.");
+                return false;
+            }
+
+            // Build first
+            string buildArgs = config == "Release" ? "build -c Release" : "build";
+            bool buildSuccess = await RunAsync(buildArgs, projectDir);
+
+            if (!buildSuccess)
+            {
+                await pane.WriteLineAsync("Build failed. Cannot start debugger.");
+                return false;
+            }
+
+            // Find the executable
+            var project = CforgeTomlParser.ParseProject(projectDir);
+            if (project != null && project.Type == "executable")
+            {
+                // Use FindExecutable to check multiple possible locations
+                string? exePath = CforgeTomlParser.FindExecutable(projectDir, project, config);
+
+                if (exePath != null && File.Exists(exePath))
+                {
+                    await pane.WriteLineAsync($"Starting debugger: {exePath}");
+                    return await LaunchDebuggerAsync(exePath, projectDir);
+                }
+                else
+                {
+                    // Show all checked paths for debugging
+                    string expectedPath = CforgeTomlParser.GetOutputPath(project, config);
+                    await pane.WriteLineAsync($"Error: Executable not found.");
+                    await pane.WriteLineAsync($"Expected location: {Path.Combine(projectDir, expectedPath)}");
+                    await pane.WriteLineAsync($"Make sure the project has been built successfully.");
+                    return false;
+                }
+            }
+            else if (project != null)
+            {
+                await pane.WriteLineAsync($"Warning: Project type is '{project.Type}', cannot debug directly.");
+                return false;
+            }
+            else
+            {
+                await pane.WriteLineAsync("Error: Could not parse cforge.toml");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Launches the VS debugger for the specified executable.
+        /// </summary>
+        private static async Task<bool> LaunchDebuggerAsync(string exePath, string workingDirectory)
+        {
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+
+            var pane = await GetOutputPaneAsync();
+
+            try
+            {
+                await pane.WriteLineAsync($"Launching debugger for: {exePath}");
+
+                // Use IVsDebugger with VsDebugTargetInfo for proper native debugging
+                var debugger = await VS.GetServiceAsync<SVsShellDebugger, IVsDebugger>();
+                if (debugger == null)
+                {
+                    await pane.WriteLineAsync("Error: Could not get IVsDebugger service");
+                    return false;
+                }
+
+                var targetInfo = new VsDebugTargetInfo();
+                targetInfo.cbSize = (uint)System.Runtime.InteropServices.Marshal.SizeOf(targetInfo);
+                targetInfo.dlo = DEBUG_LAUNCH_OPERATION.DLO_CreateProcess;
+                targetInfo.bstrExe = exePath;
+                targetInfo.bstrCurDir = workingDirectory;
+                targetInfo.bstrArg = "";
+                targetInfo.bstrRemoteMachine = null;
+                targetInfo.fSendStdoutToOutputWindow = 0;
+                targetInfo.grfLaunch = (uint)__VSDBGLAUNCHFLAGS.DBGLAUNCH_StopDebuggingOnEnd;
+
+                // Use the Native debug engine
+                targetInfo.clsidPortSupplier = Guid.Empty;
+                targetInfo.bstrPortName = "";
+
+                // Native Only debug engine GUID - set via clsidCustom
+                targetInfo.clsidCustom = new Guid("3B476D35-A401-11D2-AAD4-00C04F990171");
+
+                IntPtr pInfo = System.Runtime.InteropServices.Marshal.AllocCoTaskMem((int)targetInfo.cbSize);
+                try
+                {
+                    System.Runtime.InteropServices.Marshal.StructureToPtr(targetInfo, pInfo, false);
+                    int hr = debugger.LaunchDebugTargets(1, pInfo);
+
+                    if (hr == 0)
+                    {
+                        await pane.WriteLineAsync("Debugger launched successfully.");
+                        return true;
+                    }
+                    else
+                    {
+                        await pane.WriteLineAsync($"LaunchDebugTargets failed with HRESULT: 0x{hr:X8}");
+                    }
+                }
+                finally
+                {
+                    System.Runtime.InteropServices.Marshal.FreeCoTaskMem(pInfo);
+                }
+
+                // Fallback: Try mixed mode (native + managed)
+                await pane.WriteLineAsync("Trying mixed mode debugging...");
+                targetInfo.clsidCustom = Guid.Empty; // Let VS choose
+
+                pInfo = System.Runtime.InteropServices.Marshal.AllocCoTaskMem((int)targetInfo.cbSize);
+                try
+                {
+                    System.Runtime.InteropServices.Marshal.StructureToPtr(targetInfo, pInfo, false);
+                    int hr = debugger.LaunchDebugTargets(1, pInfo);
+
+                    if (hr == 0)
+                    {
+                        await pane.WriteLineAsync("Debugger launched successfully (mixed mode).");
+                        return true;
+                    }
+                    else
+                    {
+                        await pane.WriteLineAsync($"Mixed mode launch failed with HRESULT: 0x{hr:X8}");
+                    }
+                }
+                finally
+                {
+                    System.Runtime.InteropServices.Marshal.FreeCoTaskMem(pInfo);
+                }
+            }
+            catch (Exception ex)
+            {
+                await pane.WriteLineAsync($"Error launching debugger: {ex.Message}");
+            }
+
+            await pane.WriteLineAsync("Falling back to console execution...");
+            await RunExecutableInConsoleAsync(exePath, workingDirectory);
+            return false;
+        }
+
+        /// <summary>
+        /// Runs the watch command in the background.
+        /// </summary>
+        public static async Task RunWatchAsync(string? workingDirectory = null)
+        {
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+
+            // Stop any existing watch process
+            StopWatch();
+
+            var pane = await GetOutputPaneAsync();
+            await pane.ActivateAsync();
+            await pane.ClearAsync();
+
+            string? projectDir = workingDirectory ?? await GetProjectDirectoryAsync();
+            if (string.IsNullOrEmpty(projectDir))
+            {
+                await pane.WriteLineAsync("Error: No cforge project found.");
+                return;
+            }
+
+            string cforgeExe = GetCforgeExecutable();
+            await pane.WriteLineAsync($"> cforge watch");
+            await pane.WriteLineAsync("Watching for file changes... (use Stop Watch to terminate)");
+            await pane.WriteLineAsync("");
+
+            try
+            {
+                var startInfo = new ProcessStartInfo
+                {
+                    FileName = cforgeExe,
+                    Arguments = "watch",
+                    WorkingDirectory = projectDir,
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true,
+                    StandardOutputEncoding = Encoding.UTF8,
+                    StandardErrorEncoding = Encoding.UTF8
+                };
+
+                _watchProcess = new Process { StartInfo = startInfo };
+
+                _watchProcess.OutputDataReceived += (s, e) =>
+                {
+                    if (e.Data != null)
+                    {
+                        string cleanLine = StripAnsiCodes(e.Data);
+                        _ = pane.WriteLineAsync(cleanLine);
+                    }
+                };
+
+                _watchProcess.ErrorDataReceived += (s, e) =>
+                {
+                    if (e.Data != null)
+                    {
+                        string cleanLine = StripAnsiCodes(e.Data);
+                        _ = pane.WriteLineAsync(cleanLine);
+                    }
+                };
+
+                _watchProcess.Start();
+                _watchProcess.BeginOutputReadLine();
+                _watchProcess.BeginErrorReadLine();
+
+                await VS.StatusBar.ShowMessageAsync("cforge watch started");
+            }
+            catch (Exception ex)
+            {
+                await pane.WriteLineAsync($"Error starting watch: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Stops the watch process if running.
+        /// </summary>
+        public static void StopWatch()
+        {
+            if (_watchProcess != null && !_watchProcess.HasExited)
+            {
+                try
+                {
+                    _watchProcess.Kill();
+                    _watchProcess.Dispose();
+                    _ = VS.StatusBar.ShowMessageAsync("cforge watch stopped");
+                }
+                catch { }
+                finally
+                {
+                    _watchProcess = null;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Stops the current running cforge process.
+        /// </summary>
+        public static void StopCurrentProcess()
+        {
+            if (_currentProcess != null && !_currentProcess.HasExited)
+            {
+                try
+                {
+                    _currentProcess.Kill();
+                    _currentProcess.Dispose();
+                    _ = VS.StatusBar.ShowMessageAsync("Process stopped");
+                }
+                catch { }
+                finally
+                {
+                    _currentProcess = null;
+                }
+            }
         }
 
         /// <summary>

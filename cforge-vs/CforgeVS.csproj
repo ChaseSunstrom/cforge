@@ -49,6 +49,7 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <ItemGroup>
+    <!-- Source files -->
     <Compile Include="src\CforgePackage.cs" />
     <Compile Include="src\CforgeRunner.cs" />
     <Compile Include="src\CforgeProjectDetector.cs" />
@@ -58,10 +59,14 @@
     <Compile Include="src\OpenFolderSupport.cs" />
     <Compile Include="src\VcxprojGenerator.cs" />
     <Compile Include="src\PackageIds.cs" />
+    <Compile Include="src\CforgeOptionsPage.cs">
+      <SubType>Component</SubType>
+    </Compile>
     <Compile Include="src\Commands\BuildCommand.cs" />
     <Compile Include="src\Commands\DependencyCommands.cs" />
     <Compile Include="ProjectSystem\CforgeProjectSystem.cs" />
     <Compile Include="ProjectSystem\CforgeBuildManager.cs" />
+    <!-- Tool Windows -->
     <Compile Include="ToolWindows\DependencyToolWindow.cs" />
     <Compile Include="ToolWindows\DependencyToolWindow.xaml.cs">
       <DependentUpon>DependencyToolWindow.xaml</DependentUpon>
@@ -70,9 +75,25 @@
     <Compile Include="ToolWindows\OutputToolWindow.xaml.cs">
       <DependentUpon>OutputToolWindow.xaml</DependentUpon>
     </Compile>
+    <Compile Include="ToolWindows\ProjectPropertiesWindow.cs" />
+    <Compile Include="ToolWindows\ProjectPropertiesWindow.xaml.cs">
+      <DependentUpon>ProjectPropertiesWindow.xaml</DependentUpon>
+    </Compile>
+    <!-- CforgeExplorerWindow -->
+    <Compile Include="ToolWindows\CforgeExplorerWindow.cs" />
+    <Compile Include="ToolWindows\CforgeExplorerWindow.xaml.cs">
+      <DependentUpon>CforgeExplorerWindow.xaml</DependentUpon>
+    </Compile>
+    <!-- Dialogs -->
     <Compile Include="Dialogs\InputDialog.xaml.cs">
       <DependentUpon>InputDialog.xaml</DependentUpon>
     </Compile>
+    <Compile Include="ToolWindows\Dialogs\AddDependencyDialog.xaml.cs">
+      <DependentUpon>AddDependencyDialog.xaml</DependentUpon>
+    </Compile>
+    <!-- Test Adapter -->
+    <Compile Include="TestAdapter\CforgeTestDiscoverer.cs" />
+    <Compile Include="TestAdapter\CforgeTestExecutor.cs" />
   </ItemGroup>
   <ItemGroup>
     <Page Include="ToolWindows\DependencyToolWindow.xaml">
@@ -83,7 +104,19 @@
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>
+    <Page Include="ToolWindows\ProjectPropertiesWindow.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
     <Page Include="Dialogs\InputDialog.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="ToolWindows\CforgeExplorerWindow.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="ToolWindows\Dialogs\AddDependencyDialog.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>
@@ -118,6 +151,7 @@
     <PackageReference Include="Microsoft.VisualStudio.ProjectSystem.VS" Version="17.9.380" />
     <PackageReference Include="Microsoft.VisualStudio.ProjectSystem.Analyzers" Version="17.9.380" />
     <PackageReference Include="Tomlyn" Version="0.17.0" />
+    <PackageReference Include="Microsoft.TestPlatform.ObjectModel" Version="17.8.0" />
   </ItemGroup>
   <!-- Project Templates -->
   <ItemGroup>

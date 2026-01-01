@@ -3,20 +3,99 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:vsshell="clr-namespace:Microsoft.VisualStudio.Shell;assembly=Microsoft.VisualStudio.Shell.15.0"
+             xmlns:imaging="clr-namespace:Microsoft.VisualStudio.Imaging;assembly=Microsoft.VisualStudio.Imaging"
+             xmlns:catalog="clr-namespace:Microsoft.VisualStudio.Imaging;assembly=Microsoft.VisualStudio.ImageCatalog"
+             xmlns:theming="clr-namespace:Microsoft.VisualStudio.PlatformUI;assembly=Microsoft.VisualStudio.Imaging"
+             xmlns:local="clr-namespace:CforgeVS"
              mc:Ignorable="d"
-             d:DesignHeight="500" d:DesignWidth="400"
-             Background="{DynamicResource VsBrush.Window}"
-             Foreground="{DynamicResource VsBrush.WindowText}">
+             d:DesignHeight="600" d:DesignWidth="400"
+             Background="{DynamicResource {x:Static vsshell:VsBrushes.ToolWindowBackgroundKey}}"
+             Foreground="{DynamicResource {x:Static vsshell:VsBrushes.ToolWindowTextKey}}"
+             theming:ImageThemingUtilities.ImageBackgroundColor="{DynamicResource {x:Static vsshell:VsColors.ToolWindowBackgroundKey}}">
 
     <UserControl.Resources>
+        <!-- TreeView Item Style -->
         <Style x:Key="DependencyTreeItemStyle" TargetType="TreeViewItem">
             <Setter Property="IsExpanded" Value="True"/>
-            <Setter Property="Padding" Value="2"/>
+            <Setter Property="Padding" Value="2,1"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Foreground" Value="{DynamicResource {x:Static vsshell:VsBrushes.ToolWindowTextKey}}"/>
         </Style>
-        <Style x:Key="ToolbarButtonStyle" TargetType="Button">
-            <Setter Property="Padding" Value="8,4"/>
+
+        <!-- Toolbar Button Style -->
+        <Style x:Key="ToolbarBtn" TargetType="Button">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="Padding" Value="4,2"/>
+            <Setter Property="Margin" Value="1"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Foreground" Value="{DynamicResource {x:Static vsshell:VsBrushes.CommandBarTextActiveKey}}"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="{DynamicResource {x:Static vsshell:VsBrushes.CommandBarMouseOverBackgroundGradientKey}}"/>
+                    <Setter Property="BorderBrush" Value="{DynamicResource {x:Static vsshell:VsBrushes.CommandBarBorderKey}}"/>
+                </Trigger>
+                <Trigger Property="IsPressed" Value="True">
+                    <Setter Property="Background" Value="{DynamicResource {x:Static vsshell:VsBrushes.CommandBarMouseDownBackgroundGradientKey}}"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Small Button Style -->
+        <Style x:Key="SmallBtn" TargetType="Button">
+            <Setter Property="Padding" Value="8,3"/>
             <Setter Property="Margin" Value="2"/>
-            <Setter Property="MinWidth" Value="60"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Background" Value="{DynamicResource {x:Static vsshell:VsBrushes.CommandBarGradientKey}}"/>
+            <Setter Property="Foreground" Value="{DynamicResource {x:Static vsshell:VsBrushes.CommandBarTextActiveKey}}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource {x:Static vsshell:VsBrushes.CommandBarBorderKey}}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="{DynamicResource {x:Static vsshell:VsBrushes.CommandBarMouseOverBackgroundGradientKey}}"/>
+                </Trigger>
+                <Trigger Property="IsPressed" Value="True">
+                    <Setter Property="Background" Value="{DynamicResource {x:Static vsshell:VsBrushes.CommandBarMouseDownBackgroundGradientKey}}"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- TextBox Style for SearchBox -->
+        <Style x:Key="ThemedTextBox" TargetType="TextBox">
+            <Setter Property="Background" Value="{DynamicResource {x:Static vsshell:VsBrushes.ComboBoxBackgroundKey}}"/>
+            <Setter Property="Foreground" Value="{DynamicResource {x:Static vsshell:VsBrushes.WindowTextKey}}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource {x:Static vsshell:VsBrushes.ComboBoxBorderKey}}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CaretBrush" Value="{DynamicResource {x:Static vsshell:VsBrushes.WindowTextKey}}"/>
+        </Style>
+
+        <!-- TabControl Style -->
+        <Style x:Key="ThemedTabControl" TargetType="TabControl">
+            <Setter Property="Background" Value="{DynamicResource {x:Static vsshell:VsBrushes.ToolWindowBackgroundKey}}"/>
+            <Setter Property="BorderThickness" Value="0"/>
+        </Style>
+
+        <!-- TabItem Style -->
+        <Style x:Key="ThemedTabItem" TargetType="TabItem">
+            <Setter Property="Background" Value="{DynamicResource {x:Static vsshell:VsBrushes.CommandBarGradientKey}}"/>
+            <Setter Property="Foreground" Value="{DynamicResource {x:Static vsshell:VsBrushes.CommandBarTextActiveKey}}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource {x:Static vsshell:VsBrushes.CommandBarBorderKey}}"/>
+            <Setter Property="BorderThickness" Value="1,1,1,0"/>
+            <Setter Property="Padding" Value="10,4"/>
+            <Setter Property="Margin" Value="0,0,2,0"/>
+            <Style.Triggers>
+                <Trigger Property="IsSelected" Value="True">
+                    <Setter Property="Background" Value="{DynamicResource {x:Static vsshell:VsBrushes.ToolWindowBackgroundKey}}"/>
+                    <Setter Property="Foreground" Value="{DynamicResource {x:Static vsshell:VsBrushes.ToolWindowTextKey}}"/>
+                </Trigger>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="{DynamicResource {x:Static vsshell:VsBrushes.CommandBarMouseOverBackgroundGradientKey}}"/>
+                </Trigger>
+            </Style.Triggers>
         </Style>
     </UserControl.Resources>
 
@@ -26,55 +105,63 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
         <!-- Toolbar -->
-        <Border Grid.Row="0" Background="{DynamicResource VsBrush.CommandBarGradientBegin}" Padding="4">
-            <WrapPanel>
-                <Button x:Name="AddButton" Click="AddButton_Click" Style="{StaticResource ToolbarButtonStyle}" ToolTip="Add a new dependency">
+        <Border Grid.Row="0" Background="{DynamicResource {x:Static vsshell:VsBrushes.CommandBarGradientKey}}"
+                BorderBrush="{DynamicResource {x:Static vsshell:VsBrushes.CommandBarBorderKey}}" BorderThickness="0,0,0,1">
+            <StackPanel Orientation="Horizontal" Margin="4,2">
+                <Button Style="{StaticResource ToolbarBtn}" Click="AddButton_Click" ToolTip="Add dependency">
                     <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="+" FontWeight="Bold" Margin="0,0,4,0"/>
-                        <TextBlock Text="Add"/>
+                        <imaging:CrispImage Width="16" Height="16" Moniker="{x:Static catalog:KnownMonikers.Add}"/>
+                        <TextBlock Text="Add" Margin="4,0,0,0" VerticalAlignment="Center"/>
                     </StackPanel>
                 </Button>
-                <Button x:Name="RemoveButton" Click="RemoveButton_Click" Style="{StaticResource ToolbarButtonStyle}" ToolTip="Remove selected dependency">
+                <Button Style="{StaticResource ToolbarBtn}" Click="RemoveButton_Click" ToolTip="Remove selected">
                     <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="-" FontWeight="Bold" Margin="0,0,4,0"/>
-                        <TextBlock Text="Remove"/>
+                        <imaging:CrispImage Width="16" Height="16" Moniker="{x:Static catalog:KnownMonikers.Cancel}"/>
+                        <TextBlock Text="Remove" Margin="4,0,0,0" VerticalAlignment="Center"/>
                     </StackPanel>
                 </Button>
-                <Separator Style="{StaticResource {x:Static ToolBar.SeparatorStyleKey}}" Margin="4,0"/>
-                <Button x:Name="RefreshButton" Click="RefreshButton_Click" Style="{StaticResource ToolbarButtonStyle}" ToolTip="Refresh dependency list">
-                    <TextBlock Text="Refresh"/>
+
+                <Border Width="1" Margin="6,4" Background="{DynamicResource {x:Static vsshell:VsBrushes.CommandBarMenuSeparatorKey}}"/>
+
+                <Button Style="{StaticResource ToolbarBtn}" Click="RefreshButton_Click" ToolTip="Refresh">
+                    <imaging:CrispImage Width="16" Height="16" Moniker="{x:Static catalog:KnownMonikers.Refresh}"/>
                 </Button>
-                <Button x:Name="UpdateRegistryButton" Click="UpdateRegistryButton_Click" Style="{StaticResource ToolbarButtonStyle}" ToolTip="Update package registry">
-                    <TextBlock Text="Update Registry"/>
+                <Button Style="{StaticResource ToolbarBtn}" Click="UpdateRegistryButton_Click" ToolTip="Update registry"><imaging:CrispImage Width="16" Height="16" Moniker="{x:Static catalog:KnownMonikers.CloudDownload}"/>
                 </Button>
-            </WrapPanel>
+                <Button Style="{StaticResource ToolbarBtn}" Click="OutdatedButton_Click" ToolTip="Check for updates">
+                    <imaging:CrispImage Width="16" Height="16" Moniker="{x:Static catalog:KnownMonikers.Sync}"/>
+                </Button>
+            </StackPanel>
         </Border>
 
         <!-- Search Box -->
-        <Border Grid.Row="1" Padding="8,4" Background="{DynamicResource VsBrush.CommandBarGradientBegin}">
+        <Border Grid.Row="1" Background="{DynamicResource {x:Static vsshell:VsBrushes.CommandBarGradientKey}}"
+                BorderBrush="{DynamicResource {x:Static vsshell:VsBrushes.CommandBarBorderKey}}" BorderThickness="0,0,0,1"
+                Padding="8,4">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 <TextBox x:Name="SearchBox" Grid.Column="0"
+                         Style="{StaticResource ThemedTextBox}"
                          VerticalContentAlignment="Center"
-                         Padding="4"
+                         Padding="4,3"
                          KeyDown="SearchBox_KeyDown"/>
-                <Button x:Name="SearchButton" Grid.Column="1" Click="SearchButton_Click" Padding="8,4" Margin="4,0,0,0">
-                    <TextBlock Text="Search"/>
+                <Button Grid.Column="1" Style="{StaticResource ToolbarBtn}" Click="SearchButton_Click" Margin="4,0,0,0">
+                    <imaging:CrispImage Width="16" Height="16" Moniker="{x:Static catalog:KnownMonikers.Search}"/>
                 </Button>
             </Grid>
         </Border>
 
         <!-- Main Content - TabControl -->
-        <TabControl Grid.Row="2" x:Name="MainTabControl">
+        <TabControl Grid.Row="2" x:Name="MainTabControl"
+                    Style="{StaticResource ThemedTabControl}">
             <!-- Installed Dependencies Tab -->
-            <TabItem Header="Installed">
+            <TabItem Header="Installed" Style="{StaticResource ThemedTabItem}">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="*"/>
@@ -82,103 +169,161 @@
                     </Grid.RowDefinitions>
 
                     <TreeView x:Name="DependencyTree" Grid.Row="0"
-                              Background="Transparent"
+                              Background="{DynamicResource {x:Static vsshell:VsBrushes.ToolWindowBackgroundKey}}"
                               BorderThickness="0"
                               Padding="4"
                               ItemContainerStyle="{StaticResource DependencyTreeItemStyle}"
                               SelectedItemChanged="DependencyTree_SelectedItemChanged">
                         <TreeView.ItemTemplate>
                             <HierarchicalDataTemplate ItemsSource="{Binding Children}">
-                                <StackPanel Orientation="Horizontal" Margin="2">
-                                    <TextBlock x:Name="Icon" Text="" Margin="0,0,6,0"/>
-                                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold"/>
-                                    <TextBlock Text=" @ " Foreground="Gray" x:Name="AtSign"/>
+                                <StackPanel Orientation="Horizontal" Margin="0,2">
+                                    <!-- Icon -->
+                                    <imaging:CrispImage Width="16" Height="16" Margin="0,0,6,0"
+                                                        Moniker="{Binding ImageMoniker}"/>
+                                    <!-- Name -->
+                                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" VerticalAlignment="Center"
+                                               Foreground="{DynamicResource {x:Static vsshell:VsBrushes.ToolWindowTextKey}}"/>
+                                    <!-- Version -->
+                                    <TextBlock x:Name="VersionText" Text=" @ "
+                                               Foreground="{DynamicResource {x:Static vsshell:VsBrushes.GrayTextKey}}"/>
                                     <TextBlock Text="{Binding Version}" Foreground="#0097A7"/>
-                                    <TextBlock Text=" (" Foreground="Gray" x:Name="TypeOpen"/>
-                                    <TextBlock Text="{Binding Type}" Foreground="Gray" FontStyle="Italic"/>
-                                    <TextBlock Text=")" Foreground="Gray"/>
+                                    <!-- Type indicator -->
+                                    <Border x:Name="TypeBadge" CornerRadius="2" Padding="4,1" Margin="6,0,0,0"
+                                            Background="{DynamicResource {x:Static vsshell:VsBrushes.CommandBarGradientKey}}">
+                                        <TextBlock Text="{Binding Type}" FontSize="10"
+                                                   Foreground="{DynamicResource {x:Static vsshell:VsBrushes.GrayTextKey}}"/>
+                                    </Border>
                                 </StackPanel>
                                 <HierarchicalDataTemplate.Triggers>
                                     <DataTrigger Binding="{Binding Type}" Value="group">
-                                        <Setter TargetName="Icon" Property="Text" Value="[+]"/>
-                                        <Setter TargetName="AtSign" Property="Visibility" Value="Collapsed"/>
-                                        <Setter TargetName="TypeOpen" Property="Visibility" Value="Collapsed"/>
-                                    </DataTrigger>
-                                    <DataTrigger Binding="{Binding Type}" Value="index">
-                                        <Setter TargetName="Icon" Property="Text" Value="[P]"/>
-                                    </DataTrigger>
-                                    <DataTrigger Binding="{Binding Type}" Value="git">
-                                        <Setter TargetName="Icon" Property="Text" Value="[G]"/>
-                                    </DataTrigger>
-                                    <DataTrigger Binding="{Binding Type}" Value="vcpkg">
-                                        <Setter TargetName="Icon" Property="Text" Value="[V]"/>
-                                    </DataTrigger>
-                                    <DataTrigger Binding="{Binding Type}" Value="system">
-                                        <Setter TargetName="Icon" Property="Text" Value="[S]"/>
+                                        <Setter TargetName="VersionText" Property="Visibility" Value="Collapsed"/>
+                                        <Setter TargetName="TypeBadge" Property="Visibility" Value="Collapsed"/>
                                     </DataTrigger>
                                 </HierarchicalDataTemplate.Triggers>
                             </HierarchicalDataTemplate>
                         </TreeView.ItemTemplate>
                         <TreeView.ContextMenu>
                             <ContextMenu>
-                                <MenuItem Header="Copy Name" Click="CopyName_Click"/>
+                                <MenuItem Header="Copy Name" Click="CopyName_Click">
+                                    <MenuItem.Icon>
+                                        <imaging:CrispImage Width="16" Height="16" Moniker="{x:Static catalog:KnownMonikers.Copy}"/>
+                                    </MenuItem.Icon>
+                                </MenuItem>
                                 <MenuItem Header="Copy with Version" Click="CopyNameVersion_Click"/>
                                 <Separator/>
-                                <MenuItem Header="Remove" Click="RemoveDependency_Click"/>
+                                <MenuItem Header="Check for Updates" Click="CheckUpdate_Click">
+                                    <MenuItem.Icon>
+                                        <imaging:CrispImage Width="16" Height="16" Moniker="{x:Static catalog:KnownMonikers.Refresh}"/>
+                                    </MenuItem.Icon>
+                                </MenuItem>
+                                <MenuItem Header="Update to Latest" Click="UpdateDependency_Click">
+                                    <MenuItem.Icon>
+                                        <imaging:CrispImage Width="16" Height="16" Moniker="{x:Static catalog:KnownMonikers.StatusOK}"/>
+                                    </MenuItem.Icon>
+                                </MenuItem>
                                 <Separator/>
-                                <MenuItem Header="View in cforge.toml" Click="ViewInToml_Click"/>
+                                <MenuItem Header="Remove" Click="RemoveDependency_Click">
+                                    <MenuItem.Icon>
+                                        <imaging:CrispImage Width="16" Height="16" Moniker="{x:Static catalog:KnownMonikers.Cancel}"/>
+                                    </MenuItem.Icon>
+                                </MenuItem>
+                                <Separator/>
+                                <MenuItem Header="View in cforge.toml" Click="ViewInToml_Click">
+                                    <MenuItem.Icon>
+                                        <imaging:CrispImage Width="16" Height="16" Moniker="{x:Static catalog:KnownMonikers.ConfigurationFile}"/>
+                                    </MenuItem.Icon>
+                                </MenuItem>
                             </ContextMenu>
                         </TreeView.ContextMenu>
                     </TreeView>
 
                     <!-- Selected Package Details -->
-                    <Border Grid.Row="1" x:Name="DetailsPanel" Background="{DynamicResource VsBrush.CommandBarGradientBegin}"
-                            Padding="8" Visibility="Collapsed">
-                        <StackPanel>
-                            <TextBlock x:Name="DetailName" FontWeight="Bold" FontSize="14"/>
-                            <TextBlock x:Name="DetailVersion" Foreground="Gray"/>
-                            <TextBlock x:Name="DetailType" Foreground="Gray" FontStyle="Italic"/>
-                        </StackPanel>
+                    <Border Grid.Row="1" x:Name="DetailsPanel"
+                            Background="{DynamicResource {x:Static vsshell:VsBrushes.CommandBarGradientKey}}"
+                            BorderBrush="{DynamicResource {x:Static vsshell:VsBrushes.CommandBarBorderKey}}"
+                            BorderThickness="0,1,0,0"
+                            Padding="12,8" Visibility="Collapsed">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0">
+                                <TextBlock x:Name="DetailName" FontWeight="Bold" FontSize="13"
+                                           Foreground="{DynamicResource {x:Static vsshell:VsBrushes.ToolWindowTextKey}}"/>
+                                <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                    <TextBlock Text="Installed: " Foreground="{DynamicResource {x:Static vsshell:VsBrushes.GrayTextKey}}" FontSize="11"/>
+                                    <TextBlock x:Name="DetailVersion" Foreground="#0097A7" FontSize="11"/>
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="Latest: " Foreground="{DynamicResource {x:Static vsshell:VsBrushes.GrayTextKey}}" FontSize="11"/>
+                                    <TextBlock x:Name="DetailLatestVersion" Foreground="#4CAF50" FontSize="11"/>
+                                </StackPanel>
+                                <TextBlock x:Name="DetailType" Foreground="{DynamicResource {x:Static vsshell:VsBrushes.GrayTextKey}}" FontSize="11" FontStyle="Italic"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                <Button Content="Update" Style="{StaticResource SmallBtn}" Click="DetailUpdateButton_Click"/>
+                                <Button Content="Remove" Style="{StaticResource SmallBtn}" Click="DetailRemoveButton_Click"/>
+                                <Button Content="Info" Style="{StaticResource SmallBtn}" Click="DetailInfoButton_Click"/>
+                            </StackPanel>
+                        </Grid>
                     </Border>
                 </Grid>
             </TabItem>
 
             <!-- Available Packages Tab -->
-            <TabItem Header="Available">
+            <TabItem Header="Browse" Style="{StaticResource ThemedTabItem}">
                 <Grid>
                     <ListBox x:Name="AvailablePackagesList"
-                             Background="Transparent"
+                             Background="{DynamicResource {x:Static vsshell:VsBrushes.ToolWindowBackgroundKey}}"
                              BorderThickness="0"
                              ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                        <ListBox.ItemContainerStyle>
+                            <Style TargetType="ListBoxItem">
+                                <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                <Setter Property="Padding" Value="0"/>
+                                <Setter Property="Margin" Value="0"/>
+                                <Setter Property="Background" Value="Transparent"/>
+                                <Style.Triggers>
+                                    <Trigger Property="IsSelected" Value="True">
+                                        <Setter Property="Background" Value="{DynamicResource {x:Static vsshell:VsBrushes.HighlightKey}}"/>
+                                    </Trigger>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter Property="Background" Value="{DynamicResource {x:Static vsshell:VsBrushes.CommandBarMouseOverBackgroundGradientKey}}"/>
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </ListBox.ItemContainerStyle>
                         <ListBox.ItemTemplate>
                             <DataTemplate>
-                                <Border Padding="8" Margin="2" BorderBrush="LightGray" BorderThickness="1" CornerRadius="4">
+                                <Border Padding="12,8" BorderBrush="{DynamicResource {x:Static vsshell:VsBrushes.CommandBarBorderKey}}"
+                                        BorderThickness="0,0,0,1">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*"/>
                                             <ColumnDefinition Width="Auto"/>
                                         </Grid.ColumnDefinitions>
-                                        <Grid.RowDefinitions>
-                                            <RowDefinition Height="Auto"/>
-                                            <RowDefinition Height="Auto"/>
-                                        </Grid.RowDefinitions>
 
-                                        <TextBlock Grid.Column="0" Grid.Row="0"
-                                                   Text="{Binding Name}"
-                                                   FontWeight="Bold" FontSize="13"/>
-                                        <TextBlock Grid.Column="0" Grid.Row="1"
-                                                   Text="{Binding Description}"
-                                                   Foreground="Gray" TextWrapping="Wrap"
-                                                   MaxWidth="250"/>
-
-                                        <StackPanel Grid.Column="1" Grid.RowSpan="2" VerticalAlignment="Center">
-                                            <TextBlock Text="{Binding LatestVersion}"
-                                                       Foreground="#0097A7" FontWeight="SemiBold"
-                                                       HorizontalAlignment="Right"/>
-                                            <Button Content="Install" Padding="8,2" Margin="0,4,0,0"
-                                                    Click="InstallPackage_Click"
-                                                    Tag="{Binding Name}"/>
+                                        <StackPanel Grid.Column="0">
+                                            <StackPanel Orientation="Horizontal">
+                                                <imaging:CrispImage Width="16" Height="16" Margin="0,0,8,0"
+                                                                    Moniker="{x:Static catalog:KnownMonikers.NuGet}"/>
+                                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="12"
+                                                           Foreground="{DynamicResource {x:Static vsshell:VsBrushes.ToolWindowTextKey}}"/>
+                                                <TextBlock Text=" v" Foreground="{DynamicResource {x:Static vsshell:VsBrushes.GrayTextKey}}"
+                                                           FontSize="11" VerticalAlignment="Center"/>
+                                                <TextBlock Text="{Binding LatestVersion}" Foreground="#0097A7"
+                                                           FontSize="11" VerticalAlignment="Center"/>
+                                            </StackPanel>
+                                            <TextBlock Text="{Binding Description}"
+                                                       Foreground="{DynamicResource {x:Static vsshell:VsBrushes.GrayTextKey}}"
+                                                       TextWrapping="Wrap" FontSize="11"
+                                                       MaxWidth="280" Margin="24,2,0,0"/>
                                         </StackPanel>
+
+                                        <Button Grid.Column="1" Style="{StaticResource SmallBtn}"
+                                                Content="Install" VerticalAlignment="Center"
+                                                Click="InstallPackage_Click" Tag="{Binding Name}"/>
                                     </Grid>
                                 </Border>
                             </DataTemplate>
@@ -186,40 +331,125 @@
                     </ListBox>
 
                     <!-- Empty state -->
-                    <TextBlock x:Name="NoPackagesText"
-                               Text="Search for packages or click 'Update Registry' to see available packages"
-                               HorizontalAlignment="Center"
-                               VerticalAlignment="Center"
-                               Foreground="Gray"
-                               TextWrapping="Wrap"
-                               Margin="20"/>
+                    <StackPanel x:Name="NoPackagesText" HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <imaging:CrispImage Width="32" Height="32" Margin="0,0,0,12"
+                                            Moniker="{x:Static catalog:KnownMonikers.Search}"
+                                            HorizontalAlignment="Center"/>
+                        <TextBlock Text="Search for packages"
+                                   HorizontalAlignment="Center"
+                                   Foreground="{DynamicResource {x:Static vsshell:VsBrushes.GrayTextKey}}"
+                                   FontSize="13"/>
+                        <TextBlock Text="fmt, spdlog, nlohmann_json, catch2, boost"
+                                   HorizontalAlignment="Center"
+                                   Foreground="{DynamicResource {x:Static vsshell:VsBrushes.GrayTextKey}}"
+                                   FontSize="11" Margin="0,4,0,0"/>
+                    </StackPanel>
+                </Grid>
+            </TabItem>
+
+            <!-- Dependency Tree Tab -->
+            <TabItem Header="Tree" Style="{StaticResource ThemedTabItem}">
+                <Grid>
+                    <Border Background="{DynamicResource {x:Static vsshell:VsBrushes.ToolWindowBackgroundKey}}">
+                        <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+                            <TextBox x:Name="DependencyTreeText"
+                                     IsReadOnly="True"
+                                     FontFamily="Cascadia Code, Consolas, Courier New"
+                                     FontSize="12"
+                                     Background="Transparent"
+                                     Foreground="{DynamicResource {x:Static vsshell:VsBrushes.ToolWindowTextKey}}"
+                                     BorderThickness="0"
+                                     TextWrapping="NoWrap"
+                                     Padding="8"/>
+                        </ScrollViewer>
+                    </Border>
+                    <Button Style="{StaticResource SmallBtn}" Content="Refresh"
+                            HorizontalAlignment="Right" VerticalAlignment="Top"
+                            Margin="8" Click="RefreshTreeButton_Click"/>
+                </Grid>
+            </TabItem>
+
+            <!-- Outdated Tab -->
+            <TabItem Header="Updates" Style="{StaticResource ThemedTabItem}">
+                <Grid>
+                    <ListBox x:Name="OutdatedPackagesList"
+                             Background="{DynamicResource {x:Static vsshell:VsBrushes.ToolWindowBackgroundKey}}"
+                             BorderThickness="0"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                        <ListBox.ItemContainerStyle>
+                            <Style TargetType="ListBoxItem">
+                                <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                <Setter Property="Padding" Value="0"/>
+                                <Setter Property="Margin" Value="0"/>
+                                <Setter Property="Background" Value="Transparent"/>
+                                <Style.Triggers>
+                                    <Trigger Property="IsSelected" Value="True">
+                                        <Setter Property="Background" Value="{DynamicResource {x:Static vsshell:VsBrushes.HighlightKey}}"/>
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </ListBox.ItemContainerStyle>
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Border Padding="12,8" BorderBrush="{DynamicResource {x:Static vsshell:VsBrushes.CommandBarBorderKey}}"
+                                        BorderThickness="0,0,0,1">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+
+                                        <StackPanel Grid.Column="0">
+                                            <StackPanel Orientation="Horizontal">
+                                                <imaging:CrispImage Width="16" Height="16" Margin="0,0,8,0"
+                                                                    Moniker="{x:Static catalog:KnownMonikers.StatusWarning}"/>
+                                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="12"
+                                                           Foreground="{DynamicResource {x:Static vsshell:VsBrushes.ToolWindowTextKey}}"/>
+                                            </StackPanel>
+                                            <StackPanel Orientation="Horizontal" Margin="24,2,0,0">
+                                                <TextBlock Text="{Binding CurrentVersion}"
+                                                           Foreground="{DynamicResource {x:Static vsshell:VsBrushes.GrayTextKey}}" FontSize="11"/>
+                                                <TextBlock Text=" → " Foreground="{DynamicResource {x:Static vsshell:VsBrushes.GrayTextKey}}" FontSize="11"/>
+                                                <TextBlock Text="{Binding LatestVersion}" Foreground="#4CAF50"
+                                                           FontWeight="SemiBold" FontSize="11"/>
+                                            </StackPanel>
+                                        </StackPanel>
+
+                                        <Button Grid.Column="1" Style="{StaticResource SmallBtn}"
+                                                Content="Update" VerticalAlignment="Center"
+                                                Click="UpdateOutdatedPackage_Click" Tag="{Binding Name}"/>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+
+                    <StackPanel x:Name="NoUpdatesPanel" HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <imaging:CrispImage Width="32" Height="32" Margin="0,0,0,12"
+                                            Moniker="{x:Static catalog:KnownMonikers.StatusOK}"
+                                            HorizontalAlignment="Center"/>
+                        <TextBlock Text="All packages are up to date!"
+                                   Foreground="#4CAF50" FontWeight="SemiBold"
+                                   HorizontalAlignment="Center"/>
+                        <Button Style="{StaticResource SmallBtn}" Content="Check for Updates"
+                                Margin="0,12,0,0" Click="OutdatedButton_Click"/>
+                    </StackPanel>
                 </Grid>
             </TabItem>
         </TabControl>
 
-        <!-- Quick Actions -->
-        <Border Grid.Row="3" Background="{DynamicResource VsBrush.CommandBarGradientBegin}" Padding="8">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="*"/>
-                </Grid.ColumnDefinitions>
-                <Button Grid.Column="0" Content="Build" Margin="0,0,4,0" Padding="8,6" Click="BuildButton_Click"/>
-                <Button Grid.Column="1" Content="Run" Margin="2,0" Padding="8,6" Click="RunButton_Click"/>
-                <Button Grid.Column="2" Content="Clean" Margin="4,0,0,0" Padding="8,6" Click="CleanButton_Click"/>
-            </Grid>
-        </Border>
-
         <!-- Status Bar -->
-        <Border Grid.Row="4" Background="{DynamicResource VsBrush.CommandBarGradientBegin}" Padding="8,6">
+        <Border Grid.Row="3" Background="{DynamicResource {x:Static vsshell:VsBrushes.CommandBarGradientKey}}"
+                BorderBrush="{DynamicResource {x:Static vsshell:VsBrushes.CommandBarBorderKey}}" BorderThickness="0,1,0,0"
+                Padding="8,4">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <TextBlock x:Name="StatusText" Grid.Column="0" Text="Ready" FontSize="11" VerticalAlignment="Center"/>
-                <ProgressBar x:Name="ProgressBar" Grid.Column="1" Width="100" Height="12"
+                <TextBlock x:Name="StatusText" Grid.Column="0" Text="Ready" FontSize="11"
+                           Foreground="{DynamicResource {x:Static vsshell:VsBrushes.GrayTextKey}}" VerticalAlignment="Center"/>
+                <ProgressBar x:Name="ProgressBar" Grid.Column="1" Width="80" Height="10"
                              Visibility="Collapsed" IsIndeterminate="True"/>
             </Grid>
         </Border>

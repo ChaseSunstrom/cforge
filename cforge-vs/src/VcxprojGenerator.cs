@@ -339,8 +339,10 @@ namespace CforgeVS
             sb.AppendLine();
 
             // Output directories - use source directory for output, not temp
+            // cforge puts executables in build/bin/Config/ and libraries in build/lib/Config/
+            string binDir = project.Type == "static_library" ? "lib" : "bin";
             sb.AppendLine("  <PropertyGroup>");
-            sb.AppendLine($"    <OutDir>{sourceDirAbs}\\{project.OutputDir}\\$(Configuration)\\</OutDir>");
+            sb.AppendLine($"    <OutDir>{sourceDirAbs}\\{project.OutputDir}\\{binDir}\\$(Configuration)\\</OutDir>");
             sb.AppendLine($"    <IntDir>{sourceDirAbs}\\{project.OutputDir}\\obj\\$(Configuration)\\</IntDir>");
             sb.AppendLine($"    <TargetName>{project.Name}</TargetName>");
             sb.AppendLine($"    <TargetExt>{outputExt}</TargetExt>");

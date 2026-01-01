@@ -136,55 +136,8 @@ namespace CforgeVS
             _isBuilding = true;
             try
             {
-                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-
-                var pane = await CforgeRunner.GetOutputPaneAsync();
-                await pane.WriteLineAsync("[cforge] Building before debug...");
-
-                // Determine configuration
-                string config = "Debug";
-                if (_dte?.Solution?.SolutionBuild != null)
-                {
-                    var activeConfig = _dte.Solution.SolutionBuild.ActiveConfiguration;
-                    if (activeConfig?.Name?.Contains("Release") == true)
-                    {
-                        config = "Release";
-                    }
-                }
-
-                string args = config == "Release" ? "build -c Release" : "build";
-                bool success = await CforgeRunner.RunAsync(args, projectDir);
-
-                if (success)
-                {
-                    await pane.WriteLineAsync("[cforge] Build succeeded, starting...");
-
-                    // Find the executable
-                    var project = CforgeTomlParser.ParseProject(projectDir);
-                    if (project != null && project.Type == "executable")
-                    {
-                        string exePath = Path.Combine(projectDir, project.OutputDir, config, project.Name + ".exe");
-
-                        if (File.Exists(exePath))
-                        {
-                            // Start the executable in Windows Terminal
-                            await CforgeRunner.RunExecutableInConsoleAsync(exePath, projectDir);
-                        }
-                        else
-                        {
-                            await pane.WriteLineAsync($"[cforge] Error: Could not find executable at {exePath}");
-                            await pane.WriteLineAsync("[cforge] Make sure cforge build completed successfully.");
-                        }
-                    }
-                    else
-                    {
-                        await pane.WriteLineAsync("[cforge] Warning: Project is not an executable, cannot run.");
-                    }
-                }
-                else
-                {
-                    await pane.WriteLineAsync("[cforge] Build failed.");
-                }
+                // Use CforgeRunner.BuildAndDebugAsync which properly handles building and launching the debugger
+                await CforgeRunner.BuildAndDebugAsync(projectDir);
             }
             finally
             {

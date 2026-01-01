@@ -18,7 +18,32 @@ namespace CforgeVS
 
             if (!string.IsNullOrWhiteSpace(packageName))
             {
-                await CforgeRunner.RunAsync($"add {packageName}");
+                await CforgeRunner.RunAsync($"deps add {packageName}");
+
+                // Refresh dependency window if open
+                var window = await DependencyToolWindow.ShowAsync();
+                if (window?.Content is DependencyToolWindowControl control)
+                {
+                    await control.RefreshDependenciesAsync();
+                }
+            }
+        }
+    }
+
+    [Command(PackageGuids.CforgeMenuGroupGuidString, PackageIds.RemoveDependencyCommandId)]
+    internal sealed class RemoveDependencyCommand : BaseCommand<RemoveDependencyCommand>
+    {
+        protected override async Task ExecuteAsync(OleMenuCmdEventArgs e)
+        {
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+
+            string? packageName = InputDialog.Show(
+                "Remove Dependency",
+                "Enter package name to remove:");
+
+            if (!string.IsNullOrWhiteSpace(packageName))
+            {
+                await CforgeRunner.RunAsync($"deps remove {packageName}");
 
                 // Refresh dependency window if open
                 var window = await DependencyToolWindow.ShowAsync();
@@ -35,7 +60,43 @@ namespace CforgeVS
     {
         protected override async Task ExecuteAsync(OleMenuCmdEventArgs e)
         {
-            await CforgeRunner.RunAsync("update --packages");
+            await CforgeRunner.RunAsync("deps update");
+        }
+    }
+
+    [Command(PackageGuids.CforgeMenuGroupGuidString, PackageIds.DepsTreeCommandId)]
+    internal sealed class DepsTreeCommand : BaseCommand<DepsTreeCommand>
+    {
+        protected override async Task ExecuteAsync(OleMenuCmdEventArgs e)
+        {
+            await CforgeRunner.RunAsync("deps tree");
+        }
+    }
+
+    [Command(PackageGuids.CforgeMenuGroupGuidString, PackageIds.DepsOutdatedCommandId)]
+    internal sealed class DepsOutdatedCommand : BaseCommand<DepsOutdatedCommand>
+    {
+        protected override async Task ExecuteAsync(OleMenuCmdEventArgs e)
+        {
+            await CforgeRunner.RunAsync("deps outdated");
+        }
+    }
+
+    [Command(PackageGuids.CforgeMenuGroupGuidString, PackageIds.DepsLockCommandId)]
+    internal sealed class DepsLockCommand : BaseCommand<DepsLockCommand>
+    {
+        protected override async Task ExecuteAsync(OleMenuCmdEventArgs e)
+        {
+            await CforgeRunner.RunAsync("deps lock");
+        }
+    }
+
+    [Command(PackageGuids.CforgeMenuGroupGuidString, PackageIds.VcpkgInstallCommandId)]
+    internal sealed class VcpkgInstallCommand : BaseCommand<VcpkgInstallCommand>
+    {
+        protected override async Task ExecuteAsync(OleMenuCmdEventArgs e)
+        {
+            await CforgeRunner.RunAsync("vcpkg install");
         }
     }
 

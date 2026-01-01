@@ -61,7 +61,7 @@ namespace CforgeVS
                 {
                     project.Name = GetString(projectTable, "name") ?? Path.GetFileName(projectDir);
                     project.Version = GetString(projectTable, "version") ?? "0.1.0";
-                    project.Type = GetString(projectTable, "type") ?? "executable";
+                    project.Type = GetString(projectTable, "binary_type") ?? GetString(projectTable, "type") ?? "executable";
                     project.CppStandard = GetString(projectTable, "cpp_standard") ??
                                           GetString(projectTable, "cxx_standard") ?? "20";
                     project.CStandard = GetString(projectTable, "c_standard") ?? "17";
@@ -75,13 +75,21 @@ namespace CforgeVS
                 // Parse [build] section
                 if (doc.TryGetValue("build", out var buildSection) && buildSection is TomlTable buildTable)
                 {
-                    var outputDir = GetString(buildTable, "output_dir");
+                    // cforge uses "directory" for output dir, not "output_dir"
+                    var outputDir = GetString(buildTable, "directory") ?? GetString(buildTable, "output_dir");
                     if (!string.IsNullOrEmpty(outputDir))
                         project.OutputDir = outputDir;
 
                     // Merge any additional settings
                     var extraIncludes = GetStringList(buildTable, "include_dirs");
                     project.IncludeDirs.AddRange(extraIncludes);
+
+                    var extraSources = GetStringList(buildTable, "source_dirs");
+                    foreach (var src in extraSources)
+                    {
+                        project.Sources.Add($"{src}/**/*.cpp");
+                        project.Sources.Add($"{src}/**/*.c");
+                    }
 
                     var extraDefines = GetStringList(buildTable, "defines");
                     project.Defines.AddRange(extraDefines);
@@ -231,6 +239,7 @@ namespace CforgeVS
 
         /// <summary>
         /// Gets the executable/library output path.
+        /// cforge puts executables in {outputDir}/bin/{config}/ and libraries in {outputDir}/lib/{config}/
         /// </summary>
         public static string GetOutputPath(CforgeProject project, string configuration)
         {
@@ -242,7 +251,54 @@ namespace CforgeVS
                 _ => ".exe"
             };
 
-            return $"{project.OutputDir}/{configuration}/{project.Name}{extension}";
+            string subdir = project.Type switch
+            {
+                "executable" => "bin",
+                "static_library" => "lib",
+                "shared_library" => "bin",
+                _ => "bin"
+            };
+
+            return $"{project.OutputDir}/{subdir}/{configuration}/{project.Name}{extension}";
+        }
+
+        /// <summary>
+        /// Finds the actual executable path by checking multiple possible locations.
+        /// </summary>
+        public static string? FindExecutable(string projectDir, CforgeProject project, string configuration)
+        {
+            string extension = project.Type switch
+            {
+                "executable" => ".exe",
+                "static_library" => ".lib",
+                "shared_library" => ".dll",
+                _ => ".exe"
+            };
+
+            // Possible locations where cforge might put the executable
+            var possiblePaths = new[]
+            {
+                // Standard cforge layout: build/bin/Config/name.exe
+                Path.Combine(projectDir, project.OutputDir, "bin", configuration, project.Name + extension),
+                // Alternative: build/Config/name.exe
+                Path.Combine(projectDir, project.OutputDir, configuration, project.Name + extension),
+                // CMake multi-config: build/Config/bin/name.exe
+                Path.Combine(projectDir, project.OutputDir, configuration, "bin", project.Name + extension),
+                // Single-config build: build/bin/name.exe
+                Path.Combine(projectDir, project.OutputDir, "bin", project.Name + extension),
+                // Flat build: build/name.exe
+                Path.Combine(projectDir, project.OutputDir, project.Name + extension),
+            };
+
+            foreach (var path in possiblePaths)
+            {
+                if (File.Exists(path))
+                {
+                    return path;
+                }
+            }
+
+            return null;
         }
 
         private static string? GetString(TomlTable table, string key)

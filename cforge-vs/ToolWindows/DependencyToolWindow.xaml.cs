@@ -8,6 +8,8 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using Community.VisualStudio.Toolkit;
+using Microsoft.VisualStudio.Imaging;
+using Microsoft.VisualStudio.Imaging.Interop;
 using Microsoft.VisualStudio.Shell;
 using Tomlyn;
 using Tomlyn.Model;
@@ -18,21 +20,23 @@ namespace CforgeVS
     {
         public ObservableCollection<DependencyItem> Dependencies { get; } = new ObservableCollection<DependencyItem>();
         public ObservableCollection<AvailablePackage> AvailablePackages { get; } = new ObservableCollection<AvailablePackage>();
+        public ObservableCollection<OutdatedPackage> OutdatedPackages { get; } = new ObservableCollection<OutdatedPackage>();
 
         private string? _registryPath;
+        private DependencyItem? _selectedDependency;
 
         public DependencyToolWindowControl()
         {
             InitializeComponent();
             DependencyTree.ItemsSource = Dependencies;
             AvailablePackagesList.ItemsSource = AvailablePackages;
+            OutdatedPackagesList.ItemsSource = OutdatedPackages;
 
             // Find registry path
             string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
             _registryPath = Path.Combine(localAppData, "cforge", "registry", "cforge-index", "packages");
 
             _ = RefreshDependenciesAsync();
-            _ = LoadAvailablePackagesAsync();
         }
 
         #region Refresh Dependencies
@@ -222,35 +226,50 @@ namespace CforgeVS
             });
         }
 
-        private void SearchPackages(string query)
+        private async Task SearchPackagesAsync(string query)
         {
             if (string.IsNullOrWhiteSpace(query))
             {
-                // Show all
-                foreach (var item in AvailablePackagesList.Items)
-                {
-                    if (AvailablePackagesList.ItemContainerGenerator.ContainerFromItem(item) is ListBoxItem container)
-                    {
-                        container.Visibility = Visibility.Visible;
-                    }
-                }
+                await LoadAvailablePackagesAsync();
                 return;
             }
 
-            query = query.ToLowerInvariant();
-            foreach (var item in AvailablePackagesList.Items)
-            {
-                if (item is AvailablePackage pkg)
-                {
-                    bool match = pkg.Name.ToLowerInvariant().Contains(query) ||
-                                 pkg.Description.ToLowerInvariant().Contains(query);
+            SetStatus($"Searching for '{query}'...", true);
 
-                    if (AvailablePackagesList.ItemContainerGenerator.ContainerFromItem(item) is ListBoxItem container)
+            // Use cforge deps search
+            var result = await CforgeRunner.RunAndCaptureAsync($"deps search {query}");
+
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+            AvailablePackages.Clear();
+
+            if (!string.IsNullOrWhiteSpace(result))
+            {
+                foreach (var line in result.Split('\n'))
+                {
+                    string trimmedLine = line.Trim();
+                    if (string.IsNullOrEmpty(trimmedLine) ||
+                        trimmedLine.StartsWith("Searching") ||
+                        trimmedLine.StartsWith("Found") ||
+                        trimmedLine.StartsWith("---"))
+                        continue;
+
+                    // Try to parse package info
+                    var parts = trimmedLine.Split(new[] { " - ", ": " }, StringSplitOptions.RemoveEmptyEntries);
+                    if (parts.Length >= 1)
                     {
-                        container.Visibility = match ? Visibility.Visible : Visibility.Collapsed;
+                        var namePart = parts[0].Trim().Split('@', ' ');
+                        AvailablePackages.Add(new AvailablePackage
+                        {
+                            Name = namePart[0].Trim(),
+                            LatestVersion = namePart.Length > 1 ? namePart[1].Trim() : "latest",
+                            Description = parts.Length > 1 ? string.Join(" - ", parts.Skip(1)) : ""
+                        });
                     }
                 }
             }
+
+            NoPackagesText.Visibility = AvailablePackages.Count > 0 ? Visibility.Collapsed : Visibility.Visible;
+            SetStatus($"Found {AvailablePackages.Count} packages");
         }
 
         #endregion
@@ -272,15 +291,19 @@ namespace CforgeVS
 
         private async Task AddPackageAsync(string packageName)
         {
-            await CforgeRunner.RunAsync($"add {packageName}");
+            await CforgeRunner.RunAsync($"deps add {packageName}");
             await RefreshDependenciesAsync();
         }
 
         private void RemoveButton_Click(object sender, RoutedEventArgs e)
         {
-            if (DependencyTree.SelectedItem is DependencyItem item && item.Type != "group")
+            if (_selectedDependency != null && _selectedDependency.Type != "group")
             {
-                _ = RemovePackageAsync(item.Name);
+                _ = RemovePackageAsync(_selectedDependency.Name);
+            }
+            else
+            {
+                _ = VS.MessageBox.ShowWarningAsync("Remove Dependency", "Please select a dependency to remove.");
             }
         }
 
@@ -297,10 +320,52 @@ namespace CforgeVS
 
         private async Task UpdateRegistryAsync()
         {
-            await CforgeRunner.RunAsync("update --packages");
+            await CforgeRunner.RunAsync("deps update");
             await LoadAvailablePackagesAsync();
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
             SetStatus("Registry updated");
+        }
+
+        private async void OutdatedButton_Click(object sender, RoutedEventArgs e)
+        {
+            SetStatus("Checking for outdated packages...", true);
+
+            var result = await CforgeRunner.RunAndCaptureAsync("deps outdated");
+
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+            OutdatedPackages.Clear();
+
+            if (!string.IsNullOrWhiteSpace(result))
+            {
+                foreach (var line in result.Split('\n'))
+                {
+                    if (line.Contains("->"))
+                    {
+                        var parts = line.Split(':');
+                        if (parts.Length >= 2)
+                        {
+                            string name = parts[0].Trim();
+                            string versionPart = parts[1].Trim();
+                            var versions = versionPart.Split(new[] { "->" }, StringSplitOptions.None);
+                            if (versions.Length == 2)
+                            {
+                                OutdatedPackages.Add(new OutdatedPackage
+                                {
+                                    Name = name,
+                                    CurrentVersion = versions[0].Trim(),
+                                    LatestVersion = versions[1].Trim()
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+
+            NoUpdatesPanel.Visibility = OutdatedPackages.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            OutdatedPackagesList.Visibility = OutdatedPackages.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+
+            SetStatus($"{OutdatedPackages.Count} outdated packages found");
+            MainTabControl.SelectedIndex = 3; // Switch to Updates tab
         }
 
         private void SearchBox_KeyDown(object sender, KeyEventArgs e)
@@ -314,9 +379,9 @@ namespace CforgeVS
         private void SearchButton_Click(object sender, RoutedEventArgs e)
         {
             string query = SearchBox.Text;
-            SearchPackages(query);
+            _ = SearchPackagesAsync(query);
 
-            // Switch to Available tab if searching
+            // Switch to Browse tab if searching
             if (!string.IsNullOrWhiteSpace(query))
             {
                 MainTabControl.SelectedIndex = 1;
@@ -325,12 +390,18 @@ namespace CforgeVS
 
         private void DependencyTree_SelectedItemChanged(object sender, RoutedPropertyChangedEventArgs<object> e)
         {
-            if (e.NewValue is DependencyItem item && item.Type != "group")
+            _selectedDependency = e.NewValue as DependencyItem;
+
+            if (_selectedDependency != null && _selectedDependency.Type != "group")
             {
                 DetailsPanel.Visibility = Visibility.Visible;
-                DetailName.Text = item.Name;
-                DetailVersion.Text = $"Version: {item.Version}";
-                DetailType.Text = $"Source: {item.Type}";
+                DetailName.Text = _selectedDependency.Name;
+                DetailVersion.Text = _selectedDependency.Version;
+                DetailLatestVersion.Text = "Checking...";
+                DetailType.Text = $"Source: {_selectedDependency.Type}";
+
+                // Async check for latest version
+                _ = CheckLatestVersionAsync(_selectedDependency.Name);
             }
             else
             {
@@ -338,11 +409,58 @@ namespace CforgeVS
             }
         }
 
+        private async Task CheckLatestVersionAsync(string packageName)
+        {
+            var result = await CforgeRunner.RunAndCaptureAsync($"deps info {packageName}");
+
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+
+            if (!string.IsNullOrWhiteSpace(result))
+            {
+                foreach (var line in result.Split('\n'))
+                {
+                    if (line.ToLower().Contains("latest") || line.ToLower().Contains("version"))
+                    {
+                        var parts = line.Split(':');
+                        if (parts.Length >= 2)
+                        {
+                            DetailLatestVersion.Text = parts[1].Trim();
+                            return;
+                        }
+                    }
+                }
+            }
+            DetailLatestVersion.Text = "Unknown";
+        }
+
+        private void CheckUpdate_Click(object sender, RoutedEventArgs e)
+        {
+            if (_selectedDependency != null)
+            {
+                _ = CheckLatestVersionAsync(_selectedDependency.Name);
+            }
+        }
+
+        private void UpdateDependency_Click(object sender, RoutedEventArgs e)
+        {
+            if (_selectedDependency != null)
+            {
+                SetStatus($"Updating {_selectedDependency.Name}...", true);
+                _ = UpdatePackageAsync(_selectedDependency.Name);
+            }
+        }
+
+        private async Task UpdatePackageAsync(string packageName)
+        {
+            await CforgeRunner.RunAsync($"deps add {packageName}@latest");
+            await RefreshDependenciesAsync();
+        }
+
         private void RemoveDependency_Click(object sender, RoutedEventArgs e)
         {
-            if (DependencyTree.SelectedItem is DependencyItem item && item.Type != "group")
+            if (_selectedDependency != null && _selectedDependency.Type != "group")
             {
-                _ = RemovePackageAsync(item.Name);
+                _ = RemovePackageAsync(_selectedDependency.Name);
             }
         }
 
@@ -356,25 +474,25 @@ namespace CforgeVS
             {
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
                 SetStatus($"Removing {packageName}...", true);
-                await CforgeRunner.RunAsync($"remove {packageName}");
+                await CforgeRunner.RunAsync($"deps remove {packageName}");
                 await RefreshDependenciesAsync();
             }
         }
 
         private void CopyName_Click(object sender, RoutedEventArgs e)
         {
-            if (DependencyTree.SelectedItem is DependencyItem item)
+            if (_selectedDependency != null)
             {
-                Clipboard.SetText(item.Name);
-                SetStatus($"Copied '{item.Name}'");
+                Clipboard.SetText(_selectedDependency.Name);
+                SetStatus($"Copied '{_selectedDependency.Name}'");
             }
         }
 
         private void CopyNameVersion_Click(object sender, RoutedEventArgs e)
         {
-            if (DependencyTree.SelectedItem is DependencyItem item)
+            if (_selectedDependency != null)
             {
-                string text = $"{item.Name}@{item.Version}";
+                string text = $"{_selectedDependency.Name} = \"{_selectedDependency.Version}\"";
                 Clipboard.SetText(text);
                 SetStatus($"Copied '{text}'");
             }
@@ -393,6 +511,24 @@ namespace CforgeVS
             }
         }
 
+        private void DetailUpdateButton_Click(object sender, RoutedEventArgs e)
+        {
+            UpdateDependency_Click(sender, e);
+        }
+
+        private void DetailRemoveButton_Click(object sender, RoutedEventArgs e)
+        {
+            RemoveDependency_Click(sender, e);
+        }
+
+        private async void DetailInfoButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_selectedDependency != null)
+            {
+                await CforgeRunner.RunAsync($"deps info {_selectedDependency.Name}");
+            }
+        }
+
         private void InstallPackage_Click(object sender, RoutedEventArgs e)
         {
             if (sender is Button btn && btn.Tag is string packageName)
@@ -402,29 +538,38 @@ namespace CforgeVS
             }
         }
 
-        private void BuildButton_Click(object sender, RoutedEventArgs e)
+        private async void PackageInfoButton_Click(object sender, RoutedEventArgs e)
         {
-            SetStatus("Building...", true);
-            _ = RunCommandAsync("build", "Build");
+            if (sender is Button btn && btn.Tag is string packageName)
+            {
+                await CforgeRunner.RunAsync($"deps info {packageName}");
+            }
         }
 
-        private void RunButton_Click(object sender, RoutedEventArgs e)
+        private async void RefreshTreeButton_Click(object sender, RoutedEventArgs e)
         {
-            SetStatus("Running...", true);
-            _ = RunCommandAsync("run", "Run");
+            SetStatus("Loading dependency tree...", true);
+            var result = await CforgeRunner.RunAndCaptureAsync("deps tree");
+            DependencyTreeText.Text = result ?? "No dependency tree available";
+            SetStatus("Dependency tree loaded");
         }
 
-        private void CleanButton_Click(object sender, RoutedEventArgs e)
+        private void UpdateOutdatedPackage_Click(object sender, RoutedEventArgs e)
         {
-            SetStatus("Cleaning...", true);
-            _ = RunCommandAsync("clean", "Clean");
+            if (sender is Button btn && btn.Tag is string packageName)
+            {
+                SetStatus($"Updating {packageName}...", true);
+                _ = UpdateAndRefreshAsync(packageName);
+            }
         }
 
-        private async Task RunCommandAsync(string command, string displayName)
+        private async Task UpdateAndRefreshAsync(string packageName)
         {
-            bool success = await CforgeRunner.RunAsync(command);
-            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-            SetStatus(success ? $"{displayName} completed" : $"{displayName} failed");
+            await CforgeRunner.RunAsync($"deps add {packageName}@latest");
+            await RefreshDependenciesAsync();
+
+            // Re-check outdated
+            OutdatedButton_Click(null!, null!);
         }
 
         #endregion
@@ -446,6 +591,22 @@ namespace CforgeVS
         public string Version { get; set; } = "";
         public string Type { get; set; } = "";
         public ObservableCollection<DependencyItem> Children { get; } = new ObservableCollection<DependencyItem>();
+
+        public ImageMoniker ImageMoniker
+        {
+            get
+            {
+                return Type switch
+                {
+                    "group" => KnownMonikers.FolderOpened,
+                    "git" => KnownMonikers.Git,
+                    "vcpkg" => KnownMonikers.Package,
+                    "system" => KnownMonikers.Library,
+                    "project" => KnownMonikers.Application,
+                    _ => KnownMonikers.NuGet
+                };
+            }
+        }
     }
 
     public class AvailablePackage
@@ -453,5 +614,13 @@ namespace CforgeVS
         public string Name { get; set; } = "";
         public string LatestVersion { get; set; } = "";
         public string Description { get; set; } = "";
+        public string Categories { get; set; } = "";
+    }
+
+    public class OutdatedPackage
+    {
+        public string Name { get; set; } = "";
+        public string CurrentVersion { get; set; } = "";
+        public string LatestVersion { get; set; } = "";
     }
 }

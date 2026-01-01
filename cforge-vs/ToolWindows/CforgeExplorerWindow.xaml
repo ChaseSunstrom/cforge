@@ -1,0 +1,240 @@
+<UserControl x:Class="CforgeVS.CforgeExplorerWindowControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:vsshell="clr-namespace:Microsoft.VisualStudio.Shell;assembly=Microsoft.VisualStudio.Shell.15.0"
+             xmlns:platformui="clr-namespace:Microsoft.VisualStudio.PlatformUI;assembly=Microsoft.VisualStudio.Shell.15.0"
+             xmlns:imaging="clr-namespace:Microsoft.VisualStudio.Imaging;assembly=Microsoft.VisualStudio.Imaging"
+             xmlns:catalog="clr-namespace:Microsoft.VisualStudio.Imaging;assembly=Microsoft.VisualStudio.ImageCatalog"
+             xmlns:theming="clr-namespace:Microsoft.VisualStudio.PlatformUI;assembly=Microsoft.VisualStudio.Imaging"
+             xmlns:local="clr-namespace:CforgeVS"
+             mc:Ignorable="d"
+             d:DesignHeight="600" d:DesignWidth="300"
+             Background="{DynamicResource {x:Static vsshell:VsBrushes.ToolWindowBackgroundKey}}"
+             Foreground="{DynamicResource {x:Static vsshell:VsBrushes.ToolWindowTextKey}}"
+             theming:ImageThemingUtilities.ImageBackgroundColor="{DynamicResource {x:Static vsshell:VsColors.ToolWindowBackgroundKey}}">
+
+    <UserControl.Resources>
+        <!-- Moniker to ImageSource Converter -->
+        <local:MonikerToImageSourceConverter x:Key="MonikerConverter"/>
+
+        <!-- TreeView Item Style -->
+        <Style x:Key="TreeItemStyle" TargetType="TreeViewItem">
+            <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=OneWay}"/>
+            <Setter Property="Padding" Value="2,1"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{DynamicResource {x:Static vsshell:VsBrushes.ToolWindowTextKey}}"/>
+        </Style>
+
+        <!-- Toolbar Button Style -->
+        <Style x:Key="ToolbarBtn" TargetType="Button">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="Padding" Value="4,2"/>
+            <Setter Property="Margin" Value="1"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Foreground" Value="{DynamicResource {x:Static vsshell:VsBrushes.CommandBarTextActiveKey}}"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="{DynamicResource {x:Static vsshell:VsBrushes.CommandBarMouseOverBackgroundGradientKey}}"/>
+                    <Setter Property="BorderBrush" Value="{DynamicResource {x:Static vsshell:VsBrushes.CommandBarBorderKey}}"/>
+                </Trigger>
+                <Trigger Property="IsPressed" Value="True">
+                    <Setter Property="Background" Value="{DynamicResource {x:Static vsshell:VsBrushes.CommandBarMouseDownBackgroundGradientKey}}"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Separator Style -->
+        <Style x:Key="ToolbarSep" TargetType="Border">
+            <Setter Property="Width" Value="1"/>
+            <Setter Property="Margin" Value="4,4"/>
+            <Setter Property="Background" Value="{DynamicResource {x:Static vsshell:VsBrushes.CommandBarMenuSeparatorKey}}"/>
+        </Style>
+    </UserControl.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Toolbar -->
+        <Border Grid.Row="0" Background="{DynamicResource {x:Static vsshell:VsBrushes.CommandBarGradientKey}}"
+                BorderBrush="{DynamicResource {x:Static vsshell:VsBrushes.CommandBarBorderKey}}" BorderThickness="0,0,0,1">
+            <StackPanel Orientation="Horizontal" Margin="4,2">
+                <!-- Build Actions -->
+                <Button Style="{StaticResource ToolbarBtn}" ToolTip="Build (Ctrl+Shift+B)" Click="BuildButton_Click">
+                    <StackPanel Orientation="Horizontal">
+                        <imaging:CrispImage Width="16" Height="16" Moniker="{x:Static catalog:KnownMonikers.BuildSolution}"/>
+                        <TextBlock Text="Build" Margin="4,0,0,0" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+                <Button Style="{StaticResource ToolbarBtn}" ToolTip="Run (F5)" Click="RunButton_Click">
+                    <StackPanel Orientation="Horizontal">
+                        <imaging:CrispImage Width="16" Height="16" Moniker="{x:Static catalog:KnownMonikers.Run}"/>
+                        <TextBlock Text="Run" Margin="4,0,0,0" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+                <Button Style="{StaticResource ToolbarBtn}" ToolTip="Debug (F5)" Click="DebugButton_Click">
+                    <StackPanel Orientation="Horizontal">
+                        <imaging:CrispImage Width="16" Height="16" Moniker="{x:Static catalog:KnownMonikers.Play}"/>
+                    </StackPanel>
+                </Button>
+
+                <Border Style="{StaticResource ToolbarSep}"/>
+
+                <!-- Test & Clean -->
+                <Button Style="{StaticResource ToolbarBtn}" ToolTip="Run Tests" Click="TestButton_Click">
+                    <imaging:CrispImage Width="16" Height="16" Moniker="{x:Static catalog:KnownMonikers.Test}"/>
+                </Button>
+                <Button Style="{StaticResource ToolbarBtn}" ToolTip="Clean" Click="CleanButton_Click">
+                    <imaging:CrispImage Width="16" Height="16" Moniker="{x:Static catalog:KnownMonikers.ClearWindowContent}"/>
+                </Button>
+
+                <Border Style="{StaticResource ToolbarSep}"/>
+
+                <!-- Project Actions -->
+                <Button Style="{StaticResource ToolbarBtn}" ToolTip="Open cforge.toml" Click="OpenTomlButton_Click">
+                    <imaging:CrispImage Width="16" Height="16" Moniker="{x:Static catalog:KnownMonikers.ConfigurationFile}"/>
+                </Button>
+                <Button Style="{StaticResource ToolbarBtn}" ToolTip="Refresh" Click="RefreshButton_Click">
+                    <imaging:CrispImage Width="16" Height="16" Moniker="{x:Static catalog:KnownMonikers.Refresh}"/>
+                </Button>
+
+                <!-- Configuration Dropdown -->
+                <ComboBox x:Name="ConfigCombo" Width="70" Margin="4,0" VerticalAlignment="Center"
+                          SelectionChanged="ConfigCombo_SelectionChanged" ToolTip="Build Configuration">
+                    <ComboBoxItem Content="Debug" IsSelected="True"/>
+                    <ComboBoxItem Content="Release"/>
+                </ComboBox>
+            </StackPanel>
+        </Border>
+
+        <!-- Project Header -->
+        <Border Grid.Row="1" Background="{DynamicResource {x:Static vsshell:VsBrushes.CommandBarGradientKey}}"
+                BorderBrush="{DynamicResource {x:Static vsshell:VsBrushes.CommandBarBorderKey}}" BorderThickness="0,0,0,1"
+                Padding="8,6">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- Project Icon -->
+                <imaging:CrispImage Grid.Column="0" Width="16" Height="16"
+                                    Moniker="{x:Static catalog:KnownMonikers.Application}"
+                                    VerticalAlignment="Center" Margin="0,0,8,0"/>
+
+                <!-- Project Name & Version -->
+                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                    <TextBlock x:Name="ProjectNameText" Text="No project" FontWeight="SemiBold" FontSize="12"
+                               Foreground="{DynamicResource {x:Static vsshell:VsBrushes.ToolWindowTextKey}}"/>
+                    <TextBlock x:Name="ProjectVersionText" Text="" FontSize="10"
+                               Foreground="{DynamicResource {x:Static vsshell:VsBrushes.GrayTextKey}}"/>
+                </StackPanel>
+
+                <!-- Build Status Indicator -->
+                <Border Grid.Column="2" x:Name="BuildStatusBorder" CornerRadius="3" Padding="6,2"
+                        VerticalAlignment="Center" Background="{DynamicResource {x:Static vsshell:VsBrushes.CommandBarGradientKey}}">
+                    <TextBlock x:Name="BuildStatusText" Text="Ready" FontSize="10"
+                               Foreground="{DynamicResource {x:Static vsshell:VsBrushes.ToolWindowTextKey}}"/>
+                </Border>
+            </Grid>
+        </Border>
+
+        <!-- Main Content - Project Tree -->
+        <TreeView Grid.Row="2" x:Name="ProjectTree"
+                  Background="{DynamicResource {x:Static vsshell:VsBrushes.ToolWindowBackgroundKey}}"
+                  BorderThickness="0" Padding="4"
+                  ItemContainerStyle="{StaticResource TreeItemStyle}"
+                  SelectedItemChanged="ProjectTree_SelectedItemChanged"
+                  MouseDoubleClick="ProjectTree_MouseDoubleClick">
+            <TreeView.ContextMenu>
+                <ContextMenu>
+                    <MenuItem Header="Open" Click="OpenFile_Click">
+                        <MenuItem.Icon>
+                            <imaging:CrispImage Width="16" Height="16" Moniker="{x:Static catalog:KnownMonikers.Open}"/>
+                        </MenuItem.Icon>
+                    </MenuItem>
+                    <MenuItem Header="Open Containing Folder" Click="OpenFolder_Click">
+                        <MenuItem.Icon>
+                            <imaging:CrispImage Width="16" Height="16" Moniker="{x:Static catalog:KnownMonikers.FolderOpened}"/>
+                        </MenuItem.Icon>
+                    </MenuItem>
+                    <Separator/>
+                    <MenuItem Header="New Class..." Click="NewClass_Click">
+                        <MenuItem.Icon>
+                            <imaging:CrispImage Width="16" Height="16" Moniker="{x:Static catalog:KnownMonikers.AddDocument}"/>
+                        </MenuItem.Icon>
+                    </MenuItem>
+                    <MenuItem Header="New Header..." Click="NewHeader_Click">
+                        <MenuItem.Icon>
+                            <imaging:CrispImage Width="16" Height="16" Moniker="{x:Static catalog:KnownMonikers.AddDocument}"/>
+                        </MenuItem.Icon>
+                    </MenuItem>
+                    <Separator/>
+                    <MenuItem Header="Build" Click="BuildButton_Click">
+                        <MenuItem.Icon>
+                            <imaging:CrispImage Width="16" Height="16" Moniker="{x:Static catalog:KnownMonikers.BuildSolution}"/>
+                        </MenuItem.Icon>
+                    </MenuItem>
+                    <MenuItem Header="Run" Click="RunButton_Click">
+                        <MenuItem.Icon>
+                            <imaging:CrispImage Width="16" Height="16" Moniker="{x:Static catalog:KnownMonikers.Run}"/>
+                        </MenuItem.Icon>
+                    </MenuItem>
+                    <MenuItem Header="Debug" Click="DebugButton_Click">
+                        <MenuItem.Icon>
+                            <imaging:CrispImage Width="16" Height="16" Moniker="{x:Static catalog:KnownMonikers.Play}"/>
+                        </MenuItem.Icon>
+                    </MenuItem>
+                </ContextMenu>
+            </TreeView.ContextMenu>
+            <TreeView.ItemTemplate>
+                <HierarchicalDataTemplate ItemsSource="{Binding Children}">
+                    <StackPanel Orientation="Horizontal" Margin="0,2">
+                        <!-- Icon from Moniker -->
+                        <imaging:CrispImage Width="16" Height="16" Margin="0,0,6,0"
+                                            Moniker="{Binding ImageMoniker}"/>
+                        <!-- Name -->
+                        <TextBlock Text="{Binding Name}" VerticalAlignment="Center"
+                                   Foreground="{DynamicResource {x:Static vsshell:VsBrushes.ToolWindowTextKey}}"/>
+                        <!-- Badge/Info -->
+                        <TextBlock Text="{Binding Badge}" FontSize="10" Margin="6,0,0,0"
+                                   Foreground="{DynamicResource {x:Static vsshell:VsBrushes.GrayTextKey}}"
+                                   VerticalAlignment="Center"/>
+                    </StackPanel>
+                </HierarchicalDataTemplate>
+            </TreeView.ItemTemplate>
+        </TreeView>
+
+        <!-- Status Bar -->
+        <Border Grid.Row="3" Background="{DynamicResource {x:Static vsshell:VsBrushes.CommandBarGradientKey}}"
+                BorderBrush="{DynamicResource {x:Static vsshell:VsBrushes.CommandBarBorderKey}}" BorderThickness="0,1,0,0"
+                Padding="8,4">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <TextBlock x:Name="StatusText" Grid.Column="0" Text="Ready" FontSize="11"
+                           Foreground="{DynamicResource {x:Static vsshell:VsBrushes.GrayTextKey}}" VerticalAlignment="Center"/>
+
+                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                    <ProgressBar x:Name="ProgressBar" Width="80" Height="10"
+                                 Visibility="Collapsed" IsIndeterminate="True" Margin="0,0,8,0"/>
+                    <TextBlock x:Name="FileCountText" Text="" FontSize="10"
+                               Foreground="{DynamicResource {x:Static vsshell:VsBrushes.GrayTextKey}}" VerticalAlignment="Center"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>
