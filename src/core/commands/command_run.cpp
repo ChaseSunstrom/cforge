@@ -592,16 +592,16 @@ cforge_int_t cforge_cmd_run(const cforge_context_t *ctx) {
       // Display program output header
       cforge::logger::print_action("", "Program Output\n");
 
-      // Capture stderr for runtime error formatting
-      std::string captured_stderr;
-
       // Create callbacks to display raw program output
+      // Note: We only print stdout immediately; stderr is captured and formatted later
+      // to avoid duplicated error output
       std::function<void(const std::string &)> stdout_callback =
           [](const std::string &chunk) { std::cout << chunk << std::flush; };
 
+      // Capture stderr for later formatting - don't print immediately to avoid duplication
+      std::string captured_stderr;
       std::function<void(const std::string &)> stderr_callback =
           [&captured_stderr](const std::string &chunk) {
-            std::cerr << chunk << std::flush;
             captured_stderr += chunk;
           };
 
@@ -615,20 +615,29 @@ cforge_int_t cforge_cmd_run(const cforge_context_t *ctx) {
       // Add a separator line after program output
       std::cout << std::endl;
 
+      // Use captured_stderr for error analysis
+      std::string error_output = captured_stderr;
+      if (error_output.empty()) {
+        error_output = result.stderr_output;
+      }
+
       if (result.success) {
+        // On success, just print any stderr warnings directly
+        if (!error_output.empty()) {
+          std::cerr << error_output << std::flush;
+        }
         cforge::logger::finished(config);
         return 0;
       } else {
-        // Combine stdout and stderr for error analysis
-        std::string combined_output = result.stdout_output + "\n" +
-                                      result.stderr_output + "\n" +
-                                      captured_stderr;
-
-        // Try to format any runtime errors
-        std::string formatted = cforge::format_build_errors(combined_output);
+        // On failure, try to format errors nicely first
+        std::string formatted = cforge::format_build_errors(error_output);
         if (!formatted.empty()) {
+          // Print formatted errors (don't print raw stderr to avoid duplication)
           std::cout << "\n";
           std::cout << formatted;
+        } else if (!error_output.empty()) {
+          // Fallback: print raw stderr if formatter didn't produce anything
+          std::cerr << error_output << std::flush;
         }
 
         cforge::logger::print_error("program exited with code: " +

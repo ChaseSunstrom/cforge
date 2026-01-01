@@ -72,6 +72,10 @@ void logger::print_success(const std::string &message) {
 }
 
 void logger::print_warning(const std::string &message) {
+  // Skip empty messages to avoid blank warning lines
+  if (message.empty()) {
+    return;
+  }
   // Warnings always show unless quiet
   if (s_verbosity == log_verbosity::VERBOSITY_QUIET)
     return;
@@ -79,11 +83,20 @@ void logger::print_warning(const std::string &message) {
 }
 
 void logger::print_error(const std::string &message) {
+  // Skip empty messages to avoid blank error lines
+  if (message.empty()) {
+    return;
+  }
   // Errors always show
   print_status_line("error", message, fmt::color::red, true, stderr);
 }
 
 void logger::print_verbose(const std::string &message) {
+  // Skip empty messages
+  if (message.empty()) {
+    return;
+  }
+
   // Check if this looks like an error (for backwards compat)
   if (message.find("error") != std::string::npos ||
       message.find("Error") != std::string::npos ||

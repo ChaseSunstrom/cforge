@@ -26,7 +26,7 @@
   ],
   "activationEvents": [
     "workspaceContains:cforge.toml",
-    "workspaceContains:workspace.toml"
+    "workspaceContains:cforge.workspace.toml"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -123,6 +123,79 @@
         "title": "Refresh Dependencies",
         "category": "cforge",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "cforge.new",
+        "title": "New Project",
+        "category": "cforge",
+        "icon": "$(new-folder)"
+      },
+      {
+        "command": "cforge.deps",
+        "title": "Show Dependencies",
+        "category": "cforge"
+      },
+      {
+        "command": "cforge.tree",
+        "title": "Show Dependency Tree",
+        "category": "cforge",
+        "icon": "$(list-tree)"
+      },
+      {
+        "command": "cforge.install",
+        "title": "Install Project",
+        "category": "cforge"
+      },
+      {
+        "command": "cforge.version",
+        "title": "Show Version",
+        "category": "cforge",
+        "icon": "$(info)"
+      },
+      {
+        "command": "cforge.ide",
+        "title": "Generate IDE Files",
+        "category": "cforge"
+      },
+      {
+        "command": "cforge.package",
+        "title": "Package Project",
+        "category": "cforge",
+        "icon": "$(package)"
+      },
+      {
+        "command": "cforge.bench",
+        "title": "Run Benchmarks",
+        "category": "cforge",
+        "icon": "$(graph)"
+      },
+      {
+        "command": "cforge.info",
+        "title": "Show Project Info",
+        "category": "cforge"
+      },
+      {
+        "command": "cforge.circular",
+        "title": "Check Circular Dependencies",
+        "category": "cforge"
+      },
+      {
+        "command": "cforge.doctor",
+        "title": "Diagnose Issues",
+        "category": "cforge",
+        "icon": "$(warning)"
+      },
+      {
+        "command": "cforge.docs",
+        "title": "Generate Documentation",
+        "category": "cforge",
+        "icon": "$(book)"
+      },
+      {
+        "command": "cforge.stopWatch",
+        "title": "Stop Watch Mode",
+        "category": "cforge",
+        "icon": "$(debug-stop)"
       }
     ],
     "views": {
@@ -233,7 +306,7 @@
       {
         "id": "toml",
         "extensions": [".toml"],
-        "filenames": ["cforge.toml", "workspace.toml"]
+        "filenames": ["cforge.toml", "cforge.workspace.toml"]
       }
     ]
   },

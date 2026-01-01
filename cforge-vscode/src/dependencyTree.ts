@@ -9,6 +9,11 @@ interface Dependency {
     url?: string;
 }
 
+interface WorkspaceMember {
+    name: string;
+    path: string;
+}
+
 export class DependencyTreeProvider implements vscode.TreeDataProvider<DependencyItem> {
     private _onDidChangeTreeData: vscode.EventEmitter<DependencyItem | undefined | null | void> = new vscode.EventEmitter<DependencyItem | undefined | null | void>();
     readonly onDidChangeTreeData: vscode.Event<DependencyItem | undefined | null | void> = this._onDidChangeTreeData.event;
@@ -33,16 +38,55 @@ export class DependencyTreeProvider implements vscode.TreeDataProvider<Dependenc
             return [];
         }
 
+        // Check for cforge.toml or cforge.workspace.toml
         const cforgeTomlPath = path.join(workspaceFolder.uri.fsPath, 'cforge.toml');
-        if (!fs.existsSync(cforgeTomlPath)) {
+        const workspaceTomlPath = path.join(workspaceFolder.uri.fsPath, 'cforge.workspace.toml');
+
+        let configPath = '';
+        let isWorkspace = false;
+
+        if (fs.existsSync(cforgeTomlPath)) {
+            configPath = cforgeTomlPath;
+            // Check if it's a workspace (has [workspace] section)
+            const content = fs.readFileSync(cforgeTomlPath, 'utf-8');
+            isWorkspace = content.includes('[workspace]');
+        } else if (fs.existsSync(workspaceTomlPath)) {
+            configPath = workspaceTomlPath;
+            isWorkspace = true;
+        }
+
+        if (!configPath) {
             return [];
         }
 
         try {
-            const content = fs.readFileSync(cforgeTomlPath, 'utf-8');
-            const deps = this.parseDependencies(content);
-
+            const content = fs.readFileSync(configPath, 'utf-8');
             const categories: DependencyItem[] = [];
+
+            // If this is a workspace, show workspace members first
+            if (isWorkspace) {
+                const members = this.parseWorkspaceMembers(content, workspaceFolder.uri.fsPath);
+                if (members.length > 0) {
+                    const memberChildren = members.map(m => new DependencyItem(
+                        m.name,
+                        m.path,
+                        vscode.TreeItemCollapsibleState.None,
+                        'project',
+                        undefined
+                    ));
+                    categories.push(new DependencyItem(
+                        'Workspace Members',
+                        `${members.length} projects`,
+                        vscode.TreeItemCollapsibleState.Expanded,
+                        'category',
+                        undefined,
+                        memberChildren
+                    ));
+                }
+            }
+
+            // Parse dependencies
+            const deps = this.parseDependencies(content);
 
             // Index dependencies
             const indexDeps = deps.filter(d => d.type === 'index');
@@ -204,6 +248,66 @@ export class DependencyTreeProvider implements vscode.TreeDataProvider<Dependenc
 
         return deps;
     }
+
+    private parseWorkspaceMembers(content: string, workspacePath: string): WorkspaceMember[] {
+        const members: WorkspaceMember[] = [];
+        const lines = content.split('\n');
+        let inWorkspace = false;
+        let inMembers = false;
+
+        for (const line of lines) {
+            const trimmed = line.trim();
+
+            // Check for workspace section
+            if (trimmed === '[workspace]') {
+                inWorkspace = true;
+                continue;
+            } else if (trimmed.startsWith('[') && trimmed !== '[workspace]' && !trimmed.startsWith('[workspace.')) {
+                inWorkspace = false;
+                inMembers = false;
+                continue;
+            }
+
+            if (inWorkspace) {
+                // Check for members array start
+                if (trimmed.startsWith('members')) {
+                    inMembers = true;
+                    // Handle inline array: members = ["a", "b"]
+                    const inlineMatch = trimmed.match(/members\s*=\s*\[([^\]]+)\]/);
+                    if (inlineMatch) {
+                        const items = inlineMatch[1].split(',').map(s => s.trim().replace(/"/g, ''));
+                        for (const item of items) {
+                            if (item) {
+                                members.push({
+                                    name: path.basename(item),
+                                    path: item
+                                });
+                            }
+                        }
+                        inMembers = false;
+                    }
+                    continue;
+                }
+
+                // Parse multiline array items
+                if (inMembers) {
+                    if (trimmed === ']') {
+                        inMembers = false;
+                        continue;
+                    }
+                    const match = trimmed.match(/"([^"]+)"/);
+                    if (match) {
+                        members.push({
+                            name: path.basename(match[1]),
+                            path: match[1]
+                        });
+                    }
+                }
+            }
+        }
+
+        return members;
+    }
 }
 
 export class DependencyItem extends vscode.TreeItem {
@@ -213,7 +317,7 @@ export class DependencyItem extends vscode.TreeItem {
         public readonly label: string,
         private version: string,
         public readonly collapsibleState: vscode.TreeItemCollapsibleState,
-        private itemType: 'category' | 'package' | 'git' | 'vcpkg',
+        private itemType: 'category' | 'package' | 'git' | 'vcpkg' | 'project',
         public readonly dependency?: Dependency,
         children?: DependencyItem[]
     ) {
@@ -237,6 +341,11 @@ export class DependencyItem extends vscode.TreeItem {
             case 'vcpkg':
                 this.iconPath = new vscode.ThemeIcon('extensions');
                 this.contextValue = 'dependency';
+                break;
+            case 'project':
+                this.iconPath = new vscode.ThemeIcon('project');
+                this.contextValue = 'workspaceMember';
+                this.tooltip = `Workspace member: ${label}\nPath: ${version}`;
                 break;
         }
 

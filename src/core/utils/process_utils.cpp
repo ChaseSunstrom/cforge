@@ -12,6 +12,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
+#include <set>
 #include <sstream>
 
 #include <fmt/color.h>
@@ -556,29 +557,42 @@ bool execute_tool(const std::string &command,
 
   // Always show warnings for build tools in non-verbose mode unless suppressed
   else if (is_build_tool && result.success && !g_suppress_warnings) {
-    // Parse stderr for warnings
-    std::istringstream warn_stream(result.stderr_output);
-    std::string warn_line;
-    while (std::getline(warn_stream, warn_line)) {
-      if (!warn_line.empty() &&
-          (warn_line.find("warning") != std::string::npos ||
-           warn_line.find("Warning") != std::string::npos)) {
-        logger::print_warning(warn_line);
+    // Collect and deduplicate warnings from both stderr and stdout
+    std::set<std::string> seen_warnings;
+    std::vector<std::string> warnings;
+
+    auto collect_warnings = [&](const std::string& output) {
+      std::istringstream stream(output);
+      std::string line;
+      while (std::getline(stream, line)) {
+        // Skip empty/whitespace-only lines
+        size_t first_char = line.find_first_not_of(" \t\r\n");
+        if (first_char == std::string::npos) continue;
+
+        // Check for warning keywords
+        if (line.find("warning") != std::string::npos ||
+            line.find("Warning") != std::string::npos) {
+          // Deduplicate
+          if (seen_warnings.find(line) == seen_warnings.end()) {
+            seen_warnings.insert(line);
+            warnings.push_back(line);
+          }
+        }
       }
-    }
-    // Parse stdout for warnings
-    std::istringstream warn_stream_out(result.stdout_output);
-    while (std::getline(warn_stream_out, warn_line)) {
-      if (!warn_line.empty() &&
-          (warn_line.find("warning") != std::string::npos ||
-           warn_line.find("Warning") != std::string::npos)) {
-        logger::print_warning(warn_line);
-      }
+    };
+
+    collect_warnings(result.stderr_output);
+    collect_warnings(result.stdout_output);
+
+    // Print deduplicated warnings
+    for (const auto& warn : warnings) {
+      logger::print_warning(warn);
     }
   }
 
   // Always try to format and display errors using the Rust-style formatter
-  if (!result.success) {
+  // Skip if verbose mode is on - verbose callbacks already printed the output
+  if (!result.success && !verbose) {
     // For both stdout and stderr, try to format errors using our nice formatter
     bool found_errors = false;
 
@@ -592,8 +606,8 @@ bool execute_tool(const std::string &command,
     }
 
     // Also check for errors in stdout (some tools like CMake output errors
-    // there)
-    if (!result.stdout_output.empty() &&
+    // there) - but only if we haven't already shown stderr errors
+    if (!found_errors && !result.stdout_output.empty() &&
         (result.stdout_output.find("error") != std::string::npos ||
          result.stdout_output.find("Error") != std::string::npos ||
          result.stdout_output.find("ERROR") != std::string::npos)) {
@@ -609,100 +623,91 @@ bool execute_tool(const std::string &command,
     // If our formatter didn't produce anything useful, fall back to simple
     // error display
     if (!found_errors) {
-      // For non-build tools or if formatter failed, extract relevant error
-      // messages
-      bool printed_error_header = false;
+      // Collect error lines from both stderr and stdout
+      std::vector<std::string> error_lines;
+      std::set<std::string> seen_lines; // For deduplication
 
-      if (!result.stderr_output.empty()) {
-        std::istringstream error_stream(result.stderr_output);
+      auto collect_error_lines = [&](const std::string& output) {
+        std::istringstream stream(output);
         std::string line;
+        while (std::getline(stream, line)) {
+          // Skip empty lines, whitespace-only lines, or common noise
+          size_t first_char = line.find_first_not_of(" \t\r\n");
+          if (first_char == std::string::npos) continue;
+          if (line.find("--") == 0) continue;
+          if (line.find("MSBuild") == 0 && line.find("error") == std::string::npos) continue;
 
-        while (std::getline(error_stream, line)) {
-          // Skip empty lines or common information messages
-          if (line.empty() || line.find("--") == 0 ||
-              line.find("MSBuild") == 0) {
-            continue;
-          }
-
-          // Focus on lines with "error" in them
+          // Check for error keywords
           if (line.find("error") != std::string::npos ||
               line.find("Error") != std::string::npos ||
               line.find("ERROR") != std::string::npos) {
-
-            if (!printed_error_header) {
-              // Use color for the error header
-              fmt::print(fg(fmt::color::crimson) | fmt::emphasis::bold,
-                         "→ Command failed:\n");
-              printed_error_header = true;
+            // Deduplicate
+            if (seen_lines.find(line) == seen_lines.end()) {
+              seen_lines.insert(line);
+              error_lines.push_back(line);
             }
-
-            // Print the actual error line with color
-            fmt::print(fg(fmt::color::light_pink), "    {}\n", line);
           }
         }
-      }
+      };
 
-      if (!result.stdout_output.empty() && !printed_error_header) {
-        std::istringstream output_stream(result.stdout_output);
-        std::string line;
+      collect_error_lines(result.stderr_output);
+      collect_error_lines(result.stdout_output);
 
-        while (std::getline(output_stream, line)) {
-          if (line.find("error") != std::string::npos ||
-              line.find("Error") != std::string::npos ||
-              line.find("ERROR") != std::string::npos) {
-
-            if (!printed_error_header) {
-              // Use color for the error header
-              fmt::print(fg(fmt::color::crimson) | fmt::emphasis::bold,
-                         "→ Command failed:\n");
-              printed_error_header = true;
-            }
-
-            // Print the actual error line with color
-            fmt::print(fg(fmt::color::light_pink), "    {}\n", line);
-          }
-        }
-      }
-
-      // Final fallback: if we still haven't shown any errors, show raw stderr/stdout
-      // This ensures the user always sees SOMETHING when a command fails
-      if (!printed_error_header) {
+      if (!error_lines.empty()) {
         fmt::print(fg(fmt::color::crimson) | fmt::emphasis::bold,
-                   "→ Command failed (exit code {}):\n", result.exit_code);
+                   "→ Command failed:\n");
+        for (const auto& line : error_lines) {
+          fmt::print(fg(fmt::color::light_pink), "    {}\n", line);
+        }
+      } else {
+        // Final fallback: show raw output if nothing else worked
+        // Only show if there's actually content to show
+        bool has_stderr = false;
+        bool has_stdout = false;
 
-        // Show stderr first (most likely to contain error info)
-        if (!result.stderr_output.empty()) {
-          fmt::print(fg(fmt::color::light_pink), "  stderr:\n");
-          std::istringstream stderr_stream(result.stderr_output);
+        // Check for non-empty lines in stderr
+        {
+          std::istringstream stream(result.stderr_output);
+          std::string line;
+          while (std::getline(stream, line)) {
+            size_t first_char = line.find_first_not_of(" \t\r\n");
+            if (first_char != std::string::npos) {
+              has_stderr = true;
+              break;
+            }
+          }
+        }
+
+        // Check for non-empty lines in stdout
+        if (!has_stderr) {
+          std::istringstream stream(result.stdout_output);
+          std::string line;
+          while (std::getline(stream, line)) {
+            size_t first_char = line.find_first_not_of(" \t\r\n");
+            if (first_char != std::string::npos) {
+              has_stdout = true;
+              break;
+            }
+          }
+        }
+
+        if (has_stderr || has_stdout) {
+          fmt::print(fg(fmt::color::crimson) | fmt::emphasis::bold,
+                     "→ Command failed (exit code {}):\n", result.exit_code);
+
+          const std::string& output_to_show = has_stderr ? result.stderr_output : result.stdout_output;
+          std::istringstream stream(output_to_show);
           std::string line;
           cforge_int_t line_count = 0;
-          while (std::getline(stderr_stream, line) && line_count < 20) {
-            if (!line.empty()) {
+          while (std::getline(stream, line) && line_count < 20) {
+            size_t first_char = line.find_first_not_of(" \t\r\n");
+            if (first_char != std::string::npos) {
               fmt::print(fg(fmt::color::light_pink), "    {}\n", line);
               line_count++;
             }
           }
           if (line_count >= 20) {
             fmt::print(fg(fmt::color::gray), "    ... (output truncated)\n");
-          }
-        }
-
-        // Show last few lines of stdout if stderr was empty
-        if (result.stderr_output.empty() && !result.stdout_output.empty()) {
-          fmt::print(fg(fmt::color::light_pink), "  stdout:\n");
-          std::istringstream stdout_stream(result.stdout_output);
-          std::string line;
-          std::vector<std::string> last_lines;
-          while (std::getline(stdout_stream, line)) {
-            if (!line.empty()) {
-              last_lines.push_back(line);
-              if (last_lines.size() > 20) {
-                last_lines.erase(last_lines.begin());
-              }
-            }
-          }
-          for (const auto& l : last_lines) {
-            fmt::print(fg(fmt::color::light_pink), "    {}\n", l);
           }
         }
       }

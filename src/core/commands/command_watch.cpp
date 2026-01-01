@@ -9,10 +9,12 @@
 #endif
 
 #include "cforge/log.hpp"
+#include "core/build_utils.hpp"
 #include "core/commands.hpp"
-#include "core/types.h"
+#include "core/constants.h"
 #include "core/process_utils.hpp"
 #include "core/toml_reader.hpp"
+#include "core/types.h"
 
 #include <atomic>
 #include <chrono>
@@ -208,39 +210,49 @@ private:
 };
 
 /**
- * @brief Run the build command
+ * @brief Run the build command using proper cforge build utilities
+ *
+ * This function handles:
+ * - CMakeLists.txt regeneration from cforge.toml when needed
+ * - CMake reconfiguration when needed
+ * - The actual build with proper config support
  */
 bool run_build(const fs::path &project_dir, const std::string &config,
-               bool verbose) {
-  std::vector<std::string> args = {"--build", "build"};
-  if (!config.empty()) {
-    args.push_back("--config");
-    args.push_back(config);
-  }
-
+               bool verbose, bool toml_changed = false) {
   auto start = std::chrono::steady_clock::now();
 
-  auto result = cforge::execute_process(
-      "cmake", args, project_dir.string(),
-      [verbose](const std::string &line) {
-        if (verbose || line.find("error") != std::string::npos ||
-            line.find("warning") != std::string::npos) {
-          fmt::print("{}\n", line);
-        }
-      },
-      [](const std::string &line) {
-        if (line.find("error") != std::string::npos) {
-          fmt::print(fg(fmt::color::red), "{}\n", line);
-        } else if (line.find("warning") != std::string::npos) {
-          fmt::print(fg(fmt::color::yellow), "{}\n", line);
-        }
-      });
+  // Get build directory
+  fs::path build_dir = cforge::get_build_dir_for_config(
+      (project_dir / DEFAULT_BUILD_DIR).string(), config, true);
+
+  // Prepare project for build (handles CMakeLists.txt regeneration and CMake config)
+  auto prep_result = cforge::prepare_project_for_build(
+      project_dir, build_dir, config, verbose,
+      toml_changed,  // Force regeneration if toml changed
+      false          // Don't force reconfigure unless needed
+  );
+
+  if (!prep_result.success) {
+    cforge::logger::print_error(prep_result.error_message);
+    return false;
+  }
+
+  if (prep_result.cmakelists_regenerated) {
+    cforge::logger::print_action("Regenerated", "CMakeLists.txt from cforge.toml");
+  }
+
+  if (prep_result.cmake_reconfigured) {
+    cforge::logger::print_action("Reconfigured", "CMake build system");
+  }
+
+  // Run the actual build
+  bool build_success = cforge::run_cmake_build(build_dir, config, "", 0, verbose);
 
   auto end = std::chrono::steady_clock::now();
   auto duration =
       std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
 
-  if (result.exit_code == 0) {
+  if (build_success) {
     cforge::logger::finished("build",
                      fmt::format("{:.2f}s", duration.count() / 1000.0));
     return true;
@@ -307,12 +319,16 @@ cforge_int_t cforge_cmd_watch(const cforge_context_t *ctx) {
   cforge::logger::print_header("Watching for changes...");
   cforge::logger::print_status("Tracking " + std::to_string(watcher.file_count()) +
                        " files");
+  cforge::logger::print_status("Build config: " + (config.empty() ? "Debug" : config));
   cforge::logger::print_status("Press Ctrl+C to stop");
   fmt::print("\n");
 
+  // Use Debug as default config if none specified
+  std::string effective_config = config.empty() ? "Debug" : config;
+
   // Do an initial build
   cforge::logger::building(project_dir.filename().string());
-  bool last_build_succeeded = run_build(project_dir, config, verbose);
+  bool last_build_succeeded = run_build(project_dir, effective_config, verbose, false);
   fmt::print("\n");
 
   // Watch loop
@@ -323,6 +339,19 @@ cforge_int_t cforge_cmd_watch(const cforge_context_t *ctx) {
       auto changed = watcher.get_changed_files();
       auto added = watcher.get_new_files();
       auto deleted = watcher.get_deleted_files();
+
+      // Check if any toml file changed (triggers CMakeLists.txt regeneration)
+      bool toml_changed = false;
+      auto check_toml = [&toml_changed](const std::vector<fs::path> &files) {
+        for (const auto &file : files) {
+          if (file.extension() == ".toml") {
+            toml_changed = true;
+            break;
+          }
+        }
+      };
+      check_toml(changed);
+      check_toml(added);
 
       // Clear screen (optional, can be made configurable)
       // fmt::print("\033[2J\033[H");
@@ -341,11 +370,15 @@ cforge_int_t cforge_cmd_watch(const cforge_context_t *ctx) {
         cforge::logger::print_action("Removed", file.filename().string());
       }
 
+      if (toml_changed) {
+        cforge::logger::print_action("Config", "cforge.toml changed, will regenerate CMakeLists.txt");
+      }
+
       fmt::print("\n");
 
       // Rebuild
       cforge::logger::building(project_dir.filename().string());
-      last_build_succeeded = run_build(project_dir, config, verbose);
+      last_build_succeeded = run_build(project_dir, effective_config, verbose, toml_changed);
 
       // Run if requested and build succeeded
       if (run_after_build && last_build_succeeded) {
@@ -355,25 +388,14 @@ cforge_int_t cforge_cmd_watch(const cforge_context_t *ctx) {
         std::string project_name = reader.get_string("project.name");
 
         if (!project_name.empty()) {
-          fs::path exe_path;
+          // Use the build utilities to find the binary
+          fs::path build_dir = cforge::get_build_dir_for_config(
+              (project_dir / DEFAULT_BUILD_DIR).string(), effective_config, false);
 
-#ifdef _WIN32
-          exe_path = project_dir / "build" / config / (project_name + ".exe");
-          if (!fs::exists(exe_path)) {
-            exe_path = project_dir / "build" / "bin" / config /
-                       (project_name + ".exe");
-          }
-          if (!fs::exists(exe_path)) {
-            exe_path = project_dir / "build" / (project_name + ".exe");
-          }
-#else
-          exe_path = project_dir / "build" / project_name;
-          if (!fs::exists(exe_path)) {
-            exe_path = project_dir / "build" / "bin" / project_name;
-          }
-#endif
+          fs::path exe_path = cforge::find_project_binary(
+              build_dir, project_name, effective_config, "executable");
 
-          if (fs::exists(exe_path)) {
+          if (!exe_path.empty() && fs::exists(exe_path)) {
             fmt::print("\n");
             cforge::logger::running(exe_path.filename().string());
             fmt::print("{}\n", std::string(40, '-'));
@@ -390,6 +412,8 @@ cforge_int_t cforge_cmd_watch(const cforge_context_t *ctx) {
               cforge::logger::print_warning("Process exited with code " +
                                     std::to_string(run_result.exit_code));
             }
+          } else {
+            cforge::logger::print_warning("Could not find executable: " + project_name);
           }
         }
       }

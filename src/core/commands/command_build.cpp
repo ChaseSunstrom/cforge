@@ -880,23 +880,43 @@ static bool run_cmake_configure(const std::vector<std::string> &cmake_args,
       // Print formatted errors directly (they already contain "error" prefix from Rust-style formatting)
       fmt::print("{}", formatted_errors);
     } else {
-      // Fallback: print raw outputs
+      // Fallback: print raw outputs only if they contain non-empty lines
+      bool printed_any = false;
+
       if (!pr.stderr_output.empty()) {
-        cforge::logger::print_error("Raw stderr output:");
         std::istringstream ess(pr.stderr_output);
         std::string line;
+        std::vector<std::string> non_empty_lines;
         while (std::getline(ess, line)) {
-          if (!line.empty())
-            cforge::logger::print_error(line);
+          // Trim whitespace
+          size_t start = line.find_first_not_of(" \t\r\n");
+          if (start != std::string::npos) {
+            non_empty_lines.push_back(line);
+          }
+        }
+        if (!non_empty_lines.empty()) {
+          for (const auto& l : non_empty_lines) {
+            cforge::logger::print_error(l);
+          }
+          printed_any = true;
         }
       }
-      if (!pr.stdout_output.empty()) {
-        cforge::logger::print_error("Raw stdout output:");
+
+      if (!pr.stdout_output.empty() && !printed_any) {
         std::istringstream oss(pr.stdout_output);
         std::string line;
+        std::vector<std::string> non_empty_lines;
         while (std::getline(oss, line)) {
-          if (!line.empty())
-            cforge::logger::print_error(line);
+          // Trim whitespace
+          size_t start = line.find_first_not_of(" \t\r\n");
+          if (start != std::string::npos) {
+            non_empty_lines.push_back(line);
+          }
+        }
+        if (!non_empty_lines.empty()) {
+          for (const auto& l : non_empty_lines) {
+            cforge::logger::print_error(l);
+          }
         }
       }
     }
