@@ -52,7 +52,6 @@ namespace CforgeVS
             await AddDependencyCommand.InitializeAsync(this);
             await RemoveDependencyCommand.InitializeAsync(this);
             await UpdatePackagesCommand.InitializeAsync(this);
-            await DepsTreeCommand.InitializeAsync(this);
             await DepsOutdatedCommand.InitializeAsync(this);
             await DepsLockCommand.InitializeAsync(this);
             await VcpkgInstallCommand.InitializeAsync(this);
@@ -64,6 +63,7 @@ namespace CforgeVS
             await DocCommand.InitializeAsync(this);
             await DoctorCommand.InitializeAsync(this);
             await ProjectInfoCommand.InitializeAsync(this);
+            await CleanGeneratedFilesCommand.InitializeAsync(this);
 
             // Register project/template commands
             await InitProjectCommand.InitializeAsync(this);

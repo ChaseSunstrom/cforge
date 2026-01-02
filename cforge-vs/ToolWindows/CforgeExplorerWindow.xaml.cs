@@ -19,6 +19,8 @@ namespace CforgeVS
     public enum TreeItemType
     {
         Project,
+        Workspace,
+        WorkspaceMember,
         Folder,
         File,
         Executable,
@@ -79,6 +81,46 @@ namespace CforgeVS
                 if (files.Count > 50 || dirs.Count > 20)
                 {
                     node.Badge = $"({files.Count + dirs.Count} items)";
+                }
+            }
+            catch { }
+
+            if (node.Children.Count > 0)
+            {
+                parent.Children.Add(node);
+            }
+        }
+
+        private void AddDirectoryNodeForMember(ProjectTreeItem parent, string memberDir, string dirName, string displayName, ImageMoniker icon)
+        {
+            string fullPath = Path.Combine(memberDir, dirName);
+            if (!Directory.Exists(fullPath)) return;
+
+            var node = new ProjectTreeItem
+            {
+                Name = displayName,
+                ImageMoniker = icon,
+                FullPath = fullPath,
+                ItemType = TreeItemType.Folder
+            };
+
+            try
+            {
+                var files = Directory.GetFiles(fullPath, "*.*", SearchOption.TopDirectoryOnly)
+                    .Where(f => IsCppFile(f))
+                    .OrderBy(f => f)
+                    .Take(30)
+                    .ToList();
+
+                foreach (var file in files)
+                {
+                    node.Children.Add(CreateFileNode(file));
+                }
+
+                var dirs = Directory.GetDirectories(fullPath).Take(10);
+                foreach (var dir in dirs)
+                {
+                    AddSubdirectory(node, dir);
                 }
             }
             catch { }
@@ -190,6 +232,28 @@ namespace CforgeVS
             return count;
         }
 
+        private int CountSourceFilesInDir(string dir)
+        {
+            int count = 0;
+            string[] subDirs = { "src", "include", "tests", "bench" };
+
+            foreach (var subDir in subDirs)
+            {
+                string path = Path.Combine(dir, subDir);
+                if (Directory.Exists(path))
+                {
+                    try
+                    {
+                        count += Directory.GetFiles(path, "*.*", SearchOption.AllDirectories)
+                            .Count(f => IsCppFile(f));
+                    }
+                    catch { }
+                }
+            }
+
+            return count;
+        }
+
         private ProjectTreeItem CreateFileNode(string filePath)
         {
             string fileName = Path.GetFileName(filePath);
@@ -217,11 +281,8 @@ namespace CforgeVS
 
                     case ".hpp":
                     case ".hxx":
-                        icon = KnownMonikers.CPPHeaderFile;
-                        break;
-
                     case ".h":
-                        icon = KnownMonikers.Include;
+                        icon = KnownMonikers.CPPHeaderFile;
                         break;
 
                     case ".toml":
@@ -300,6 +361,21 @@ namespace CforgeVS
                 return;
             }
 
+            // Check if this is a workspace first
+            if (CforgeTomlParser.IsWorkspace(_projectDir))
+            {
+                var workspace = CforgeTomlParser.ParseWorkspace(_projectDir);
+                if (workspace != null)
+                {
+                    ProjectNameText.Text = workspace.Name;
+                    ProjectVersionText.Text = $"Workspace ({workspace.Members.Count} projects)";
+                    SetBuildStatus("Workspace", true);
+                    await PopulateWorkspaceTreeAsync(workspace);
+                    return;
+                }
+            }
+
+            // Regular project
             var project = CforgeTomlParser.ParseProject(_projectDir);
             if (project != null)
             {
@@ -474,6 +550,141 @@ namespace CforgeVS
                 int fileCount = CountSourceFiles();
 
                 // Update UI on main thread
+                _ = ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
+                {
+                    await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                    ProjectTree.ItemsSource = new[] { root };
+                    FileCountText.Text = $"{fileCount} files";
+                    SetStatus("Ready");
+                });
+            });
+        }
+
+        private async Task PopulateWorkspaceTreeAsync(CforgeWorkspace workspace)
+        {
+            await Task.Run(() =>
+            {
+                var root = new ProjectTreeItem
+                {
+                    Name = workspace.Name,
+                    ImageMoniker = KnownMonikers.Solution,
+                    IsExpanded = true,
+                    FullPath = _projectDir!,
+                    ItemType = TreeItemType.Workspace
+                };
+
+                // Add cforge.toml
+                var tomlPath = Path.Combine(_projectDir!, "cforge.toml");
+                if (File.Exists(tomlPath))
+                {
+                    root.Children.Add(new ProjectTreeItem
+                    {
+                        Name = "cforge.toml",
+                        ImageMoniker = KnownMonikers.ConfigurationFile,
+                        FullPath = tomlPath,
+                        ItemType = TreeItemType.File
+                    });
+                }
+
+                // Add workspace members
+                int totalFiles = 0;
+                foreach (var memberPath in workspace.Members)
+                {
+                    string memberDir = Path.Combine(_projectDir!, memberPath);
+                    if (!Directory.Exists(memberDir)) continue;
+
+                    var memberProject = CforgeTomlParser.ParseProject(memberDir);
+                    string memberName = memberProject?.Name ?? Path.GetFileName(memberPath);
+
+                    // Check if this is the startup project
+                    var wsProject = workspace.Projects.FirstOrDefault(p => p.Path == memberPath || p.Name == memberName);
+                    bool isStartup = wsProject?.IsStartup ?? false;
+
+                    var memberNode = new ProjectTreeItem
+                    {
+                        Name = memberName,
+                        ImageMoniker = isStartup ? KnownMonikers.Run : KnownMonikers.Application,
+                        IsExpanded = false,
+                        FullPath = memberDir,
+                        ItemType = TreeItemType.WorkspaceMember,
+                        Badge = isStartup ? "(startup)" : ""
+                    };
+
+                    // Add member's cforge.toml
+                    var memberToml = Path.Combine(memberDir, "cforge.toml");
+                    if (File.Exists(memberToml))
+                    {
+                        memberNode.Children.Add(new ProjectTreeItem
+                        {
+                            Name = "cforge.toml",
+                            ImageMoniker = KnownMonikers.ConfigurationFile,
+                            FullPath = memberToml,
+                            ItemType = TreeItemType.File
+                        });
+                    }
+
+                    // Add member's directories
+                    AddDirectoryNodeForMember(memberNode, memberDir, "src", "Source Files", KnownMonikers.CPPSourceFile);
+                    AddDirectoryNodeForMember(memberNode, memberDir, "include", "Headers", KnownMonikers.CPPHeaderFile);
+                    AddDirectoryNodeForMember(memberNode, memberDir, "tests", "Tests", KnownMonikers.TestGroup);
+                    AddDirectoryNodeForMember(memberNode, memberDir, "bench", "Benchmarks", KnownMonikers.Performance);
+
+                    // Add member's dependencies
+                    if (memberProject?.Dependencies?.Count > 0)
+                    {
+                        var depsNode = new ProjectTreeItem
+                        {
+                            Name = "Dependencies",
+                            ImageMoniker = KnownMonikers.Reference,
+                            Badge = $"({memberProject.Dependencies.Count})",
+                            ItemType = TreeItemType.Folder
+                        };
+
+                        foreach (var dep in memberProject.Dependencies.Take(5))
+                        {
+                            depsNode.Children.Add(new ProjectTreeItem
+                            {
+                                Name = dep.Name,
+                                ImageMoniker = KnownMonikers.NuGet,
+                                Badge = string.IsNullOrEmpty(dep.Version) ? "*" : dep.Version,
+                                ItemType = TreeItemType.Dependency
+                            });
+                        }
+
+                        if (memberProject.Dependencies.Count > 5)
+                        {
+                            depsNode.Children.Add(new ProjectTreeItem
+                            {
+                                Name = $"... and {memberProject.Dependencies.Count - 5} more",
+                                ImageMoniker = KnownMonikers.StatusInformation,
+                                ItemType = TreeItemType.Info
+                            });
+                        }
+
+                        memberNode.Children.Add(depsNode);
+                    }
+
+                    // Count files
+                    totalFiles += CountSourceFilesInDir(memberDir);
+
+                    root.Children.Add(memberNode);
+                }
+
+                // Add shared build output
+                var buildDir = Path.Combine(_projectDir!, "build");
+                if (Directory.Exists(buildDir))
+                {
+                    root.Children.Add(new ProjectTreeItem
+                    {
+                        Name = "Build Output",
+                        ImageMoniker = KnownMonikers.Output,
+                        FullPath = buildDir,
+                        ItemType = TreeItemType.Folder
+                    });
+                }
+
+                // Update UI on main thread
+                int fileCount = totalFiles;
                 _ = ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
                 {
                     await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();

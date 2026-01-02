@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using Community.VisualStudio.Toolkit;
 using EnvDTE;
 using EnvDTE80;
+using Microsoft.VisualStudio.Imaging;
 using Microsoft.VisualStudio.Shell;
 
 namespace CforgeVS
@@ -443,12 +444,15 @@ namespace CforgeVS
             sb.AppendLine();
 
             // Source files - use absolute paths
+            // Mark as ExcludedFromBuild so MSVC doesn't compile them (cforge handles compilation)
             if (sourceFiles.Count > 0)
             {
                 sb.AppendLine("  <ItemGroup>");
                 foreach (var file in sourceFiles)
                 {
-                    sb.AppendLine($"    <ClCompile Include=\"{file}\" />");
+                    sb.AppendLine($"    <ClCompile Include=\"{file}\">");
+                    sb.AppendLine("      <ExcludedFromBuild>true</ExcludedFromBuild>");
+                    sb.AppendLine("    </ClCompile>");
                 }
                 sb.AppendLine("  </ItemGroup>");
                 sb.AppendLine();
@@ -703,13 +707,15 @@ namespace CforgeVS
             sb.AppendLine("  </ItemDefinitionGroup>");
             sb.AppendLine();
 
-            // Source files
+            // Source files - mark as excluded from build (cforge handles compilation)
             if (sourceFiles.Count > 0)
             {
                 sb.AppendLine("  <ItemGroup>");
                 foreach (var file in sourceFiles)
                 {
-                    sb.AppendLine($"    <ClCompile Include=\"{file}\" />");
+                    sb.AppendLine($"    <ClCompile Include=\"{file}\">");
+                    sb.AppendLine("      <ExcludedFromBuild>true</ExcludedFromBuild>");
+                    sb.AppendLine("    </ClCompile>");
                 }
                 sb.AppendLine("  </ItemGroup>");
                 sb.AppendLine();
@@ -1082,14 +1088,38 @@ namespace CforgeVS
                         await pane.WriteLineAsync($"[cforge] Close failed (may be OK): {closeEx.Message}");
                     }
 
-                    // Small delay to ensure VS is ready
-                    await Task.Delay(200);
+                    // Longer delay to ensure VS is fully ready after closing Open Folder
+                    await Task.Delay(1000);
 
                     // Open the generated solution
                     await pane.WriteLineAsync($"[cforge] Opening: {slnPath}");
-                    dte.Solution.Open(slnPath);
-                    await pane.WriteLineAsync("[cforge] Solution.Open() called successfully");
-                    await pane.WriteLineAsync("[cforge] IntelliSense and error highlighting should now be available.");
+
+                    try
+                    {
+                        dte.Solution.Open(slnPath);
+                        await Task.Delay(500); // Give VS time to process
+
+                        // Verify it opened
+                        var newSolution = await VS.Solutions.GetCurrentSolutionAsync();
+                        if (newSolution?.FullPath != null &&
+                            newSolution.FullPath.Equals(slnPath, StringComparison.OrdinalIgnoreCase))
+                        {
+                            await pane.WriteLineAsync("[cforge] Solution opened successfully!");
+                            await pane.WriteLineAsync("[cforge] IntelliSense and error highlighting should now be available.");
+                        }
+                        else
+                        {
+                            await pane.WriteLineAsync("[cforge] Solution may not have opened correctly.");
+                            await pane.WriteLineAsync($"[cforge] Please manually open: {slnPath}");
+                            await ShowOpenSolutionInfoBarAsync(slnPath);
+                        }
+                    }
+                    catch (Exception openEx)
+                    {
+                        await pane.WriteLineAsync($"[cforge] Solution.Open failed: {openEx.Message}");
+                        await pane.WriteLineAsync($"[cforge] Please manually open: {slnPath}");
+                        await ShowOpenSolutionInfoBarAsync(slnPath);
+                    }
                 }
                 else
                 {
@@ -1105,6 +1135,40 @@ namespace CforgeVS
             finally
             {
                 _isOpeningSolution = false;
+            }
+        }
+
+        /// <summary>
+        /// Shows a notification prompting the user to open the generated solution.
+        /// </summary>
+        private static async Task ShowOpenSolutionInfoBarAsync(string slnPath)
+        {
+            try
+            {
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+
+                // Show in status bar
+                await VS.StatusBar.ShowMessageAsync($"cforge: Solution ready - {Path.GetFileName(slnPath)}");
+
+                // Also show a message box as a more visible notification
+                var result = await VS.MessageBox.ShowAsync(
+                    "cforge Solution Generated",
+                    $"The solution was generated but couldn't be opened automatically.\n\nWould you like to open it now?\n\n{slnPath}",
+                    Microsoft.VisualStudio.Shell.Interop.OLEMSGICON.OLEMSGICON_INFO,
+                    Microsoft.VisualStudio.Shell.Interop.OLEMSGBUTTON.OLEMSGBUTTON_YESNO);
+
+                if (result == Microsoft.VisualStudio.VSConstants.MessageBoxResult.IDYES)
+                {
+                    var dte = await VS.GetServiceAsync<DTE, DTE2>();
+                    if (dte != null)
+                    {
+                        dte.Solution.Open(slnPath);
+                    }
+                }
+            }
+            catch
+            {
+                // Notification not available, that's okay - output pane has the info
             }
         }
 

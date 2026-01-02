@@ -295,9 +295,8 @@ Commit `cforge.lock` to version control for reproducible builds.
 
 ```bash
 cforge deps tree                       # Show dependency tree
-cforge deps tree -a                    # Include transitive deps
+cforge deps tree -a                    # Include all details
 cforge deps tree -d 2                  # Limit depth
-cforge deps tree -i                    # Inverted (show dependents)
 ```
 
 ---

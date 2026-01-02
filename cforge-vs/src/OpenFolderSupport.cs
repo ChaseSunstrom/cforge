@@ -75,6 +75,9 @@ namespace CforgeVS
             // Disable CMake integration - cforge handles the build
             DisableCMakeIntegration(projectDir);
 
+            // Generate test configuration for Test Explorer
+            GenerateTestSettings(projectDir, project, workspace);
+
             var pane = await CforgeRunner.GetOutputPaneAsync();
             await pane.WriteLineAsync($"[cforge] VS configuration files generated from cforge.toml");
             if (project != null)
@@ -414,6 +417,106 @@ namespace CforgeVS
                     // Ignore write errors - not critical
                 }
             }
+        }
+
+        /// <summary>
+        /// Generates test settings for VS Test Explorer integration.
+        /// Creates .runsettings file that points to cforge.toml as test source.
+        /// </summary>
+        private static void GenerateTestSettings(string projectDir, CforgeProject? project, CforgeWorkspace? workspace)
+        {
+            // Create a .runsettings file in the .vs folder
+            string vsDir = Path.Combine(projectDir, ".vs");
+            if (!Directory.Exists(vsDir))
+            {
+                Directory.CreateDirectory(vsDir);
+            }
+
+            // Collect all test sources (cforge.toml files for projects with tests)
+            var testSources = new System.Collections.Generic.List<string>();
+
+            if (workspace != null)
+            {
+                foreach (var member in workspace.Members)
+                {
+                    var memberDir = Path.Combine(projectDir, member);
+                    var memberToml = Path.Combine(memberDir, "cforge.toml");
+                    var memberTestsDir = Path.Combine(memberDir, "tests");
+
+                    if (File.Exists(memberToml) && Directory.Exists(memberTestsDir))
+                    {
+                        testSources.Add(memberToml);
+                    }
+                }
+            }
+            else if (project != null)
+            {
+                var testsDir = Path.Combine(projectDir, "tests");
+                if (Directory.Exists(testsDir))
+                {
+                    testSources.Add(Path.Combine(projectDir, "cforge.toml"));
+                }
+            }
+
+            // Generate .runsettings file
+            string runsettingsPath = Path.Combine(vsDir, "cforge.runsettings");
+            var sb = new StringBuilder();
+            sb.AppendLine("<?xml version=\"1.0\" encoding=\"utf-8\"?>");
+            sb.AppendLine("<RunSettings>");
+            sb.AppendLine("  <RunConfiguration>");
+            sb.AppendLine("    <TestAdaptersPaths>.</TestAdaptersPaths>");
+            sb.AppendLine("  </RunConfiguration>");
+            sb.AppendLine("  <DataCollectionRunSettings>");
+            sb.AppendLine("    <DataCollectors />");
+            sb.AppendLine("  </DataCollectionRunSettings>");
+            sb.AppendLine("</RunSettings>");
+
+            try
+            {
+                File.WriteAllText(runsettingsPath, sb.ToString());
+            }
+            catch
+            {
+                // Ignore write errors
+            }
+
+            // Create testsettings.json for Open Folder test discovery
+            string testsettingsPath = Path.Combine(vsDir, "testsettings.json");
+            var tsb = new StringBuilder();
+            tsb.AppendLine("{");
+            tsb.AppendLine("  \"TestFramework\": \"CforgeTestAdapter\",");
+            tsb.AppendLine("  \"testSources\": [");
+            for (int i = 0; i < testSources.Count; i++)
+            {
+                string relativePath = GetRelativePath(projectDir, testSources[i]).Replace("\\", "/");
+                tsb.Append($"    \"{relativePath}\"");
+                if (i < testSources.Count - 1)
+                    tsb.Append(",");
+                tsb.AppendLine();
+            }
+            tsb.AppendLine("  ]");
+            tsb.AppendLine("}");
+
+            try
+            {
+                File.WriteAllText(testsettingsPath, tsb.ToString());
+            }
+            catch
+            {
+                // Ignore write errors
+            }
+        }
+
+        private static string GetRelativePath(string basePath, string fullPath)
+        {
+            if (!basePath.EndsWith(Path.DirectorySeparatorChar.ToString()))
+                basePath += Path.DirectorySeparatorChar;
+
+            var baseUri = new Uri(basePath);
+            var fullUri = new Uri(fullPath);
+
+            var relativeUri = baseUri.MakeRelativeUri(fullUri);
+            return Uri.UnescapeDataString(relativeUri.ToString().Replace('/', Path.DirectorySeparatorChar));
         }
     }
 }

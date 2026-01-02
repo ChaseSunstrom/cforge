@@ -38,7 +38,18 @@ namespace CforgeVS
     public class CforgeWorkspace
     {
         public string Name { get; set; } = "";
+        public string Description { get; set; } = "";
+        public string CppStandard { get; set; } = "";
+        public string MainProject { get; set; } = "";
         public List<string> Members { get; set; } = new List<string>();
+        public List<WorkspaceProject> Projects { get; set; } = new List<WorkspaceProject>();
+    }
+
+    public class WorkspaceProject
+    {
+        public string Name { get; set; } = "";
+        public string Path { get; set; } = "";
+        public bool IsStartup { get; set; } = false;
     }
 
     public static class CforgeTomlParser
@@ -158,31 +169,175 @@ namespace CforgeVS
             }
         }
 
+        /// <summary>
+        /// Parses workspace configuration from cforge.toml or legacy cforge.workspace.toml.
+        /// Modern format: [workspace] section in cforge.toml
+        /// Legacy format: cforge.workspace.toml file
+        /// </summary>
         public static CforgeWorkspace? ParseWorkspace(string projectDir)
         {
-            string tomlPath = Path.Combine(projectDir, "cforge.workspace.toml");
-            if (!File.Exists(tomlPath))
-                return null;
-
-            try
+            // First try modern format: [workspace] section in cforge.toml
+            string mainTomlPath = Path.Combine(projectDir, "cforge.toml");
+            if (File.Exists(mainTomlPath))
             {
-                string content = File.ReadAllText(tomlPath);
-                var doc = Toml.ToModel(content);
-
-                var workspace = new CforgeWorkspace();
-
-                if (doc.TryGetValue("workspace", out var wsSection) && wsSection is TomlTable wsTable)
+                try
                 {
-                    workspace.Name = GetString(wsTable, "name") ?? Path.GetFileName(projectDir);
-                    workspace.Members = GetStringList(wsTable, "members");
-                }
+                    string content = File.ReadAllText(mainTomlPath);
+                    var doc = Toml.ToModel(content);
 
-                return workspace;
+                    if (doc.TryGetValue("workspace", out var wsSection) && wsSection is TomlTable wsTable)
+                    {
+                        return ParseWorkspaceTable(wsTable, projectDir, doc);
+                    }
+                }
+                catch { }
             }
-            catch (Exception)
+
+            // Fall back to legacy format: cforge.workspace.toml
+            string legacyPath = Path.Combine(projectDir, "cforge.workspace.toml");
+            if (File.Exists(legacyPath))
             {
-                return null;
+                try
+                {
+                    string content = File.ReadAllText(legacyPath);
+                    var doc = Toml.ToModel(content);
+
+                    if (doc.TryGetValue("workspace", out var wsSection) && wsSection is TomlTable wsTable)
+                    {
+                        return ParseWorkspaceTable(wsTable, projectDir, doc);
+                    }
+                }
+                catch { }
             }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Checks if a directory contains a workspace (either format).
+        /// </summary>
+        public static bool IsWorkspace(string projectDir)
+        {
+            // Check modern format
+            string mainTomlPath = Path.Combine(projectDir, "cforge.toml");
+            if (File.Exists(mainTomlPath))
+            {
+                try
+                {
+                    string content = File.ReadAllText(mainTomlPath);
+                    var doc = Toml.ToModel(content);
+                    if (doc.ContainsKey("workspace"))
+                        return true;
+                }
+                catch { }
+            }
+
+            // Check legacy format
+            return File.Exists(Path.Combine(projectDir, "cforge.workspace.toml"));
+        }
+
+        private static CforgeWorkspace ParseWorkspaceTable(TomlTable wsTable, string projectDir, TomlTable doc)
+        {
+            var workspace = new CforgeWorkspace
+            {
+                Name = GetString(wsTable, "name") ?? Path.GetFileName(projectDir),
+                Description = GetString(wsTable, "description") ?? "",
+                CppStandard = GetString(wsTable, "cpp_standard") ?? "",
+                MainProject = GetString(wsTable, "main_project") ?? ""
+            };
+
+            // Priority 1: members array
+            workspace.Members = GetStringList(wsTable, "members");
+
+            // Priority 2: [[workspace.projects]] array of tables
+            if (wsTable.TryGetValue("projects", out var projectsSection))
+            {
+                if (projectsSection is TomlTableArray projectsArray)
+                {
+                    foreach (var projTable in projectsArray)
+                    {
+                        var proj = new WorkspaceProject
+                        {
+                            Name = GetString(projTable, "name") ?? "",
+                            Path = GetString(projTable, "path") ?? GetString(projTable, "name") ?? "",
+                            IsStartup = GetBool(projTable, "startup") ?? false
+                        };
+                        if (!string.IsNullOrEmpty(proj.Name))
+                        {
+                            workspace.Projects.Add(proj);
+                            if (!workspace.Members.Contains(proj.Path))
+                                workspace.Members.Add(proj.Path);
+                        }
+                    }
+                }
+                else if (projectsSection is TomlArray simpleArray)
+                {
+                    // Legacy string array format: "name:path:is_startup"
+                    foreach (var item in simpleArray)
+                    {
+                        if (item is string str)
+                        {
+                            var parts = str.Split(':');
+                            if (parts.Length >= 1)
+                            {
+                                var proj = new WorkspaceProject
+                                {
+                                    Name = parts[0],
+                                    Path = parts.Length > 1 ? parts[1] : parts[0],
+                                    IsStartup = parts.Length > 2 && parts[2].Equals("true", StringComparison.OrdinalIgnoreCase)
+                                };
+                                workspace.Projects.Add(proj);
+                                if (!workspace.Members.Contains(proj.Path))
+                                    workspace.Members.Add(proj.Path);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Priority 3: [[workspace.project]] (singular, legacy)
+            if (wsTable.TryGetValue("project", out var projectSection) && projectSection is TomlTableArray projectArray)
+            {
+                foreach (var projTable in projectArray)
+                {
+                    var proj = new WorkspaceProject
+                    {
+                        Name = GetString(projTable, "name") ?? "",
+                        Path = GetString(projTable, "path") ?? GetString(projTable, "name") ?? "",
+                        IsStartup = GetBool(projTable, "startup") ?? false
+                    };
+                    if (!string.IsNullOrEmpty(proj.Name) && !workspace.Projects.Any(p => p.Name == proj.Name))
+                    {
+                        workspace.Projects.Add(proj);
+                        if (!workspace.Members.Contains(proj.Path))
+                            workspace.Members.Add(proj.Path);
+                    }
+                }
+            }
+
+            // If main_project is set but no project has IsStartup, mark it
+            if (!string.IsNullOrEmpty(workspace.MainProject))
+            {
+                var mainProj = workspace.Projects.FirstOrDefault(p =>
+                    p.Name.Equals(workspace.MainProject, StringComparison.OrdinalIgnoreCase) ||
+                    p.Path.Equals(workspace.MainProject, StringComparison.OrdinalIgnoreCase));
+                if (mainProj != null)
+                    mainProj.IsStartup = true;
+            }
+
+            return workspace;
+        }
+
+        private static bool? GetBool(TomlTable table, string key)
+        {
+            if (table.TryGetValue(key, out var value))
+            {
+                if (value is bool b)
+                    return b;
+                if (value is string s)
+                    return s.Equals("true", StringComparison.OrdinalIgnoreCase);
+            }
+            return null;
         }
 
         /// <summary>

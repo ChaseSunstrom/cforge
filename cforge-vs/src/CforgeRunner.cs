@@ -692,8 +692,11 @@ namespace CforgeVS
 
         private static string StripAnsiCodes(string input)
         {
-            // Remove ANSI escape sequences
-            return System.Text.RegularExpressions.Regex.Replace(input, @"\x1b\[[0-9;]*m", "");
+            // Remove all ANSI escape sequences (colors, cursor movement, clearing, etc.)
+            // Pattern matches: ESC[ followed by any params and ending with a letter
+            // Also matches: ESC] (OSC), ESC( (charset), and other escape sequences
+            return System.Text.RegularExpressions.Regex.Replace(input,
+                @"\x1b(?:\[[0-9;?]*[a-zA-Z]|\][^\x07]*\x07|\([0-9A-Za-z]|[=>])", "");
         }
 
         /// <summary>

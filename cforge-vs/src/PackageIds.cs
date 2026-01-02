@@ -26,7 +26,6 @@ namespace CforgeVS
         public const int UpdatePackagesCommandId = 0x0201;
         public const int OpenDependencyWindowCommandId = 0x0202;
         public const int RemoveDependencyCommandId = 0x0203;
-        public const int DepsTreeCommandId = 0x0204;
         public const int DepsOutdatedCommandId = 0x0205;
         public const int DepsLockCommandId = 0x0206;
         public const int VcpkgInstallCommandId = 0x0207;
@@ -37,6 +36,7 @@ namespace CforgeVS
         public const int DocCommandId = 0x0302;
         public const int DoctorCommandId = 0x0303;
         public const int ProjectInfoCommandId = 0x0304;
+        public const int CleanGeneratedFilesCommandId = 0x0305;
 
         // Project/Template commands
         public const int InitProjectCommandId = 0x0400;

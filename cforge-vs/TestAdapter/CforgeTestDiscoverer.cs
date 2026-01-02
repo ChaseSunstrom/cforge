@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Text.RegularExpressions;
 using Microsoft.VisualStudio.TestPlatform.ObjectModel;
 using Microsoft.VisualStudio.TestPlatform.ObjectModel.Adapter;
@@ -10,31 +11,132 @@ using Microsoft.VisualStudio.TestPlatform.ObjectModel.Logging;
 namespace CforgeVS.TestAdapter
 {
     /// <summary>
-    /// Discovers cforge tests by parsing test source files and running cforge test --list
+    /// Discovers cforge tests by parsing test source files and running cforge test --list.
+    /// Registers for .toml, .cpp, and .exe files to ensure test discovery works in all scenarios.
     /// </summary>
     [FileExtension(".toml")]
+    [FileExtension(".cpp")]
+    [FileExtension(".exe")]
     [DefaultExecutorUri(CforgeTestExecutor.ExecutorUri)]
     public class CforgeTestDiscoverer : ITestDiscoverer
     {
+        // Track which projects we've already discovered to avoid duplicates
+        private static readonly HashSet<string> _discoveredProjects = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
         public void DiscoverTests(IEnumerable<string> sources, IDiscoveryContext discoveryContext,
             IMessageLogger logger, ITestCaseDiscoverySink discoverySink)
         {
+            _discoveredProjects.Clear();
+
+            logger?.SendMessage(TestMessageLevel.Informational, $"CForge: DiscoverTests called with {sources.Count()} sources");
+
             foreach (var source in sources)
             {
-                if (!source.EndsWith("cforge.toml", StringComparison.OrdinalIgnoreCase))
-                    continue;
+                logger?.SendMessage(TestMessageLevel.Informational, $"CForge: Checking source: {source}");
 
-                var projectDir = Path.GetDirectoryName(source);
-                if (string.IsNullOrEmpty(projectDir)) continue;
+                string? projectDir = null;
+                string? testSource = null;
+
+                if (source.EndsWith("cforge.toml", StringComparison.OrdinalIgnoreCase))
+                {
+                    projectDir = Path.GetDirectoryName(source);
+                    testSource = source;
+                }
+                else if (source.EndsWith(".cpp", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Check if this .cpp file is in a cforge project
+                    projectDir = FindCforgeProjectDir(source);
+                    if (projectDir != null)
+                        testSource = Path.Combine(projectDir, "cforge.toml");
+                }
+                else if (source.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Check if this exe is in a cforge project's build directory
+                    projectDir = FindCforgeProjectDirFromBuildOutput(source);
+                    if (projectDir != null)
+                        testSource = Path.Combine(projectDir, "cforge.toml");
+                }
+
+                if (string.IsNullOrEmpty(projectDir) || string.IsNullOrEmpty(testSource))
+                {
+                    logger?.SendMessage(TestMessageLevel.Informational, $"CForge: No cforge project found for {source}");
+                    continue;
+                }
+
+                // Skip if we've already discovered this project
+                if (_discoveredProjects.Contains(projectDir)) continue;
+                _discoveredProjects.Add(projectDir);
+
+                // Verify it's a cforge project with tests
+                if (!File.Exists(testSource)) continue;
+
+                var testsDir = Path.Combine(projectDir, "tests");
+                if (!Directory.Exists(testsDir))
+                {
+                    logger?.SendMessage(TestMessageLevel.Informational, $"CForge: No tests directory in {projectDir}");
+                    continue;
+                }
 
                 logger?.SendMessage(TestMessageLevel.Informational, $"CForge: Discovering tests in {projectDir}");
 
-                var tests = DiscoverTestsInProject(projectDir, source, logger);
+                var tests = DiscoverTestsInProject(projectDir, testSource, logger);
+                logger?.SendMessage(TestMessageLevel.Informational, $"CForge: Found {tests.Count} tests");
+
                 foreach (var test in tests)
                 {
                     discoverySink.SendTestCase(test);
                 }
             }
+        }
+
+        /// <summary>
+        /// Finds the cforge project directory for a source file.
+        /// Walks up the directory tree looking for cforge.toml.
+        /// </summary>
+        private string? FindCforgeProjectDir(string sourceFile)
+        {
+            var dir = Path.GetDirectoryName(sourceFile);
+            while (!string.IsNullOrEmpty(dir))
+            {
+                if (File.Exists(Path.Combine(dir, "cforge.toml")))
+                    return dir;
+
+                var parent = Path.GetDirectoryName(dir);
+                if (parent == dir) break; // Root reached
+                dir = parent;
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// Finds the cforge project directory from a build output (exe file).
+        /// Looks for cforge.toml in parent directories or checks .cforge-source marker.
+        /// </summary>
+        private string? FindCforgeProjectDirFromBuildOutput(string exePath)
+        {
+            var dir = Path.GetDirectoryName(exePath);
+
+            // First check if there's a .cforge-source marker (for generated solutions)
+            while (!string.IsNullOrEmpty(dir))
+            {
+                var markerPath = Path.Combine(dir, ".cforge-source");
+                if (File.Exists(markerPath))
+                {
+                    var sourceDir = File.ReadAllText(markerPath).Trim();
+                    if (Directory.Exists(sourceDir) && File.Exists(Path.Combine(sourceDir, "cforge.toml")))
+                        return sourceDir;
+                }
+
+                // Also check for cforge.toml directly (for builds in source tree)
+                if (File.Exists(Path.Combine(dir, "cforge.toml")))
+                    return dir;
+
+                var parent = Path.GetDirectoryName(dir);
+                if (parent == dir) break;
+                dir = parent;
+            }
+
+            return null;
         }
 
         private List<TestCase> DiscoverTestsInProject(string projectDir, string source, IMessageLogger? logger)

@@ -202,7 +202,7 @@ cforge list variants
 cforge list targets
 
 # Show dependency tree
-cforge deps tree
+cforge tree
 
 # List dependencies
 cforge deps list

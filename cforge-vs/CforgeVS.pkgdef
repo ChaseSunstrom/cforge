@@ -21,3 +21,12 @@
 ; Register the custom MSBuild extension path
 [$RootKey$\MSBuild\CustomImportSearchPaths]
 "CforgeVS"="$PackageFolder$\\BuildSystem"
+
+; Test Adapter registration for cforge tests
+[$RootKey$\TestAdapters\CforgeTestAdapter]
+"ExecutorUri"="executor://CforgeTestExecutor/v1"
+"FileExtension"=".toml"
+
+; Open Folder test source file extensions
+[$RootKey$\OpenFolder\TestSources\.toml]
+@="CforgeTestAdapter"

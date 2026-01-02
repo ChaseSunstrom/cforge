@@ -45,7 +45,10 @@ void print_tree_branch(const std::string &name, const dependency_info &info,
   // Determine color based on type
   fmt::color color = fmt::color::white;
   std::string type_indicator;
-  if (info.type == "git") {
+  if (info.type == "index") {
+    color = fmt::color::light_blue;
+    type_indicator = " (index)";
+  } else if (info.type == "git") {
     color = fmt::color::cyan;
     type_indicator = " (git)";
   } else if (info.type == "vcpkg") {
@@ -91,7 +94,89 @@ void print_tree_branch(const std::string &name, const dependency_info &info,
 [[maybe_unused]] void collect_dependencies(const fs::path & /*project_dir*/,
                           const cforge::toml_reader &config,
                           std::map<std::string, dependency_info> &deps) {
-  // Git dependencies
+  // Special keys that are not package names
+  static const std::set<std::string> special_keys = {
+      "directory", "git", "vcpkg", "system", "project", "fetch_content"};
+
+  // First, collect registry/index packages (direct key = "version" entries)
+  if (config.has_key("dependencies")) {
+    auto dep_keys = config.get_table_keys("dependencies");
+    for (const auto &dep : dep_keys) {
+      // Skip special keys
+      if (special_keys.count(dep))
+        continue;
+
+      std::string key = "dependencies." + dep;
+
+      // Check if it's a simple string value (registry package)
+      std::string version = config.get_string(key, "");
+      if (!version.empty()) {
+        // It's a registry package like: fmt = "11.1.4"
+        dependency_info info;
+        info.name = dep;
+        info.type = "index";
+        info.version = version;
+        deps[dep] = info;
+        continue;
+      }
+
+      // Check if it's a table with version (registry package with options)
+      if (config.has_key(key + ".version")) {
+        // Check what type of dependency it is
+        if (config.has_key(key + ".git")) {
+          // Git dependency in new format
+          dependency_info info;
+          info.name = dep;
+          info.type = "git";
+          info.url = config.get_string(key + ".git", "");
+          info.version = config.get_string(key + ".tag", "");
+          if (info.version.empty()) {
+            info.version = config.get_string(key + ".branch", "");
+          }
+          if (info.version.empty()) {
+            info.version = config.get_string(key + ".commit", "");
+            if (!info.version.empty() && info.version.length() > 8) {
+              info.version = info.version.substr(0, 8);
+            }
+          }
+          deps[dep] = info;
+        } else if (config.has_key(key + ".vcpkg") ||
+                   config.get_bool(key + ".vcpkg", false)) {
+          // vcpkg dependency
+          dependency_info info;
+          info.name = dep;
+          info.type = "vcpkg";
+          info.version = config.get_string(key + ".version", "");
+          deps[dep] = info;
+        } else if (config.has_key(key + ".system") ||
+                   config.get_bool(key + ".system", false)) {
+          // System dependency
+          dependency_info info;
+          info.name = dep;
+          info.type = "system";
+          info.version = config.get_string(key + ".version", "");
+          deps[dep] = info;
+        } else if (config.has_key(key + ".path") ||
+                   config.has_key(key + ".project")) {
+          // Project/path dependency
+          dependency_info info;
+          info.name = dep;
+          info.type = "project";
+          info.version = config.get_string(key + ".version", "");
+          deps[dep] = info;
+        } else {
+          // Registry package with options (e.g., features)
+          dependency_info info;
+          info.name = dep;
+          info.type = "index";
+          info.version = config.get_string(key + ".version", "");
+          deps[dep] = info;
+        }
+      }
+    }
+  }
+
+  // Git dependencies (old style: [dependencies.git])
   if (config.has_key("dependencies.git")) {
     auto git_deps = config.get_table_keys("dependencies.git");
     for (const auto &dep : git_deps) {
@@ -115,7 +200,7 @@ void print_tree_branch(const std::string &name, const dependency_info &info,
     }
   }
 
-  // vcpkg dependencies
+  // vcpkg dependencies (old style)
   if (config.has_key("dependencies.vcpkg.packages")) {
     auto vcpkg_deps = config.get_string_array("dependencies.vcpkg.packages");
     for (const auto &dep : vcpkg_deps) {
@@ -133,7 +218,7 @@ void print_tree_branch(const std::string &name, const dependency_info &info,
     }
   }
 
-  // System dependencies
+  // System dependencies (old style)
   if (config.has_key("dependencies.system")) {
     auto sys_deps = config.get_string_array("dependencies.system");
     for (const auto &dep : sys_deps) {
@@ -144,7 +229,7 @@ void print_tree_branch(const std::string &name, const dependency_info &info,
     }
   }
 
-  // Project dependencies (workspace)
+  // Project dependencies (old style: [dependencies.project])
   if (config.has_key("dependencies.project")) {
     auto proj_deps = config.get_table_keys("dependencies.project");
     for (const auto &dep : proj_deps) {
@@ -268,9 +353,12 @@ cforge_int_t cforge_cmd_tree(const cforge_context_t *ctx) {
 
   // Print summary
   fmt::print("\n");
-  cforge_int_t git_count = 0, vcpkg_count = 0, sys_count = 0, proj_count = 0;
+  cforge_int_t index_count = 0, git_count = 0, vcpkg_count = 0, sys_count = 0,
+               proj_count = 0;
   for (const auto &[name, info] : all_deps) {
-    if (info.type == "git")
+    if (info.type == "index")
+      index_count++;
+    else if (info.type == "git")
       git_count++;
     else if (info.type == "vcpkg")
       vcpkg_count++;
@@ -281,6 +369,8 @@ cforge_int_t cforge_cmd_tree(const cforge_context_t *ctx) {
   }
 
   std::vector<std::string> summary_parts;
+  if (index_count > 0)
+    summary_parts.push_back(std::to_string(index_count) + " index");
   if (git_count > 0)
     summary_parts.push_back(std::to_string(git_count) + " git");
   if (vcpkg_count > 0)

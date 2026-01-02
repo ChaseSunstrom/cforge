@@ -389,4 +389,69 @@ namespace CforgeVS
             }
         }
     }
+
+    // ==================== CLEANUP COMMANDS ====================
+
+    [Command(PackageGuids.CforgeMenuGroupGuidString, PackageIds.CleanGeneratedFilesCommandId)]
+    internal sealed class CleanGeneratedFilesCommand : BaseCommand<CleanGeneratedFilesCommand>
+    {
+        protected override async Task ExecuteAsync(OleMenuCmdEventArgs e)
+        {
+            var pane = await CforgeRunner.GetOutputPaneAsync();
+            await pane.ActivateAsync();
+
+            string? projectDir = await CforgeRunner.GetProjectDirectoryAsync();
+            if (string.IsNullOrEmpty(projectDir))
+            {
+                await pane.WriteLineAsync("Error: No cforge project found.");
+                return;
+            }
+
+            await pane.WriteLineAsync("[cforge] Cleaning generated VS files...");
+
+            try
+            {
+                // Clean the generated vcxproj/sln files
+                VcxprojGenerator.CleanupGeneratedFiles(projectDir);
+
+                // Also clean the .vs folder config files we generated
+                string vsDir = Path.Combine(projectDir, ".vs");
+                string[] filesToDelete = new[]
+                {
+                    Path.Combine(vsDir, "tasks.vs.json"),
+                    Path.Combine(vsDir, "launch.vs.json"),
+                    Path.Combine(vsDir, "CppProperties.json"),
+                    Path.Combine(vsDir, "cforge.runsettings"),
+                    Path.Combine(vsDir, "testsettings.json"),
+                    Path.Combine(vsDir, "ProjectSettings.json"),
+                    Path.Combine(projectDir, "CMakeSettings.json")
+                };
+
+                int cleanedCount = 0;
+                foreach (var file in filesToDelete)
+                {
+                    if (File.Exists(file))
+                    {
+                        File.Delete(file);
+                        cleanedCount++;
+                        await pane.WriteLineAsync($"  Deleted: {Path.GetFileName(file)}");
+                    }
+                }
+
+                string tempDir = VcxprojGenerator.GetTempProjectDir(projectDir);
+                if (!Directory.Exists(tempDir))
+                {
+                    await pane.WriteLineAsync($"  Deleted: Generated solution directory");
+                    cleanedCount++;
+                }
+
+                await pane.WriteLineAsync($"[cforge] Cleanup complete. Removed {cleanedCount} generated file(s).");
+                await pane.WriteLineAsync($"  Temp directory location: {Path.GetDirectoryName(tempDir)}");
+            }
+            catch (Exception ex)
+            {
+                await pane.WriteLineAsync($"Error cleaning files: {ex.Message}");
+            }
+        }
+    }
 }

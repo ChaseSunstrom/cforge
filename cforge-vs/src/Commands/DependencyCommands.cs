@@ -64,15 +64,6 @@ namespace CforgeVS
         }
     }
 
-    [Command(PackageGuids.CforgeMenuGroupGuidString, PackageIds.DepsTreeCommandId)]
-    internal sealed class DepsTreeCommand : BaseCommand<DepsTreeCommand>
-    {
-        protected override async Task ExecuteAsync(OleMenuCmdEventArgs e)
-        {
-            await CforgeRunner.RunAsync("deps tree");
-        }
-    }
-
     [Command(PackageGuids.CforgeMenuGroupGuidString, PackageIds.DepsOutdatedCommandId)]
     internal sealed class DepsOutdatedCommand : BaseCommand<DepsOutdatedCommand>
     {

@@ -261,16 +261,18 @@ cforge deps tree
 cforge deps tree --depth 2
 
 # Show all details
-cforge deps tree -v
+cforge deps tree -a
 ```
 
 **Output:**
 ```
 my_app v1.0.0
-├── fmt (10.1.0) [index]
-├── spdlog (1.12.0) [index]
-│   └── fmt (10.1.0) [index]
-└── my_lib (local) [project]
+├── fmt @ 10.1.0 (index)
+├── spdlog @ 1.12.0 (index)
+│   └── fmt @ 10.1.0 (index)
+└── my_lib (project)
+
+Dependencies: 2 index, 1 project
 ```
 
 ### new
