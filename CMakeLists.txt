@@ -130,6 +130,11 @@ target_link_libraries(${PROJECT_NAME} PUBLIC
     tomlplusplus::tomlplusplus
 )
 
+# platform-specific configuration
+if(CFORGE_PLATFORM STREQUAL "windows")
+    target_compile_definitions(${PROJECT_NAME} PUBLIC NOMINMAX)
+endif()
+
 # Portable compiler flags per configuration
 # Debug configuration flags
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
@@ -163,6 +168,9 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
   target_compile_definitions(${PROJECT_NAME} PUBLIC DEBUG=1)
   target_compile_definitions(${PROJECT_NAME} PUBLIC FMT_UNICODE=0)
 endif()
+
+# platform-specific defines for windows
+target_compile_definitions(${PROJECT_NAME} PUBLIC NOMINMAX)
 
 # Link libraries
 target_link_libraries(${PROJECT_NAME} PUBLIC

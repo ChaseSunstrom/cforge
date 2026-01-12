@@ -4,8 +4,8 @@
  */
 
 // Prevent Windows min/max macros from conflicting with std::min/max
-#ifdef _WIN32
-#define NOMINMAX
+#if defined(_WIN32) && !defined(NOMINMAX)
+  #define NOMINMAX
 #endif
 
 #include "cforge/log.hpp"

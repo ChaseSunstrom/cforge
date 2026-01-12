@@ -34,6 +34,9 @@ generators = ["ZIP", "TGZ", "DEB"]
 vendor = "Chase Sunstrom"
 contact = "Chase Sunstrom <casunstrom@gmail.com>"
 
+[platform.windows]
+defines = [ "NOMINMAX" ]
+
 [dependencies]
 directory = "vendor"
 tomlplusplus = "3.4.0"
