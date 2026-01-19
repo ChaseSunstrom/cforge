@@ -5,6 +5,7 @@
 
 #include "cforge/log.hpp"
 #include "core/build_utils.hpp"
+#include "core/command_registry.hpp"
 #include "core/commands.hpp"
 #include "core/constants.h"
 #include "core/file_system.h"
@@ -322,6 +323,15 @@ static bool regenerate_cmake_files(const std::filesystem::path &project_dir,
  * @return cforge_int_t Exit code (0 for success)
  */
 cforge_int_t cforge_cmd_clean(const cforge_context_t *ctx) {
+  // Check for help flag first
+  for (cforge_int_t i = 0; i < ctx->args.arg_count; i++) {
+    std::string arg = ctx->args.args[i];
+    if (arg == "-h" || arg == "--help") {
+      cforge::command_registry::instance().print_command_help("clean");
+      return 0;
+    }
+  }
+
   // Check for workspace clean - support both unified format and legacy format
   std::filesystem::path current_dir(ctx->working_dir);
   bool is_workspace = false;

@@ -1,7 +1,7 @@
 {
   "id": "scripts-hooks",
   "title": "Scripts & Hooks",
-  "description": "📝 Scripts & Hooks",
+  "description": "Scripts and Hooks",
   "source": "@site/docs/scripts-hooks.md",
   "sourceDirName": ".",
   "slug": "/scripts-hooks",

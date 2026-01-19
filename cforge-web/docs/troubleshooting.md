@@ -189,6 +189,9 @@ sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
 ## Useful Debug Commands
 
 ```bash
+# Diagnose environment
+cforge doctor
+
 # Verbose build output
 cforge build -v
 
@@ -202,7 +205,7 @@ cforge list variants
 cforge list targets
 
 # Show dependency tree
-cforge tree
+cforge deps tree
 
 # List dependencies
 cforge deps list

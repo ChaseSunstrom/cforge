@@ -6,13 +6,71 @@
 export default {
   "title": "CForge",
   "tagline": "A modern TOML-based build system for C/C++ with CMake & vcpkg integration",
-  "favicon": "img/logo.svg",
+  "favicon": "img/cforge-light.png",
   "url": "https://chasesunstrom.github.io",
   "baseUrl": "/cforge/",
   "organizationName": "chasesunstrom",
   "projectName": "cforge",
   "onBrokenLinks": "warn",
   "onBrokenMarkdownLinks": "warn",
+  "headTags": [
+    {
+      "tagName": "meta",
+      "attributes": {
+        "property": "og:title",
+        "content": "CForge - Modern C/C++ Build System"
+      }
+    },
+    {
+      "tagName": "meta",
+      "attributes": {
+        "property": "og:description",
+        "content": "A modern TOML-based build system for C/C++ with CMake & vcpkg integration. Simple configuration, powerful features."
+      }
+    },
+    {
+      "tagName": "meta",
+      "attributes": {
+        "property": "og:image",
+        "content": "https://chasesunstrom.github.io/cforge/img/cforge-glow.png"
+      }
+    },
+    {
+      "tagName": "meta",
+      "attributes": {
+        "property": "og:type",
+        "content": "website"
+      }
+    },
+    {
+      "tagName": "meta",
+      "attributes": {
+        "name": "twitter:card",
+        "content": "summary_large_image"
+      }
+    },
+    {
+      "tagName": "meta",
+      "attributes": {
+        "name": "twitter:title",
+        "content": "CForge - Modern C/C++ Build System"
+      }
+    },
+    {
+      "tagName": "meta",
+      "attributes": {
+        "name": "twitter:description",
+        "content": "A modern TOML-based build system for C/C++ with CMake & vcpkg integration."
+      }
+    },
+    {
+      "tagName": "meta",
+      "attributes": {
+        "name": "twitter:image",
+        "content": "https://chasesunstrom.github.io/cforge/img/cforge-glow.png"
+      }
+    }
+  ],
   "i18n": {
     "defaultLocale": "en",
     "locales": [
@@ -41,7 +99,7 @@ export default {
     ]
   ],
   "themeConfig": {
-    "image": "img/cforge.png",
+    "image": "img/cforge-glow.png",
     "colorMode": {
       "defaultMode": "dark",
       "disableSwitch": false,
@@ -51,7 +109,7 @@ export default {
       "title": "CForge",
       "logo": {
         "alt": "CForge Logo",
-        "src": "img/cforge.png"
+        "src": "img/cforge-light.png"
       },
       "items": [
         {
@@ -128,7 +186,7 @@ export default {
           ]
         }
       ],
-      "copyright": "Copyright 2025 CForge. Built with Docusaurus."
+      "copyright": "Copyright 2026 CForge. Built with Docusaurus."
     },
     "prism": {
       "theme": {
@@ -341,10 +399,10 @@ export default {
       ]
     },
     "announcementBar": {
-      "id": "beta_announcement",
-      "content": "CForge is currently in <strong>BETA</strong>. Features may change. <a href=\"/cforge/docs/intro\">Learn more</a>",
-      "backgroundColor": "#2d2d2d",
-      "textColor": "#e0e0e0",
+      "id": "beta_announcement_v3",
+      "content": "CForge 3.1 is here with binary caching and improved UX. <a href=\"/cforge/docs/intro\">Learn more</a>",
+      "backgroundColor": "#92400e",
+      "textColor": "#ffffff",
       "isCloseable": true
     },
     "docs": {
@@ -390,7 +448,6 @@ export default {
   "plugins": [],
   "themes": [],
   "scripts": [],
-  "headTags": [],
   "stylesheets": [],
   "clientModules": [],
   "titleDelimiter": "|",

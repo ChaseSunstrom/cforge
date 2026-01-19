@@ -1,7 +1,7 @@
 {
   "id": "examples",
   "title": "Examples",
-  "description": "📚 Examples",
+  "description": "Examples",
   "source": "@site/docs/examples.md",
   "sourceDirName": ".",
   "slug": "/examples",

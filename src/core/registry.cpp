@@ -35,9 +35,14 @@ std::filesystem::path registry::get_default_cache_dir() {
     return std::filesystem::path(userprofile) / ".cforge" / "registry";
   }
 #else
+  // Use XDG_DATA_HOME if set, otherwise ~/.local/share/cforge
+  const char *xdg_data = std::getenv("XDG_DATA_HOME");
+  if (xdg_data) {
+    return std::filesystem::path(xdg_data) / "cforge" / "registry";
+  }
   const char *home = std::getenv("HOME");
   if (home) {
-    return std::filesystem::path(home) / ".cforge" / "registry";
+    return std::filesystem::path(home) / ".local" / "share" / "cforge" / "registry";
   }
 #endif
   return std::filesystem::current_path() / ".cforge" / "registry";

@@ -366,29 +366,29 @@ cforge_int_t cforge_cmd_new(const cforge_context_t *ctx) {
   }
 
   if (template_type.empty()) {
-    cforge::logger::print_plain("cforge new - Create files from templates");
-    cforge::logger::print_plain("");
-    cforge::logger::print_plain("Usage: cforge new <template> <name> [options]");
-    cforge::logger::print_plain("");
-    cforge::logger::print_plain("Templates:");
-    cforge::logger::print_plain(
-        "  class      Create a class with header and source files");
-    cforge::logger::print_plain("  header     Create a header-only file");
-    cforge::logger::print_plain("  struct     Create a struct header file");
-    cforge::logger::print_plain("  interface  Create an interface (abstract class)");
-    cforge::logger::print_plain("  test       Create a test file");
-    cforge::logger::print_plain("  main       Create a main.cpp file");
-    cforge::logger::print_plain("");
-    cforge::logger::print_plain("Options:");
-    cforge::logger::print_plain("  -n, --namespace <name>  Wrap in namespace");
-    cforge::logger::print_plain("  -o, --output <dir>      Output directory");
-    cforge::logger::print_plain("  -f, --force             Overwrite existing files");
-    cforge::logger::print_plain("");
-    cforge::logger::print_plain("Examples:");
-    cforge::logger::print_plain("  cforge new class MyClass");
-    cforge::logger::print_plain("  cforge new class MyClass -n myproject");
-    cforge::logger::print_plain("  cforge new header utils -o include/myproject");
-    cforge::logger::print_plain("  cforge new test MyClass --framework catch2");
+    cforge::logger::print_cmd_header("new", "Create files from templates");
+    cforge::logger::print_usage("cforge new <template> <name> [options]");
+
+    cforge::logger::print_help_section("TEMPLATES");
+    cforge::logger::print_subcommand("class", "Create a class with header and source files", 12);
+    cforge::logger::print_subcommand("header", "Create a header-only file", 12);
+    cforge::logger::print_subcommand("struct", "Create a struct header file", 12);
+    cforge::logger::print_subcommand("interface", "Create an interface (abstract class)", 12);
+    cforge::logger::print_subcommand("test", "Create a test file", 12);
+    cforge::logger::print_subcommand("main", "Create a main.cpp file", 12);
+    cforge::logger::print_blank();
+
+    cforge::logger::print_help_section("OPTIONS");
+    cforge::logger::print_option("-n, --namespace <name>", "Wrap in namespace");
+    cforge::logger::print_option("-o, --output <dir>", "Output directory");
+    cforge::logger::print_option("-f, --force", "Overwrite existing files");
+    cforge::logger::print_blank();
+
+    cforge::logger::print_help_section("EXAMPLES");
+    cforge::logger::print_example("cforge new class MyClass", "Create class files");
+    cforge::logger::print_example("cforge new class MyClass -n myproject", "With namespace");
+    cforge::logger::print_example("cforge new header utils -o include/myproject", "Custom output dir");
+    cforge::logger::print_example("cforge new test MyClass --framework catch2", "Create test file");
     return 0;
   }
 
@@ -535,8 +535,7 @@ cforge_int_t cforge_cmd_new(const cforge_context_t *ctx) {
 
   } else {
     cforge::logger::print_error("Unknown template: " + template_type);
-    cforge::logger::print_plain(
-        "Available templates: class, header, struct, interface, test, main");
+    cforge::logger::print_hint("Available templates: class, header, struct, interface, test, main");
     return 1;
   }
 

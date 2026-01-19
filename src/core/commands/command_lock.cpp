@@ -46,23 +46,19 @@ cforge_int_t cforge_cmd_lock(const cforge_context_t *ctx) {
     } else if (arg == "--force" || arg == "-f") {
       force_update = true;
     } else if (arg == "--help" || arg == "-h") {
-      cforge::logger::print_plain("Usage: cforge lock [options]");
-      cforge::logger::print_plain("");
-      cforge::logger::print_plain(
-          "Generate or verify dependency lock file (cforge.lock)");
-      cforge::logger::print_plain("");
-      cforge::logger::print_plain("Options:");
-      cforge::logger::print_plain(
-          "  --verify, -v   Verify dependencies match lock file");
-      cforge::logger::print_plain("  --clean, -c    Remove the lock file");
-      cforge::logger::print_plain(
-          "  --force, -f    Force regeneration even if lock exists");
-      cforge::logger::print_plain("  --help, -h     Show this help message");
-      cforge::logger::print_plain("");
-      cforge::logger::print_plain(
-          "The lock file ensures reproducible builds by tracking");
-      cforge::logger::print_plain(
-          "exact versions (commit hashes) of all dependencies.");
+      cforge::logger::print_cmd_header("lock", "Dependency lock file management");
+      cforge::logger::print_usage("cforge lock [options]");
+
+      cforge::logger::print_help_section("OPTIONS");
+      cforge::logger::print_option("--verify, -v", "Verify dependencies match lock file");
+      cforge::logger::print_option("--clean, -c", "Remove the lock file");
+      cforge::logger::print_option("--force, -f", "Force regeneration even if lock exists");
+      cforge::logger::print_option("--help, -h", "Show this help message");
+      cforge::logger::print_blank();
+
+      cforge::logger::print_help_section("DESCRIPTION");
+      cforge::logger::print_dim("The lock file ensures reproducible builds by tracking", 4);
+      cforge::logger::print_dim("exact versions (commit hashes) of all dependencies.", 4);
       return 0;
     }
   }

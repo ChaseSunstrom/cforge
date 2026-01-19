@@ -3,7 +3,7 @@ id: contributing
 title: Contributing
 ---
 
-## 🤝 Contributing
+## Contributing
 
 Contributions welcome!
 

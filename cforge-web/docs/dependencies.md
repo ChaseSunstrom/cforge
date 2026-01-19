@@ -260,8 +260,8 @@ cforge deps update
 # Check for outdated dependencies
 cforge deps outdated
 
-# Update cforge itself
-cforge update --self
+# Upgrade cforge itself
+cforge upgrade
 ```
 
 ### Dependency Tree

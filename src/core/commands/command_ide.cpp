@@ -4,6 +4,7 @@
  */
 
 #include "cforge/log.hpp"
+#include "core/command_registry.hpp"
 #include "core/commands.hpp"
 #include "core/constants.h"
 #include "core/types.h"
@@ -775,6 +776,15 @@ static bool generate_vs_project_direct(const std::filesystem::path &project_dir,
  * @return cforge_int_t Exit code (0 for success)
  */
 cforge_int_t cforge_cmd_ide(const cforge_context_t *ctx) {
+  // Check for help flag first
+  for (cforge_int_t i = 0; i < ctx->args.arg_count; i++) {
+    std::string arg = ctx->args.args[i];
+    if (arg == "-h" || arg == "--help") {
+      cforge::command_registry::instance().print_command_help("ide");
+      return 0;
+    }
+  }
+
   // Determine project directory
   std::filesystem::path project_dir = ctx->working_dir;
 

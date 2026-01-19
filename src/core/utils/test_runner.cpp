@@ -644,7 +644,7 @@ std::vector<test_result> test_runner::run_target(const test_target &target,
 
   if (options.native_output) {
     // Just print native output, create summary result
-    std::cout << combined_output << std::endl;
+    logger::print_plain(combined_output);
 
     test_result summary;
     summary.name = target.name;

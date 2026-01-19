@@ -6,6 +6,7 @@
 
 #include "cforge/log.hpp"
 #include "core/build_utils.hpp"
+#include "core/command_registry.hpp"
 #include "core/commands.hpp"
 #include "core/constants.h"
 #include "core/error_format.hpp"
@@ -319,6 +320,15 @@ static bool spawn_in_terminal(const std::string &cmd) {
 }
 
 cforge_int_t cforge_cmd_run(const cforge_context_t *ctx) {
+  // Check for help flag first
+  for (cforge_int_t i = 0; i < ctx->args.arg_count; i++) {
+    std::string arg = ctx->args.args[i];
+    if (arg == "-h" || arg == "--help") {
+      cforge::command_registry::instance().print_command_help("run");
+      return 0;
+    }
+  }
+
   try {
     // Determine project directory
     std::filesystem::path project_dir =
@@ -596,7 +606,7 @@ cforge_int_t cforge_cmd_run(const cforge_context_t *ctx) {
       // Note: We only print stdout immediately; stderr is captured and formatted later
       // to avoid duplicated error output
       std::function<void(const std::string &)> stdout_callback =
-          [](const std::string &chunk) { std::cout << chunk << std::flush; };
+          [](const std::string &chunk) { cforge::logger::print_plain(chunk); };
 
       // Capture stderr for later formatting - don't print immediately to avoid duplication
       std::string captured_stderr;
@@ -613,7 +623,7 @@ cforge_int_t cforge_cmd_run(const cforge_context_t *ctx) {
           );
 
       // Add a separator line after program output
-      std::cout << std::endl;
+      cforge::logger::print_blank();
 
       // Use captured_stderr for error analysis
       std::string error_output = captured_stderr;
@@ -624,7 +634,7 @@ cforge_int_t cforge_cmd_run(const cforge_context_t *ctx) {
       if (result.success) {
         // On success, just print any stderr warnings directly
         if (!error_output.empty()) {
-          std::cerr << error_output << std::flush;
+          cforge::logger::print_warning(error_output);
         }
         cforge::logger::finished(config);
         return 0;
@@ -633,11 +643,11 @@ cforge_int_t cforge_cmd_run(const cforge_context_t *ctx) {
         std::string formatted = cforge::format_build_errors(error_output);
         if (!formatted.empty()) {
           // Print formatted errors (don't print raw stderr to avoid duplication)
-          std::cout << "\n";
-          std::cout << formatted;
+          cforge::logger::print_blank();
+          cforge::logger::print_plain(formatted);
         } else if (!error_output.empty()) {
           // Fallback: print raw stderr if formatter didn't produce anything
-          std::cerr << error_output << std::flush;
+          cforge::logger::print_error(error_output);
         }
 
         cforge::logger::print_error("program exited with code: " +

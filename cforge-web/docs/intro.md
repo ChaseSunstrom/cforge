@@ -6,7 +6,7 @@ slug: /intro
 
 # CForge
 
-![Version](https://img.shields.io/badge/version-3.0.1-blue.svg)
+![Version](https://img.shields.io/badge/version-3.1.0-blue.svg)
 ![License](https://img.shields.io/badge/license-PolyForm%20NC-green.svg)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)
 
@@ -34,7 +34,7 @@ This project is currently in **BETA**. Features may be incomplete, contain bugs,
 - **Conan Support** - Integrate with Conan package manager
 - **Git Dependencies** - Clone and build from Git repositories
 - **System Libraries** - Link against system-installed libraries
-- **Dependency Visualization** - View dependency tree with `cforge tree`
+- **Dependency Visualization** - View dependency tree with `cforge deps tree`
 
 ### Developer Tools
 - **Code Formatting** - `cforge fmt` with clang-format integration

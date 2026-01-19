@@ -5,6 +5,7 @@
 
 #include "core/build_progress.hpp"
 #include "core/types.h"
+#include "cforge/log.hpp"
 #include <algorithm>
 #include <fmt/core.h>
 #include <iostream>
@@ -278,12 +279,14 @@ void display_progress_bar(cforge_int_t current, cforge_int_t total, cforge_int_t
   }
 
   // Use carriage return to update in place
-  std::cout << "\r" << line << std::flush;
+  // Note: This uses direct output for real-time progress updates
+  fmt::print("\r{}", line);
+  std::fflush(stdout);
 }
 
 void clear_progress_line() {
   // Move to beginning of line and clear it
-  std::cout << "\r\033[K" << std::flush;
+  cforge::logger::clear_line();
 }
 
 } // namespace cforge

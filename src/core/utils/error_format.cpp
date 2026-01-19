@@ -154,55 +154,62 @@ static std::string read_line_from_file(const std::string &file_path, cforge_int_
 }
 
 // Format a diagnostic in Cargo/Rust style
+// NOTE: This function builds a string version of the diagnostic.
+// For direct output, use print_diagnostic() which uses logger utilities.
+// This function maintains the same formatting as logger utilities but returns a string
+// for use in contexts where we need to collect/process output before printing.
 std::string format_diagnostic_to_string(const diagnostic &diag) {
   std::stringstream ss;
 
-  // Determine the level-specific formatting
-  std::string level_str;
-  fmt::color level_color = fmt::color::white; // Default initialization
-
+  // Print error/warning header - matches logger::print_error_header() format
   switch (diag.level) {
   case diagnostic_level::ERROR:
-    level_str = "error";
-    level_color = fmt::color::red;
+    ss << fmt::format(fg(fmt::color::red) | fmt::emphasis::bold, "error");
+    if (!diag.code.empty()) {
+      ss << fmt::format(fg(fmt::color::red) | fmt::emphasis::bold, "[{}]", diag.code);
+    }
+    ss << fmt::format(fg(fmt::color::white) | fmt::emphasis::bold, ": {}\n", diag.message);
     break;
   case diagnostic_level::WARNING:
-    level_str = "warning";
-    level_color = fmt::color::yellow;
+    ss << fmt::format(fg(fmt::color::yellow) | fmt::emphasis::bold, "warning");
+    if (!diag.code.empty()) {
+      ss << fmt::format(fg(fmt::color::yellow) | fmt::emphasis::bold, "[{}]", diag.code);
+    }
+    ss << fmt::format(fg(fmt::color::white) | fmt::emphasis::bold, ": {}\n", diag.message);
     break;
   case diagnostic_level::NOTE:
-    level_str = "note";
-    level_color = fmt::color::cyan;
+    ss << fmt::format(fg(fmt::color::cyan) | fmt::emphasis::bold, "note");
+    if (!diag.code.empty()) {
+      ss << fmt::format(fg(fmt::color::cyan) | fmt::emphasis::bold, "[{}]", diag.code);
+    }
+    ss << fmt::format(fg(fmt::color::white) | fmt::emphasis::bold, ": {}\n", diag.message);
     break;
   case diagnostic_level::HELP:
-    level_str = "help";
-    level_color = fmt::color::green;
+    ss << fmt::format(fg(fmt::color::green) | fmt::emphasis::bold, "help");
+    if (!diag.code.empty()) {
+      ss << fmt::format(fg(fmt::color::green) | fmt::emphasis::bold, "[{}]", diag.code);
+    }
+    ss << fmt::format(fg(fmt::color::white) | fmt::emphasis::bold, ": {}\n", diag.message);
     break;
   default:
-    level_str = "unknown";
-    level_color = fmt::color::white;
+    ss << fmt::format(fg(fmt::color::white) | fmt::emphasis::bold, "unknown");
+    if (!diag.code.empty()) {
+      ss << fmt::format(fg(fmt::color::white) | fmt::emphasis::bold, "[{}]", diag.code);
+    }
+    ss << fmt::format(fg(fmt::color::white) | fmt::emphasis::bold, ": {}\n", diag.message);
     break;
   }
 
-  // Cargo-style header: "error[E0425]: cannot find value `x`"
-  ss << fmt::format(fg(level_color) | fmt::emphasis::bold, "{}", level_str);
-  if (!diag.code.empty()) {
-    ss << fmt::format(fg(level_color) | fmt::emphasis::bold, "[{}]", diag.code);
-  }
-  ss << fmt::format(fg(fmt::color::white) | fmt::emphasis::bold, ": {}\n",
-                    diag.message);
-
-  // File location: " --> src/main.cpp:10:5"
+  // File location - matches logger::print_location() format exactly
   if (!diag.file_path.empty()) {
-    // Shorten long paths for display
+    // Shorten long paths for display (same logic as logger::print_location)
     std::string display_path = diag.file_path;
     if (display_path.length() > 60) {
-      // Use ... for middle of path
       display_path = display_path.substr(0, 25) + "..." +
                      display_path.substr(display_path.length() - 32);
     }
 
-    ss << fmt::format(fg(fmt::color::cyan), "  --> ");
+    ss << fmt::format(fg(fmt::color::steel_blue), "   --> ");
     ss << display_path;
     if (diag.line_number > 0) {
       ss << ":" << diag.line_number;
@@ -219,23 +226,22 @@ std::string format_diagnostic_to_string(const diagnostic &diag) {
     line_content = read_line_from_file(diag.file_path, diag.line_number);
   }
 
-  // Code snippet with line numbers
+  // Code snippet with line numbers - matches logger::print_code_line() and print_error_pointer()
   if (!line_content.empty() && diag.line_number > 0) {
     // Calculate gutter width based on line number
     cforge_int_t gutter_width = std::to_string(diag.line_number).length();
     if (gutter_width < 2)
       gutter_width = 2;
 
-    // Empty line before code
-    ss << fmt::format(fg(fmt::color::cyan), "{:>{}} |\n", "", gutter_width);
+    // Empty gutter line - matches logger::print_gutter_line()
+    ss << fmt::format(fg(fmt::color::steel_blue), "   |\n");
 
-    // The actual code line
-    ss << fmt::format(fg(fmt::color::cyan), "{:>{}} | ", diag.line_number,
-                      gutter_width);
+    // The actual code line - matches logger::print_code_line()
+    ss << fmt::format(fg(fmt::color::steel_blue), "{:>{}} | ", diag.line_number, gutter_width);
     ss << line_content << "\n";
 
-    // The error pointer line
-    ss << fmt::format(fg(fmt::color::cyan), "{:>{}} | ", "", gutter_width);
+    // The error pointer line - matches logger::print_error_pointer()
+    ss << fmt::format(fg(fmt::color::steel_blue), "{:>{}} | ", "", gutter_width);
 
     if (diag.column_number > 0) {
       cforge_size_t col = static_cast<cforge_size_t>(diag.column_number - 1);
@@ -243,18 +249,15 @@ std::string format_diagnostic_to_string(const diagnostic &diag) {
 
       // Try to find the token length
       if (col < line_content.length()) {
-        if (std::isalnum(line_content[col]) ||
-            line_content[col] == '_') {
-          cforge_size_t start = col;
+        if (std::isalnum(line_content[col]) || line_content[col] == '_') {
           cforge_size_t end = col;
 
           // Find token boundaries
           while (end < line_content.length() &&
-                 (std::isalnum(line_content[end]) ||
-                  line_content[end] == '_')) {
+                 (std::isalnum(line_content[end]) || line_content[end] == '_')) {
             end++;
           }
-          token_length = end - start;
+          token_length = end - col;
           if (token_length == 0)
             token_length = 1;
         }
@@ -262,45 +265,41 @@ std::string format_diagnostic_to_string(const diagnostic &diag) {
 
       // Print spaces then carets
       ss << std::string(col, ' ');
-      ss << fmt::format(fg(level_color) | fmt::emphasis::bold, "{}\n",
+      ss << fmt::format(fg(fmt::color::red) | fmt::emphasis::bold, "{}\n",
                         std::string(token_length, '^'));
     } else {
-      ss << fmt::format(fg(level_color) | fmt::emphasis::bold, "^\n");
+      ss << fmt::format(fg(fmt::color::red) | fmt::emphasis::bold, "^\n");
     }
   }
 
-  // Notes
+  // Notes - matches logger::print_diag_note() format
   for (const auto &note : diag.notes) {
-    ss << fmt::format(fg(fmt::color::cyan) | fmt::emphasis::bold,
-                      "   = note: ");
-    ss << note << "\n";
+    ss << fmt::format(fg(fmt::color::cyan) | fmt::emphasis::bold, "       note: ");
+    ss << fmt::format(fg(fmt::color::light_gray), "{}\n", note);
   }
 
-  // Help text
+  // Help text - matches logger::print_diag_help() format
   std::string help = diag.help.empty() ? diag.help_text : diag.help;
   if (!help.empty()) {
-    ss << fmt::format(fg(fmt::color::green) | fmt::emphasis::bold,
-                      "   = help: ");
-    ss << help << "\n";
+    ss << fmt::format(fg(fmt::color::medium_sea_green) | fmt::emphasis::bold, "       help: ");
+    ss << fmt::format(fg(fmt::color::light_gray), "{}\n", help);
   }
 
-  // Fix suggestions
+  // Fix suggestions - matches logger::print_diag_fix() format
   if (!diag.fixes.empty()) {
-    for (cforge_size_t i = 0; i < diag.fixes.size() && i < 3;
-         ++i) { // Limit to 3 suggestions
+    for (cforge_size_t i = 0; i < diag.fixes.size() && i < 3; ++i) {
       const auto &fix = diag.fixes[i];
-      ss << fmt::format(fg(fmt::color::magenta) | fmt::emphasis::bold,
-                        "   = fix: ");
-      ss << fix.description;
+      ss << fmt::format(fg(fmt::color::magenta) | fmt::emphasis::bold, "        fix: ");
+      ss << fmt::format(fg(fmt::color::light_gray), "{}", fix.description);
       if (!fix.replacement.empty() && fix.replacement.length() < 40) {
         ss << fmt::format(fg(fmt::color::gray), " -> ");
-        ss << fmt::format(fg(fmt::color::green), "`{}`", fix.replacement);
+        ss << fmt::format(fg(fmt::color::lime_green), "`{}`", fix.replacement);
       }
       ss << "\n";
     }
     if (diag.fixes.size() > 3) {
       ss << fmt::format(fg(fmt::color::gray),
-                        "   = ... and {} more suggestion(s)\n",
+                        "            ... and {} more suggestion(s)\n",
                         diag.fixes.size() - 3);
     }
   }
@@ -310,9 +309,102 @@ std::string format_diagnostic_to_string(const diagnostic &diag) {
 }
 
 void print_diagnostic(const diagnostic &diag) {
-  // Simply print the formatted string to stderr
-  std::string formatted = format_diagnostic_to_string(diag);
-  fmt::print(stderr, "{}", formatted);
+  // Use logger utilities directly instead of building strings
+
+  // Print error/warning header
+  switch (diag.level) {
+  case diagnostic_level::ERROR:
+    logger::print_error_header(diag.code, diag.message);
+    break;
+  case diagnostic_level::WARNING:
+    logger::print_warning_header(diag.code, diag.message);
+    break;
+  case diagnostic_level::NOTE:
+    logger::print_diag_note(diag.code.empty() ? diag.message : "[" + diag.code + "]: " + diag.message);
+    break;
+  case diagnostic_level::HELP:
+    logger::print_diag_help(diag.code.empty() ? diag.message : "[" + diag.code + "]: " + diag.message);
+    break;
+  default:
+    // For unknown diagnostic levels, use note style
+    logger::print_diag_note(diag.code.empty() ? diag.message : "[" + diag.code + "]: " + diag.message);
+    break;
+  }
+
+  // Print file location
+  if (!diag.file_path.empty()) {
+    logger::print_location(diag.file_path, diag.line_number, diag.column_number);
+  }
+
+  // Get line content - either from diagnostic or by reading the file
+  std::string line_content = diag.line_content;
+  if (line_content.empty() && !diag.file_path.empty() && diag.line_number > 0) {
+    line_content = read_line_from_file(diag.file_path, diag.line_number);
+  }
+
+  // Print code snippet with line numbers
+  if (!line_content.empty() && diag.line_number > 0) {
+    // Calculate gutter width based on line number
+    cforge_int_t gutter_width = std::to_string(diag.line_number).length();
+    if (gutter_width < 2)
+      gutter_width = 2;
+
+    // Empty gutter line before code
+    logger::print_gutter_line();
+
+    // The actual code line
+    logger::print_code_line(diag.line_number, line_content, gutter_width);
+
+    // The error pointer line
+    if (diag.column_number > 0) {
+      cforge_size_t col = static_cast<cforge_size_t>(diag.column_number - 1);
+      cforge_size_t token_length = 1;
+
+      // Try to find the token length
+      if (col < line_content.length()) {
+        if (std::isalnum(line_content[col]) || line_content[col] == '_') {
+          cforge_size_t end = col;
+
+          // Find token boundaries
+          while (end < line_content.length() &&
+                 (std::isalnum(line_content[end]) || line_content[end] == '_')) {
+            end++;
+          }
+          token_length = end - col;
+          if (token_length == 0)
+            token_length = 1;
+        }
+      }
+
+      logger::print_error_pointer(diag.column_number, token_length, gutter_width);
+    } else {
+      logger::print_error_pointer(1, 1, gutter_width);
+    }
+  }
+
+  // Print notes
+  for (const auto &note : diag.notes) {
+    logger::print_diag_note(note);
+  }
+
+  // Print help text
+  std::string help = diag.help.empty() ? diag.help_text : diag.help;
+  if (!help.empty()) {
+    logger::print_diag_help(help);
+  }
+
+  // Print fix suggestions
+  if (!diag.fixes.empty()) {
+    for (cforge_size_t i = 0; i < diag.fixes.size() && i < 3; ++i) {
+      const auto &fix = diag.fixes[i];
+      logger::print_diag_fix(fix.description, fix.replacement);
+    }
+    if (diag.fixes.size() > 3) {
+      logger::print_dim("            ... and " + std::to_string(diag.fixes.size() - 3) + " more suggestion(s)");
+    }
+  }
+
+  logger::print_blank();
 }
 
 std::vector<diagnostic> extract_diagnostics(const std::string &error_output) {
@@ -1045,36 +1137,37 @@ std::vector<diagnostic> parse_ninja_errors(const std::string &error_output) {
       if (std::regex_search(diag.message, code_match, ninja_code_regex)) {
         diag.code = code_match[1].str();
       } else {
-        diag.code = error_code_prefix::NINJA;
+        // Use simple numeric codes for ninja errors
+        std::string message = diag.message;
 
         if (level_str == "error") {
           diag.level = diagnostic_level::ERROR;
-          diag.code += "-ERROR";
 
-          // Add specific context based on the message
-          std::string message = diag.message;
+          // Assign specific error codes
           if (message.find("syntax error") != std::string::npos) {
-            diag.code += "-SYNTAX";
+            diag.code = "E0101"; // Ninja syntax error
           } else if (message.find("multiple rules") != std::string::npos) {
-            diag.code += "-MULTIPLE";
+            diag.code = "E0102"; // Multiple rules
           } else if (message.find("missing") != std::string::npos) {
-            diag.code += "-MISSING";
+            diag.code = "E0103"; // Missing file/dependency
           } else if (message.find("stopping") != std::string::npos ||
                      message.find("failed") != std::string::npos) {
-            diag.code += "-FAILED";
+            diag.code = "E0104"; // Build failed
           } else if (message.find("unknown") != std::string::npos) {
-            diag.code += "-UNKNOWN";
+            diag.code = "E0105"; // Unknown target/rule
+          } else {
+            diag.code = "E0100"; // Generic ninja error
           }
         } else if (level_str == "warning") {
           diag.level = diagnostic_level::WARNING;
-          diag.code += "-WARN";
 
-          // Add specific context based on the message
-          std::string message = diag.message;
+          // Assign specific warning codes
           if (message.find("duplicate") != std::string::npos) {
-            diag.code += "-DUPLICATE";
+            diag.code = "W0101"; // Duplicate entry
           } else if (message.find("deprecated") != std::string::npos) {
-            diag.code += "-DEPR";
+            diag.code = "W0102"; // Deprecated usage
+          } else {
+            diag.code = "W0100"; // Generic ninja warning
           }
         }
       }
@@ -2011,44 +2104,45 @@ std::string format_error_summary(const error_summary &summary) {
 
   // Main summary line
   if (summary.total_errors > 0) {
+    ss << "\n";
     ss << fmt::format(fg(fmt::color::red) | fmt::emphasis::bold, "error");
     ss << fmt::format(fg(fmt::color::white) | fmt::emphasis::bold,
                       ": build failed\n");
   }
 
   // Breakdown by source
-  ss << fmt::format(fg(fmt::color::cyan), "   |\n");
+  ss << fmt::format(fg(fmt::color::steel_blue), "   |\n");
 
   if (summary.compiler_errors > 0) {
-    ss << fmt::format(fg(fmt::color::cyan), "   = ");
+    ss << fmt::format(fg(fmt::color::steel_blue), "   |  ");
     ss << fmt::format(fg(fmt::color::red), "{} compiler error{}\n",
                       summary.compiler_errors,
                       summary.compiler_errors == 1 ? "" : "s");
   }
 
   if (summary.linker_errors > 0) {
-    ss << fmt::format(fg(fmt::color::cyan), "   = ");
+    ss << fmt::format(fg(fmt::color::steel_blue), "   |  ");
     ss << fmt::format(fg(fmt::color::red), "{} linker error{}\n",
                       summary.linker_errors,
                       summary.linker_errors == 1 ? "" : "s");
   }
 
   if (summary.template_errors > 0) {
-    ss << fmt::format(fg(fmt::color::cyan), "   = ");
+    ss << fmt::format(fg(fmt::color::steel_blue), "   |  ");
     ss << fmt::format(fg(fmt::color::red), "{} template error{}\n",
                       summary.template_errors,
                       summary.template_errors == 1 ? "" : "s");
   }
 
   if (summary.cmake_errors > 0) {
-    ss << fmt::format(fg(fmt::color::cyan), "   = ");
+    ss << fmt::format(fg(fmt::color::steel_blue), "   |  ");
     ss << fmt::format(fg(fmt::color::red), "{} CMake error{}\n",
                       summary.cmake_errors,
                       summary.cmake_errors == 1 ? "" : "s");
   }
 
   if (summary.total_warnings > 0) {
-    ss << fmt::format(fg(fmt::color::cyan), "   = ");
+    ss << fmt::format(fg(fmt::color::steel_blue), "   |  ");
     ss << fmt::format(fg(fmt::color::yellow), "{} warning{}\n",
                       summary.total_warnings,
                       summary.total_warnings == 1 ? "" : "s");

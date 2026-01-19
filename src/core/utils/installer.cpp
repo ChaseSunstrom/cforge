@@ -741,7 +741,18 @@ std::string installer::get_install_location() const {
   // Try to find cforge installation
 
 #ifdef _WIN32
-  // On Windows, check the registry first
+  // Check LOCALAPPDATA first (preferred location)
+  char local_appdata[MAX_PATH];
+  if (SHGetFolderPathA(NULL, CSIDL_LOCAL_APPDATA, NULL, 0, local_appdata) ==
+      S_OK) {
+    std::filesystem::path path =
+        std::filesystem::path(local_appdata) / "cforge";
+    if (std::filesystem::exists(path / "installed" / "cforge" / "bin" / "cforge.exe")) {
+      return path.string();
+    }
+  }
+
+  // Check registry for legacy installations
   HKEY h_key;
   if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, "SOFTWARE\\cforge", 0, KEY_READ,
                     &h_key) == ERROR_SUCCESS) {
@@ -757,7 +768,7 @@ std::string installer::get_install_location() const {
     RegCloseKey(h_key);
   }
 
-  // Check Program Files
+  // Check Program Files (legacy location)
   char program_files[MAX_PATH];
   if (SHGetFolderPathA(NULL, CSIDL_PROGRAM_FILES, NULL, 0, program_files) ==
       S_OK) {
@@ -768,7 +779,30 @@ std::string installer::get_install_location() const {
     }
   }
 #else
-  // On Unix-like systems, check standard locations
+  // Check XDG_DATA_HOME first (preferred)
+  const char *xdg_data = getenv("XDG_DATA_HOME");
+  if (xdg_data) {
+    std::filesystem::path path = std::filesystem::path(xdg_data) / "cforge";
+    if (std::filesystem::exists(path / "installed" / "cforge" / "bin" / "cforge")) {
+      return path.string();
+    }
+  }
+
+  // Check ~/.local/share/cforge
+  const char *home_dir = getenv("HOME");
+  if (home_dir) {
+    std::filesystem::path path = std::filesystem::path(home_dir) / ".local" / "share" / "cforge";
+    if (std::filesystem::exists(path / "installed" / "cforge" / "bin" / "cforge")) {
+      return path.string();
+    }
+    // Also check legacy ~/.local/cforge
+    path = std::filesystem::path(home_dir) / ".local" / "cforge";
+    if (std::filesystem::exists(path / "installed" / "cforge" / "bin" / "cforge")) {
+      return path.string();
+    }
+  }
+
+  // Check standard system locations
   std::vector<std::string> locations = {"/usr/local/bin/cforge",
                                         "/usr/bin/cforge", "/opt/cforge"};
 
@@ -911,15 +945,26 @@ bool installer::copy_files(const std::filesystem::path &source,
 
 std::string installer::get_platform_specific_path() const {
 #ifdef _WIN32
-  // On Windows, use Program Files
-  char program_files[MAX_PATH];
-  if (SHGetFolderPathA(NULL, CSIDL_PROGRAM_FILES, NULL, 0, program_files) ==
+  // On Windows, use LOCALAPPDATA - same location as cache/registry
+  // This doesn't require admin privileges and keeps all cforge data together
+  char local_appdata[MAX_PATH];
+  if (SHGetFolderPathA(NULL, CSIDL_LOCAL_APPDATA, NULL, 0, local_appdata) ==
       S_OK) {
-    return std::string(program_files) + "\\cforge";
+    return std::string(local_appdata) + "\\cforge";
   }
-  return "C:\\Program Files\\cforge";
+  // Fallback to USERPROFILE
+  const char *userprofile = getenv("USERPROFILE");
+  if (userprofile) {
+    return std::string(userprofile) + "\\.cforge";
+  }
+  return "C:\\cforge";
 #else
-  // On Unix-like systems, use ~/.local/cforge (user-writable, no sudo required)
+  // On Unix-like systems, use ~/.local/share/cforge (XDG compliant)
+  // This keeps all cforge data in a standard location
+  const char *xdg_data = getenv("XDG_DATA_HOME");
+  if (xdg_data) {
+    return std::string(xdg_data) + "/cforge";
+  }
   const char *home_dir = getenv("HOME");
   if (!home_dir) {
     struct passwd *pw = getpwuid(getuid());
@@ -928,7 +973,7 @@ std::string installer::get_platform_specific_path() const {
     }
   }
   if (home_dir) {
-    return std::string(home_dir) + "/.local/cforge";
+    return std::string(home_dir) + "/.local/share/cforge";
   }
   // Fallback if HOME is not set
   return "/usr/local/cforge";

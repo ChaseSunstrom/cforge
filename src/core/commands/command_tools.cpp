@@ -413,7 +413,7 @@ cforge_int_t cforge_cmd_fmt(const cforge_context_t *ctx) {
   std::string clang_format = find_clang_format();
   if (clang_format.empty()) {
     cforge::logger::print_error("clang-format not found in PATH");
-    cforge::logger::print_status("Install clang-format or add it to your PATH");
+    cforge::logger::print_hint("Install clang-format or add it to your PATH");
     return 1;
   }
 
@@ -434,7 +434,7 @@ cforge_int_t cforge_cmd_fmt(const cforge_context_t *ctx) {
     return 0;
   }
 
-  cforge::logger::print_status("Found " + std::to_string(files.size()) + " files");
+  cforge::logger::print_verbose("Found " + std::to_string(files.size()) + " files");
 
   cforge_int_t formatted_count = 0;
   cforge_int_t failed_count = 0;
@@ -475,13 +475,13 @@ cforge_int_t cforge_cmd_fmt(const cforge_context_t *ctx) {
     if (failed_count > 0) {
       cforge::logger::print_error(std::to_string(failed_count) +
                           " file(s) need formatting");
-      cforge::logger::print_status("Run 'cforge fmt' to format them");
+      cforge::logger::print_hint("Run 'cforge fmt' to format them");
       return 1;
     } else {
       cforge::logger::print_success("All files are properly formatted");
     }
   } else if (dry_run) {
-    cforge::logger::print_status("Would format " + std::to_string(formatted_count) +
+    cforge::logger::print_verbose("Would format " + std::to_string(formatted_count) +
                          " file(s)");
   } else {
     cforge::logger::finished(
@@ -515,7 +515,7 @@ cforge_int_t cforge_cmd_lint(const cforge_context_t *ctx) {
   std::string clang_tidy = find_clang_tidy();
   if (clang_tidy.empty()) {
     cforge::logger::print_error("clang-tidy not found in PATH");
-    cforge::logger::print_status("Install clang-tidy or add it to your PATH");
+    cforge::logger::print_hint("Install clang-tidy or add it to your PATH");
     return 1;
   }
 
@@ -525,7 +525,7 @@ cforge_int_t cforge_cmd_lint(const cforge_context_t *ctx) {
   fs::path compile_commands = build_dir / "compile_commands.json";
   if (!fs::exists(compile_commands)) {
     cforge::logger::print_warning("compile_commands.json not found");
-    cforge::logger::print_status(
+    cforge::logger::print_verbose(
         "Building project first to generate compilation database...");
 
     // Try to generate compile_commands.json
@@ -536,7 +536,7 @@ cforge_int_t cforge_cmd_lint(const cforge_context_t *ctx) {
     auto result = cforge::execute_process("cmake", cmake_args, project_dir.string());
     if (result.exit_code != 0 || !fs::exists(compile_commands)) {
       cforge::logger::print_error("Could not generate compile_commands.json");
-      cforge::logger::print_status(
+      cforge::logger::print_hint(
           "Run 'cforge build' first, or create compile_commands.json manually");
       return 1;
     }
@@ -555,7 +555,7 @@ cforge_int_t cforge_cmd_lint(const cforge_context_t *ctx) {
     return 0;
   }
 
-  cforge::logger::print_status("Analyzing " + std::to_string(files.size()) +
+  cforge::logger::print_verbose("Analyzing " + std::to_string(files.size()) +
                        " file(s)...");
 
   cforge_int_t warnings = 0;
@@ -583,20 +583,20 @@ cforge_int_t cforge_cmd_lint(const cforge_context_t *ctx) {
           // Parse clang-tidy output
           if (line.find("warning:") != std::string::npos) {
             warnings++;
-            fmt::print(fg(fmt::color::yellow), "{}\n", line);
+            cforge::logger::print_warning(line);
           } else if (line.find("error:") != std::string::npos) {
             errors++;
-            fmt::print(fg(fmt::color::red), "{}\n", line);
+            cforge::logger::print_error(line);
           } else if (!line.empty()) {
-            fmt::print("{}\n", line);
+            cforge::logger::print_plain(line);
           }
         });
   }
 
   // Summary
-  fmt::print("\n");
+  cforge::logger::print_blank();
   if (errors > 0 || warnings > 0) {
-    cforge::logger::print_status("Analysis complete:");
+    cforge::logger::print_verbose("Analysis complete:");
     if (errors > 0) {
       cforge::logger::print_error(std::to_string(errors) + " error(s)");
     }
@@ -604,9 +604,9 @@ cforge_int_t cforge_cmd_lint(const cforge_context_t *ctx) {
       cforge::logger::print_warning(std::to_string(warnings) + " warning(s)");
     }
     if (fix) {
-      cforge::logger::print_status("Some issues may have been automatically fixed");
+      cforge::logger::print_verbose("Some issues may have been automatically fixed");
     } else {
-      cforge::logger::print_status(
+      cforge::logger::print_hint(
           "Run 'cforge lint --fix' to automatically fix some issues");
     }
     return errors > 0 ? 1 : 0;
@@ -651,15 +651,15 @@ cforge_int_t cforge_cmd_completions(const cforge_context_t *ctx) {
     install_hint = "Save to ~/.config/fish/completions/cforge.fish";
   } else {
     cforge::logger::print_error("Unknown shell: " + shell);
-    cforge::logger::print_status("Supported shells: bash, zsh, powershell, fish");
+    cforge::logger::print_hint("Supported shells: bash, zsh, powershell, fish");
     return 1;
   }
 
-  // Output the script
-  fmt::print("{}\n", script);
+  // Output the script (use raw print to stdout, not logger, since it's being piped)
+  cforge::logger::print_plain(script);
 
   // Print install hint to stderr so it doesn't pollute piped output
-  fmt::print(stderr, fg(fmt::color::gray), "\n# {}\n", install_hint);
+  cforge::logger::print_dim("# " + install_hint);
 
   return 0;
 }

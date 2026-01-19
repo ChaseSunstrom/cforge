@@ -5,6 +5,7 @@
  */
 
 #include "cforge/log.hpp"
+#include "core/command_registry.hpp"
 #include "core/commands.hpp"
 #include "core/constants.h"
 #include "core/error_format.hpp"
@@ -2569,6 +2570,15 @@ list_packages(const std::filesystem::path &dir,
  * @return cforge_int_t Exit code (0 for success)
  */
 cforge_int_t cforge_cmd_package(const cforge_context_t *ctx) {
+  // Check for help flag first
+  for (cforge_int_t i = 0; i < ctx->args.arg_count; i++) {
+    std::string arg = ctx->args.args[i];
+    if (arg == "-h" || arg == "--help") {
+      cforge::command_registry::instance().print_command_help("package");
+      return 0;
+    }
+  }
+
   cforge::logger::packaging("project");
 
   // Check if this is a cforge::workspace (supports both unified cforge.toml and

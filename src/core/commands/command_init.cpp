@@ -4,6 +4,7 @@
  */
 
 #include "cforge/log.hpp"
+#include "core/command_registry.hpp"
 #include "core/commands.hpp"
 #include "core/constants.h"
 #include "core/file_system.h"
@@ -1298,9 +1299,14 @@ static bool create_project(const std::filesystem::path &project_path,
  * @return cforge_int_t Exit code (0 for success)
  */
 cforge_int_t cforge_cmd_init(const cforge_context_t *ctx) {
-  // Set flush after each log message to ensure output is visible
-  std::cout.flush();
-  std::cerr.flush();
+  // Check for help flag first
+  for (cforge_int_t i = 0; i < ctx->args.arg_count; i++) {
+    std::string arg = ctx->args.args[i];
+    if (arg == "-h" || arg == "--help") {
+      cforge::command_registry::instance().print_command_help("init");
+      return 0;
+    }
+  }
 
   try {
     // Check if a workspace configuration file exists in the current directory

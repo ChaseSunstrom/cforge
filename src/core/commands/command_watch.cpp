@@ -10,6 +10,7 @@
 
 #include "cforge/log.hpp"
 #include "core/build_utils.hpp"
+#include "core/command_registry.hpp"
 #include "core/commands.hpp"
 #include "core/constants.h"
 #include "core/process_utils.hpp"
@@ -268,6 +269,15 @@ bool run_build(const fs::path &project_dir, const std::string &config,
  * @brief Handle the 'watch' command for auto-rebuild
  */
 cforge_int_t cforge_cmd_watch(const cforge_context_t *ctx) {
+  // Check for help flag first
+  for (cforge_int_t i = 0; i < ctx->args.arg_count; i++) {
+    std::string arg = ctx->args.args[i];
+    if (arg == "-h" || arg == "--help") {
+      cforge::command_registry::instance().print_command_help("watch");
+      return 0;
+    }
+  }
+
   fs::path project_dir = ctx->working_dir;
 
   // Parse arguments
@@ -321,7 +331,7 @@ cforge_int_t cforge_cmd_watch(const cforge_context_t *ctx) {
                        " files");
   cforge::logger::print_status("Build config: " + (config.empty() ? "Debug" : config));
   cforge::logger::print_status("Press Ctrl+C to stop");
-  fmt::print("\n");
+  cforge::logger::print_blank();
 
   // Use Debug as default config if none specified
   std::string effective_config = config.empty() ? "Debug" : config;
@@ -329,7 +339,7 @@ cforge_int_t cforge_cmd_watch(const cforge_context_t *ctx) {
   // Do an initial build
   cforge::logger::building(project_dir.filename().string());
   bool last_build_succeeded = run_build(project_dir, effective_config, verbose, false);
-  fmt::print("\n");
+  cforge::logger::print_blank();
 
   // Watch loop
   while (!g_should_exit) {
@@ -357,7 +367,7 @@ cforge_int_t cforge_cmd_watch(const cforge_context_t *ctx) {
       // fmt::print("\033[2J\033[H");
 
       // Report changes
-      fmt::print("\n");
+      cforge::logger::print_blank();
       cforge::logger::print_status("Changes detected:");
 
       for (const auto &file : changed) {
@@ -374,7 +384,7 @@ cforge_int_t cforge_cmd_watch(const cforge_context_t *ctx) {
         cforge::logger::print_action("Config", "cforge.toml changed, will regenerate CMakeLists.txt");
       }
 
-      fmt::print("\n");
+      cforge::logger::print_blank();
 
       // Rebuild
       cforge::logger::building(project_dir.filename().string());
@@ -396,18 +406,18 @@ cforge_int_t cforge_cmd_watch(const cforge_context_t *ctx) {
               build_dir, project_name, effective_config, "executable");
 
           if (!exe_path.empty() && fs::exists(exe_path)) {
-            fmt::print("\n");
+            cforge::logger::print_blank();
             cforge::logger::running(exe_path.filename().string());
-            fmt::print("{}\n", std::string(40, '-'));
+            cforge::logger::print_rule(40);
 
             auto run_result = cforge::execute_process(
                 exe_path.string(), {}, project_dir.string(),
-                [](const std::string &line) { fmt::print("{}\n", line); },
+                [](const std::string &line) { cforge::logger::print_plain(line); },
                 [](const std::string &line) {
-                  fmt::print(stderr, "{}\n", line);
+                  cforge::logger::print_error(line);
                 });
 
-            fmt::print("{}\n", std::string(40, '-'));
+            cforge::logger::print_rule(40);
             if (run_result.exit_code != 0) {
               cforge::logger::print_warning("Process exited with code " +
                                     std::to_string(run_result.exit_code));
@@ -418,12 +428,12 @@ cforge_int_t cforge_cmd_watch(const cforge_context_t *ctx) {
         }
       }
 
-      fmt::print("\n");
+      cforge::logger::print_blank();
       cforge::logger::print_status("Watching for changes... (Ctrl+C to stop)");
     }
   }
 
-  fmt::print("\n");
+  cforge::logger::print_blank();
   cforge::logger::print_status("Watch mode stopped");
 
   return 0;

@@ -20,8 +20,13 @@ BOLD='\033[1m'
 NC='\033[0m' # No Color
 
 # Default installation paths
-# Install to ~/.local/cforge to match `cforge install` and `cforge update --self`
-DEFAULT_PREFIX="$HOME/.local/cforge"
+# Use XDG_DATA_HOME if set, otherwise ~/.local/share/cforge (XDG compliant)
+# This keeps all cforge data (install, cache, registry) in one location
+if [ -n "${XDG_DATA_HOME:-}" ]; then
+    DEFAULT_PREFIX="$XDG_DATA_HOME/cforge"
+else
+    DEFAULT_PREFIX="$HOME/.local/share/cforge"
+fi
 PREFIX="${PREFIX:-$DEFAULT_PREFIX}"
 ADD_TO_PATH=true
 VERBOSE=false

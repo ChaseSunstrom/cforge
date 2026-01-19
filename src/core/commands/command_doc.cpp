@@ -5,6 +5,7 @@
  */
 
 #include "cforge/log.hpp"
+#include "core/command_registry.hpp"
 #include "core/commands.hpp"
 #include "core/types.h"
 #include "core/platform.hpp"
@@ -110,6 +111,15 @@ bool generate_doxyfile(const fs::path &project_dir,
  * @brief Handle the 'doc' command for generating documentation
  */
 cforge_int_t cforge_cmd_doc(const cforge_context_t *ctx) {
+  // Check for help flag first
+  for (cforge_int_t i = 0; i < ctx->args.arg_count; i++) {
+    std::string arg = ctx->args.args[i];
+    if (arg == "-h" || arg == "--help") {
+      cforge::command_registry::instance().print_command_help("doc");
+      return 0;
+    }
+  }
+
   fs::path project_dir = ctx->working_dir;
 
   // Parse arguments
@@ -189,7 +199,7 @@ cforge_int_t cforge_cmd_doc(const cforge_context_t *ctx) {
       doxygen_cmd, args, project_dir.string(),
       [verbose](const std::string &line) {
         if (verbose) {
-          fmt::print("{}\n", line);
+          cforge::logger::print_verbose(line);
         }
       },
       [](const std::string &line) {

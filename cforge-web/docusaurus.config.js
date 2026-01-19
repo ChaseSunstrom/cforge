@@ -12,7 +12,7 @@ import {themes as prismThemes} from 'prism-react-renderer';
 const config = {
   title: 'CForge',
   tagline: 'A modern TOML-based build system for C/C++ with CMake & vcpkg integration',
-  favicon: 'img/logo.svg',
+  favicon: 'img/cforge-light.png',
 
   url: 'https://chasesunstrom.github.io',
   baseUrl: '/cforge/',
@@ -21,6 +21,65 @@ const config = {
 
   onBrokenLinks: 'warn',
   onBrokenMarkdownLinks: 'warn',
+
+  headTags: [
+    {
+      tagName: 'meta',
+      attributes: {
+        property: 'og:title',
+        content: 'CForge - Modern C/C++ Build System',
+      },
+    },
+    {
+      tagName: 'meta',
+      attributes: {
+        property: 'og:description',
+        content: 'A modern TOML-based build system for C/C++ with CMake & vcpkg integration. Simple configuration, powerful features.',
+      },
+    },
+    {
+      tagName: 'meta',
+      attributes: {
+        property: 'og:image',
+        content: 'https://chasesunstrom.github.io/cforge/img/cforge-glow.png',
+      },
+    },
+    {
+      tagName: 'meta',
+      attributes: {
+        property: 'og:type',
+        content: 'website',
+      },
+    },
+    {
+      tagName: 'meta',
+      attributes: {
+        name: 'twitter:card',
+        content: 'summary_large_image',
+      },
+    },
+    {
+      tagName: 'meta',
+      attributes: {
+        name: 'twitter:title',
+        content: 'CForge - Modern C/C++ Build System',
+      },
+    },
+    {
+      tagName: 'meta',
+      attributes: {
+        name: 'twitter:description',
+        content: 'A modern TOML-based build system for C/C++ with CMake & vcpkg integration.',
+      },
+    },
+    {
+      tagName: 'meta',
+      attributes: {
+        name: 'twitter:image',
+        content: 'https://chasesunstrom.github.io/cforge/img/cforge-glow.png',
+      },
+    },
+  ],
 
   // Even if you don't use internationalization, you can use this field to set
   // useful metadata like html lang. For example, if your site is Chinese, you
@@ -53,7 +112,7 @@ const config = {
   themeConfig:
     /** @type {import('@docusaurus/preset-classic').ThemeConfig} */
     ({
-      image: 'img/cforge.png',
+      image: 'img/cforge-glow.png',
       colorMode: {
         defaultMode: 'dark',
         disableSwitch: false,
@@ -63,7 +122,7 @@ const config = {
         title: 'CForge',
         logo: {
           alt: 'CForge Logo',
-          src: 'img/cforge.png',
+          src: 'img/cforge-light.png',
         },
         items: [
           {
@@ -147,10 +206,10 @@ const config = {
 
       // Announcement bar for beta status
       announcementBar: {
-        id: 'beta_announcement',
-        content: 'CForge is currently in <strong>BETA</strong>. Features may change. <a href="/cforge/docs/intro">Learn more</a>',
-        backgroundColor: '#2d2d2d',
-        textColor: '#e0e0e0',
+        id: 'beta_announcement_v3',
+        content: 'CForge 3.1 is here with binary caching and improved UX. <a href="/cforge/docs/intro">Learn more</a>',
+        backgroundColor: '#92400e',
+        textColor: '#ffffff',
         isCloseable: true,
       },
     }),

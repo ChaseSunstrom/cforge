@@ -7,6 +7,7 @@
 #define CFORGE_TOML_READER_H
 
 #include <map>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -39,6 +40,26 @@ public:
    * @brief Destructor
    */
   ~toml_reader();
+
+  /**
+   * @brief Move constructor
+   */
+  toml_reader(toml_reader &&other) noexcept;
+
+  /**
+   * @brief Move assignment operator
+   */
+  toml_reader &operator=(toml_reader &&other) noexcept;
+
+  /**
+   * @brief Copy constructor - performs deep copy
+   */
+  toml_reader(const toml_reader &other);
+
+  /**
+   * @brief Copy assignment operator - performs deep copy
+   */
+  toml_reader &operator=(const toml_reader &other);
 
   /**
    * @brief Load and parse a TOML file
@@ -147,10 +168,10 @@ public:
    * @brief Get the underlying toml::table pointer (for advanced usage)
    * @return Pointer to the toml::table, or nullptr if not loaded
    */
-  const void* get_table() const { return toml_data; }
+  const toml::table* get_raw_table() const { return toml_data.get(); }
 
 private:
-  cforge_pointer_t toml_data; // Opaque pointer to the toml::table
+  std::unique_ptr<toml::table> toml_data; // Smart pointer to the toml::table
 };
 
 } // namespace cforge

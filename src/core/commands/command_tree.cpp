@@ -37,7 +37,7 @@ void print_tree_branch(const std::string &name, const dependency_info &info,
   if (current_depth > max_depth)
     return;
   if (visited.count(name)) {
-    fmt::print("{}{}{}[circular]\n", prefix, is_last ? "`-- " : "|-- ", name);
+    cforge::logger::print_plain(prefix + (is_last ? "`-- " : "|-- ") + name + "[circular]");
     return;
   }
   visited.insert(name);
@@ -67,9 +67,12 @@ void print_tree_branch(const std::string &name, const dependency_info &info,
     version_str = " @ " + info.version;
   }
 
-  fmt::print("{}{}", prefix, is_last ? "`-- " : "|-- ");
-  fmt::print(fg(color), "{}", name);
-  fmt::print("{}{}\n", version_str, type_indicator);
+  // Use logger for output with colored name
+  std::string branch = prefix + (is_last ? "`-- " : "|-- ");
+  std::string output = fmt::format("{}{}{}{}", branch,
+                                   fmt::format(fg(color), "{}", name),
+                                   version_str, type_indicator);
+  cforge::logger::print_plain(output);
 
   // Print children
   std::string child_prefix = prefix + (is_last ? "    " : "|   ");
@@ -82,8 +85,7 @@ void print_tree_branch(const std::string &name, const dependency_info &info,
       print_tree_branch(child, it->second, all_deps, child_prefix,
                         child_is_last, visited, max_depth, current_depth + 1);
     } else {
-      fmt::print("{}{}{}\n", child_prefix, child_is_last ? "`-- " : "|-- ",
-                 child);
+      cforge::logger::print_plain(child_prefix + (child_is_last ? "`-- " : "|-- ") + child);
     }
   }
 }
@@ -281,8 +283,7 @@ cforge_int_t cforge_cmd_tree(const cforge_context_t *ctx) {
       return 1;
     }
 
-    fmt::print(fg(fmt::color::cyan) | fmt::emphasis::bold, "{}", ws.get_name());
-    fmt::print(" (workspace)\n");
+    cforge::logger::print_emphasis(ws.get_name() + " (workspace)");
 
     // Process each project
     for (const auto &proj : ws.get_projects()) {
@@ -323,11 +324,11 @@ cforge_int_t cforge_cmd_tree(const cforge_context_t *ctx) {
         config.get_string("project.name", current_dir.filename().string());
     std::string version = config.get_string("project.version", "");
 
-    fmt::print(fg(fmt::color::cyan) | fmt::emphasis::bold, "{}", project_name);
+    std::string title = project_name;
     if (!version.empty()) {
-      fmt::print(" v{}", version);
+      title += " v" + version;
     }
-    fmt::print("\n");
+    cforge::logger::print_emphasis(title);
 
     // Collect dependencies
     collect_dependencies(current_dir, config, all_deps);
@@ -339,7 +340,7 @@ cforge_int_t cforge_cmd_tree(const cforge_context_t *ctx) {
   }
 
   if (roots.empty() && all_deps.empty()) {
-    fmt::print("  (no dependencies)\n");
+    cforge::logger::print_dim("  (no dependencies)");
     return 0;
   }
 
@@ -352,7 +353,7 @@ cforge_int_t cforge_cmd_tree(const cforge_context_t *ctx) {
   }
 
   // Print summary
-  fmt::print("\n");
+  cforge::logger::print_blank();
   cforge_int_t index_count = 0, git_count = 0, vcpkg_count = 0, sys_count = 0,
                proj_count = 0;
   for (const auto &[name, info] : all_deps) {
@@ -381,13 +382,13 @@ cforge_int_t cforge_cmd_tree(const cforge_context_t *ctx) {
     summary_parts.push_back(std::to_string(proj_count) + " project");
 
   if (!summary_parts.empty()) {
-    fmt::print("Dependencies: ");
+    std::string summary = "Dependencies: ";
     for (cforge_size_t i = 0; i < summary_parts.size(); i++) {
       if (i > 0)
-        fmt::print(", ");
-      fmt::print("{}", summary_parts[i]);
+        summary += ", ";
+      summary += summary_parts[i];
     }
-    fmt::print("\n");
+    cforge::logger::print_plain(summary);
   }
 
   return 0;

@@ -39,9 +39,10 @@ $ErrorActionPreference = "Stop"
 # Detect existing installation or use default
 if (-not $Prefix) {
     # Check common installation locations (using the installed/cforge/bin structure)
+    # Prioritize LOCALAPPDATA since that's where cache/registry are stored
     $existingPaths = @(
-        "$env:ProgramFiles\cforge",
         "$env:LOCALAPPDATA\cforge",
+        "$env:ProgramFiles\cforge",
         "C:\cforge"
     )
 
@@ -52,9 +53,9 @@ if (-not $Prefix) {
         }
     }
 
-    # Default to ProgramFiles if no existing installation found
+    # Default to LOCALAPPDATA - same location as cache/registry
     if (-not $Prefix) {
-        $Prefix = "$env:ProgramFiles\cforge"
+        $Prefix = "$env:LOCALAPPDATA\cforge"
     }
 }
 

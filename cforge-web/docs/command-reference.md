@@ -52,16 +52,17 @@ All dependency operations use the unified `cforge deps` command:
 
 | Command      | Description                              | Example                            |
 |--------------|------------------------------------------|------------------------------------|
-| `update`     | Update cforge itself                     | `cforge update --self`             |
-| `list`       | List project information                 | `cforge list`                      |
 | `ide`        | Generate IDE project files               | `cforge ide vscode`                |
-| `vcpkg`      | Manage vcpkg integration                 | `cforge vcpkg install`             |
+| `cache`      | Manage binary cache                      | `cforge cache stats`               |
+| `circular`   | Detect circular include dependencies     | `cforge circular`                  |
 
 ## Utility Commands
 
 | Command      | Description                              | Example                            |
 |--------------|------------------------------------------|------------------------------------|
 | `version`    | Display version information              | `cforge version`                   |
+| `upgrade`    | Upgrade cforge to latest version         | `cforge upgrade`                   |
+| `doctor`     | Diagnose environment issues              | `cforge doctor`                    |
 | `help`       | Show help for commands                   | `cforge help build`                |
 
 ---

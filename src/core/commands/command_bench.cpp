@@ -7,6 +7,7 @@
 #include "core/benchmark_framework.hpp"
 #include "core/benchmark_runner.hpp"
 #include "core/command.h"
+#include "core/command_registry.hpp"
 #include "core/commands.hpp"
 #include "core/process_utils.hpp"
 #include "core/toml_reader.hpp"
@@ -30,9 +31,9 @@ namespace {
  * @brief Print benchmark results summary
  */
 void print_benchmark_summary(const cforge::benchmark_summary &summary) {
-  fmt::print("\n");
+  cforge::logger::print_blank();
   cforge::logger::print_header("Benchmark Summary");
-  fmt::print("\n");
+  cforge::logger::print_blank();
 
   if (summary.results.empty()) {
     cforge::logger::print_plain("  No benchmark results collected");
@@ -40,75 +41,32 @@ void print_benchmark_summary(const cforge::benchmark_summary &summary) {
   }
 
   // Print results table
-  fmt::print("  {:<40} {:>15} {:>15} {:>12}\n",
-             "Benchmark", "Time", "CPU", "Iterations");
-  fmt::print("  {:-<40} {:-<15} {:-<15} {:-<12}\n", "", "", "", "");
+  std::vector<int> widths = {40, 15, 15, 12};
+  cforge::logger::print_table_header({"Benchmark", "Time", "CPU", "Iterations"}, widths, 2);
 
   for (const auto &result : summary.results) {
     if (result.success) {
-      fmt::print("  {:<40} {:>15} {:>15} {:>12}\n",
-                 result.name,
-                 cforge::format_bench_time(result.time_ns),
-                 cforge::format_bench_time(result.cpu_time_ns),
-                 result.iterations);
+      cforge::logger::print_table_row({
+          result.name,
+          cforge::format_bench_time(result.time_ns),
+          cforge::format_bench_time(result.cpu_time_ns),
+          std::to_string(result.iterations)
+      }, widths, 2);
     } else {
-      fmt::print("  {:<40} ",
-                 fmt::format(fg(fmt::color::red), "{}", result.name));
-      fmt::print("{}\n",
-                 fmt::format(fg(fmt::color::red), "FAILED: {}", result.error_message));
+      cforge::logger::print_error("  " + result.name + " FAILED: " + result.error_message);
     }
   }
 
-  fmt::print("\n");
-  fmt::print("  Ran {} benchmark(s) in {:.2f}s\n",
-             summary.total,
-             summary.total_duration.count() / 1000.0);
+  cforge::logger::print_blank();
+  cforge::logger::print_plain("  Ran " + std::to_string(summary.total) + " benchmark(s) in " +
+                              fmt::format("{:.2f}s", summary.total_duration.count() / 1000.0));
 
   if (summary.failed > 0) {
-    fmt::print(fg(fmt::color::red), "  {} failed\n", summary.failed);
+    cforge::logger::print_error("  " + std::to_string(summary.failed) + " failed");
   }
   if (summary.successful > 0) {
-    fmt::print(fg(fmt::color::green), "  {} passed\n", summary.successful);
+    cforge::logger::print_success(std::to_string(summary.successful) + " passed");
   }
-}
-
-/**
- * @brief Print help for benchmark command
- */
-void print_bench_help() {
-  cforge::logger::print_plain("cforge bench - Run benchmarks");
-  cforge::logger::print_plain("");
-  cforge::logger::print_plain("Usage: cforge bench [options] [benchmark-name]");
-  cforge::logger::print_plain("");
-  cforge::logger::print_plain("Options:");
-  cforge::logger::print_plain("  -c, --config <cfg>   Build configuration (default: Release)");
-  cforge::logger::print_plain("  --no-build           Skip building before running");
-  cforge::logger::print_plain("  --filter <pattern>   Run only benchmarks matching pattern");
-  cforge::logger::print_plain("  --json               Output in JSON format");
-  cforge::logger::print_plain("  --csv                Output in CSV format");
-  cforge::logger::print_plain("  -v, --verbose        Show verbose output");
-  cforge::logger::print_plain("");
-  cforge::logger::print_plain("Examples:");
-  cforge::logger::print_plain("  cforge bench                      Run all benchmarks");
-  cforge::logger::print_plain("  cforge bench --filter 'BM_Sort'   Run only Sort benchmarks");
-  cforge::logger::print_plain("  cforge bench --no-build           Run without rebuilding");
-  cforge::logger::print_plain("  cforge bench --json > results.json");
-  cforge::logger::print_plain("");
-  cforge::logger::print_plain("Configuration (cforge.toml):");
-  cforge::logger::print_plain("  [benchmark]");
-  cforge::logger::print_plain("  directory = \"bench\"        # Benchmark source directory");
-  cforge::logger::print_plain("  framework = \"google\"       # google, nanobench, catch2");
-  cforge::logger::print_plain("  auto_link_project = true   # Link project library");
-  cforge::logger::print_plain("");
-  cforge::logger::print_plain("Supported Frameworks:");
-  cforge::logger::print_plain("  - Google Benchmark (default)");
-  cforge::logger::print_plain("  - nanobench");
-  cforge::logger::print_plain("  - Catch2 BENCHMARK");
-  cforge::logger::print_plain("");
-  cforge::logger::print_plain("Notes:");
-  cforge::logger::print_plain("  - Benchmarks run in Release mode by default for accurate timing");
-  cforge::logger::print_plain("  - Create a bench/ directory with benchmark source files");
-  cforge::logger::print_plain("  - Files with 'bench' or 'perf' in the name are auto-discovered");
 }
 
 } // anonymous namespace
@@ -128,7 +86,8 @@ cforge_int_t cforge_cmd_bench(const cforge_context_t *ctx) {
     std::string arg = ctx->args.args[i];
 
     if (arg == "-h" || arg == "--help") {
-      print_bench_help();
+      // Use command registry for consistent help output
+      cforge::command_registry::instance().print_command_help("bench");
       return 0;
     } else if (arg == "-c" || arg == "--config") {
       if (i + 1 < ctx->args.arg_count) {
@@ -174,29 +133,36 @@ cforge_int_t cforge_cmd_bench(const cforge_context_t *ctx) {
 
   if (!fs::exists(bench_dir)) {
     cforge::logger::print_warning("Benchmark directory not found: " + bench_dir.string());
-    cforge::logger::print_plain("");
-    cforge::logger::print_plain("To add benchmarks:");
-    cforge::logger::print_plain("  1. Create a " + bench_dir_str + "/ directory");
-    cforge::logger::print_plain("  2. Add benchmark source files (e.g., bench_main.cpp)");
-    cforge::logger::print_plain("  3. Use Google Benchmark, nanobench, or Catch2 BENCHMARK");
-    cforge::logger::print_plain("");
-    cforge::logger::print_plain("Example bench/bench_main.cpp with Google Benchmark:");
-    cforge::logger::print_plain("");
-    cforge::logger::print_plain("  #include <benchmark/benchmark.h>");
-    cforge::logger::print_plain("");
-    cforge::logger::print_plain("  static void BM_Example(benchmark::State& state) {");
-    cforge::logger::print_plain("    for (auto _ : state) {");
-    cforge::logger::print_plain("      // Code to benchmark");
-    cforge::logger::print_plain("    }");
-    cforge::logger::print_plain("  }");
-    cforge::logger::print_plain("  BENCHMARK(BM_Example);");
-    cforge::logger::print_plain("");
-    cforge::logger::print_plain("  BENCHMARK_MAIN();");
-    cforge::logger::print_plain("");
-    cforge::logger::print_plain("Configure in cforge.toml:");
-    cforge::logger::print_plain("  [benchmark]");
-    cforge::logger::print_plain("  directory = \"bench\"");
-    cforge::logger::print_plain("  framework = \"google\"");
+    cforge::logger::print_blank();
+
+    cforge::logger::print_help_section("TO ADD BENCHMARKS");
+    cforge::logger::print_list_item("Create a " + bench_dir_str + "/ directory", "1.", 4);
+    cforge::logger::print_list_item("Add benchmark source files (e.g., bench_main.cpp)", "2.", 4);
+    cforge::logger::print_list_item("Use Google Benchmark, nanobench, or Catch2 BENCHMARK", "3.", 4);
+    cforge::logger::print_blank();
+
+    cforge::logger::print_help_section("EXAMPLE CODE");
+    cforge::logger::print_dim("bench/bench_main.cpp with Google Benchmark:", 4);
+    cforge::logger::print_config_block({
+      "#include <benchmark/benchmark.h>",
+      "",
+      "static void BM_Example(benchmark::State& state) {",
+      "    for (auto _ : state) {",
+      "        // Code to benchmark",
+      "    }",
+      "}",
+      "BENCHMARK(BM_Example);",
+      "",
+      "BENCHMARK_MAIN();"
+    });
+    cforge::logger::print_blank();
+
+    cforge::logger::print_help_section("CONFIGURATION");
+    cforge::logger::print_config_block({
+      "[benchmark]",
+      "directory = \"bench\"",
+      "framework = \"google\""
+    });
     return 0;
   }
 
@@ -213,16 +179,16 @@ cforge_int_t cforge_cmd_bench(const cforge_context_t *ctx) {
 
   if (targets.empty()) {
     cforge::logger::print_warning("No benchmark targets found in " + bench_dir.string());
-    cforge::logger::print_plain("");
-    cforge::logger::print_plain("Benchmark files should:");
-    cforge::logger::print_plain("  - Have 'bench' or 'perf' in the filename");
-    cforge::logger::print_plain("  - Include a benchmark framework header");
-    cforge::logger::print_plain("  - Contain BENCHMARK() macros or equivalent");
+    cforge::logger::print_blank();
+    cforge::logger::print_help_section("BENCHMARK FILES SHOULD");
+    cforge::logger::print_list_item("Have 'bench' or 'perf' in the filename", "-", 4);
+    cforge::logger::print_list_item("Include a benchmark framework header", "-", 4);
+    cforge::logger::print_list_item("Contain BENCHMARK() macros or equivalent", "-", 4);
     return 0;
   }
 
   cforge::logger::print_header("Running Benchmarks");
-  fmt::print("\n");
+  cforge::logger::print_blank();
 
   for (const auto &target : targets) {
     cforge::logger::print_action("Found",
@@ -230,7 +196,7 @@ cforge_int_t cforge_cmd_bench(const cforge_context_t *ctx) {
                                  cforge::benchmark_framework_to_string(target.framework) +
                                  ")");
   }
-  fmt::print("\n");
+  cforge::logger::print_blank();
 
   // Run benchmarks
   auto summary = runner.run_benchmarks(options);

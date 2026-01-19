@@ -2,7 +2,7 @@
 
 A modern C/C++ build tool with Cargo-like simplicity.
 
-[![Version](https://img.shields.io/badge/version-3.0.1-blue.svg)](https://github.com/ChaseSunstrom/cforge/releases)
+[![Version](https://img.shields.io/badge/version-3.1.0-blue.svg)](https://github.com/ChaseSunstrom/cforge/releases)
 [![License](https://img.shields.io/badge/license-PolyForm%20NC-green.svg)](LICENSE)
 
 cforge simplifies C/C++ project management with a clean TOML configuration, automatic dependency resolution, and cross-platform builds. It generates CMake under the hood while providing a much simpler interface.
@@ -143,16 +143,23 @@ spdlog = "1.12.0"
 | `cforge lint` | Static analysis with clang-tidy |
 | `cforge doc` | Generate documentation with Doxygen |
 
-### Other
+### Tools & IDE
 
 | Command | Description |
 |---------|-------------|
 | `cforge ide` | Generate IDE project files |
 | `cforge watch` | Watch for changes and auto-rebuild |
 | `cforge package` | Create distributable packages |
-| `cforge vcpkg` | Manage vcpkg dependencies |
+| `cforge cache` | Manage binary cache |
 | `cforge completions` | Generate shell completions |
+
+### Other
+
+| Command | Description |
+|---------|-------------|
 | `cforge version` | Show version information |
+| `cforge upgrade` | Upgrade cforge to the latest version |
+| `cforge doctor` | Diagnose environment and check for required tools |
 | `cforge help <cmd>` | Show help for a command |
 
 ---
@@ -598,11 +605,36 @@ cforge clean --deep                    # Remove dependencies too
 
 ---
 
-## Updating
+## Upgrading cforge
 
 ```bash
-cforge update --self                   # Update cforge itself
-cforge update --packages               # Refresh package registry
+cforge upgrade                         # Upgrade cforge to latest version
+cforge upgrade --path /opt/cforge      # Upgrade to custom location
+cforge deps update                     # Refresh package registry
+```
+
+## Data Locations
+
+cforge stores all data in a single location per platform:
+
+**Windows:** `%LOCALAPPDATA%\cforge\`
+```
+%LOCALAPPDATA%\cforge\
+├── installed\cforge\bin\cforge.exe    # Binary installation
+├── cache\                              # Binary cache for dependencies
+├── registry\                           # Package registry index
+└── config.toml                         # Global configuration
+```
+
+**Linux/macOS:** `~/.local/share/cforge\` (XDG compliant)
+```
+~/.local/share/cforge/
+├── installed/cforge/bin/cforge        # Binary installation
+├── cache/                              # Binary cache
+└── registry/                           # Package registry
+
+~/.config/cforge/
+└── config.toml                         # Global configuration
 ```
 
 ---

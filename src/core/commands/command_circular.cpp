@@ -4,6 +4,7 @@
  */
 
 #include "cforge/log.hpp"
+#include "core/command_registry.hpp"
 #include "core/commands.hpp"
 #include "core/constants.h"
 #include "core/include_analyzer.hpp"
@@ -13,20 +14,8 @@
 #include <filesystem>
 #include <fmt/color.h>
 #include <fmt/core.h>
-#include <iostream>
 
 namespace cforge {
-
-static void print_help() {
-  fmt::print("Usage: cforge circular [options]\n\n");
-  fmt::print("Detect and display circular include dependencies\n\n");
-  fmt::print("Options:\n");
-  fmt::print("  --include-deps    Also check dependency headers\n");
-  fmt::print("  --cforge::workspace      Check all cforge::workspaceprojects\n");
-  fmt::print("  --json            Output as JSON\n");
-  fmt::print("  --limit N         Limit output to first N chains\n");
-  fmt::print("  -h, --help        Show this help message\n");
-}
 
 static cforge_int_t analyze_project(const std::filesystem::path &project_dir,
                            bool include_deps, bool json_output, cforge_int_t limit) {
@@ -40,10 +29,9 @@ static cforge_int_t analyze_project(const std::filesystem::path &project_dir,
 
   if (!result.has_cycles) {
     if (json_output) {
-      fmt::print("{}\n", cforge::format_circular_chains_json(result.chains));
+      cforge::logger::print_plain(cforge::format_circular_chains_json(result.chains));
     } else {
-      fmt::print(fg(fmt::color::green), "{:>12}", "No cycles");
-      fmt::print(" found in {}\n", project_dir.string());
+      cforge::logger::print_success("No cycles found in " + project_dir.string());
     }
     return 0;
   }
@@ -55,14 +43,14 @@ static cforge_int_t analyze_project(const std::filesystem::path &project_dir,
   }
 
   if (json_output) {
-    fmt::print("{}\n", cforge::format_circular_chains_json(chains_to_show));
+    cforge::logger::print_plain(cforge::format_circular_chains_json(chains_to_show));
   } else {
-    fmt::print("\n{}", cforge::format_circular_chains(chains_to_show));
+    cforge::logger::print_blank();
+    cforge::logger::print_plain(cforge::format_circular_chains(chains_to_show));
 
     if (limit > 0 && static_cast<cforge_size_t>(limit) < result.chains.size()) {
-      fmt::print(fg(fmt::color::yellow),
-                 "... and {} more chains (use --limit to see more)\n",
-                 result.chains.size() - limit);
+      cforge::logger::print_warning("... and " + std::to_string(result.chains.size() - limit) +
+                                    " more chains (use --limit to see more)");
     }
   }
 
@@ -82,7 +70,7 @@ cforge_int_t cforge_cmd_circular(const cforge_context_t *ctx) {
     std::string arg = ctx->args.args[i];
 
     if (arg == "-h" || arg == "--help") {
-      cforge::print_help();
+      cforge::command_registry::instance().print_command_help("circular");
       return 0;
     } else if (arg == "--include-deps") {
       include_deps = true;

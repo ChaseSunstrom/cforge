@@ -15,6 +15,7 @@
  */
 
 #include "cforge/log.hpp"
+#include "core/command_registry.hpp"
 #include "core/commands.hpp"
 #include "core/constants.h"
 #include "core/registry.hpp"
@@ -32,39 +33,6 @@
 namespace fs = std::filesystem;
 
 namespace {
-
-/**
- * @brief Print deps subcommand help
- */
-void print_deps_help() {
-  cforge::logger::print_plain("cforge deps - Unified dependency management");
-  cforge::logger::print_plain("");
-  cforge::logger::print_plain("Usage: cforge deps <subcommand> [options]");
-  cforge::logger::print_plain("");
-  cforge::logger::print_plain("Subcommands:");
-  cforge::logger::print_plain("  add <pkg>[@ver]    Add a dependency to the project");
-  cforge::logger::print_plain("  remove <pkg>       Remove a dependency from the project");
-  cforge::logger::print_plain("  update             Update the package registry index");
-  cforge::logger::print_plain("  search <query>     Search for packages in the registry");
-  cforge::logger::print_plain("  info <pkg>         Show detailed package information");
-  cforge::logger::print_plain("  tree               Visualize dependency tree");
-  cforge::logger::print_plain("  lock               Manage dependency lock file");
-  cforge::logger::print_plain("  outdated           Show dependencies with newer versions");
-  cforge::logger::print_plain("  list               List current project dependencies");
-  cforge::logger::print_plain("");
-  cforge::logger::print_plain("Examples:");
-  cforge::logger::print_plain("  cforge deps add fmt@11.1.4");
-  cforge::logger::print_plain("  cforge deps add spdlog --features async");
-  cforge::logger::print_plain("  cforge deps add mylib --git https://github.com/user/mylib --tag v1.0");
-  cforge::logger::print_plain("  cforge deps remove fmt");
-  cforge::logger::print_plain("  cforge deps search json");
-  cforge::logger::print_plain("  cforge deps info nlohmann_json");
-  cforge::logger::print_plain("  cforge deps tree");
-  cforge::logger::print_plain("  cforge deps outdated");
-  cforge::logger::print_plain("  cforge deps lock --verify");
-  cforge::logger::print_plain("");
-  cforge::logger::print_plain("Run 'cforge deps <subcommand> --help' for subcommand details");
-}
 
 /**
  * @brief Create a modified context for subcommand dispatch
@@ -110,13 +78,11 @@ cforge_int_t deps_outdated(const cforge_context_t *ctx) {
     } else if (arg == "-u" || arg == "--update") {
       update_first = true;
     } else if (arg == "-h" || arg == "--help") {
-      cforge::logger::print_plain("cforge deps outdated - Show outdated dependencies");
-      cforge::logger::print_plain("");
-      cforge::logger::print_plain("Usage: cforge deps outdated [options]");
-      cforge::logger::print_plain("");
-      cforge::logger::print_plain("Options:");
-      cforge::logger::print_plain("  -u, --update     Update registry before checking");
-      cforge::logger::print_plain("  -v, --verbose    Show verbose output");
+      cforge::logger::print_cmd_header("deps outdated", "Show outdated dependencies");
+      cforge::logger::print_usage("cforge deps outdated [options]");
+      cforge::logger::print_help_section("OPTIONS");
+      cforge::logger::print_option("-u, --update", "Update registry before checking");
+      cforge::logger::print_option("-v, --verbose", "Show verbose output");
       return 0;
     }
   }
@@ -137,7 +103,7 @@ cforge_int_t deps_outdated(const cforge_context_t *ctx) {
   }
 
   cforge::logger::print_header("Checking for outdated dependencies");
-  fmt::print("\n");
+  cforge::logger::print_blank();
 
   // Track outdated packages
   struct outdated_info {
@@ -238,18 +204,14 @@ cforge_int_t deps_outdated(const cforge_context_t *ctx) {
   }
 
   // Print table header
-  fmt::print("  {:<25} {:<15} {:<15} {:<10}\n",
-             "Package", "Current", "Latest", "Source");
-  fmt::print("  {:-<25} {:-<15} {:-<15} {:-<10}\n", "", "", "", "");
+  std::vector<int> widths = {25, 15, 15, 10};
+  cforge::logger::print_table_header({"Package", "Current", "Latest", "Source"}, widths, 2);
 
   for (const auto &info : outdated) {
-    fmt::print("  {:<25} ", fmt::format(fg(fmt::color::white), "{}", info.name));
-    fmt::print("{:<15} ", fmt::format(fg(fmt::color::yellow), "{}", info.current));
-    fmt::print("{:<15} ", fmt::format(fg(fmt::color::green), "{}", info.latest));
-    fmt::print("{:<10}\n", info.source);
+    cforge::logger::print_table_row({info.name, info.current, info.latest, info.source}, widths, 2);
   }
 
-  fmt::print("\n");
+  cforge::logger::print_blank();
   cforge::logger::print_action("Found", std::to_string(outdated.size()) +
                                             " outdated package(s)");
   cforge::logger::print_plain("");
@@ -283,14 +245,12 @@ cforge_int_t deps_list(const cforge_context_t *ctx) {
     } else if (arg == "--simple") {
       format = "simple";
     } else if (arg == "-h" || arg == "--help") {
-      cforge::logger::print_plain("cforge deps list - List project dependencies");
-      cforge::logger::print_plain("");
-      cforge::logger::print_plain("Usage: cforge deps list [options]");
-      cforge::logger::print_plain("");
-      cforge::logger::print_plain("Options:");
-      cforge::logger::print_plain("  --json       Output as JSON");
-      cforge::logger::print_plain("  --simple     Simple list format");
-      cforge::logger::print_plain("  -v, --verbose Show verbose output");
+      cforge::logger::print_cmd_header("deps list", "List project dependencies");
+      cforge::logger::print_usage("cforge deps list [options]");
+      cforge::logger::print_help_section("OPTIONS");
+      cforge::logger::print_option("--json", "Output as JSON");
+      cforge::logger::print_option("--simple", "Simple list format");
+      cforge::logger::print_option("-v, --verbose", "Show verbose output");
       return 0;
     }
   }
@@ -374,32 +334,33 @@ cforge_int_t deps_list(const cforge_context_t *ctx) {
 
   // Output
   if (format == "json") {
-    fmt::print("{{\n  \"dependencies\": [\n");
+    cforge::logger::print_plain("{");
+    cforge::logger::print_plain("  \"dependencies\": [");
     for (size_t i = 0; i < all_deps.size(); i++) {
       const auto &dep = all_deps[i];
-      fmt::print("    {{ \"name\": \"{}\", \"version\": \"{}\", \"source\": \"{}\" }}",
-                 dep.name, dep.version, dep.source);
-      if (i < all_deps.size() - 1) fmt::print(",");
-      fmt::print("\n");
+      std::string line = "    { \"name\": \"" + dep.name + "\", \"version\": \"" +
+                         dep.version + "\", \"source\": \"" + dep.source + "\" }";
+      if (i < all_deps.size() - 1) line += ",";
+      cforge::logger::print_plain(line);
     }
-    fmt::print("  ]\n}}\n");
+    cforge::logger::print_plain("  ]");
+    cforge::logger::print_plain("}");
   } else if (format == "simple") {
     for (const auto &dep : all_deps) {
-      fmt::print("{}@{} ({})\n", dep.name, dep.version, dep.source);
+      cforge::logger::print_plain(dep.name + "@" + dep.version + " (" + dep.source + ")");
     }
   } else {
     // Table format
     cforge::logger::print_header("Project Dependencies");
-    fmt::print("\n");
+    cforge::logger::print_blank();
 
     if (all_deps.empty()) {
       cforge::logger::print_plain("  No dependencies configured");
       return 0;
     }
 
-    fmt::print("  {:<25} {:<15} {:<10} {:<20}\n",
-               "Package", "Version", "Source", "Features");
-    fmt::print("  {:-<25} {:-<15} {:-<10} {:-<20}\n", "", "", "", "");
+    std::vector<int> widths = {25, 15, 10, 20};
+    cforge::logger::print_table_header({"Package", "Version", "Source", "Features"}, widths, 2);
 
     for (const auto &dep : all_deps) {
       std::string features_str = dep.features.empty() ? "-" : "";
@@ -408,17 +369,11 @@ cforge_int_t deps_list(const cforge_context_t *ctx) {
         if (i < dep.features.size() - 1) features_str += ", ";
       }
 
-      fmt::terminal_color name_color = fmt::terminal_color::white;
-      if (dep.source == "git") name_color = fmt::terminal_color::cyan;
-      else if (dep.source == "vcpkg") name_color = fmt::terminal_color::magenta;
-      else if (dep.source == "system") name_color = fmt::terminal_color::yellow;
-
-      fmt::print("  {:<25} {:<15} {:<10} {:<20}\n",
-                 fmt::format(fg(name_color), "{}", dep.name),
-                 dep.version, dep.source, features_str);
+      cforge::logger::print_table_row({dep.name, dep.version, dep.source, features_str}, widths, 2);
     }
 
-    fmt::print("\n  Total: {} dependencies\n", all_deps.size());
+    cforge::logger::print_blank();
+    cforge::logger::print_plain("  Total: " + std::to_string(all_deps.size()) + " dependencies");
   }
 
   return 0;
@@ -449,7 +404,7 @@ cforge_int_t cforge_cmd_deps(const cforge_context_t *ctx) {
   // If no subcommand or help requested, show help
   if (subcommand.empty() || subcommand == "-h" || subcommand == "--help" ||
       subcommand == "help") {
-    print_deps_help();
+    cforge::command_registry::instance().print_command_help("deps");
     return 0;
   }
 
@@ -510,7 +465,7 @@ cforge_int_t cforge_cmd_deps(const cforge_context_t *ctx) {
   } else {
     cforge::logger::print_error("Unknown deps subcommand: " + subcommand);
     cforge::logger::print_plain("");
-    print_deps_help();
+    cforge::command_registry::instance().print_command_help("deps");
     return 1;
   }
 }

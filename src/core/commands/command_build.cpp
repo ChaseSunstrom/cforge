@@ -5,6 +5,7 @@
 
 #include "cforge/log.hpp"
 #include "core/build_utils.hpp"
+#include "core/command_registry.hpp"
 #include "core/commands.hpp"
 #include "core/constants.h"
 #include "core/dependency_hash.hpp"
@@ -878,7 +879,7 @@ static bool run_cmake_configure(const std::vector<std::string> &cmake_args,
     }
     if (!formatted_errors.empty()) {
       // Print formatted errors directly (they already contain "error" prefix from Rust-style formatting)
-      fmt::print("{}", formatted_errors);
+      cforge::logger::print_plain(formatted_errors);
     } else {
       // Fallback: print raw outputs only if they contain non-empty lines
       bool printed_any = false;
@@ -971,23 +972,18 @@ static bool check_circular_dependencies(const std::filesystem::path &project_dir
     }
 
     // Format warning in Rust style
-    fmt::print(fg(fmt::color::yellow) | fmt::emphasis::bold, "warning");
-    fmt::print(": circular include detected\n");
-    fmt::print(fg(fmt::color::blue) | fmt::emphasis::bold, "  --> ");
-    fmt::print("{}\n", chain.root);
-    fmt::print(fg(fmt::color::blue) | fmt::emphasis::bold, "   |\n");
-    fmt::print(fg(fmt::color::blue) | fmt::emphasis::bold, "   = ");
-    fmt::print("{}\n", chain_str);
-    fmt::print(fg(fmt::color::blue) | fmt::emphasis::bold, "   = ");
-    fmt::print(fg(fmt::color::green), "help");
-    fmt::print(": consider forward declarations or restructuring\n\n");
+    cforge::logger::print_warning("circular include detected");
+    cforge::logger::print_plain("  --> " + chain.root);
+    cforge::logger::print_plain("   |");
+    cforge::logger::print_plain("   = " + chain_str);
+    cforge::logger::print_hint("consider forward declarations or restructuring");
+    cforge::logger::print_blank();
   }
 
   // Summary
-  fmt::print(fg(fmt::color::yellow) | fmt::emphasis::bold, "warning");
-  fmt::print(": {} circular dependency chain{} detected\n",
-             result.chains.size(),
-             result.chains.size() == 1 ? "" : "s");
+  std::string chains_msg = std::to_string(result.chains.size()) + " circular dependency chain" +
+                           (result.chains.size() == 1 ? "" : "s") + " detected";
+  cforge::logger::print_warning(chains_msg);
 
   if (fail_on_circular) {
     cforge::logger::print_error("Build failed due to circular dependencies (build.fail_on_circular = true)");
@@ -1722,6 +1718,15 @@ static bool build_project(const std::filesystem::path &project_dir,
  * @return cforge_int_t Exit code (0 for success)
  */
 cforge_int_t cforge_cmd_build(const cforge_context_t *ctx) {
+  // Check for help flag first
+  for (cforge_int_t i = 0; i < ctx->args.arg_count; i++) {
+    std::string arg = ctx->args.args[i];
+    if (arg == "-h" || arg == "--help") {
+      cforge::command_registry::instance().print_command_help("build");
+      return 0;
+    }
+  }
+
   // Start build timer
   auto build_start_time = std::chrono::steady_clock::now();
 

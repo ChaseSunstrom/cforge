@@ -3,7 +3,7 @@ id: examples
 title: Examples
 ---
 
-## 📚 Examples
+## Examples
 
 ### Simple Application
 

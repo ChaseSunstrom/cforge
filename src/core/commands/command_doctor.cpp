@@ -4,6 +4,7 @@
  */
 
 #include "cforge/log.hpp"
+#include "core/command_registry.hpp"
 #include "core/commands.hpp"
 #include "core/types.h"
 #include "core/process_utils.hpp"
@@ -39,17 +40,14 @@ static void print_check_result(const std::string &name, bool success,
                                 const std::string &version = "",
                                 const std::string &help = "") {
   if (success) {
-    fmt::print(fg(fmt::color::green), "  \xe2\x9c\x93 "); // checkmark
-    fmt::print("{}", name);
-    if (!version.empty()) {
-      fmt::print(" {}", version);
-    }
-    fmt::print("\n");
+    // Green checkmark with name and version
+    std::string value = version.empty() ? "found" : version;
+    logger::print_kv_colored(name, value, fmt::color::green, 20, 2);
   } else {
-    fmt::print(fg(fmt::color::red), "  \xe2\x9c\x97 "); // X
-    fmt::print("{} not found\n", name);
+    // Red X with name
+    logger::print_kv_colored(name, "not found", fmt::color::red, 20, 2);
     if (!help.empty()) {
-      fmt::print("    = help: {}\n", help);
+      logger::print_hint(help);
     }
   }
 }
@@ -65,16 +63,14 @@ cforge_int_t cforge_cmd_doctor(const cforge_context_t *ctx) {
     if (arg == "-v" || arg == "--verbose") {
       verbose = true;
     } else if (arg == "-h" || arg == "--help") {
-      fmt::print("Usage: cforge doctor [options]\n\n");
-      fmt::print("Diagnose environment issues and verify toolchain setup\n\n");
-      fmt::print("Options:\n");
-      fmt::print("  -v, --verbose    Show detailed information\n");
-      fmt::print("  -h, --help       Show this help message\n");
+      cforge::command_registry::instance().print_command_help("doctor");
       return 0;
     }
   }
 
-  fmt::print("\nChecking environment...\n\n");
+  cforge::logger::print_blank();
+  cforge::logger::print_section("Environment Check");
+  cforge::logger::print_blank();
 
   cforge_int_t passed = 0;
   cforge_int_t warnings = 0;
@@ -205,18 +201,18 @@ cforge_int_t cforge_cmd_doctor(const cforge_context_t *ctx) {
     warnings++;
 
   // Summary
-  fmt::print("\n");
+  cforge::logger::print_blank();
   if (warnings == 0) {
-    fmt::print(fg(fmt::color::green), "Summary: ");
-    fmt::print("{} checks passed\n", passed);
+    cforge::logger::print_action("Summary", std::to_string(passed) + " checks passed");
   } else {
-    fmt::print(fg(fmt::color::yellow), "Summary: ");
-    fmt::print("{} passed, {} warnings\n", passed, warnings);
+    cforge::logger::print_action("Summary", std::to_string(passed) + " passed, " +
+                                 std::to_string(warnings) + " warnings");
   }
 
   // Show additional info in verbose mode
   if (verbose) {
-    fmt::print("\nDetailed tool information available with verbose output.\n");
+    cforge::logger::print_blank();
+    cforge::logger::print_dim("Detailed tool information available with verbose output.");
   }
 
   return 0;

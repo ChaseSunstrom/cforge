@@ -379,8 +379,82 @@ std::vector<benchmark_target> benchmark_runner::auto_discover_targets() {
 std::vector<benchmark_target> benchmark_runner::load_explicit_targets() {
   std::vector<benchmark_target> targets;
 
-  // Check for [[benchmark.targets]] array
-  // TODO: Implement explicit target loading from TOML array of tables
+  // Load explicitly defined targets from [[benchmark.targets]] array
+  auto target_tables = m_project_config.get_table_array("benchmark.targets");
+  for (const auto &table : target_tables) {
+    benchmark_target target;
+
+    // Name is required
+    target.name = table.get_string("name", "");
+    if (target.name.empty()) {
+      logger::print_warning("[[benchmark.targets]] entry missing 'name', skipping");
+      continue;
+    }
+
+    // Load source files
+    target.sources = table.get_string_array("sources");
+    if (target.sources.empty()) {
+      logger::print_warning("[[benchmark.targets]] '" + target.name + "' has no sources, skipping");
+      continue;
+    }
+
+    // Load other properties
+    target.dependencies = table.get_string_array("dependencies");
+    target.defines = table.get_string_array("defines");
+    target.includes = table.get_string_array("includes");
+    target.enabled = table.get_bool("enabled", true);
+
+    // Parse framework (default to auto-detection)
+    std::string fw_str = table.get_string("framework", "auto");
+    target.framework = string_to_benchmark_framework(fw_str);
+
+    // Expand source globs and resolve paths
+    for (const auto &src : target.sources) {
+      fs::path src_path = src;
+      if (src_path.is_relative()) {
+        src_path = m_bench_config.directory / src_path;
+      }
+
+      // Handle glob patterns
+      if (src.find('*') != std::string::npos) {
+        // Simple glob expansion for common patterns
+        std::string pattern = src_path.string();
+        fs::path search_dir = src_path.parent_path();
+        std::string file_pattern = src_path.filename().string();
+
+        if (fs::exists(search_dir)) {
+          for (const auto &entry : fs::directory_iterator(search_dir)) {
+            if (!entry.is_regular_file()) continue;
+
+            std::string filename = entry.path().filename().string();
+            // Simple wildcard matching (*.cpp matches any .cpp file)
+            if (file_pattern == "*.cpp" || file_pattern == "*.cc" || file_pattern == "*.cxx") {
+              std::string ext = entry.path().extension().string();
+              if ((file_pattern == "*.cpp" && ext == ".cpp") ||
+                  (file_pattern == "*.cc" && ext == ".cc") ||
+                  (file_pattern == "*.cxx" && ext == ".cxx")) {
+                target.source_files.push_back(entry.path());
+              }
+            }
+          }
+        }
+      } else if (fs::exists(src_path)) {
+        target.source_files.push_back(src_path);
+      }
+    }
+
+    // Detect framework from sources if set to auto
+    if (target.framework == benchmark_framework::Auto && !target.source_files.empty()) {
+      target.framework = detect_framework(target.source_files.front());
+    }
+
+    // Use default framework if still auto
+    if (target.framework == benchmark_framework::Auto) {
+      target.framework = m_bench_config.default_framework;
+    }
+
+    targets.push_back(target);
+  }
 
   return targets;
 }
@@ -621,10 +695,10 @@ std::vector<benchmark_result> benchmark_runner::run_target(
   auto result = execute_process(exe.string(), args, m_project_dir.string(),
                                [&output](const std::string &line) {
                                  output += line + "\n";
-                                 fmt::print("{}\n", line);
+                                 logger::print_plain(line);
                                },
                                [](const std::string &line) {
-                                 fmt::print(fg(fmt::color::red), "{}\n", line);
+                                 logger::print_error(line);
                                });
 
   if (result.exit_code != 0) {

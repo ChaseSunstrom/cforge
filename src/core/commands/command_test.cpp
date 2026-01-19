@@ -8,6 +8,7 @@
  */
 
 #include "cforge/log.hpp"
+#include "core/command_registry.hpp"
 #include "core/commands.hpp"
 #include "core/constants.h"
 #include "core/process_utils.hpp"
@@ -57,10 +58,9 @@ void ensure_test_framework_header(const std::filesystem::path &tests_dir) {
 #define test_assert(expr)                           \
     do {                                           \
         if (!(expr)) {                             \
-            fprintf(stderr, COLOR_RED              \
-                "Assertion failed: %s at %s:%d\n" \
-                COLOR_RESET,                      \
-                #expr, __FILE__, __LINE__);       \
+            std::string msg = std::string("Assertion failed: ") + #expr + \
+                             " at " + __FILE__ + ":" + std::to_string(__LINE__); \
+            cforge::logger::print_error(msg);      \
             return 1;                             \
         }                                          \
         return 0;                                  \
@@ -256,6 +256,15 @@ cforge_int_t run_tests_for_project(const std::filesystem::path &project_dir,
  * in the workspace in dependency order.
  */
 cforge_int_t cforge_cmd_test(const cforge_context_t *ctx) {
+  // Check for help flag first
+  for (cforge_int_t i = 0; i < ctx->args.arg_count; i++) {
+    std::string arg = ctx->args.args[i];
+    if (arg == "-h" || arg == "--help") {
+      cforge::command_registry::instance().print_command_help("test");
+      return 0;
+    }
+  }
+
   namespace fs = std::filesystem;
 
   fs::path current_dir = fs::absolute(ctx->working_dir);
@@ -348,7 +357,7 @@ cforge_int_t cforge_cmd_test(const cforge_context_t *ctx) {
 
     // Print aggregated results
     if (!opts.native_output && !opts.list_only) {
-      fmt::print("\n");
+      cforge::logger::print_blank();
       cforge::logger::print_header("Workspace Test Summary");
 
       // Print header with actual test count
@@ -364,8 +373,9 @@ cforge_int_t cforge_cmd_test(const cforge_context_t *ctx) {
       // Print summary
       formatter.print_summary(total_summary);
 
-      fmt::print("\nProjects tested: {}, Projects with failures: {}\n",
-                 projects_tested, projects_failed);
+      cforge::logger::print_blank();
+      cforge::logger::print_plain("Projects tested: " + std::to_string(projects_tested) +
+                                  ", Projects with failures: " + std::to_string(projects_failed));
     }
 
     // Return failure if any tests failed

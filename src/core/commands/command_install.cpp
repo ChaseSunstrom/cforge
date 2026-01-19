@@ -4,6 +4,7 @@
  */
 
 #include "cforge/log.hpp"
+#include "core/command_registry.hpp"
 #include "core/commands.hpp"
 #include "core/constants.h"
 #include "core/installer.hpp"
@@ -24,18 +25,12 @@
  * @return cforge_int_t Exit code (0 for success)
  */
 cforge_int_t cforge_cmd_install(const cforge_context_t *ctx) {
-  // Check if help was requested
-  if (ctx->args.args) {
-    for (cforge_int_t i = 0; i < ctx->args.arg_count; i++) {
-      if (strcmp(ctx->args.args[i], "--help") == 0 ||
-          strcmp(ctx->args.args[i], "-h") == 0) {
-        // Show install usage
-        cforge_context_t help_ctx = *ctx;
-        static const char *help_args[] = {"install", "--help", NULL};
-        help_ctx.args.args = (cforge_string_t *)help_args;
-        help_ctx.args.arg_count = 2;
-        return cforge_cmd_help(&help_ctx);
-      }
+  // Check for help flag first
+  for (cforge_int_t i = 0; i < ctx->args.arg_count; i++) {
+    std::string arg = ctx->args.args[i];
+    if (arg == "-h" || arg == "--help") {
+      cforge::command_registry::instance().print_command_help("install");
+      return 0;
     }
   }
 

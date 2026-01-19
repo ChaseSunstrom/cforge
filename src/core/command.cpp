@@ -20,8 +20,14 @@ bool cforge_is_workspace_dir(void) {
       if (config.contains("workspace")) {
         return true;
       }
-    } catch (...) {
-      // Fall through to legacy check
+    } catch (const toml::parse_error &err) {
+      // TOML parse error - log it and fall through to legacy check
+      cforge::logger::print_verbose("Failed to parse cforge.toml: " +
+                                    std::string(err.description()));
+    } catch (const std::exception &ex) {
+      // Other errors - log and fall through to legacy check
+      cforge::logger::print_verbose("Error reading cforge.toml: " +
+                                    std::string(ex.what()));
     }
   }
 
@@ -39,7 +45,8 @@ void cforge_parse_args(cforge_int_t argc, cforge_string_t argv[],
     return;
   }
 
-  args->command = argv[1];
+  // Use strdup to safely copy strings - these will be freed in cforge_free_args
+  args->command = strdup(argv[1]);
 
   // Allocate memory for additional arguments
   // We allocate for all possible arguments to simplify management
@@ -55,45 +62,58 @@ void cforge_parse_args(cforge_int_t argc, cforge_string_t argv[],
   // Parse the rest of the arguments
   for (cforge_int_t i = 2; i < argc; i++) {
     // Store all arguments in args->args for better access in command handlers
-    args->args[args->arg_count++] = argv[i];
+    // Use strdup for safety
+    args->args[args->arg_count++] = strdup(argv[i]);
 
     // Also check for specific options
     if (strcmp(argv[i], "--config") == 0 && i + 1 < argc) {
-      args->config = argv[++i];
+      i++;
+      if (args->config) free(args->config);
+      args->config = strdup(argv[i]);
       // Also add this to args array
-      args->args[args->arg_count++] = argv[i];
+      args->args[args->arg_count++] = strdup(argv[i]);
     } else if (strcmp(argv[i], "--variant") == 0 && i + 1 < argc) {
-      args->variant = argv[++i];
+      i++;
+      if (args->variant) free(args->variant);
+      args->variant = strdup(argv[i]);
       // Also add this to args array
-      args->args[args->arg_count++] = argv[i];
+      args->args[args->arg_count++] = strdup(argv[i]);
     } else if (strcmp(argv[i], "--target") == 0 && i + 1 < argc) {
-      args->target = argv[++i];
+      i++;
+      if (args->target) free(args->target);
+      args->target = strdup(argv[i]);
       // Also add this to args array
-      args->args[args->arg_count++] = argv[i];
+      args->args[args->arg_count++] = strdup(argv[i]);
     } else if (strcmp(argv[i], "--verbosity") == 0 && i + 1 < argc) {
-      args->verbosity = argv[++i];
+      i++;
+      if (args->verbosity) free(args->verbosity);
+      args->verbosity = strdup(argv[i]);
       // Also add this to args array
-      args->args[args->arg_count++] = argv[i];
+      args->args[args->arg_count++] = strdup(argv[i]);
     } else if (args->project == NULL && argv[i][0] != '-') {
       // The first non-option argument is the project
-      args->project = argv[i];
+      args->project = strdup(argv[i]);
     }
 
     // Handle --config=value format
     if (strncmp(argv[i], "--config=", 9) == 0) {
-      args->config = argv[i] + 9;
+      if (args->config) free(args->config);
+      args->config = strdup(argv[i] + 9);
     }
     // Handle --variant=value format
     else if (strncmp(argv[i], "--variant=", 10) == 0) {
-      args->variant = argv[i] + 10;
+      if (args->variant) free(args->variant);
+      args->variant = strdup(argv[i] + 10);
     }
     // Handle --target=value format
     else if (strncmp(argv[i], "--target=", 9) == 0) {
-      args->target = argv[i] + 9;
+      if (args->target) free(args->target);
+      args->target = strdup(argv[i] + 9);
     }
     // Handle --verbosity=value format
     else if (strncmp(argv[i], "--verbosity=", 12) == 0) {
-      args->verbosity = argv[i] + 12;
+      if (args->verbosity) free(args->verbosity);
+      args->verbosity = strdup(argv[i] + 12);
     }
   }
 
@@ -106,10 +126,55 @@ void cforge_parse_args(cforge_int_t argc, cforge_string_t argv[],
 
 // Function to free allocated resources
 void cforge_free_args(cforge_command_args_t *args) {
+  // Free command string
+  if (args->command) {
+    free(args->command);
+    args->command = NULL;
+  }
+
+  // Free project string
+  if (args->project) {
+    free(args->project);
+    args->project = NULL;
+  }
+
+  // Free config string
+  if (args->config) {
+    free(args->config);
+    args->config = NULL;
+  }
+
+  // Free variant string
+  if (args->variant) {
+    free(args->variant);
+    args->variant = NULL;
+  }
+
+  // Free target string
+  if (args->target) {
+    free(args->target);
+    args->target = NULL;
+  }
+
+  // Free verbosity string
+  if (args->verbosity) {
+    free(args->verbosity);
+    args->verbosity = NULL;
+  }
+
+  // Free all argument strings in the args array
   if (args->args) {
+    for (cforge_int_t i = 0; i < args->arg_count; i++) {
+      if (args->args[i]) {
+        free(args->args[i]);
+        args->args[i] = NULL;
+      }
+    }
     free(args->args);
     args->args = NULL;
   }
+
+  args->arg_count = 0;
 }
 
 // Verbosity handling

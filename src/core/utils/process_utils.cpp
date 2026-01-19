@@ -537,7 +537,7 @@ bool execute_tool(const std::string &command,
   if (show_progress && progress.has_progress()) {
     logger::clear_line();
     // Print newline to move past the progress bar
-    fmt::print("\n");
+    logger::print_blank();
   }
 
   // Always show output/errors for failed commands regardless of verbose mode
@@ -601,7 +601,7 @@ bool execute_tool(const std::string &command,
       std::string formatted_errors = format_build_errors(result.stderr_output);
       if (!formatted_errors.empty()) {
         found_errors = true;
-        fmt::print("{}", formatted_errors);
+        logger::print_plain(formatted_errors);
       }
     }
 
@@ -616,7 +616,7 @@ bool execute_tool(const std::string &command,
           format_build_errors(result.stdout_output);
       if (!formatted_stdout_errors.empty()) {
         found_errors = true;
-        fmt::print("{}", formatted_stdout_errors);
+        logger::print_plain(formatted_stdout_errors);
       }
     }
 
@@ -654,10 +654,9 @@ bool execute_tool(const std::string &command,
       collect_error_lines(result.stdout_output);
 
       if (!error_lines.empty()) {
-        fmt::print(fg(fmt::color::crimson) | fmt::emphasis::bold,
-                   "→ Command failed:\n");
+        logger::print_error("Command failed:");
         for (const auto& line : error_lines) {
-          fmt::print(fg(fmt::color::light_pink), "    {}\n", line);
+          logger::print_plain("    " + line);
         }
       } else {
         // Final fallback: show raw output if nothing else worked
@@ -692,8 +691,7 @@ bool execute_tool(const std::string &command,
         }
 
         if (has_stderr || has_stdout) {
-          fmt::print(fg(fmt::color::crimson) | fmt::emphasis::bold,
-                     "→ Command failed (exit code {}):\n", result.exit_code);
+          logger::print_error("Command failed (exit code " + std::to_string(result.exit_code) + "):");
 
           const std::string& output_to_show = has_stderr ? result.stderr_output : result.stdout_output;
           std::istringstream stream(output_to_show);
@@ -702,12 +700,12 @@ bool execute_tool(const std::string &command,
           while (std::getline(stream, line) && line_count < 20) {
             size_t first_char = line.find_first_not_of(" \t\r\n");
             if (first_char != std::string::npos) {
-              fmt::print(fg(fmt::color::light_pink), "    {}\n", line);
+              logger::print_plain("    " + line);
               line_count++;
             }
           }
           if (line_count >= 20) {
-            fmt::print(fg(fmt::color::gray), "    ... (output truncated)\n");
+            logger::print_dim("    ... (output truncated)");
           }
         }
       }

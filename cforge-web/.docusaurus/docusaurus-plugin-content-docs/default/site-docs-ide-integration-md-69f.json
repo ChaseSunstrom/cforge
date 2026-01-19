@@ -1,7 +1,7 @@
 {
   "id": "ide-integration",
   "title": "IDE Integration",
-  "description": "🖥️ IDE Integration",
+  "description": "IDE Integration",
   "source": "@site/docs/ide-integration.md",
   "sourceDirName": ".",
   "slug": "/ide-integration",

@@ -3,7 +3,7 @@ id: advanced-topics
 title: Advanced Topics
 ---
 
-## 🧩 Advanced Topics
+## Advanced Topics
 
 ### Precompiled Headers
 

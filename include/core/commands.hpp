@@ -112,6 +112,14 @@ cforge_int_t cforge_cmd_vcpkg(const cforge_context_t *ctx);
 cforge_int_t cforge_cmd_version(const cforge_context_t *ctx);
 
 /**
+ * @brief Handle the 'upgrade' command to update cforge itself
+ *
+ * @param ctx Context containing parsed arguments
+ * @return cforge_int_t Exit code (0 for success)
+ */
+cforge_int_t cforge_cmd_upgrade(const cforge_context_t *ctx);
+
+/**
  * @brief Handle the 'help' command to display help
  *
  * @param ctx Context containing parsed arguments
@@ -254,3 +262,11 @@ cforge_int_t cforge_cmd_circular(const cforge_context_t *ctx);
  * @return cforge_int_t Exit code (0 for success)
  */
 cforge_int_t cforge_cmd_doctor(const cforge_context_t *ctx);
+
+/**
+ * @brief Handle the 'cache' command to manage binary cache
+ *
+ * @param ctx Context containing parsed arguments
+ * @return cforge_int_t Exit code (0 for success)
+ */
+cforge_int_t cforge_cmd_cache(const cforge_context_t *ctx);

@@ -12,9 +12,17 @@ namespace cforge {
 bool is_generator_valid(const std::string &gen) {
   process_result pr =
       execute_process("cmake", {"--help"}, "", nullptr, nullptr, 10);
-  if (!pr.success)
-    return true; // Assume valid if we can't check
-  return pr.stdout_output.find(gen) != std::string::npos;
+  if (!pr.success) {
+    // CMake check failed - log warning and return false to indicate invalid
+    logger::print_warning("Could not verify CMake generator '" + gen +
+                          "' - cmake --help failed");
+    return false;
+  }
+  bool valid = pr.stdout_output.find(gen) != std::string::npos;
+  if (!valid) {
+    logger::print_verbose("CMake generator '" + gen + "' not found in available generators");
+  }
+  return valid;
 }
 
 std::string get_cmake_generator() {

@@ -153,8 +153,12 @@ bool workspace::load(const std::filesystem::path &workspace_path) {
       if (test_config.contains("workspace")) {
         config_path = unified_config_path;
       }
-    } catch (...) {
-      // Fall through to legacy check
+    } catch (const toml::parse_error &err) {
+      logger::print_verbose("Failed to parse " + unified_config_path.string() +
+                            ": " + std::string(err.description()));
+    } catch (const std::exception &ex) {
+      logger::print_verbose("Error reading " + unified_config_path.string() +
+                            ": " + std::string(ex.what()));
     }
   }
 
@@ -498,7 +502,9 @@ is_in_workspace(const std::filesystem::path &path) {
     try {
       auto config = toml::parse_file(toml_path.string());
       return config.contains("workspace");
-    } catch (...) {
+    } catch (const toml::parse_error &) {
+      return false;
+    } catch (const std::exception &) {
       return false;
     }
   };
@@ -3046,10 +3052,10 @@ bool workspace::run_project(const std::string &project_name,
 
   // Create custom callbacks to display raw program output
   std::function<void(const std::string &)> stdout_callback =
-      [](const std::string &chunk) { std::cout << chunk << std::flush; };
+      [](const std::string &chunk) { logger::print_plain(chunk); };
 
   std::function<void(const std::string &)> stderr_callback =
-      [](const std::string &chunk) { std::cerr << chunk << std::flush; };
+      [](const std::string &chunk) { logger::print_plain(chunk); };
 
   // Execute the program with custom output handling
   process_result result =
@@ -3059,7 +3065,7 @@ bool workspace::run_project(const std::string &project_name,
       );
 
   // Add a blank line after program output
-  std::cout << std::endl;
+  logger::print_blank();
 
   if (!result.success) {
     logger::print_error("Project execution failed: " + project.name);
@@ -3079,8 +3085,10 @@ bool workspace::is_workspace_dir(const std::filesystem::path &dir) {
       if (config.contains("workspace")) {
         return true;
       }
-    } catch (...) {
+    } catch (const toml::parse_error &) {
       // Ignore parse errors, continue to check legacy file
+    } catch (const std::exception &) {
+      // Ignore other errors, continue to check legacy file
     }
   }
 
@@ -3115,8 +3123,10 @@ bool workspace::create_workspace(const std::filesystem::path &workspace_path,
                               config_path.string());
         return true;
       }
-    } catch (...) {
-      // File exists but isn't valid TOML or doesn't have workspace section
+    } catch (const toml::parse_error &) {
+      // File exists but isn't valid TOML - will be overwritten
+    } catch (const std::exception &) {
+      // Other error - continue
     }
   }
 
@@ -3188,7 +3198,9 @@ void workspace::load_projects() {
       if (test_config.contains("workspace")) {
         config_path = unified_path;
       }
-    } catch (...) {
+    } catch (const toml::parse_error &) {
+      // Fall through to legacy
+    } catch (const std::exception &) {
       // Fall through to legacy
     }
   }
@@ -3301,7 +3313,9 @@ bool generate_workspace_cmakelists(const std::filesystem::path &workspace_dir,
         toml_path = unified_path;
         hash_key = CFORGE_FILE;
       }
-    } catch (...) {
+    } catch (const toml::parse_error &) {
+      // Fall through to legacy
+    } catch (const std::exception &) {
       // Fall through to legacy
     }
   }
@@ -3420,7 +3434,8 @@ bool generate_workspace_cmakelists(const std::filesystem::path &workspace_dir,
         if (rel_path.is_absolute()) {
           try {
             rel_path = std::filesystem::relative(rel_path, workspace_dir);
-          } catch (...) {
+          } catch (const std::exception &) {
+            // Keep absolute path if relative conversion fails
           }
         }
         cmakelists << "add_subdirectory(" << rel_path.string() << ")\n";
@@ -3683,7 +3698,8 @@ bool workspace_config::save(const std::string &workspace_file) const {
     if (project.path.is_absolute()) {
       try {
         path_to_save = std::filesystem::relative(project.path, workspace_dir);
-      } catch (...) {
+      } catch (const std::exception &) {
+        // Keep absolute path if relative conversion fails
         path_to_save = project.path;
       }
     } else {
@@ -3880,7 +3896,9 @@ std::filesystem::path get_workspace_config_path(const std::filesystem::path &wor
       if (test_config.contains("workspace")) {
         return unified_config_path;
       }
-    } catch (...) {
+    } catch (const toml::parse_error &) {
+      // Fall through to legacy check
+    } catch (const std::exception &) {
       // Fall through to legacy check
     }
   }

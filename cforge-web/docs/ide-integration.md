@@ -3,7 +3,7 @@ id: ide-integration
 title: IDE Integration
 ---
 
-## 🖥️ IDE Integration
+## IDE Integration
 
 Generate IDE-specific project files:
 

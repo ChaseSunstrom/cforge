@@ -70,7 +70,7 @@ cforge version
 
 Expected output:
 ```
-cforge 3.0.1
+cforge 3.1.0
 ```
 
 ## Shell Completions
@@ -102,17 +102,27 @@ cforge completions powershell >> $PROFILE
 cforge completions fish > ~/.config/fish/completions/cforge.fish
 ```
 
-## Updating CForge
+## Upgrading CForge
+
+### Using the Upgrade Command
+
+The easiest way to update cforge to the latest version:
+
+```bash
+cforge upgrade
+```
+
+This will automatically download, build, and install the latest version.
 
 ### Using Install Script
 
-Run the install script again to update:
+Alternatively, run the install script again:
 
 ```bash
 # Linux/macOS
 curl -sSL https://raw.githubusercontent.com/ChaseSunstrom/cforge/master/scripts/install.sh | bash
 
-# Windows
+# Windows (PowerShell)
 irm https://raw.githubusercontent.com/ChaseSunstrom/cforge/master/scripts/install.ps1 | iex
 ```
 
@@ -130,16 +140,36 @@ cmake --install build
 ### Linux/macOS
 
 ```bash
-rm -rf /usr/local/bin/cforge
-rm -rf ~/.cforge
+# Remove binary and data
+rm -rf ~/.local/share/cforge
+rm -rf ~/.config/cforge
+
+# If installed to /usr/local
+rm -f /usr/local/bin/cforge
 ```
 
 ### Windows
 
 ```powershell
-# Remove from PATH
+# Remove cforge directory (includes binary and cache)
 Remove-Item "$env:LOCALAPPDATA\cforge" -Recurse -Force
 ```
+
+## Data Locations
+
+CForge stores all data in a single location per platform:
+
+**Windows:** `%LOCALAPPDATA%\cforge\`
+- `installed\cforge\bin\cforge.exe` - Binary
+- `cache\` - Binary cache for dependencies
+- `registry\` - Package registry index
+
+**Linux/macOS:** `~/.local/share/cforge/`
+- `installed/cforge/bin/cforge` - Binary
+- `cache/` - Binary cache
+- `registry/` - Package registry
+
+**Config:** `~/.config/cforge/config.toml` (Linux/macOS)
 
 ## Troubleshooting
 

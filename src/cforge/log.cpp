@@ -338,6 +338,300 @@ void logger::print_lines(const std::vector<std::string> &messages) {
   }
 }
 
+
+// Enhanced formatting utilities
+
+
+void logger::print_section(const std::string &title) {
+  if (s_verbosity == log_verbosity::VERBOSITY_QUIET)
+    return;
+  fmt::print(fg(fmt::color::cyan) | fmt::emphasis::bold, "{}\n", title);
+}
+
+void logger::print_kv(const std::string &key, const std::string &value,
+                      int key_width, int indent) {
+  if (s_verbosity == log_verbosity::VERBOSITY_QUIET)
+    return;
+  std::string key_fmt = key.empty() ? "" : key + ":";
+  fmt::print("{:{}}{:<{}} {}\n", "", indent, key_fmt, key_width, value);
+}
+
+void logger::print_kv_colored(const std::string &key, const std::string &value,
+                              fmt::color value_color,
+                              int key_width, int indent) {
+  if (s_verbosity == log_verbosity::VERBOSITY_QUIET)
+    return;
+  std::string key_fmt = key.empty() ? "" : key + ":";
+  fmt::print("{:{}}{:<{}}", "", indent, key_fmt, key_width);
+  fmt::print(fg(value_color), "{}\n", value);
+}
+
+void logger::print_list_item(const std::string &text,
+                             const std::string &bullet,
+                             int indent) {
+  if (s_verbosity == log_verbosity::VERBOSITY_QUIET)
+    return;
+  fmt::print("{:{}}{} {}\n", "", indent, bullet, text);
+}
+
+void logger::print_dim(const std::string &message, int indent) {
+  if (s_verbosity == log_verbosity::VERBOSITY_QUIET)
+    return;
+  fmt::print(fg(fmt::color::gray), "{:{}}{}\n", "", indent, message);
+}
+
+void logger::print_rule(int width, char ch) {
+  if (s_verbosity == log_verbosity::VERBOSITY_QUIET)
+    return;
+  fmt::print(fg(fmt::color::gray), "{}\n", std::string(width, ch));
+}
+
+void logger::print_emphasis(const std::string &message) {
+  if (s_verbosity == log_verbosity::VERBOSITY_QUIET)
+    return;
+  fmt::print(fmt::emphasis::bold, "{}\n", message);
+}
+
+void logger::print_note(const std::string &message) {
+  if (s_verbosity == log_verbosity::VERBOSITY_QUIET)
+    return;
+  fmt::print(fg(fmt::color::steel_blue) | fmt::emphasis::bold, "{:>{}}", "note", STATUS_WIDTH);
+  fmt::print(" {}\n", message);
+}
+
+void logger::print_hint(const std::string &message) {
+  if (s_verbosity == log_verbosity::VERBOSITY_QUIET)
+    return;
+  fmt::print(fg(fmt::color::medium_sea_green) | fmt::emphasis::bold, "{:>{}}", "hint", STATUS_WIDTH);
+  fmt::print(" {}\n", message);
+}
+
+void logger::print_help_lines(const std::vector<std::string> &help_lines,
+                              int indent) {
+  if (s_verbosity == log_verbosity::VERBOSITY_QUIET)
+    return;
+  for (const auto &line : help_lines) {
+    fmt::print("{:{}}{}\n", "", indent, line);
+  }
+}
+
+void logger::print_table_row(const std::vector<std::string> &columns,
+                             const std::vector<int> &widths,
+                             int indent) {
+  if (s_verbosity == log_verbosity::VERBOSITY_QUIET)
+    return;
+  fmt::print("{:{}}", "", indent);
+  for (size_t i = 0; i < columns.size(); ++i) {
+    int width = (i < widths.size()) ? widths[i] : 12;
+    fmt::print("{:<{}} ", columns[i], width);
+  }
+  fmt::print("\n");
+}
+
+void logger::print_table_header(const std::vector<std::string> &columns,
+                                const std::vector<int> &widths,
+                                int indent) {
+  if (s_verbosity == log_verbosity::VERBOSITY_QUIET)
+    return;
+  // Print header row in bold
+  fmt::print("{:{}}", "", indent);
+  int total_width = 0;
+  for (size_t i = 0; i < columns.size(); ++i) {
+    int width = (i < widths.size()) ? widths[i] : 12;
+    fmt::print(fmt::emphasis::bold, "{:<{}} ", columns[i], width);
+    total_width += width + 1;
+  }
+  fmt::print("\n");
+  // Print separator
+  fmt::print("{:{}}", "", indent);
+  fmt::print(fg(fmt::color::gray), "{}\n", std::string(total_width, '-'));
+}
+
+void logger::print_blank() {
+  fmt::print("\n");
+}
+
+
+// Help formatting utilities
+
+
+void logger::print_cmd_header(const std::string &cmd,
+                              const std::string &description) {
+  if (s_verbosity == log_verbosity::VERBOSITY_QUIET)
+    return;
+  // Clean header without separators, similar to cargo/git
+  fmt::print("\n");
+  fmt::print(fg(fmt::color::lime_green) | fmt::emphasis::bold, "cforge {}", cmd);
+  fmt::print(fg(fmt::color::white), " - ");
+  fmt::print("{}\n\n", description);
+}
+
+void logger::print_usage(const std::string &usage) {
+  if (s_verbosity == log_verbosity::VERBOSITY_QUIET)
+    return;
+  fmt::print(fg(fmt::color::cyan) | fmt::emphasis::bold, "USAGE:\n");
+  fmt::print(fg(fmt::color::white), "    {}\n\n", usage);
+}
+
+void logger::print_option(const std::string &flags,
+                          const std::string &description,
+                          int flag_width) {
+  if (s_verbosity == log_verbosity::VERBOSITY_QUIET)
+    return;
+  fmt::print("    ");
+  fmt::print(fg(fmt::color::lime_green), "{:<{}}", flags, flag_width);
+  fmt::print(fg(fmt::color::light_gray), "{}\n", description);
+}
+
+void logger::print_arg(const std::string &name,
+                       const std::string &description,
+                       int name_width) {
+  if (s_verbosity == log_verbosity::VERBOSITY_QUIET)
+    return;
+  fmt::print("    ");
+  fmt::print(fg(fmt::color::lime_green) | fmt::emphasis::bold, "{:<{}}", name, name_width);
+  fmt::print(fg(fmt::color::light_gray), "{}\n", description);
+}
+
+void logger::print_example(const std::string &example,
+                           const std::string &description) {
+  if (s_verbosity == log_verbosity::VERBOSITY_QUIET)
+    return;
+  fmt::print("    ");
+  fmt::print(fg(fmt::color::steel_blue), "$ ");
+  fmt::print(fg(fmt::color::white), "{}", example);
+  if (!description.empty()) {
+    fmt::print(fg(fmt::color::gray), "  # {}", description);
+  }
+  fmt::print("\n");
+}
+
+void logger::print_subcommand(const std::string &name,
+                              const std::string &description,
+                              int name_width) {
+  if (s_verbosity == log_verbosity::VERBOSITY_QUIET)
+    return;
+  fmt::print("    ");
+  fmt::print(fg(fmt::color::lime_green) | fmt::emphasis::bold, "{:<{}}", name, name_width);
+  fmt::print(fg(fmt::color::light_gray), "{}\n", description);
+}
+
+void logger::print_help_section(const std::string &title) {
+  if (s_verbosity == log_verbosity::VERBOSITY_QUIET)
+    return;
+  fmt::print(fg(fmt::color::cyan) | fmt::emphasis::bold, "{}\n", title);
+}
+
+void logger::print_config_block(const std::vector<std::string> &lines) {
+  if (s_verbosity == log_verbosity::VERBOSITY_QUIET)
+    return;
+  fmt::print(fg(fmt::color::steel_blue), "    {}\n", std::string(40, '-'));
+  for (const auto &line : lines) {
+    fmt::print(fg(fmt::color::light_slate_gray), "    {}\n", line);
+  }
+  fmt::print(fg(fmt::color::steel_blue), "    {}\n", std::string(40, '-'));
+}
+
+void logger::print_help_footer(const std::string &message) {
+  if (s_verbosity == log_verbosity::VERBOSITY_QUIET)
+    return;
+  fmt::print("\n");
+  fmt::print(fg(fmt::color::gray), "{}\n", message);
+}
+
+
+// Error/Diagnostic formatting utilities
+
+
+void logger::print_error_header(const std::string &code,
+                                const std::string &message) {
+  fmt::print(stderr, fg(fmt::color::red) | fmt::emphasis::bold, "error");
+  if (!code.empty()) {
+    fmt::print(stderr, fg(fmt::color::red) | fmt::emphasis::bold, "[{}]", code);
+  }
+  fmt::print(stderr, fg(fmt::color::white) | fmt::emphasis::bold, ": {}\n", message);
+}
+
+void logger::print_warning_header(const std::string &code,
+                                  const std::string &message) {
+  fmt::print(stderr, fg(fmt::color::yellow) | fmt::emphasis::bold, "warning");
+  if (!code.empty()) {
+    fmt::print(stderr, fg(fmt::color::yellow) | fmt::emphasis::bold, "[{}]", code);
+  }
+  fmt::print(stderr, fg(fmt::color::white) | fmt::emphasis::bold, ": {}\n", message);
+}
+
+void logger::print_location(const std::string &file_path, int line, int column) {
+  // Shorten long paths for display
+  std::string display_path = file_path;
+  if (display_path.length() > 60) {
+    display_path = display_path.substr(0, 25) + "..." +
+                   display_path.substr(display_path.length() - 32);
+  }
+
+  fmt::print(stderr, fg(fmt::color::steel_blue), "   --> ");
+  fmt::print(stderr, "{}", display_path);
+  if (line > 0) {
+    fmt::print(stderr, ":{}", line);
+    if (column > 0) {
+      fmt::print(stderr, ":{}", column);
+    }
+  }
+  fmt::print(stderr, "\n");
+}
+
+void logger::print_code_line(int line_number, const std::string &content,
+                             int gutter_width) {
+  if (line_number > 0) {
+    fmt::print(stderr, fg(fmt::color::steel_blue), "{:>{}} | ", line_number,
+               gutter_width);
+  } else {
+    fmt::print(stderr, fg(fmt::color::steel_blue), "{:>{}} | ", "",
+               gutter_width);
+  }
+  fmt::print(stderr, "{}\n", content);
+}
+
+void logger::print_error_pointer(int column_start, int length, int gutter_width) {
+  fmt::print(stderr, fg(fmt::color::steel_blue), "{:>{}} | ", "", gutter_width);
+  if (column_start > 0) {
+    fmt::print(stderr, "{:>{}}", "", column_start - 1);
+  }
+  fmt::print(stderr, fg(fmt::color::red) | fmt::emphasis::bold, "{}\n",
+             std::string(length > 0 ? length : 1, '^'));
+}
+
+void logger::print_diag_note(const std::string &message) {
+  fmt::print(stderr, fg(fmt::color::cyan) | fmt::emphasis::bold, "       note: ");
+  fmt::print(stderr, fg(fmt::color::light_gray), "{}\n", message);
+}
+
+void logger::print_diag_help(const std::string &message) {
+  fmt::print(stderr, fg(fmt::color::medium_sea_green) | fmt::emphasis::bold, "       help: ");
+  fmt::print(stderr, fg(fmt::color::light_gray), "{}\n", message);
+}
+
+void logger::print_diag_fix(const std::string &description,
+                            const std::string &replacement) {
+  fmt::print(stderr, fg(fmt::color::magenta) | fmt::emphasis::bold, "        fix: ");
+  fmt::print(stderr, fg(fmt::color::light_gray), "{}", description);
+  if (!replacement.empty() && replacement.length() < 40) {
+    fmt::print(stderr, fg(fmt::color::gray), " -> ");
+    fmt::print(stderr, fg(fmt::color::lime_green), "`{}`", replacement);
+  }
+  fmt::print(stderr, "\n");
+}
+
+void logger::print_error_count(int count, const std::string &type, bool is_error) {
+  fmt::print(stderr, fg(fmt::color::steel_blue), "   |  ");
+  fmt::color color = is_error ? fmt::color::red : fmt::color::yellow;
+  fmt::print(stderr, fg(color), "{} {}{}\n", count, type, count == 1 ? "" : "s");
+}
+
+void logger::print_gutter_line() {
+  fmt::print(stderr, fg(fmt::color::steel_blue), "   |\n");
+}
+
 } // namespace cforge
 
 

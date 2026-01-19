@@ -229,14 +229,26 @@ cforge_process_start(cforge_process_t *process, cforge_cstring_t working_dir,
     return CFORGE_PROC_ERROR_START;
   }
 
-  // Build command line with proper quoting
-  sprintf(command_line, "\"%s\"", process->command);
+  // Build command line with proper quoting using safe string operations
+  cforge_size_t pos = 0;
+  cforge_size_t remaining = total_length + 1;
 
-  for (cforge_size_t i = 0; i < process->arg_count; i++) {
-    strcat(command_line, " \"");
-    strcat(command_line, process->args[i]);
-    strcat(command_line, "\"");
+  // Write command with quotes
+  int written = snprintf(command_line + pos, remaining, "\"%s\"", process->command);
+  if (written > 0 && (cforge_size_t)written < remaining) {
+    pos += written;
+    remaining -= written;
   }
+
+  // Append arguments with quotes
+  for (cforge_size_t i = 0; i < process->arg_count && remaining > 4; i++) {
+    written = snprintf(command_line + pos, remaining, " \"%s\"", process->args[i]);
+    if (written > 0 && (cforge_size_t)written < remaining) {
+      pos += written;
+      remaining -= written;
+    }
+  }
+  command_line[pos] = '\0'; // Ensure null termination
 
   // Setup process information
   STARTUPINFO si = {0};
@@ -714,6 +726,10 @@ cforge_process_status_t cforge_run_command(cforge_cstring_t command,
 
   // Initialize output
   memset(output, 0, sizeof(cforge_process_output_t));
+  output->stdout_size = 0;
+  output->stderr_size = 0;
+  output->stdout_data = NULL;
+  output->stderr_data = NULL;
 
   // Initialize process
   cforge_process_t process;
@@ -788,9 +804,10 @@ cforge_process_status_t cforge_run_command(cforge_cstring_t command,
         output->stdout_data = new_buffer;
       }
 
-      // Append to output
-      strcat(output->stdout_data, stdout_buffer);
+      // Append to output using safe string copy
+      memcpy(output->stdout_data + output->stdout_size, stdout_buffer, bytes_read);
       output->stdout_size += bytes_read;
+      output->stdout_data[output->stdout_size] = '\0';
     }
 
     // Read from stderr
@@ -817,9 +834,10 @@ cforge_process_status_t cforge_run_command(cforge_cstring_t command,
         output->stderr_data = new_buffer;
       }
 
-      // Append to output
-      strcat(output->stderr_data, stderr_buffer);
+      // Append to output using safe string copy
+      memcpy(output->stderr_data + output->stderr_size, stderr_buffer, bytes_read);
       output->stderr_size += bytes_read;
+      output->stderr_data[output->stderr_size] = '\0';
     }
 
     // Check if process has finished (non-blocking)

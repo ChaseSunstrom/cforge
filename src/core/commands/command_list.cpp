@@ -12,7 +12,6 @@
 #include <filesystem>
 
 #include <algorithm>
-#include <iostream>
 #include <map>
 #include <string>
 #include <vector>
@@ -21,87 +20,84 @@
  * @brief Lists available build configurations
  */
 static void list_build_configs() {
-  std::cout << "Available build configurations:\n";
-  std::cout << "  - Debug        (Development with debug symbols)\n";
-  std::cout << "  - Release      (Optimized release build)\n";
-  std::cout << "  - RelWithDebInfo (Release with debug information)\n";
-  std::cout << "  - MinSizeRel   (Minimal size release build)\n";
-  std::cout << "\n";
+  cforge::logger::print_section("Available build configurations:");
+  cforge::logger::print_list_item("Debug        (Development with debug symbols)");
+  cforge::logger::print_list_item("Release      (Optimized release build)");
+  cforge::logger::print_list_item("RelWithDebInfo (Release with debug information)");
+  cforge::logger::print_list_item("MinSizeRel   (Minimal size release build)");
+  cforge::logger::print_blank();
 }
 
 /**
  * @brief Lists available CMake generators
  */
 static void list_generators() {
-  std::cout << "Available CMake generators for IDE integration:\n";
-  std::cout << "  - Visual Studio (vs)         Visual Studio project files\n";
-  std::cout << "  - CodeBlocks (cb)            CodeBlocks project files\n";
-  std::cout
-      << "  - Xcode                      Xcode project files (macOS only)\n";
-  std::cout << "  - CLion (clion)              For CLion IDE\n";
-  std::cout << "\n";
+  cforge::logger::print_section("Available CMake generators for IDE integration:");
+  cforge::logger::print_list_item("Visual Studio (vs)         Visual Studio project files");
+  cforge::logger::print_list_item("CodeBlocks (cb)            CodeBlocks project files");
+  cforge::logger::print_list_item("Xcode                      Xcode project files (macOS only)");
+  cforge::logger::print_list_item("CLion (clion)              For CLion IDE");
+  cforge::logger::print_blank();
 }
 
 /**
  * @brief Lists common build targets
  */
 static void list_build_targets() {
-  std::cout << "Common build targets:\n";
-  std::cout << "  - all          Build all targets\n";
-  std::cout << "  - clean        Clean all build files\n";
-  std::cout << "  - install      Install the project\n";
-  std::cout << "  - package      Create distribution packages\n";
-  std::cout << "  - test         Build and run tests\n";
-  std::cout << "  - doc          Generate documentation (if configured)\n";
-  std::cout << "\n";
+  cforge::logger::print_section("Common build targets:");
+  cforge::logger::print_list_item("all          Build all targets");
+  cforge::logger::print_list_item("clean        Clean all build files");
+  cforge::logger::print_list_item("install      Install the project");
+  cforge::logger::print_list_item("package      Create distribution packages");
+  cforge::logger::print_list_item("test         Build and run tests");
+  cforge::logger::print_list_item("doc          Generate documentation (if configured)");
+  cforge::logger::print_blank();
 }
 
 /**
  * @brief Lists available cforge commands
  */
 static void list_commands() {
-  std::cout << "Available cforge commands:\n";
-  std::cout << "  - init         Initialize a new project\n";
-  std::cout << "  - build        Build the project\n";
-  std::cout << "  - run          Build and run the project\n";
-  std::cout << "  - clean        Clean build artifacts\n";
-  std::cout << "  - test         Run project tests\n";
-  std::cout << "  - deps/vcpkg   Manage dependencies\n";
-  std::cout << "  - install      Install the project\n";
-  std::cout << "  - update       Update cforge\n";
-  std::cout << "  - add          Add components to the project\n";
-  std::cout << "  - remove       Remove components from the project\n";
-  std::cout << "  - ide          Generate IDE project files\n";
-  std::cout << "  - version      Display version information\n";
-  std::cout << "  - help         Display help information\n";
-  std::cout << "\n";
-  std::cout << "Run 'cforge help <command>' for more information about a "
-               "specific command.\n";
-  std::cout << "\n";
+  cforge::logger::print_section("Available cforge commands:");
+  cforge::logger::print_list_item("init         Initialize a new project");
+  cforge::logger::print_list_item("build        Build the project");
+  cforge::logger::print_list_item("run          Build and run the project");
+  cforge::logger::print_list_item("clean        Clean build artifacts");
+  cforge::logger::print_list_item("test         Run project tests");
+  cforge::logger::print_list_item("deps/vcpkg   Manage dependencies");
+  cforge::logger::print_list_item("install      Install the project");
+  cforge::logger::print_list_item("update       Update cforge");
+  cforge::logger::print_list_item("add          Add components to the project");
+  cforge::logger::print_list_item("remove       Remove components from the project");
+  cforge::logger::print_list_item("ide          Generate IDE project files");
+  cforge::logger::print_list_item("version      Display version information");
+  cforge::logger::print_list_item("help         Display help information");
+  cforge::logger::print_blank();
+  cforge::logger::print_dim("Run 'cforge help <command>' for more information about a specific command.");
+  cforge::logger::print_blank();
 }
 
 /**
  * @brief Lists available project settings in cforge.toml
  */
 static void list_project_settings() {
-  std::cout << "Available project settings in cforge.toml:\n";
-  std::cout << "[project]\n";
-  std::cout << "name = \"project-name\"        # Required: Project name\n";
-  std::cout << "version = \"0.1.0\"           # Optional: Project version\n";
-  std::cout
-      << "cpp_standard = \"17\"         # Optional: C++ standard version\n";
-  std::cout << "\n";
-  std::cout << "[build]\n";
-  std::cout
-      << "build_dir = \"build\"         # Optional: Build directory name\n";
-  std::cout << "build_type = \"Release\"      # Optional: Default build type\n";
-  std::cout << "\n";
-  std::cout << "[dependencies]\n";
-  std::cout << "vcpkg = [\"fmt\", \"spdlog\"] # Optional: vcpkg dependencies\n";
-  std::cout << "vcpkg_triplet = \"x64-windows\" # Optional: vcpkg triplet\n";
-  std::cout
-      << "vcpkg_path = \"/path/to/vcpkg\" # Optional: Custom vcpkg path\n";
-  std::cout << "\n";
+  cforge::logger::print_section("Available project settings in cforge.toml:");
+  cforge::logger::print_config_block({
+    "[project]",
+    "name = \"project-name\"        # Required: Project name",
+    "version = \"0.1.0\"           # Optional: Project version",
+    "cpp_standard = \"17\"         # Optional: C++ standard version",
+    "",
+    "[build]",
+    "build_dir = \"build\"         # Optional: Build directory name",
+    "build_type = \"Release\"      # Optional: Default build type",
+    "",
+    "[dependencies]",
+    "vcpkg = [\"fmt\", \"spdlog\"] # Optional: vcpkg dependencies",
+    "vcpkg_triplet = \"x64-windows\" # Optional: vcpkg triplet",
+    "vcpkg_path = \"/path/to/vcpkg\" # Optional: Custom vcpkg path"
+  });
+  cforge::logger::print_blank();
 }
 
 /**
@@ -118,7 +114,7 @@ cforge_int_t cforge_cmd_list(const cforge_context_t *ctx) {
     category = ctx->args.args[0];
   }
 
-  std::cout << "cforge - Available options and configurations\n";
+  cforge::logger::print_header("cforge - Available options and configurations");
 
   // If category is specified, list only that category
   if (!category.empty()) {
@@ -142,14 +138,15 @@ cforge_int_t cforge_cmd_list(const cforge_context_t *ctx) {
         cforge::logger::print_error("Failed to load workspace configuration");
         return 1;
       }
-      std::cout << "Workspace projects:\n";
+      cforge::logger::print_section("Workspace projects:");
       for (const auto &proj : ws.get_projects()) {
-        std::cout << "  - " << proj.name;
+        std::string proj_info = proj.name;
         if (proj.is_startup_project)
-          std::cout << " (startup)";
-        std::cout << " (" << proj.path.string() << ")\n";
+          proj_info += " (startup)";
+        proj_info += " (" + proj.path.string() + ")";
+        cforge::logger::print_list_item(proj_info);
       }
-      std::cout << "\n";
+      cforge::logger::print_blank();
     } else if (category == "order" || category == "build-order") {
       if (!ctx->is_workspace) {
         cforge::logger::print_error("Not in a workspace");
@@ -160,11 +157,11 @@ cforge_int_t cforge_cmd_list(const cforge_context_t *ctx) {
         cforge::logger::print_error("Failed to load workspace configuration");
         return 1;
       }
-      std::cout << "Workspace build order:\n";
+      cforge::logger::print_section("Workspace build order:");
       for (const auto &name : ws.get_build_order()) {
-        std::cout << "  - " << name << "\n";
+        cforge::logger::print_list_item(name);
       }
-      std::cout << "\n";
+      cforge::logger::print_blank();
     } else if (category == "dependencies" || category == "deps") {
       if (ctx->is_workspace) {
         // Workspace project dependencies
@@ -173,17 +170,17 @@ cforge_int_t cforge_cmd_list(const cforge_context_t *ctx) {
           cforge::logger::print_error("Failed to load workspace configuration");
           return 1;
         }
-        std::cout << "Workspace project dependencies:\n";
+        cforge::logger::print_section("Workspace project dependencies:");
         for (const auto &proj : ws.get_projects()) {
           if (!proj.dependencies.empty()) {
-            std::cout << "  " << proj.name << ": ";
+            std::string deps_str;
             for (const auto &dep : proj.dependencies) {
-              std::cout << dep << " ";
+              deps_str += dep + " ";
             }
-            std::cout << "\n";
+            cforge::logger::print_kv(proj.name, deps_str);
           }
         }
-        std::cout << "\n";
+        cforge::logger::print_blank();
       } else {
         // Project-level dependencies from cforge.toml
         std::filesystem::path toml_path =
@@ -196,31 +193,31 @@ cforge_int_t cforge_cmd_list(const cforge_context_t *ctx) {
         if (cfg.has_key("dependencies.vcpkg")) {
           auto vdeps = cfg.get_table_keys("dependencies.vcpkg");
           if (!vdeps.empty()) {
-            std::cout << "vcpkg dependencies:\n";
+            cforge::logger::print_section("vcpkg dependencies:");
             for (const auto &dep : vdeps) {
-              std::cout << "  - " << dep << "\n";
+              cforge::logger::print_list_item(dep);
             }
-            std::cout << "\n";
+            cforge::logger::print_blank();
           }
         }
         if (cfg.has_key("dependencies.git")) {
           auto gdeps = cfg.get_table_keys("dependencies.git");
           if (!gdeps.empty()) {
-            std::cout << "Git dependencies:\n";
+            cforge::logger::print_section("Git dependencies:");
             for (const auto &dep : gdeps) {
-              std::cout << "  - " << dep << "\n";
+              cforge::logger::print_list_item(dep);
             }
-            std::cout << "\n";
+            cforge::logger::print_blank();
           }
         }
         if (cfg.has_key("dependencies.system")) {
           auto sdeps = cfg.get_string_array("dependencies.system");
           if (!sdeps.empty()) {
-            std::cout << "System dependencies:\n";
+            cforge::logger::print_section("System dependencies:");
             for (const auto &lib : sdeps) {
-              std::cout << "  - " << lib << "\n";
+              cforge::logger::print_list_item(lib);
             }
-            std::cout << "\n";
+            cforge::logger::print_blank();
           }
         }
       }
@@ -235,11 +232,11 @@ cforge_int_t cforge_cmd_list(const cforge_context_t *ctx) {
         return 1;
       }
       // Output Mermaid dependency graph
-      std::cout << "graph TD\n";
+      cforge::logger::print_plain("graph TD");
       std::vector<std::string> all_deps;
       for (const auto &proj : ws.get_projects()) {
         for (const auto &dep : proj.dependencies) {
-          std::cout << "  " << proj.name << " --> " << dep << "\n";
+          cforge::logger::print_plain("  " + proj.name + " --> " + dep);
           all_deps.push_back(dep);
         }
       }
@@ -248,10 +245,10 @@ cforge_int_t cforge_cmd_list(const cforge_context_t *ctx) {
         if (proj.dependencies.empty() &&
             std::find(all_deps.begin(), all_deps.end(), proj.name) ==
                 all_deps.end()) {
-          std::cout << "  " << proj.name << "\n";
+          cforge::logger::print_plain("  " + proj.name);
         }
       }
-      std::cout << "\n";
+      cforge::logger::print_blank();
     } else if (category == "scripts") {
       // List configured scripts
       std::filesystem::path toml_path =
@@ -263,27 +260,27 @@ cforge_int_t cforge_cmd_list(const cforge_context_t *ctx) {
                             toml_path.string());
         return 1;
       }
-      std::cout << "Configured scripts:\n";
+      cforge::logger::print_section("Configured scripts:");
       if (cfg.has_key("scripts.pre_build")) {
         auto scripts = cfg.get_string_array("scripts.pre_build");
-        std::cout << "  pre_build:\n";
+        cforge::logger::print_plain("  pre_build:");
         for (const auto &s : scripts) {
-          std::cout << "    - " << s << "\n";
+          cforge::logger::print_list_item(s, "-", 4);
         }
       }
       if (cfg.has_key("scripts.post_build")) {
         auto scripts = cfg.get_string_array("scripts.post_build");
-        std::cout << "  post_build:\n";
+        cforge::logger::print_plain("  post_build:");
         for (const auto &s : scripts) {
-          std::cout << "    - " << s << "\n";
+          cforge::logger::print_list_item(s, "-", 4);
         }
       }
-      std::cout << "\n";
+      cforge::logger::print_blank();
     } else {
       cforge::logger::print_error("Unknown list category: " + category);
-      std::cout
-          << "Available categories: configs, generators, targets, commands, "
-             "settings, projects, order, dependencies, graph, scripts\n";
+      cforge::logger::print_plain(
+          "Available categories: configs, generators, targets, commands, "
+          "settings, projects, order, dependencies, graph, scripts");
       return 1;
     }
   } else {
@@ -296,23 +293,22 @@ cforge_int_t cforge_cmd_list(const cforge_context_t *ctx) {
     if (ctx->is_workspace) {
       cforge::workspace ws;
       if (ws.load(ctx->working_dir)) {
-        std::cout << "Workspace projects:\n";
+        cforge::logger::print_section("Workspace projects:");
         for (const auto &proj : ws.get_projects()) {
-          std::cout << "  - " << proj.name << " (" << proj.path.string()
-                    << ")\n";
+          cforge::logger::print_list_item(proj.name + " (" + proj.path.string() + ")");
         }
-        std::cout << "\n";
-        std::cout << "Workspace project dependencies:\n";
+        cforge::logger::print_blank();
+        cforge::logger::print_section("Workspace project dependencies:");
         for (const auto &proj : ws.get_projects()) {
           if (!proj.dependencies.empty()) {
-            std::cout << "  " << proj.name << ": ";
+            std::string deps_str;
             for (const auto &dep : proj.dependencies) {
-              std::cout << dep << " ";
+              deps_str += dep + " ";
             }
-            std::cout << "\n";
+            cforge::logger::print_kv(proj.name, deps_str);
           }
         }
-        std::cout << "\n";
+        cforge::logger::print_blank();
       }
     }
   }

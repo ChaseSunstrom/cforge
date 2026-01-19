@@ -1,7 +1,7 @@
 {
   "id": "license",
   "title": "License",
-  "description": "📄 License",
+  "description": "License",
   "source": "@site/docs/license.md",
   "sourceDirName": ".",
   "slug": "/license",

@@ -17,29 +17,44 @@
 
 namespace cforge {
 
-// Add constructor to initialize toml_data to nullptr
+// Default constructor
 toml_reader::toml_reader() : toml_data(nullptr) {}
 
-// Add constructor that takes a toml::table directly
-toml_reader::toml_reader(const toml::table &table) {
-  toml_data = new toml::table(table);
+// Constructor that takes a toml::table directly
+toml_reader::toml_reader(const toml::table &table)
+    : toml_data(std::make_unique<toml::table>(table)) {}
+
+// Destructor - unique_ptr handles cleanup automatically
+toml_reader::~toml_reader() = default;
+
+// Move constructor
+toml_reader::toml_reader(toml_reader &&other) noexcept
+    : toml_data(std::move(other.toml_data)) {}
+
+// Move assignment operator
+toml_reader &toml_reader::operator=(toml_reader &&other) noexcept {
+  if (this != &other) {
+    toml_data = std::move(other.toml_data);
+  }
+  return *this;
 }
 
-// Add destructor to clean up allocated memory
-toml_reader::~toml_reader() {
-  if (toml_data) {
-    delete static_cast<toml::table *>(toml_data);
-    toml_data = nullptr;
+// Copy constructor - performs deep copy
+toml_reader::toml_reader(const toml_reader &other)
+    : toml_data(other.toml_data ? std::make_unique<toml::table>(*other.toml_data) : nullptr) {}
+
+// Copy assignment operator - performs deep copy
+toml_reader &toml_reader::operator=(const toml_reader &other) {
+  if (this != &other) {
+    toml_data = other.toml_data ? std::make_unique<toml::table>(*other.toml_data) : nullptr;
   }
+  return *this;
 }
 
 bool toml_reader::load(const std::string &filepath) {
   try {
-    // If we have existing data, delete it
-    if (toml_data) {
-      delete static_cast<toml::table *>(toml_data);
-      toml_data = nullptr;
-    }
+    // Reset existing data
+    toml_data.reset();
 
     // Check if file exists
     if (!std::filesystem::exists(filepath)) {
@@ -48,7 +63,7 @@ bool toml_reader::load(const std::string &filepath) {
     }
 
     // Parse the file
-    toml_data = new toml::table(toml::parse_file(filepath));
+    toml_data = std::make_unique<toml::table>(toml::parse_file(filepath));
     return true;
   } catch (const toml::parse_error &err) {
     std::stringstream ss;
@@ -70,7 +85,7 @@ std::string toml_reader::get_string(const std::string &key,
   }
 
   try {
-    auto &table = *static_cast<toml::table *>(toml_data);
+    auto &table = *toml_data;
     auto value = table.at_path(key);
     if (!value || !value.is_string()) {
       return default_value;
@@ -88,7 +103,7 @@ int64_t toml_reader::get_int(const std::string &key,
   }
 
   try {
-    auto &table = *static_cast<toml::table *>(toml_data);
+    auto &table = *toml_data;
     auto value = table.at_path(key);
     if (!value || !value.is_integer()) {
       return default_value;
@@ -105,7 +120,7 @@ bool toml_reader::get_bool(const std::string &key, bool default_value) const {
   }
 
   try {
-    auto &table = *static_cast<toml::table *>(toml_data);
+    auto &table = *toml_data;
     auto value = table.at_path(key);
     if (!value || !value.is_boolean()) {
       return default_value;
@@ -124,7 +139,7 @@ toml_reader::get_string_array(const std::string &key) const {
   }
 
   try {
-    auto &table = *static_cast<toml::table *>(toml_data);
+    auto &table = *toml_data;
     auto value = table.at_path(key);
     if (!value || !value.is_array()) {
       return result;
@@ -148,7 +163,7 @@ bool toml_reader::has_key(const std::string &key) const {
   }
 
   try {
-    auto &table = *static_cast<toml::table *>(toml_data);
+    auto &table = *toml_data;
     auto node = table.at_path(key);
     return static_cast<bool>(node); // Check if node exists
   } catch (...) {
@@ -164,7 +179,7 @@ toml_reader::get_table_keys(const std::string &table_name) const {
   }
 
   try {
-    auto &root_table = *static_cast<toml::table *>(toml_data);
+    auto &root_table = *toml_data;
     const toml::table *table = &root_table;
 
     // Navigate to subtable if specified
@@ -195,7 +210,7 @@ toml_reader::get_tables(const std::string &prefix) const {
   }
 
   try {
-    auto &table = *static_cast<toml::table *>(toml_data);
+    auto &table = *toml_data;
     for (const auto &[key, value] : table) {
       if (value.is_table()) {
         std::string table_name = std::string(key.str());
@@ -218,7 +233,7 @@ toml_reader::get_string_map(const std::string &key) const {
   }
 
   try {
-    auto &table = *static_cast<toml::table *>(toml_data);
+    auto &table = *toml_data;
     auto value = table.at_path(key);
     if (!value || !value.is_table()) {
       return result;
@@ -248,7 +263,7 @@ toml_reader::get_table_array(const std::string &key) const {
   }
 
   try {
-    auto &table = *static_cast<toml::table *>(toml_data);
+    auto &table = *toml_data;
     auto value = table.at_path(key);
     if (!value || !value.is_array()) {
       return result;
@@ -273,7 +288,7 @@ toml_reader::get_table(const std::string &key) const {
   }
 
   try {
-    auto &table = *static_cast<toml::table *>(toml_data);
+    auto &table = *toml_data;
     auto value = table.at_path(key);
     if (!value || !value.is_table()) {
       return std::nullopt;

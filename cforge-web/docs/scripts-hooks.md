@@ -3,7 +3,7 @@ id: scripts-hooks
 title: Scripts & Hooks
 ---
 
-## 📝 Scripts & Hooks
+## Scripts and Hooks
 
 Define scripts and hooks in `cforge.toml`:
 

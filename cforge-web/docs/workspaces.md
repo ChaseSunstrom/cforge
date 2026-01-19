@@ -57,7 +57,7 @@ cforge list projects
 cforge list build-order
 
 # Visualize dependencies
-cforge tree
+cforge deps tree
 ```
 
 ### Project Dependencies

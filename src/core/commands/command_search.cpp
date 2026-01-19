@@ -8,9 +8,6 @@
 #include "core/registry.hpp"
 #include "core/types.h"
 #include <algorithm>
-#include <iomanip>
-#include <iostream>
-#include <sstream>
 
 /**
  * @brief Handle the 'search' command
@@ -72,14 +69,26 @@ cforge_int_t cforge_cmd_search(const cforge_context_t *ctx) {
   }
 
   // Display results
-  std::cout << std::endl;
+  cforge::logger::print_blank();
 
-  // Find maximum name length for alignment
+  // Find maximum name and version length for alignment
   cforge_size_t max_name_len = 0;
+  cforge_size_t max_ver_len = 0;
   for (const auto &name : results) {
     max_name_len = std::max(max_name_len, name.length());
+    auto pkg = reg.get_package(name);
+    if (pkg && !pkg->versions.empty()) {
+      max_ver_len = std::max(max_ver_len, pkg->versions[0].version.length());
+    }
   }
-  max_name_len = std::min(max_name_len, cforge_size_t(30));
+  max_name_len = std::min(max_name_len, cforge_size_t(25));
+  max_ver_len = std::min(max_ver_len, cforge_size_t(12));
+
+  // Print table header
+  std::vector<int> widths = {static_cast<int>(max_name_len),
+                             static_cast<int>(max_ver_len),
+                             45};
+  cforge::logger::print_table_header({"Package", "Version", "Description"}, widths, 2);
 
   // Print each result
   for (const auto &name : results) {
@@ -91,45 +100,26 @@ cforge_int_t cforge_cmd_search(const cforge_context_t *ctx) {
     // Get latest version
     std::string version = pkg->versions.empty() ? "?" : pkg->versions[0].version;
 
-    // Format name with padding
-    std::string display_name = name;
-    if (display_name.length() > max_name_len) {
-      display_name = display_name.substr(0, max_name_len - 3) + "...";
-    }
-
     // Format description (truncate if needed)
     std::string desc = pkg->description;
-    cforge_size_t max_desc_len = 50;
+    cforge_size_t max_desc_len = 42;
     if (desc.length() > max_desc_len) {
       desc = desc.substr(0, max_desc_len - 3) + "...";
     }
 
-    // Print with color formatting
-    std::cout << "  ";
-
-    // Print name (green)
-    std::cout << "\033[32m" << std::left << std::setw(max_name_len + 2) << display_name << "\033[0m";
-
-    // Print version (cyan)
-    std::cout << "\033[36m" << std::setw(12) << version << "\033[0m";
-
-    // Print description
-    std::cout << desc;
-
-    // Print verified badge if applicable
+    // Add badges to description
     if (pkg->verified) {
-      std::cout << " \033[33m[verified]\033[0m";
+      desc += " [verified]";
     }
-
-    // Print header-only badge if applicable
     if (pkg->integration.type == "header_only") {
-      std::cout << " \033[35m[header-only]\033[0m";
+      desc += " [header-only]";
     }
 
-    std::cout << std::endl;
+    // Print as table row
+    cforge::logger::print_table_row({name, version, desc}, widths, 2);
   }
 
-  std::cout << std::endl;
+  cforge::logger::print_blank();
   cforge::logger::finished(std::to_string(results.size()) + " package(s) found");
 
   return 0;
