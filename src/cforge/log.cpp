@@ -134,6 +134,34 @@ void logger::running(const std::string &command) {
   print_status_line("Running", command, fmt::color::green);
 }
 
+void logger::running_timer(const std::string &command, double elapsed_secs) {
+  if (s_verbosity == log_verbosity::VERBOSITY_QUIET)
+    return;
+
+  // Truncate command if too long
+  std::string display_cmd = command;
+  if (display_cmd.length() > 30) {
+    display_cmd = display_cmd.substr(0, 27) + "...";
+  }
+
+  // Format elapsed time
+  std::string time_str;
+  if (elapsed_secs < 60.0) {
+    time_str = fmt::format("{:.1f}s", elapsed_secs);
+  } else {
+    int mins = static_cast<int>(elapsed_secs) / 60;
+    double secs = elapsed_secs - (mins * 60);
+    time_str = fmt::format("{}m {:.0f}s", mins, secs);
+  }
+
+  // Clear line and print with timer (updates in place)
+  fmt::print(stderr, "\r\033[K");
+  fmt::print(stderr, fg(fmt::color::green) | fmt::emphasis::bold, "{:>{}}", "Running", STATUS_WIDTH);
+  fmt::print(stderr, " {}", display_cmd);
+  fmt::print(stderr, fg(fmt::color::dim_gray), " ({})", time_str);
+  std::fflush(stderr);
+}
+
 void logger::finished(const std::string &config, const std::string &time) {
   if (s_verbosity == log_verbosity::VERBOSITY_QUIET)
     return;
@@ -220,7 +248,11 @@ void logger::cleaning(const std::string &target) {
 // Build progress display (Rust-style)
 
 
-void logger::compiling_file(const std::string &file, cforge_double_t duration_secs) {
+// Static to track if we've printed the initial lines
+static bool s_progress_initialized = false;
+
+void logger::compiling_file(const std::string &file, cforge_int_t current,
+                            cforge_int_t total, cforge_double_t duration_secs) {
   if (s_verbosity == log_verbosity::VERBOSITY_QUIET)
     return;
 
@@ -233,57 +265,107 @@ void logger::compiling_file(const std::string &file, cforge_double_t duration_se
     display_file = file.substr(7);  // Remove "[link] " prefix
   }
 
-  std::string message = display_file;
-  if (duration_secs >= 0) {
-    if (duration_secs >= 10.0) {
-      // Highlight slow files
-      message = fmt::format("{} ({:.1f}s) <- slow", display_file, duration_secs);
-    } else {
-      message = fmt::format("{} ({:.1f}s)", display_file, duration_secs);
-    }
+  // Truncate long filenames for cleaner display
+  if (display_file.length() > 35) {
+    display_file = display_file.substr(0, 32) + "...";
   }
-  print_status_line(action, message, fmt::color::green);
+
+  if (!s_progress_initialized) {
+    // First time: just print the filename line, then create space for progress bar
+    fmt::print(stderr, fg(fmt::color::green) | fmt::emphasis::bold, "{:>{}}", action, STATUS_WIDTH);
+    fmt::print(stderr, " {}", display_file);
+    if (current > 0 && total > 0) {
+      fmt::print(stderr, fg(fmt::color::dim_gray), " [{}/{}]", current, total);
+    }
+    fmt::print(stderr, "\n");  // Newline after filename
+    s_progress_initialized = true;
+  } else {
+    // Subsequent updates: move up, clear, reprint filename, move back down
+    fmt::print(stderr, "\033[A\r\033[K");  // Move up, go to start, clear line
+    fmt::print(stderr, fg(fmt::color::green) | fmt::emphasis::bold, "{:>{}}", action, STATUS_WIDTH);
+    fmt::print(stderr, " {}", display_file);
+    if (current > 0 && total > 0) {
+      fmt::print(stderr, fg(fmt::color::dim_gray), " [{}/{}]", current, total);
+    }
+    if (duration_secs >= 0) {
+      if (duration_secs >= 10.0) {
+        fmt::print(stderr, fg(fmt::color::yellow), " ({:.1f}s slow)", duration_secs);
+      } else if (duration_secs >= 1.0) {
+        fmt::print(stderr, fg(fmt::color::gray), " ({:.1f}s)", duration_secs);
+      }
+    }
+    fmt::print(stderr, "\n");  // Move back to progress bar line
+  }
+  std::fflush(stderr);
 }
 
-void logger::progress_bar(cforge_int_t current, cforge_int_t total, bool in_place) {
+void logger::reset_progress_display() {
+  s_progress_initialized = false;
+}
+
+void logger::progress_bar(cforge_int_t current, cforge_int_t total, bool in_place,
+                          cforge_double_t elapsed_secs) {
   if (s_verbosity == log_verbosity::VERBOSITY_QUIET)
     return;
   if (total <= 0)
     return;
 
-  const cforge_int_t bar_width = 20;
+  const cforge_int_t bar_width = 30;
   cforge_double_t progress = static_cast<cforge_double_t>(current) / static_cast<cforge_double_t>(total);
   cforge_int_t filled = static_cast<cforge_int_t>(progress * bar_width);
+  cforge_int_t percent = static_cast<cforge_int_t>(progress * 100);
 
-  // Build the bar with Unicode block characters
+  // Build ASCII progress bar
   std::string bar;
   for (cforge_int_t i = 0; i < bar_width; ++i) {
     if (i < filled) {
-      bar += "\xe2\x96\x88"; // Full block
+      bar += "=";
+    } else if (i == filled && current < total) {
+      bar += ">";
     } else {
-      bar += "\xe2\x96\x91"; // Light shade
+      bar += " ";
     }
   }
 
-  cforge_int_t percent = static_cast<cforge_int_t>(progress * 100);
+  // Format elapsed time if provided
+  std::string time_str;
+  if (elapsed_secs >= 0) {
+    if (elapsed_secs < 60.0) {
+      time_str = fmt::format("{:.1f}s", elapsed_secs);
+    } else {
+      int mins = static_cast<int>(elapsed_secs) / 60;
+      double secs = elapsed_secs - (mins * 60);
+      time_str = fmt::format("{}m{:.0f}s", mins, secs);
+    }
+  }
 
   if (in_place) {
-    // Use carriage return to update in place
-    fmt::print("\r");
-    fmt::print(fg(fmt::color::cyan), "{:>{}}", "", STATUS_WIDTH);
-    fmt::print(" [{}] {:3d}% ({}/{})", bar, percent, current, total);
-    std::cout << std::flush;
+    // Progress bar on its own line below the compiling file line
+    // Aligned to start at same position as "Compiling" (3 spaces indent)
+    fmt::print(stderr, "\r\033[K");  // Clear current line
+    fmt::print(stderr, "   ");  // 3 spaces to align with "Compiling"
+    fmt::print(stderr, fg(fmt::color::cyan), "[{}]", bar);
+    fmt::print(stderr, " {:3d}%", percent);
+    if (!time_str.empty()) {
+      fmt::print(stderr, fg(fmt::color::yellow), "  {}", time_str);
+    }
+    std::fflush(stderr);
   } else {
-    // Print on new line
-    fmt::print(fg(fmt::color::cyan), "{:>{}}", "", STATUS_WIDTH);
-    fmt::print(" [{}] {:3d}% ({}/{})\n", bar, percent, current, total);
+    // Full progress bar on new line
+    fmt::print(stderr, "   ");  // 3 spaces to align with "Compiling"
+    fmt::print(stderr, fg(fmt::color::cyan), "[{}]", bar);
+    fmt::print(stderr, " {:3d}%", percent);
+    if (!time_str.empty()) {
+      fmt::print(stderr, "  {}", time_str);
+    }
+    fmt::print(stderr, "\n");
   }
 }
 
 void logger::clear_line() {
   // Move to beginning of line and clear it
-  fmt::print("\r\033[K");
-  std::cout << std::flush;
+  fmt::print(stderr, "\r\033[K");
+  std::fflush(stderr);
 }
 
 void logger::print_timing_summary(

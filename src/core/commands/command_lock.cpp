@@ -160,6 +160,15 @@ cforge_int_t cforge_cmd_lock(const cforge_context_t *ctx) {
   if (use_fetch_content) {
     // FetchContent mode: generate lock file from cforge.toml + registry
     cforge::registry reg;
+
+    // Ensure registry is up to date
+    if (reg.needs_update()) {
+      cforge::logger::print_action("Updating", "package index");
+      if (!reg.update()) {
+        cforge::logger::print_warning("Failed to update package index, using cached version");
+      }
+    }
+
     std::filesystem::path lock_path = current_dir / cforge::LOCK_FILE;
     std::ofstream lock_file(lock_path);
 

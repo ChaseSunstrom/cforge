@@ -803,6 +803,14 @@ void configure_index_dependencies_phase1(const std::filesystem::path &project_di
   // Initialize registry to get package info (use project_dir so index is at project_dir/cforge-index)
   registry reg;  // Use default cache directory
 
+  // Ensure registry is up to date
+  if (reg.needs_update()) {
+    logger::print_action("Updating", "package index");
+    if (!reg.update()) {
+      logger::print_warning("Failed to update package index, using cached version");
+    }
+  }
+
   cmakelists << "# Index dependencies (from cforge-index registry)\n";
 
   for (const auto &dep : index_deps) {
@@ -949,6 +957,14 @@ void configure_index_dependencies_fetchcontent_phase1(
 
   // Initialize registry to get package info
   registry reg;  // Use default cache directory
+
+  // Ensure registry is up to date
+  if (reg.needs_update()) {
+    logger::print_action("Updating", "package index");
+    if (!reg.update()) {
+      logger::print_warning("Failed to update package index, using cached version");
+    }
+  }
 
   cmakelists << "# Index dependencies via FetchContent\n";
   cmakelists << "include(FetchContent)\n\n";
@@ -2497,15 +2513,15 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
   cmakelists << "set(CPACK_DEB_COMPONENT_INSTALL ON)\n";
   cmakelists << "set(CPACK_RPM_COMPONENT_INSTALL ON)\n\n";
 
-  // Configure components
+  // Configure components (names must match install() COMPONENT names exactly)
   cmakelists << "# Package components\n";
-  cmakelists << "set(CPACK_COMPONENTS_ALL runtime)\n";
+  cmakelists << "set(CPACK_COMPONENTS_ALL Runtime)\n";
   if (binary_type == "shared_lib" || binary_type == "static_lib") {
-    cmakelists << "list(APPEND CPACK_COMPONENTS_ALL development)\n";
+    cmakelists << "list(APPEND CPACK_COMPONENTS_ALL Development)\n";
   }
   if (binary_type == "executable" &&
       project_config.get_bool("package.include_debug", false)) {
-    cmakelists << "list(APPEND CPACK_COMPONENTS_ALL debug)\n";
+    cmakelists << "list(APPEND CPACK_COMPONENTS_ALL Debug)\n";
   }
   cmakelists << "\n";
 

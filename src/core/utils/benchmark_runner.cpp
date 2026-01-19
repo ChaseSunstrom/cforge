@@ -223,12 +223,10 @@ public:
     return "Catch2::Catch2WithMain";
   }
 
-  std::vector<benchmark_result> parse_output(const std::string &output) const override {
+  std::vector<benchmark_result> parse_output([[maybe_unused]] const std::string &output) const override {
     std::vector<benchmark_result> results;
     // Catch2 benchmark output format varies, parse basic format
-
-    std::regex bench_regex(R"(benchmark name\s+samples.+mean.+)");
-    // More complex parsing would be needed for full Catch2 benchmark output
+    // TODO: Implement full Catch2 benchmark parsing
 
     return results;
   }
@@ -610,7 +608,7 @@ bool benchmark_runner::build_target(const benchmark_target &target,
   return result.exit_code == 0;
 }
 
-bool benchmark_runner::build_benchmarks(const std::string &config, bool verbose) {
+bool benchmark_runner::build_benchmarks(const std::string &config, [[maybe_unused]] bool verbose) {
   auto targets = discover_targets();
 
   if (targets.empty()) {

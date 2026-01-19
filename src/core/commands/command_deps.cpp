@@ -233,7 +233,7 @@ cforge_int_t deps_list(const cforge_context_t *ctx) {
   }
 
   // Parse arguments
-  bool verbose = false;
+  [[maybe_unused]] bool verbose = false;
   std::string format = "table"; // table, json, simple
 
   for (cforge_int_t i = 1; i < ctx->args.arg_count; i++) {

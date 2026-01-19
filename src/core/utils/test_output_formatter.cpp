@@ -5,6 +5,7 @@
 
 #include "core/test_output_formatter.hpp"
 #include "core/types.h"
+#include "cforge/log.hpp"
 #include <algorithm>
 #include <filesystem>
 #include <fmt/color.h>
@@ -230,24 +231,23 @@ std::string test_output_formatter::format_test_list(
 // ============================================================================
 
 void test_output_formatter::print_run_start(cforge_int_t total_tests) {
-  fmt::print("\nrunning {} tests\n", total_tests);
+  logger::print_action("Running", std::to_string(total_tests) + " tests");
 }
 
 void test_output_formatter::print_build_start(const std::string &target_name,
                                              test_framework framework) {
-  fmt::print(fmt::emphasis::bold | fg(fmt::color::green),
-             "    Building");
-  fmt::print(" test {} ({})\n", target_name, test_framework_to_string(framework));
+  logger::print_action("Building", "test " + target_name + " (" + test_framework_to_string(framework) + ")");
 }
 
 void test_output_formatter::print_execution_start(const std::string &executable_path) {
-  fmt::print(fmt::emphasis::bold | fg(fmt::color::green),
-             "     Running");
-  fmt::print(" {}\n", shorten_path(executable_path));
+  logger::print_action("Running", shorten_path(executable_path));
 }
 
 void test_output_formatter::print_test_result(const test_result &result) {
-  fmt::print("test {} ... ", result.name);
+  // Right-aligned "Testing" followed by test name and result
+  constexpr int STATUS_WIDTH = 12;
+  fmt::print(fg(fmt::color::green) | fmt::emphasis::bold, "{:>{}}", "Testing", STATUS_WIDTH);
+  fmt::print(" {} ... ", result.name);
 
   switch (result.status) {
     case test_status::PASSED:
@@ -377,66 +377,66 @@ void test_output_formatter::print_all_failures(const std::vector<test_result> &r
 }
 
 void test_output_formatter::print_summary(const test_summary &summary) {
+  constexpr int STATUS_WIDTH = 12;
+
   // List failed tests
   if (!summary.failed_tests.empty()) {
     fmt::print("\n");
-    fmt::print(fmt::emphasis::bold, "failures:\n");
+    fmt::print(fg(fmt::color::red) | fmt::emphasis::bold, "{:>{}}", "Failures", STATUS_WIDTH);
+    fmt::print("\n");
     for (const auto &test : summary.failed_tests) {
-      fmt::print("    {}\n", test);
+      fmt::print("{:>{}} {}\n", "", STATUS_WIDTH, test);
     }
   }
 
-  fmt::print("\ntest result: ");
-
+  // Summary line with Finished style
+  fmt::print("\n");
   if (summary.failed > 0 || summary.timeout > 0) {
-    fmt::print(fmt::emphasis::bold | fg(fmt::color::red), "FAILED");
+    fmt::print(fg(fmt::color::red) | fmt::emphasis::bold, "{:>{}}", "Failed", STATUS_WIDTH);
   } else {
-    fmt::print(fmt::emphasis::bold | fg(fmt::color::green), "ok");
+    fmt::print(fg(fmt::color::green) | fmt::emphasis::bold, "{:>{}}", "Finished", STATUS_WIDTH);
   }
 
-  fmt::print(". ");
+  fmt::print(" ");
   fmt::print(fg(fmt::color::green), "{} passed", summary.passed);
-  fmt::print("; ");
   if (summary.failed > 0) {
+    fmt::print(", ");
     fmt::print(fg(fmt::color::red), "{} failed", summary.failed);
-  } else {
-    fmt::print("{} failed", summary.failed);
   }
-
   if (summary.skipped > 0) {
-    fmt::print("; ");
+    fmt::print(", ");
     fmt::print(fg(fmt::color::yellow), "{} ignored", summary.skipped);
   }
-
   if (summary.timeout > 0) {
-    fmt::print("; ");
+    fmt::print(", ");
     fmt::print(fg(fmt::color::red), "{} timed out", summary.timeout);
   }
-
-  fmt::print("; finished in {}\n", format_duration(summary.total_duration));
+  fmt::print(" in {}\n", format_duration(summary.total_duration));
 }
 
 void test_output_formatter::print_test_list(const std::vector<std::string> &tests) {
   auto grouped = group_tests_by_suite(tests);
+  constexpr int STATUS_WIDTH = 12;
 
+  logger::print_action("Listing", std::to_string(tests.size()) + " tests");
   fmt::print("\n");
-  fmt::print(fmt::emphasis::bold, "Available tests:\n\n");
 
   for (const auto &[suite, suite_tests] : grouped) {
     if (!suite.empty()) {
-      fmt::print(fg(fmt::color::cyan), "{}::\n", suite);
+      fmt::print(fg(fmt::color::cyan) | fmt::emphasis::bold, "{:>{}}", suite, STATUS_WIDTH);
+      fmt::print("::\n");
       for (const auto &test : suite_tests) {
-        fmt::print("  {}\n", test);
+        fmt::print("{:>{}} {}\n", "", STATUS_WIDTH, test);
       }
       fmt::print("\n");
     } else {
       for (const auto &test : suite_tests) {
-        fmt::print("{}\n", test);
+        fmt::print("{:>{}} {}\n", "", STATUS_WIDTH, test);
       }
     }
   }
 
-  fmt::print("\nTotal: {} tests\n", tests.size());
+  logger::print_action("Total", std::to_string(tests.size()) + " tests");
 }
 
 void test_output_formatter::print_native_output(const std::string &output) {

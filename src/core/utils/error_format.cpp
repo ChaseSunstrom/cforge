@@ -1955,16 +1955,18 @@ deduplicate_diagnostics(std::vector<diagnostic> diagnostics) {
       }
     }
 
-    // For errors with file/line info, dedupe by location + error type
+    // For errors with file/line info, dedupe primarily by location
+    // Different parsers may produce different codes for the same diagnostic
     if (!d.file_path.empty() && d.line_number > 0) {
-      // Normalize the code to a base type for deduplication
-      std::string base_code = d.code;
-      if (base_code.find("-") != std::string::npos) {
-        // Extract the suffix after the last hyphen as the error type
-        cforge_size_t pos = base_code.rfind("-");
-        base_code = base_code.substr(pos + 1);
+      // Use file:line:column as the primary key - this deduplicates across parsers
+      // that report the same diagnostic with different codes (GCC, ICX, clang-tidy, etc.)
+      std::string location_key = d.file_path + ":" + std::to_string(d.line_number);
+      if (d.column_number > 0) {
+        location_key += ":" + std::to_string(d.column_number);
       }
-      return d.file_path + ":" + std::to_string(d.line_number) + "::" + base_code;
+      // Include diagnostic level to distinguish errors from warnings at same location
+      location_key += "::" + std::to_string(static_cast<int>(d.level));
+      return location_key;
     }
 
     // For other errors, dedupe by code + message

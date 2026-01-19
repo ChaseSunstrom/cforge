@@ -140,8 +140,8 @@ struct cache_manifest {
  * @brief Build environment information for generating cache keys
  */
 struct build_environment {
-  platform platform;
-  compiler compiler;
+  cforge::platform target_platform;
+  cforge::compiler target_compiler;
   std::string compiler_version;
   std::string arch;
   int cpp_standard;

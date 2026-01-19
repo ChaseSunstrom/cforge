@@ -1260,16 +1260,33 @@ static bool run_cpack(const std::filesystem::path &build_dir,
       pkg_version = "1.0.0";
     }
 
-    // First cleanup ALL packages in the output directory to ensure no conflicts
+    // First cleanup ALL packages and stray executables in the output directory
     cforge::logger::print_verbose("Cleaning package directory: " +
                                   package_dir.string());
     for (const auto &entry : std::filesystem::directory_iterator(package_dir)) {
       if (entry.is_regular_file()) {
         std::string filename = entry.path().filename().string();
+        std::string ext = entry.path().extension().string();
+
+        // Remove files matching the project name (old packages)
         if (filename.find(pkg_name) != std::string::npos) {
           cforge::logger::print_verbose("Removing existing package file: " +
                                         entry.path().string());
           std::filesystem::remove(entry.path());
+        }
+        // Also remove any stray executables that don't match the project name
+        // These can be leftover from tests or other builds
+        else if (ext == ".exe" || ext == "") {
+          // Check if it's actually an executable (not a package archive)
+          std::string ext_lower = ext;
+          std::transform(ext_lower.begin(), ext_lower.end(), ext_lower.begin(), ::tolower);
+          if (ext_lower != ".zip" && ext_lower != ".tar" && ext_lower != ".gz" &&
+              ext_lower != ".deb" && ext_lower != ".rpm" && ext_lower != ".msi" &&
+              ext_lower != ".nupkg") {
+            cforge::logger::print_verbose("Removing stray executable: " +
+                                          entry.path().string());
+            std::filesystem::remove(entry.path());
+          }
         }
       }
     }

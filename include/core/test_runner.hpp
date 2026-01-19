@@ -100,10 +100,19 @@ public:
 
 private:
   std::filesystem::path m_project_dir;
+  std::filesystem::path m_build_base_dir;  // Configured build directory
   const toml_reader &m_project_config;
   test_config m_test_config;
   std::vector<test_result> m_results;
   std::string m_error;
+
+  /**
+   * @brief Get the build directory for a test target
+   * @param target_name Name of the test target
+   * @return Path to the test target's build directory
+   */
+  std::filesystem::path get_test_gen_dir(const std::string &target_name) const;
+  std::filesystem::path get_test_build_dir(const std::string &target_name) const;
 
   // Framework adapters (lazily created)
   std::map<test_framework, std::unique_ptr<i_test_framework_adapter>> m_adapters;

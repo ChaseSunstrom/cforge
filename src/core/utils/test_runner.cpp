@@ -40,6 +40,10 @@ test_runner::~test_runner() = default;
 // ============================================================================
 
 bool test_runner::load_config() {
+  // Load build directory from config (same as main build uses)
+  std::string build_dir_str = m_project_config.get_string("build.build_dir", "build");
+  m_build_base_dir = m_project_dir / build_dir_str;
+
   // Load [test] section defaults
   m_test_config.directory = m_project_config.get_string("test.directory", "tests");
   m_test_config.default_timeout =
@@ -86,6 +90,14 @@ void test_runner::load_framework_config(test_framework fw, const std::string &se
   }
 
   m_test_config.framework_configs[fw] = fc;
+}
+
+fs::path test_runner::get_test_gen_dir(const std::string &target_name) const {
+  return m_build_base_dir / "tests" / target_name;
+}
+
+fs::path test_runner::get_test_build_dir(const std::string &target_name) const {
+  return get_test_gen_dir(target_name) / "build";
 }
 
 // ============================================================================
@@ -344,8 +356,8 @@ i_test_framework_adapter *test_runner::get_adapter(test_framework fw) {
 // ============================================================================
 
 bool test_runner::generate_test_cmake(const test_target &target) {
-  // Use .cforge directory to keep generated files hidden
-  fs::path gen_dir = m_project_dir / ".cforge" / "tests" / target.name;
+  // Use configured build directory for test outputs
+  fs::path gen_dir = get_test_gen_dir(target.name);
   fs::create_directories(gen_dir);
 
   fs::path cmake_file = gen_dir / "CMakeLists.txt";
@@ -480,9 +492,8 @@ std::string test_runner::get_project_link_target() const {
 
 bool test_runner::configure_cmake(const test_target &target,
                                   const std::string &build_config) {
-  // Source is in .cforge, build output goes to .cforge as well
-  fs::path gen_dir = m_project_dir / ".cforge" / "tests" / target.name;
-  fs::path build_dir = gen_dir / "build";
+  fs::path gen_dir = get_test_gen_dir(target.name);
+  fs::path build_dir = get_test_build_dir(target.name);
 
   std::vector<std::string> args = {
     "-S", to_cmake_path(gen_dir),
@@ -514,7 +525,7 @@ bool test_runner::configure_cmake(const test_target &target,
 
 bool test_runner::build_target(const test_target &target,
                                const std::string &build_config) {
-  fs::path build_dir = m_project_dir / ".cforge" / "tests" / target.name / "build";
+  fs::path build_dir = get_test_build_dir(target.name);
 
   std::vector<std::string> args = {
     "--build", to_cmake_path(build_dir),
@@ -573,7 +584,7 @@ bool test_runner::build_tests(const std::string &config, [[maybe_unused]] bool v
 
 fs::path test_runner::find_test_executable(const test_target &target,
                                            const std::string &build_config) {
-  fs::path build_dir = m_project_dir / ".cforge" / "tests" / target.name / "build";
+  fs::path build_dir = get_test_build_dir(target.name);
 
   // Check various possible locations
   std::vector<fs::path> candidates = {

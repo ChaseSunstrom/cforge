@@ -132,8 +132,9 @@ execute_process(const std::string &command,
   [[maybe_unused]] bool timed_out = false;
   auto last_activity_time = start_time;
 
-  // Status indicator for long-running commands
-  bool show_status = timeout_seconds > 10;
+  // Status indicator for long-running commands (only if no external progress callback)
+  bool show_status = timeout_seconds > 10 && !stdout_callback;
+  bool showed_timer = false;
   auto last_status_time = start_time;
 
   while (true) {
@@ -159,14 +160,18 @@ execute_process(const std::string &command,
       break;
     }
 
-    // Show status indicator for long-running commands with no output
-    if (show_status && since_last_activity > 5) {
-      auto since_last_status = std::chrono::duration_cast<std::chrono::seconds>(
+    // Show status indicator with timer for long-running commands with no output
+    if (show_status && since_last_activity > 3) {
+      auto since_last_status = std::chrono::duration_cast<std::chrono::milliseconds>(
                                    current_time - last_status_time)
                                    .count();
 
-      if (since_last_status > 5) {
-        logger::running(command + " (still running...)");
+      // Update timer every 100ms for smooth display
+      if (since_last_status > 100) {
+        auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                              current_time - start_time).count();
+        logger::running_timer(command, static_cast<double>(elapsed_ms) / 1000.0);
+        showed_timer = true;
         last_status_time = current_time;
       }
     }
@@ -178,7 +183,7 @@ execute_process(const std::string &command,
       result.exit_code = static_cast<cforge_int_t>(exit_code);
     }
 
-    [[maybe_unused]] bool had_activity = false;
+    bool had_activity = false;
 
     // Check for stdout data
     BOOL stdout_success =
@@ -216,6 +221,17 @@ execute_process(const std::string &command,
       }
     }
 
+    // Periodic tick for progress updates even without output
+    // This keeps timers running during silent phases (like linking)
+    if (!had_activity && stdout_callback) {
+      auto since_last_tick = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                 current_time - last_status_time).count();
+      if (since_last_tick >= 100) {
+        stdout_callback("");  // Empty string triggers timer update only
+        last_status_time = current_time;
+      }
+    }
+
     // If process has exited and no more data to read, or if the pipes are
     // broken, break
     if (result.exit_code != -1) {
@@ -249,6 +265,13 @@ execute_process(const std::string &command,
   result.stdout_output = stdout_stream.str();
   result.stderr_output = stderr_stream.str();
   result.success = (result.exit_code == 0);
+
+  // Clear running timer line if we were showing one
+  if (showed_timer) {
+    logger::clear_line();
+    fmt::print(stderr, "\n");
+    std::fflush(stderr);
+  }
 
   // Clean up handles
   CloseHandle(stdout_read);
@@ -340,7 +363,16 @@ execute_process(const std::string &command,
     std::stringstream stdout_stream, stderr_stream;
     bool child_running = true;
 
+    // Timer support for long-running commands (only if no external progress callback)
+    auto start_time = std::chrono::steady_clock::now();
+    auto last_activity_time = start_time;
+    auto last_status_time = start_time;
+    bool show_status = timeout_seconds > 10 && !stdout_callback;
+    bool showed_timer = false;
+
     while (child_running) {
+      auto current_time = std::chrono::steady_clock::now();
+
       // Check child process status
       cforge_int_t status;
       pid_t wait_result = waitpid(pid, &status, WNOHANG);
@@ -358,6 +390,23 @@ execute_process(const std::string &command,
         child_running = false;
       }
 
+      // Show timer for long-running commands with no output
+      if (show_status) {
+        auto since_last_activity = std::chrono::duration_cast<std::chrono::seconds>(
+                                       current_time - last_activity_time).count();
+        if (since_last_activity > 3) {
+          auto since_last_status = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                       current_time - last_status_time).count();
+          if (since_last_status > 100) {
+            auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                  current_time - start_time).count();
+            logger::running_timer(command, static_cast<double>(elapsed_ms) / 1000.0);
+            showed_timer = true;
+            last_status_time = current_time;
+          }
+        }
+      }
+
       // Read stdout
       ssize_t bytes_read;
       while ((bytes_read =
@@ -368,6 +417,7 @@ execute_process(const std::string &command,
         if (stdout_callback) {
           stdout_callback(output_chunk);
         }
+        last_activity_time = current_time;
       }
 
       // Read stderr
@@ -379,6 +429,7 @@ execute_process(const std::string &command,
         if (stderr_callback) {
           stderr_callback(error_chunk);
         }
+        last_activity_time = current_time;
       }
 
       // Avoid busy-waiting
@@ -405,6 +456,13 @@ execute_process(const std::string &command,
       if (stderr_callback) {
         stderr_callback(error_chunk);
       }
+    }
+
+    // Clear running timer line if we were showing one
+    if (showed_timer) {
+      logger::clear_line();
+      fmt::print(stderr, "\n");
+      std::fflush(stderr);
     }
 
     // Close read ends of pipes
@@ -485,9 +543,71 @@ bool execute_tool(const std::string &command,
     progress.reset();
   }
 
-  // Process stdout in real-time
+  // Variables for progress mode timing
+  auto build_start = std::chrono::steady_clock::now();
+  auto last_update = build_start;
+
+  // Process stdout/stderr in real-time
   std::function<void(const std::string &)> stdout_callback = nullptr;
-  if (verbose) {
+  std::function<void(const std::string &)> stderr_callback = nullptr;
+
+  if (show_progress) {
+    // Progress mode: parse build output and update display
+    stdout_callback = [&progress, &build_start, &last_update](const std::string &chunk) {
+      bool new_file = false;
+
+      // Parse any lines in the chunk
+      if (!chunk.empty()) {
+        std::string line;
+        std::istringstream ss(chunk);
+        while (std::getline(ss, line)) {
+          if (progress.parse_line(line)) {
+            new_file = true;
+          }
+        }
+      }
+
+      // Update timer even if no new file (handles empty ticks during linking)
+      auto now = std::chrono::steady_clock::now();
+      double elapsed = std::chrono::duration<double>(now - build_start).count();
+      auto since_last = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_update).count();
+
+      // Update display if: new file detected, OR 100ms since last update
+      if (new_file || since_last >= 100) {
+        if (progress.has_progress()) {
+          logger::compiling_file(progress.get_current_file(),
+                                 progress.get_current_step(),
+                                 progress.get_total_steps());
+          logger::progress_bar(progress.get_current_step(),
+                               progress.get_total_steps(), true, elapsed);
+          last_update = now;
+        }
+      }
+    };
+
+    // Also parse stderr for progress (some build systems output there)
+    // and update timer to keep it running during linking
+    stderr_callback = [&progress, &build_start, &last_update](const std::string &chunk) {
+      std::string line;
+      std::istringstream ss(chunk);
+      while (std::getline(ss, line)) {
+        // Try to parse progress from stderr too
+        progress.parse_line(line);
+      }
+
+      auto now = std::chrono::steady_clock::now();
+      auto since_last = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_update).count();
+      if (since_last >= 100 && progress.has_progress()) {
+        double elapsed = std::chrono::duration<double>(now - build_start).count();
+        logger::compiling_file(progress.get_current_file(),
+                               progress.get_current_step(),
+                               progress.get_total_steps());
+        logger::progress_bar(progress.get_current_step(),
+                             progress.get_total_steps(), true, elapsed);
+        last_update = now;
+      }
+    };
+  } else if (verbose) {
     stdout_callback = [&tool_name](const std::string &chunk) {
       std::string line;
       std::istringstream ss(chunk);
@@ -497,26 +617,6 @@ bool execute_tool(const std::string &command,
         }
       }
     };
-  } else if (show_progress) {
-    // Parse build output for progress display
-    stdout_callback = [&progress](const std::string &chunk) {
-      std::string line;
-      std::istringstream ss(chunk);
-      while (std::getline(ss, line)) {
-        if (progress.parse_line(line)) {
-          // Clear current line and show new progress
-          logger::clear_line();
-          logger::compiling_file(progress.get_current_file());
-          logger::progress_bar(progress.get_current_step(),
-                               progress.get_total_steps(), true);
-        }
-      }
-    };
-  }
-
-  // Process stderr in real-time
-  std::function<void(const std::string &)> stderr_callback = nullptr;
-  if (verbose) {
     stderr_callback = [&tool_name](const std::string &chunk) {
       std::string line;
       std::istringstream ss(chunk);
@@ -533,11 +633,16 @@ bool execute_tool(const std::string &command,
       execute_process(command, args, working_dir, stdout_callback,
                       stderr_callback, timeout_seconds);
 
-  // Clear progress bar line if we were showing progress
+  // Clear both progress lines if we were showing progress
   if (show_progress && progress.has_progress()) {
-    logger::clear_line();
-    // Print newline to move past the progress bar
-    logger::print_blank();
+    // Clear current line (progress bar)
+    fmt::print(stderr, "\r\033[K");
+    // Move up and clear the compiling file line
+    fmt::print(stderr, "\033[A\r\033[K");
+    // Stay on this line - next output will appear here without extra spacing
+    std::fflush(stderr);
+    // Reset progress display state for next build
+    logger::reset_progress_display();
   }
 
   // Always show output/errors for failed commands regardless of verbose mode
@@ -557,36 +662,27 @@ bool execute_tool(const std::string &command,
 
   // Always show warnings for build tools in non-verbose mode unless suppressed
   else if (is_build_tool && result.success && !g_suppress_warnings) {
-    // Collect and deduplicate warnings from both stderr and stdout
-    std::set<std::string> seen_warnings;
-    std::vector<std::string> warnings;
+    // Use the error formatter to display warnings with full context (source code, carets, help)
+    // The formatter handles both errors and warnings
+    std::string combined_output;
+    if (!result.stderr_output.empty()) {
+      combined_output += result.stderr_output;
+    }
+    if (!result.stdout_output.empty()) {
+      if (!combined_output.empty()) combined_output += "\n";
+      combined_output += result.stdout_output;
+    }
 
-    auto collect_warnings = [&](const std::string& output) {
-      std::istringstream stream(output);
-      std::string line;
-      while (std::getline(stream, line)) {
-        // Skip empty/whitespace-only lines
-        size_t first_char = line.find_first_not_of(" \t\r\n");
-        if (first_char == std::string::npos) continue;
-
-        // Check for warning keywords
-        if (line.find("warning") != std::string::npos ||
-            line.find("Warning") != std::string::npos) {
-          // Deduplicate
-          if (seen_warnings.find(line) == seen_warnings.end()) {
-            seen_warnings.insert(line);
-            warnings.push_back(line);
-          }
+    if (!combined_output.empty()) {
+      // Check if there are actually warnings in the output
+      if (combined_output.find("warning") != std::string::npos ||
+          combined_output.find("Warning") != std::string::npos) {
+        // Format warnings with full context using our Rust-style formatter
+        std::string formatted_warnings = format_build_errors(combined_output);
+        if (!formatted_warnings.empty()) {
+          logger::print_plain(formatted_warnings);
         }
       }
-    };
-
-    collect_warnings(result.stderr_output);
-    collect_warnings(result.stdout_output);
-
-    // Print deduplicated warnings
-    for (const auto& warn : warnings) {
-      logger::print_warning(warn);
     }
   }
 

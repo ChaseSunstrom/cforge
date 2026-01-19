@@ -147,6 +147,13 @@ public:
   static void running(const std::string &command);
 
   /**
+   * @brief Print "RUNNING {command} (elapsed time)" - updates in place
+   * @param command The command being run
+   * @param elapsed_secs Elapsed time in seconds
+   */
+  static void running_timer(const std::string &command, double elapsed_secs);
+
+  /**
    * @brief Print "Finished {config} target(s) in {time}"
    */
   static void finished(const std::string &config, const std::string &time = "");
@@ -216,11 +223,14 @@ public:
 
 
   /**
-   * @brief Print "Compiling {file}" with optional timing
+   * @brief Print "Compiling {file} [current/total]" with optional timing
    * @param file The file being compiled
+   * @param current Current file number (0 to skip count display)
+   * @param total Total files (0 to skip count display)
    * @param duration_secs Optional duration in seconds (for completed files)
    */
   static void compiling_file(const std::string &file,
+                             cforge_int_t current = 0, cforge_int_t total = 0,
                              cforge_double_t duration_secs = -1.0);
 
   /**
@@ -228,13 +238,20 @@ public:
    * @param current Current step (1-based)
    * @param total Total steps
    * @param in_place If true, update the line in place (use carriage return)
+   * @param elapsed_secs Optional elapsed time in seconds to display
    */
-  static void progress_bar(int current, int total, bool in_place = true);
+  static void progress_bar(int current, int total, bool in_place = true,
+                           double elapsed_secs = -1.0);
 
   /**
    * @brief Clear the current terminal line
    */
   static void clear_line();
+
+  /**
+   * @brief Reset the progress display state (call after build completes)
+   */
+  static void reset_progress_display();
 
   /**
    * @brief Print build timing summary

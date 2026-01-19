@@ -138,8 +138,8 @@ bool cache_key::operator<(const cache_key &other) const {
 
 build_environment build_environment::detect() {
   build_environment env;
-  env.platform = get_current_platform();
-  env.compiler = detect_compiler();
+  env.target_platform = get_current_platform();
+  env.target_compiler = detect_compiler();
   env.compiler_version = get_compiler_version();
   env.arch = get_arch();
   env.cpp_standard = __cplusplus >= 202002L ? 20 :
@@ -582,8 +582,7 @@ std::vector<cache_entry> package_cache::list() const {
       }
       entry.path = ver_entry.path();
 
-      // Get timestamps
-      auto manifest_time = std::filesystem::last_write_time(manifest_path);
+      // Get timestamps - use manifest time as created time approximation
       entry.last_accessed = std::chrono::system_clock::now(); // Approximate
 
       // Calculate size
@@ -709,8 +708,8 @@ cache_key generate_cache_key(const std::string &package_name,
   cache_key key;
   key.package = package_name;
   key.version = version;
-  key.platform = platform_to_string(env.platform);
-  key.compiler = compiler_to_string(env.compiler);
+  key.platform = platform_to_string(env.target_platform);
+  key.compiler = compiler_to_string(env.target_compiler);
   key.compiler_ver = env.compiler_version;
   key.config = config;
   key.arch = env.arch;
