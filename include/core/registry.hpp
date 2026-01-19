@@ -81,7 +81,7 @@ struct package_setup {
 
   // platform-specific overrides
   platform_setup windows;
-  platform_setup linux;
+  platform_setup linux_os;  // Can't use 'linux' - it's a predefined macro on Linux
   platform_setup macos;
 
   bool has_setup() const { return !commands.empty(); }

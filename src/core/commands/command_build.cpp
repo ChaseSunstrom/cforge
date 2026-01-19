@@ -461,11 +461,11 @@ static bool run_package_setup(
     required_tools = pkg.setup.macos.required_tools;
   }
 #else
-  if (!pkg.setup.linux.commands.empty()) {
-    commands = pkg.setup.linux.commands;
+  if (!pkg.setup.linux_os.commands.empty()) {
+    commands = pkg.setup.linux_os.commands;
   }
-  if (!pkg.setup.linux.required_tools.empty()) {
-    required_tools = pkg.setup.linux.required_tools;
+  if (!pkg.setup.linux_os.required_tools.empty()) {
+    required_tools = pkg.setup.linux_os.required_tools;
   }
 #endif
 

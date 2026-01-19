@@ -522,8 +522,8 @@ registry::load_package_file(const std::string &name) const {
       info.setup.windows.required_tools = reader.get_string_array("setup.windows.requires");
     }
     if (reader.has_key("setup.linux")) {
-      info.setup.linux.commands = reader.get_string_array("setup.linux.commands");
-      info.setup.linux.required_tools = reader.get_string_array("setup.linux.requires");
+      info.setup.linux_os.commands = reader.get_string_array("setup.linux.commands");
+      info.setup.linux_os.required_tools = reader.get_string_array("setup.linux.requires");
     }
     if (reader.has_key("setup.macos")) {
       info.setup.macos.commands = reader.get_string_array("setup.macos.commands");

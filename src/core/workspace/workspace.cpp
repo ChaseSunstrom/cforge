@@ -1146,8 +1146,8 @@ void configure_index_dependencies_fetchcontent_phase1(
     }
 
     cmakelists << "  else()\n";  // LINUX
-    auto linux_cmds = pkg_info.setup.linux.commands.empty() ?
-                      pkg_info.setup.commands : pkg_info.setup.linux.commands;
+    auto linux_cmds = pkg_info.setup.linux_os.commands.empty() ?
+                      pkg_info.setup.commands : pkg_info.setup.linux_os.commands;
     for (const auto &cmd : linux_cmds) {
       std::string cmake_cmd = cmd;
       cforge_size_t pos;
