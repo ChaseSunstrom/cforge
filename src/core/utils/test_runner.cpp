@@ -93,6 +93,10 @@ void test_runner::load_framework_config(test_framework fw, const std::string &se
 }
 
 fs::path test_runner::get_test_gen_dir(const std::string &target_name) const {
+  // Fallback if load_config() wasn't called
+  if (m_build_base_dir.empty()) {
+    return m_project_dir / "build" / "tests" / target_name;
+  }
   return m_build_base_dir / "tests" / target_name;
 }
 
@@ -185,7 +189,9 @@ std::vector<test_target> test_runner::auto_discover_targets() {
   std::vector<test_target> targets;
 
   fs::path test_dir = m_project_dir / m_test_config.directory;
+  logger::print_verbose("Looking for tests in: " + test_dir.string());
   if (!fs::exists(test_dir) || !fs::is_directory(test_dir)) {
+    logger::print_verbose("Test directory does not exist: " + test_dir.string());
     return targets;
   }
 
@@ -201,8 +207,11 @@ std::vector<test_target> test_runner::auto_discover_targets() {
   }
 
   if (test_files.empty()) {
+    logger::print_verbose("No test source files found in " + test_dir.string());
     return targets;
   }
+
+  logger::print_verbose("Found " + std::to_string(test_files.size()) + " test source files");
 
   // Group files by directory to create targets
   std::map<fs::path, std::vector<fs::path>> files_by_dir;
@@ -212,7 +221,11 @@ std::vector<test_target> test_runner::auto_discover_targets() {
   }
 
   // Create one target per directory (or single target for flat structure)
-  if (files_by_dir.size() == 1 && files_by_dir.begin()->first == ".") {
+  // Note: fs::relative() returns "." on Windows but empty path on some Linux systems
+  auto first_rel = files_by_dir.begin()->first;
+  bool is_flat = files_by_dir.size() == 1 &&
+                 (first_rel == "." || first_rel.empty() || first_rel == test_dir.filename());
+  if (is_flat) {
     // Flat structure - single target
     test_target target;
     target.name = "tests";
@@ -358,6 +371,7 @@ i_test_framework_adapter *test_runner::get_adapter(test_framework fw) {
 bool test_runner::generate_test_cmake(const test_target &target) {
   // Use configured build directory for test outputs
   fs::path gen_dir = get_test_gen_dir(target.name);
+  logger::print_verbose("Test CMake dir: " + gen_dir.string());
   fs::create_directories(gen_dir);
 
   fs::path cmake_file = gen_dir / "CMakeLists.txt";
@@ -495,6 +509,9 @@ bool test_runner::configure_cmake(const test_target &target,
   fs::path gen_dir = get_test_gen_dir(target.name);
   fs::path build_dir = get_test_build_dir(target.name);
 
+  // Ensure build directory exists
+  fs::create_directories(build_dir);
+
   std::vector<std::string> args = {
     "-S", to_cmake_path(gen_dir),
     "-B", to_cmake_path(build_dir),
@@ -515,9 +532,12 @@ bool test_runner::configure_cmake(const test_target &target,
   if (!result.success) {
     // Store error for later reporting
     m_error = "CMake configuration failed";
+    logger::print_error("FAILED to configure " + target.name);
     if (!result.stderr_output.empty()) {
-      // Just show the key error, not the full output
-      logger::print_error("FAILED to configure " + target.name);
+      logger::print_plain(result.stderr_output);
+    }
+    if (!result.stdout_output.empty()) {
+      logger::print_plain(result.stdout_output);
     }
   }
   return result.success;
@@ -536,8 +556,12 @@ bool test_runner::build_target(const test_target &target,
   auto result = execute_process("cmake", args, m_project_dir.string(), nullptr, nullptr, 300);
   if (!result.success) {
     m_error = "Build failed";
+    logger::print_error("FAILED to build " + target.name);
     if (!result.stderr_output.empty()) {
-      logger::print_error("FAILED to build " + target.name);
+      logger::print_plain(result.stderr_output);
+    }
+    if (!result.stdout_output.empty()) {
+      logger::print_plain(result.stdout_output);
     }
   }
   return result.success;
