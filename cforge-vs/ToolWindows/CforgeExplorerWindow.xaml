@@ -113,6 +113,11 @@
                     <ComboBoxItem Content="Debug" IsSelected="True"/>
                     <ComboBoxItem Content="Release"/>
                 </ComboBox>
+
+                <!-- Member/Project Dropdown (only visible in workspace mode) -->
+                <ComboBox x:Name="MemberCombo" Width="140" Margin="4,0" VerticalAlignment="Center"
+                          Visibility="Collapsed" SelectionChanged="MemberCombo_SelectionChanged"
+                          ToolTip="Active Project (Startup Project)"/>
             </StackPanel>
         </Border>
 
@@ -169,6 +174,32 @@
                         </MenuItem.Icon>
                     </MenuItem>
                     <Separator/>
+                    <!-- Workspace Member Commands -->
+                    <MenuItem x:Name="SetStartupProjectMenuItem" Header="Set as Startup Project" Click="SetStartupProject_Click"
+                              Visibility="Collapsed">
+                        <MenuItem.Icon>
+                            <imaging:CrispImage Width="16" Height="16" Moniker="{x:Static catalog:KnownMonikers.Run}"/>
+                        </MenuItem.Icon>
+                    </MenuItem>
+                    <MenuItem x:Name="BuildMemberMenuItem" Header="Build This Project" Click="BuildMember_Click"
+                              Visibility="Collapsed">
+                        <MenuItem.Icon>
+                            <imaging:CrispImage Width="16" Height="16" Moniker="{x:Static catalog:KnownMonikers.BuildSelection}"/>
+                        </MenuItem.Icon>
+                    </MenuItem>
+                    <MenuItem x:Name="RunMemberMenuItem" Header="Run This Project" Click="RunMember_Click"
+                              Visibility="Collapsed">
+                        <MenuItem.Icon>
+                            <imaging:CrispImage Width="16" Height="16" Moniker="{x:Static catalog:KnownMonikers.Run}"/>
+                        </MenuItem.Icon>
+                    </MenuItem>
+                    <MenuItem x:Name="DebugMemberMenuItem" Header="Debug This Project" Click="DebugMember_Click"
+                              Visibility="Collapsed">
+                        <MenuItem.Icon>
+                            <imaging:CrispImage Width="16" Height="16" Moniker="{x:Static catalog:KnownMonikers.Play}"/>
+                        </MenuItem.Icon>
+                    </MenuItem>
+                    <Separator x:Name="MemberMenuSeparator" Visibility="Collapsed"/>
                     <MenuItem Header="New Class..." Click="NewClass_Click">
                         <MenuItem.Icon>
                             <imaging:CrispImage Width="16" Height="16" Moniker="{x:Static catalog:KnownMonikers.AddDocument}"/>

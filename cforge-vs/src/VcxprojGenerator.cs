@@ -91,7 +91,7 @@ namespace CforgeVS
                 if (!string.IsNullOrEmpty(folder) && CforgeRunner.IsCforgeProject(folder))
                 {
                     await pane.WriteLineAsync($"[cforge] Found cforge project at: {folder}");
-                    await GenerateAndOpenAsync(folder);
+                    await GenerateAndOpenAsync(folder!);
                 }
                 else
                 {
@@ -108,7 +108,7 @@ namespace CforgeVS
                 {
                     var pane = await CforgeRunner.GetOutputPaneAsync();
                     await pane.WriteLineAsync($"[cforge] OnFolderOpened: {folder}");
-                    await GenerateAndOpenAsync(folder);
+                    await GenerateAndOpenAsync(folder!);
                 });
             }
         }
@@ -121,7 +121,7 @@ namespace CforgeVS
             string? slnPath = await GenerateProjectFilesAsync(sourceDir);
             if (!string.IsNullOrEmpty(slnPath))
             {
-                await OpenSolutionAsync(slnPath, sourceDir);
+                await OpenSolutionAsync(slnPath!, sourceDir);
             }
         }
 

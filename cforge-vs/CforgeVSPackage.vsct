@@ -259,6 +259,38 @@
         </Strings>
       </Button>
 
+      <Button guid="guidCforgeMenuGroup" id="DepsSearchCommandId" priority="0x0250" type="Button">
+        <Parent guid="guidCforgeMenuGroup" id="DepsSubMenuGroup"/>
+        <Strings>
+          <ButtonText>Search Packages...</ButtonText>
+          <ToolTipText>Search for packages in the registry</ToolTipText>
+        </Strings>
+      </Button>
+
+      <Button guid="guidCforgeMenuGroup" id="DepsListCommandId" priority="0x0251" type="Button">
+        <Parent guid="guidCforgeMenuGroup" id="DepsSubMenuGroup"/>
+        <Strings>
+          <ButtonText>List Dependencies</ButtonText>
+          <ToolTipText>List all project dependencies</ToolTipText>
+        </Strings>
+      </Button>
+
+      <Button guid="guidCforgeMenuGroup" id="DepsInfoCommandId" priority="0x0252" type="Button">
+        <Parent guid="guidCforgeMenuGroup" id="DepsSubMenuGroup"/>
+        <Strings>
+          <ButtonText>Package Info...</ButtonText>
+          <ToolTipText>Show information about a package</ToolTipText>
+        </Strings>
+      </Button>
+
+      <Button guid="guidCforgeMenuGroup" id="DepsTreeCommandId" priority="0x0253" type="Button">
+        <Parent guid="guidCforgeMenuGroup" id="DepsSubMenuGroup"/>
+        <Strings>
+          <ButtonText>Dependency Tree</ButtonText>
+          <ToolTipText>Show the dependency tree</ToolTipText>
+        </Strings>
+      </Button>
+
       <!-- ========== TOOL COMMANDS ========== -->
       <Button guid="guidCforgeMenuGroup" id="FormatCommandId" priority="0x0300" type="Button">
         <Parent guid="guidCforgeMenuGroup" id="CforgeToolMenuGroup"/>
@@ -305,6 +337,22 @@
         <Strings>
           <ButtonText>Clean Generated VS Files</ButtonText>
           <ToolTipText>Remove generated .vcxproj, .sln, and VS configuration files</ToolTipText>
+        </Strings>
+      </Button>
+
+      <Button guid="guidCforgeMenuGroup" id="CachePruneCommandId" priority="0x0330" type="Button">
+        <Parent guid="guidCforgeMenuGroup" id="CforgeToolMenuGroup"/>
+        <Strings>
+          <ButtonText>Prune Cache</ButtonText>
+          <ToolTipText>Remove unused packages from cache</ToolTipText>
+        </Strings>
+      </Button>
+
+      <Button guid="guidCforgeMenuGroup" id="CachePathCommandId" priority="0x0331" type="Button">
+        <Parent guid="guidCforgeMenuGroup" id="CforgeToolMenuGroup"/>
+        <Strings>
+          <ButtonText>Open Cache Folder</ButtonText>
+          <ToolTipText>Show cache location and open in Explorer</ToolTipText>
         </Strings>
       </Button>
 
@@ -418,6 +466,16 @@
         <Strings>
           <ButtonText>cforge Dependencies</ButtonText>
           <ToolTipText>Open the cforge Dependencies panel</ToolTipText>
+        </Strings>
+      </Button>
+
+      <!-- cforge Test Results in View > Other Windows -->
+      <Button guid="guidCforgeMenuGroup" id="OpenTestResultsCommandId" priority="0x0103" type="Button">
+        <Parent guid="guidCforgeMenuGroup" id="CforgeViewMenuGroup"/>
+        <Icon guid="guidSHLMainMenu" id="21"/>
+        <Strings>
+          <ButtonText>cforge Test Results</ButtonText>
+          <ToolTipText>Open the cforge Test Results panel</ToolTipText>
         </Strings>
       </Button>
 
@@ -543,6 +601,10 @@
       <IDSymbol name="DepsOutdatedCommandId" value="0x0205"/>
       <IDSymbol name="DepsLockCommandId" value="0x0206"/>
       <IDSymbol name="VcpkgInstallCommandId" value="0x0207"/>
+      <IDSymbol name="DepsSearchCommandId" value="0x0208"/>
+      <IDSymbol name="DepsListCommandId" value="0x0209"/>
+      <IDSymbol name="DepsInfoCommandId" value="0x020A"/>
+      <IDSymbol name="DepsTreeCommandId" value="0x020B"/>
 
       <!-- Tool commands -->
       <IDSymbol name="FormatCommandId" value="0x0300"/>
@@ -551,6 +613,8 @@
       <IDSymbol name="DoctorCommandId" value="0x0303"/>
       <IDSymbol name="ProjectInfoCommandId" value="0x0304"/>
       <IDSymbol name="CleanGeneratedFilesCommandId" value="0x0305"/>
+      <IDSymbol name="CachePruneCommandId" value="0x030B"/>
+      <IDSymbol name="CachePathCommandId" value="0x030C"/>
 
       <!-- Project/Template commands -->
       <IDSymbol name="InitProjectCommandId" value="0x0400"/>
@@ -568,6 +632,7 @@
 
       <!-- Tool Windows -->
       <IDSymbol name="OpenCforgeExplorerCommandId" value="0x5005"/>
+      <IDSymbol name="OpenTestResultsCommandId" value="0x5009"/>
     </GuidSymbol>
 
     <GuidSymbol name="guidCforgeToolbar" value="{7a8b9c0d-3e4f-5a6b-7c8d-9e0f1a2b3c4d}">

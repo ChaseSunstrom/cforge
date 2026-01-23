@@ -9,6 +9,7 @@ export default {
   "3a34d351": [() => import(/* webpackChunkName: "3a34d351" */ "@site/docs/cross-compilation.md"), "@site/docs/cross-compilation.md", require.resolveWeak("@site/docs/cross-compilation.md")],
   "3b8c55ea": [() => import(/* webpackChunkName: "3b8c55ea" */ "@site/docs/installation.md"), "@site/docs/installation.md", require.resolveWeak("@site/docs/installation.md")],
   "449695dd": [() => import(/* webpackChunkName: "449695dd" */ "@site/docs/project-configuration.md"), "@site/docs/project-configuration.md", require.resolveWeak("@site/docs/project-configuration.md")],
+  "4c94c16d": [() => import(/* webpackChunkName: "4c94c16d" */ "@site/src/pages/packages.js"), "@site/src/pages/packages.js", require.resolveWeak("@site/src/pages/packages.js")],
   "4d54d076": [() => import(/* webpackChunkName: "4d54d076" */ "@site/docs/contributing.md"), "@site/docs/contributing.md", require.resolveWeak("@site/docs/contributing.md")],
   "5d250c2b": [() => import(/* webpackChunkName: "5d250c2b" */ "@site/docs/advanced-topics.md"), "@site/docs/advanced-topics.md", require.resolveWeak("@site/docs/advanced-topics.md")],
   "5e38ca63": [() => import(/* webpackChunkName: "5e38ca63" */ "@generated/docusaurus-plugin-content-docs/default/p/cforge-docs-bbb.json"), "@generated/docusaurus-plugin-content-docs/default/p/cforge-docs-bbb.json", require.resolveWeak("@generated/docusaurus-plugin-content-docs/default/p/cforge-docs-bbb.json")],

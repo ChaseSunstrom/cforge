@@ -37,6 +37,11 @@ namespace CforgeVS
         public const int DoctorCommandId = 0x0303;
         public const int ProjectInfoCommandId = 0x0304;
         public const int CleanGeneratedFilesCommandId = 0x0305;
+        public const int CacheListCommandId = 0x0306;
+        public const int CacheStatsCommandId = 0x0307;
+        public const int CacheCleanCommandId = 0x0308;
+        public const int UpgradeCommandId = 0x0309;
+        public const int CircularCommandId = 0x030A;
 
         // Project/Template commands
         public const int InitProjectCommandId = 0x0400;
@@ -85,5 +90,19 @@ namespace CforgeVS
         public const int TestExplorerWindowId = 0x5003;
         public const int CforgeExplorerWindowId = 0x5004;
         public const int OpenCforgeExplorerCommandId = 0x5005;
+        public const int BuildResultsWindowId = 0x5006;
+        public const int TestResultsWindowId = 0x5007;
+        public const int OpenBuildResultsCommandId = 0x5008;
+        public const int OpenTestResultsCommandId = 0x5009;
+
+        // Additional dependency commands
+        public const int DepsSearchCommandId = 0x0208;
+        public const int DepsListCommandId = 0x0209;
+        public const int DepsInfoCommandId = 0x020A;
+        public const int DepsTreeCommandId = 0x020B;
+
+        // Cache commands
+        public const int CachePruneCommandId = 0x030B;
+        public const int CachePathCommandId = 0x030C;
     }
 }

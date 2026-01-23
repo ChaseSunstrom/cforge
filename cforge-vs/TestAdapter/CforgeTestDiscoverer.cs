@@ -64,13 +64,13 @@ namespace CforgeVS.TestAdapter
                 }
 
                 // Skip if we've already discovered this project
-                if (_discoveredProjects.Contains(projectDir)) continue;
-                _discoveredProjects.Add(projectDir);
+                if (_discoveredProjects.Contains(projectDir!)) continue;
+                _discoveredProjects.Add(projectDir!);
 
                 // Verify it's a cforge project with tests
                 if (!File.Exists(testSource)) continue;
 
-                var testsDir = Path.Combine(projectDir, "tests");
+                var testsDir = Path.Combine(projectDir!, "tests");
                 if (!Directory.Exists(testsDir))
                 {
                     logger?.SendMessage(TestMessageLevel.Informational, $"CForge: No tests directory in {projectDir}");
@@ -79,7 +79,7 @@ namespace CforgeVS.TestAdapter
 
                 logger?.SendMessage(TestMessageLevel.Informational, $"CForge: Discovering tests in {projectDir}");
 
-                var tests = DiscoverTestsInProject(projectDir, testSource, logger);
+                var tests = DiscoverTestsInProject(projectDir!, testSource!, logger);
                 logger?.SendMessage(TestMessageLevel.Informational, $"CForge: Found {tests.Count} tests");
 
                 foreach (var test in tests)

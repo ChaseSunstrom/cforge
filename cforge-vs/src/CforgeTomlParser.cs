@@ -89,7 +89,7 @@ namespace CforgeVS
                     // cforge uses "directory" for output dir, not "output_dir"
                     var outputDir = GetString(buildTable, "directory") ?? GetString(buildTable, "output_dir");
                     if (!string.IsNullOrEmpty(outputDir))
-                        project.OutputDir = outputDir;
+                        project.OutputDir = outputDir!;
 
                     // Merge any additional settings
                     var extraIncludes = GetStringList(buildTable, "include_dirs");
@@ -106,21 +106,42 @@ namespace CforgeVS
                     project.Defines.AddRange(extraDefines);
                 }
 
-                // Parse [build.debug] section
-                if (doc.TryGetValue("build", out var buildSectionForDebug) && buildSectionForDebug is TomlTable buildTableForDebug)
+                // Parse [build.config.debug] section (nested format)
+                if (doc.TryGetValue("build", out var buildSectionForConfig) && buildSectionForConfig is TomlTable buildTableForConfig)
                 {
-                    if (buildTableForDebug.TryGetValue("debug", out var debugSection) && debugSection is TomlTable debugTable)
+                    // Try build.config.debug format
+                    if (buildTableForConfig.TryGetValue("config", out var configSection) && configSection is TomlTable configTable)
                     {
-                        project.DebugDefines = GetStringList(debugTable, "defines");
+                        if (configTable.TryGetValue("debug", out var debugSection) && debugSection is TomlTable debugTable)
+                        {
+                            project.DebugDefines = GetStringList(debugTable, "defines");
+                        }
+                        if (configTable.TryGetValue("release", out var releaseSection) && releaseSection is TomlTable releaseTable)
+                        {
+                            project.ReleaseDefines = GetStringList(releaseTable, "defines");
+                        }
+                    }
+                    // Also try legacy build.debug format
+                    else
+                    {
+                        if (buildTableForConfig.TryGetValue("debug", out var legacyDebugSection) && legacyDebugSection is TomlTable legacyDebugTable)
+                        {
+                            project.DebugDefines = GetStringList(legacyDebugTable, "defines");
+                        }
+                        if (buildTableForConfig.TryGetValue("release", out var legacyReleaseSection) && legacyReleaseSection is TomlTable legacyReleaseTable)
+                        {
+                            project.ReleaseDefines = GetStringList(legacyReleaseTable, "defines");
+                        }
                     }
                 }
 
-                // Parse [build.release] section
-                if (doc.TryGetValue("build", out var buildSectionForRelease) && buildSectionForRelease is TomlTable buildTableForRelease)
+                // Parse [platform.windows] section for platform-specific defines
+                if (doc.TryGetValue("platform", out var platformSection) && platformSection is TomlTable platformTable)
                 {
-                    if (buildTableForRelease.TryGetValue("release", out var releaseSection) && releaseSection is TomlTable releaseTable)
+                    if (platformTable.TryGetValue("windows", out var windowsSection) && windowsSection is TomlTable windowsTable)
                     {
-                        project.ReleaseDefines = GetStringList(releaseTable, "defines");
+                        var windowsDefines = GetStringList(windowsTable, "defines");
+                        project.Defines.AddRange(windowsDefines);
                     }
                 }
 

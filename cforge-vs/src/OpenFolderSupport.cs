@@ -42,7 +42,7 @@ namespace CforgeVS
         {
             if (!string.IsNullOrEmpty(folder) && CforgeRunner.IsCforgeProject(folder))
             {
-                _ = EnsureVsConfigFilesAsync(folder);
+                _ = EnsureVsConfigFilesAsync(folder!);
             }
         }
 

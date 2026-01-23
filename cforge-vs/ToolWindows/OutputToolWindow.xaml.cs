@@ -161,6 +161,7 @@ namespace CforgeVS
 
         private void ClearButton_Click(object sender, RoutedEventArgs e)
         {
+            ThreadHelper.ThrowIfNotOnUIThread();
             Clear();
         }
 

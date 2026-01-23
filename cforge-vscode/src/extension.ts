@@ -397,6 +397,33 @@ function registerCommands(context: vscode.ExtensionContext) {
             runner.stop();
         })
     );
+
+    // Cache commands
+    context.subscriptions.push(
+        vscode.commands.registerCommand('cforge.cache', async () => {
+            const options = await vscode.window.showQuickPick([
+                { label: 'List', description: 'Show cached packages' },
+                { label: 'Stats', description: 'Show cache statistics' },
+                { label: 'Clean', description: 'Clear the cache' }
+            ], { placeHolder: 'Select cache action' });
+
+            if (options) {
+                const actionMap: Record<string, string> = {
+                    'List': 'list',
+                    'Stats': 'stats',
+                    'Clean': 'clean'
+                };
+                await runner.run(['cache', actionMap[options.label]]);
+            }
+        })
+    );
+
+    // Upgrade cforge command
+    context.subscriptions.push(
+        vscode.commands.registerCommand('cforge.upgrade', () => {
+            runner.run(['upgrade']);
+        })
+    );
 }
 
 function detectCforgeProject() {

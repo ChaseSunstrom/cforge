@@ -6,6 +6,7 @@ using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using CforgeVS.Models;
 using Community.VisualStudio.Toolkit;
 using Microsoft.VisualStudio.Imaging;
 using Microsoft.VisualStudio.Shell;
@@ -20,6 +21,24 @@ namespace CforgeVS
         private static List<ErrorTask> _currentErrors = new List<ErrorTask>();
         private static Process? _currentProcess;
         private static Process? _watchProcess;
+        private static BuildResult? _currentBuildResult;
+        private static TestRunResult? _currentTestResult;
+
+        // Events for build/test progress notifications
+        public static event EventHandler<BuildProgressEventArgs>? BuildProgress;
+        public static event EventHandler<BuildCompletedEventArgs>? BuildCompleted;
+        public static event EventHandler<TestProgressEventArgs>? TestProgress;
+        public static event EventHandler<TestCompletedEventArgs>? TestCompleted;
+
+        /// <summary>
+        /// Gets the last build result.
+        /// </summary>
+        public static BuildResult? LastBuildResult => _currentBuildResult;
+
+        /// <summary>
+        /// Gets the last test run result.
+        /// </summary>
+        public static TestRunResult? LastTestResult => _currentTestResult;
 
         // Regex patterns for parsing compiler errors/warnings
 
@@ -576,7 +595,7 @@ namespace CforgeVS
 
             // Build first
             string buildArgs = config == "Release" ? "build -c Release" : "build";
-            bool buildSuccess = await RunAsync(buildArgs, projectDir);
+            bool buildSuccess = await RunAsync(buildArgs, projectDir!);
 
             if (!buildSuccess)
             {
@@ -584,18 +603,18 @@ namespace CforgeVS
             }
 
             // Find and run the executable
-            var project = CforgeTomlParser.ParseProject(projectDir);
+            var project = CforgeTomlParser.ParseProject(projectDir!);
             if (project != null && project.Type == "executable")
             {
                 // Use FindExecutable to check multiple possible paths
-                string? exePath = CforgeTomlParser.FindExecutable(projectDir, project, config);
+                string? exePath = CforgeTomlParser.FindExecutable(projectDir!, project, config);
                 if (exePath != null && File.Exists(exePath))
                 {
-                    return await RunExecutableInConsoleAsync(exePath, projectDir);
+                    return await RunExecutableInConsoleAsync(exePath, projectDir!);
                 }
                 else
                 {
-                    string expectedPath = Path.Combine(projectDir, project.OutputDir, "bin", config, project.Name + ".exe");
+                    string expectedPath = Path.Combine(projectDir!, project.OutputDir, "bin", config, project.Name + ".exe");
                     await pane.WriteLineAsync($"Error: Executable not found at {expectedPath}");
                     return false;
                 }
@@ -616,8 +635,8 @@ namespace CforgeVS
             if (solution != null && !string.IsNullOrEmpty(solution.FullPath))
             {
                 // First check if this is a generated solution (stored in temp)
-                string? sourceDir = VcxprojGenerator.GetSourceDirForCurrentSolution(solution.FullPath);
-                if (!string.IsNullOrEmpty(sourceDir) && IsCforgeProject(sourceDir))
+                string? sourceDir = VcxprojGenerator.GetSourceDirForCurrentSolution(solution.FullPath!);
+                if (!string.IsNullOrEmpty(sourceDir) && IsCforgeProject(sourceDir!))
                 {
                     return sourceDir;
                 }
@@ -715,7 +734,7 @@ namespace CforgeVS
 
             // Build first
             string buildArgs = config == "Release" ? "build -c Release" : "build";
-            bool buildSuccess = await RunAsync(buildArgs, projectDir);
+            bool buildSuccess = await RunAsync(buildArgs, projectDir!);
 
             if (!buildSuccess)
             {
@@ -724,16 +743,16 @@ namespace CforgeVS
             }
 
             // Find the executable
-            var project = CforgeTomlParser.ParseProject(projectDir);
+            var project = CforgeTomlParser.ParseProject(projectDir!);
             if (project != null && project.Type == "executable")
             {
                 // Use FindExecutable to check multiple possible locations
-                string? exePath = CforgeTomlParser.FindExecutable(projectDir, project, config);
+                string? exePath = CforgeTomlParser.FindExecutable(projectDir!, project, config);
 
                 if (exePath != null && File.Exists(exePath))
                 {
                     await pane.WriteLineAsync($"Starting debugger: {exePath}");
-                    return await LaunchDebuggerAsync(exePath, projectDir);
+                    return await LaunchDebuggerAsync(exePath, projectDir!);
                 }
                 else
                 {
@@ -998,15 +1017,18 @@ namespace CforgeVS
                 var infoBar = await VS.InfoBar.CreateAsync(model);
                 if (infoBar != null)
                 {
-                    infoBar.ActionItemClicked += async (sender, args) =>
+                    infoBar.ActionItemClicked += (sender, args) =>
                     {
-                        if (args.ActionItem.Text == "Show Error List")
+                        _ = ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
                         {
                             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-                            var provider = await GetErrorListProviderAsync();
-                            provider.Show();
-                            provider.BringToFront();
-                        }
+                            if (args.ActionItem.Text == "Show Error List")
+                            {
+                                var provider = await GetErrorListProviderAsync();
+                                provider.Show();
+                                provider.BringToFront();
+                            }
+                        });
                     };
 
                     await infoBar.TryShowInfoBarUIAsync();
@@ -1017,5 +1039,902 @@ namespace CforgeVS
                 // InfoBar not available, that's okay - we still have status bar and Error List
             }
         }
+
+        #region Test Running
+
+        // Regex patterns for parsing test output
+        // Catch2 patterns
+        private static readonly Regex Catch2TestCasePattern = new Regex(
+            @"^(?<file>.+?)\((?<line>\d+)\):\s*(?:PASSED|FAILED):\s*(?<name>.+)$",
+            RegexOptions.Compiled);
+        private static readonly Regex Catch2SummaryPattern = new Regex(
+            @"^(?:All tests passed|test cases?:\s*(?<total>\d+)\s*\|\s*(?<passed>\d+)\s*passed(?:\s*\|\s*(?<failed>\d+)\s*failed)?)",
+            RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        private static readonly Regex Catch2TestPassedPattern = new Regex(
+            @"^(?<name>.+?)\s+passed\s*$",
+            RegexOptions.Compiled);
+        private static readonly Regex Catch2TestFailedPattern = new Regex(
+            @"^(?<file>.+?)\((?<line>\d+)\):\s*FAILED:",
+            RegexOptions.Compiled);
+        private static readonly Regex Catch2AssertionPattern = new Regex(
+            @"^\s*REQUIRE\(?\s*(?<expr>.+?)\s*\)?\s*$",
+            RegexOptions.Compiled);
+        private static readonly Regex Catch2RunningTestPattern = new Regex(
+            @"^-------------------------------------------------------------------------------$",
+            RegexOptions.Compiled);
+        private static readonly Regex Catch2TestNamePattern = new Regex(
+            @"^(?<name>[^-].+)$",
+            RegexOptions.Compiled);
+
+        // Google Test patterns
+        private static readonly Regex GTestRunPattern = new Regex(
+            @"^\[\s*RUN\s*\]\s*(?<suite>\w+)\.(?<name>\w+)",
+            RegexOptions.Compiled);
+        private static readonly Regex GTestOkPattern = new Regex(
+            @"^\[\s*OK\s*\]\s*(?<suite>\w+)\.(?<name>\w+)\s*\((?<time>\d+)\s*ms\)",
+            RegexOptions.Compiled);
+        private static readonly Regex GTestFailedPattern = new Regex(
+            @"^\[\s*FAILED\s*\]\s*(?<suite>\w+)\.(?<name>\w+)",
+            RegexOptions.Compiled);
+        private static readonly Regex GTestSummaryPattern = new Regex(
+            @"^\[=+\]\s*(?<total>\d+)\s*tests?\s*from\s*(?<suites>\d+)\s*test\s*suites?\s*ran",
+            RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        private static readonly Regex GTestPassedSummaryPattern = new Regex(
+            @"^\[\s*PASSED\s*\]\s*(?<count>\d+)\s*tests?",
+            RegexOptions.Compiled);
+        private static readonly Regex GTestFailedSummaryPattern = new Regex(
+            @"^\[\s*FAILED\s*\]\s*(?<count>\d+)\s*tests?",
+            RegexOptions.Compiled);
+
+        // doctest patterns
+        private static readonly Regex DoctestSummaryPattern = new Regex(
+            @"^\[doctest\]\s*test cases:\s*(?<total>\d+)\s*\|\s*(?<passed>\d+)\s*passed\s*\|\s*(?<failed>\d+)\s*failed",
+            RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+        // cforge builtin test framework patterns
+        // [RUN] TestName or [RUN] Category.TestName
+        private static readonly Regex BuiltinRunPattern = new Regex(
+            @"^\[RUN\]\s+(?<name>.+)$",
+            RegexOptions.Compiled);
+        // [PASS] TestName
+        private static readonly Regex BuiltinPassPattern = new Regex(
+            @"^\[PASS\]\s+(?<name>.+)$",
+            RegexOptions.Compiled);
+        // [FAIL] TestName
+        private static readonly Regex BuiltinFailPattern = new Regex(
+            @"^\[FAIL\]\s+(?<name>.+)$",
+            RegexOptions.Compiled);
+        // Assertion failed: expr at file:line
+        private static readonly Regex BuiltinAssertionPattern = new Regex(
+            @"^Assertion failed:\s*(?<expr>.+)\s+at\s+(?<file>.+):(?<line>\d+)$",
+            RegexOptions.Compiled);
+        // cforge output formatter: "Testing test_name ... ok" or "test test_name ... FAILED"
+        // Matches both "Testing" (colored output) and "test" (plain output)
+        // Handles both three dots (...) and Unicode ellipsis (…)
+        private static readonly Regex CforgeTestResultPattern = new Regex(
+            @"^\s*(?:Testing|test)\s+(?<name>\S+)\s+(?:\.\.\.|…)\s+(?<result>ok|FAILED|ignored|TIMEOUT)",
+            RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        // cforge summary: "Finished X passed" or "test result: ok. X passed; Y failed"
+        private static readonly Regex CforgeSummaryPattern = new Regex(
+            @"^test result:\s*(?<status>ok|FAILED)\.\s*(?<passed>\d+)\s*passed;\s*(?<failed>\d+)\s*failed",
+            RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        // cforge Finished line: "Finished 40 passed in 2.60s" or "Failed 5 passed, 2 failed in 1.00s"
+        private static readonly Regex CforgeFinishedPattern = new Regex(
+            @"^\s*(?:Finished|Failed)\s+(?<passed>\d+)\s*passed(?:,\s*(?<failed>\d+)\s*failed)?",
+            RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+        /// <summary>
+        /// Runs the test command and captures results for the Test Results window.
+        /// </summary>
+        public static async Task<TestRunResult> RunTestAsync(string? workingDirectory = null)
+        {
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+
+            var pane = await GetOutputPaneAsync();
+            await pane.ActivateAsync();
+            await pane.ClearAsync();
+
+            // Clear previous errors from Error List
+            await ClearErrorListAsync();
+
+            string? projectDir = workingDirectory ?? await GetProjectDirectoryAsync();
+            var result = new TestRunResult();
+            var startTime = DateTime.Now;
+
+            // Auto-open Test Results window and show running state
+            var windowPane = await TestResultsWindow.ShowWindowAsync();
+            TestResultsWindowControl? windowControl = null;
+            if (windowPane?.Content is TestResultsWindowControl control)
+            {
+                windowControl = control;
+                windowControl.ShowTestsRunning();
+            }
+
+            if (string.IsNullOrEmpty(projectDir))
+            {
+                await pane.WriteLineAsync("Error: No cforge project found. Open a folder containing cforge.toml.");
+                result.ExitCode = 1;
+                return result;
+            }
+
+            string cforgeExe = GetCforgeExecutable();
+            await pane.WriteLineAsync($"> cforge test");
+            await pane.WriteLineAsync("");
+
+            try
+            {
+                var startInfo = new ProcessStartInfo
+                {
+                    FileName = cforgeExe,
+                    Arguments = "test",
+                    WorkingDirectory = projectDir,
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true,
+                    StandardOutputEncoding = Encoding.UTF8,
+                    StandardErrorEncoding = Encoding.UTF8
+                };
+
+                var outputLines = new List<string>();
+                var currentSuite = new TestSuiteResult { Name = "Tests" };
+                result.Suites.Add(currentSuite);
+                TestCaseResult? currentTest = null;
+                string? pendingTestName = null;
+                bool inTestOutput = false;
+                var testOutput = new StringBuilder();
+
+                using var process = new Process { StartInfo = startInfo };
+                _currentProcess = process;
+
+                process.OutputDataReceived += (s, e) =>
+                {
+                    if (e.Data != null)
+                    {
+                        string cleanLine = StripAnsiCodes(e.Data);
+                        outputLines.Add(cleanLine);
+                        result.OutputLog.Add(cleanLine);
+                        _ = pane.WriteLineAsync(cleanLine);
+
+                        // Parse test output
+                        ParseTestLine(cleanLine, result, currentSuite, ref currentTest, ref pendingTestName, ref inTestOutput, testOutput, projectDir, windowControl);
+                    }
+                };
+
+                process.ErrorDataReceived += (s, e) =>
+                {
+                    if (e.Data != null)
+                    {
+                        string cleanLine = StripAnsiCodes(e.Data);
+                        outputLines.Add(cleanLine);
+                        result.OutputLog.Add(cleanLine);
+                        _ = pane.WriteLineAsync(cleanLine);
+
+                        ParseTestLine(cleanLine, result, currentSuite, ref currentTest, ref pendingTestName, ref inTestOutput, testOutput, projectDir, windowControl);
+                    }
+                };
+
+                process.Start();
+                process.BeginOutputReadLine();
+                process.BeginErrorReadLine();
+
+                await Task.Run(() => process.WaitForExit());
+
+                result.ExitCode = process.ExitCode;
+                result.Duration = DateTime.Now - startTime;
+
+                // Finalize any pending test
+                if (currentTest != null && currentTest.Outcome == TestOutcome.Running)
+                {
+                    currentTest.Outcome = result.ExitCode == 0 ? TestOutcome.Passed : TestOutcome.Failed;
+                    if (inTestOutput)
+                    {
+                        currentTest.StdOut = testOutput.ToString();
+                    }
+                }
+
+                // Recalculate totals
+                result.RecalculateTotals();
+
+                // If we couldn't parse individual tests, create a summary
+                if (result.TotalTests == 0 && outputLines.Count > 0)
+                {
+                    // Try to parse summary from output
+                    ParseTestSummary(outputLines, result, currentSuite);
+                }
+
+                await pane.WriteLineAsync("");
+                bool success = result.ExitCode == 0;
+
+                if (success)
+                {
+                    await pane.WriteLineAsync($"All tests passed! ({result.Passed} passed)");
+                    await VS.StatusBar.ShowMessageAsync($"Tests passed: {result.Passed}");
+                }
+                else
+                {
+                    await pane.WriteLineAsync($"Tests completed with failures: {result.Failed} failed, {result.Passed} passed");
+                    await VS.StatusBar.ShowMessageAsync($"Tests failed: {result.Failed} of {result.TotalTests}");
+                }
+
+                // Update Test Results window with final results
+                if (windowControl != null)
+                {
+                    windowControl.ShowResult(result);
+                }
+
+                // Fire completion event
+                OnTestCompleted(result);
+
+                _currentProcess = null;
+                return result;
+            }
+            catch (Exception ex)
+            {
+                await pane.WriteLineAsync($"Error running tests: {ex.Message}");
+                result.ExitCode = -1;
+                result.Duration = DateTime.Now - startTime;
+
+                if (windowControl != null)
+                {
+                    windowControl.ShowResult(result);
+                }
+
+                _currentProcess = null;
+                return result;
+            }
+        }
+
+        private static void ParseTestLine(string line, TestRunResult result, TestSuiteResult currentSuite,
+            ref TestCaseResult? currentTest, ref string? pendingTestName, ref bool inTestOutput,
+            StringBuilder testOutput, string? projectDir, TestResultsWindowControl? windowControl)
+        {
+            // Google Test patterns
+            var gtestRunMatch = GTestRunPattern.Match(line);
+            if (gtestRunMatch.Success)
+            {
+                // Finalize previous test
+                if (currentTest != null && currentTest.Outcome == TestOutcome.Running)
+                {
+                    currentTest.Outcome = TestOutcome.Passed;
+                    if (inTestOutput)
+                    {
+                        currentTest.StdOut = testOutput.ToString();
+                        testOutput.Clear();
+                    }
+                }
+
+                string suiteName = gtestRunMatch.Groups["suite"].Value;
+                string testName = gtestRunMatch.Groups["name"].Value;
+
+                // Find or create suite
+                var suite = result.Suites.FirstOrDefault(s => s.Name == suiteName);
+                if (suite == null)
+                {
+                    suite = new TestSuiteResult { Name = suiteName };
+                    result.Suites.Add(suite);
+                }
+
+                currentTest = new TestCaseResult
+                {
+                    Name = testName,
+                    FullName = $"{suiteName}.{testName}",
+                    Outcome = TestOutcome.Running
+                };
+                suite.TestCases.Add(currentTest);
+                inTestOutput = true;
+                result.Framework = "Google Test";
+
+                // Update progress
+                UpdateTestProgress(windowControl, currentTest.FullName, result);
+                return;
+            }
+
+            var gtestOkMatch = GTestOkPattern.Match(line);
+            if (gtestOkMatch.Success)
+            {
+                string suiteName = gtestOkMatch.Groups["suite"].Value;
+                string testName = gtestOkMatch.Groups["name"].Value;
+                int.TryParse(gtestOkMatch.Groups["time"].Value, out int timeMs);
+
+                var test = FindOrCreateTest(result, suiteName, testName);
+                test.Outcome = TestOutcome.Passed;
+                test.Duration = TimeSpan.FromMilliseconds(timeMs);
+                if (inTestOutput)
+                {
+                    test.StdOut = testOutput.ToString();
+                    testOutput.Clear();
+                }
+                inTestOutput = false;
+                currentTest = null;
+
+                UpdateTestProgress(windowControl, null, result);
+                return;
+            }
+
+            var gtestFailedMatch = GTestFailedPattern.Match(line);
+            if (gtestFailedMatch.Success)
+            {
+                string suiteName = gtestFailedMatch.Groups["suite"].Value;
+                string testName = gtestFailedMatch.Groups["name"].Value;
+
+                var test = FindOrCreateTest(result, suiteName, testName);
+                test.Outcome = TestOutcome.Failed;
+                if (inTestOutput)
+                {
+                    test.StdOut = testOutput.ToString();
+                    testOutput.Clear();
+                }
+                inTestOutput = false;
+                currentTest = null;
+
+                UpdateTestProgress(windowControl, null, result);
+                return;
+            }
+
+            // Catch2 patterns - detect test separator
+            if (line.StartsWith("-------------------------------------------------------------------------------"))
+            {
+                // Finalize previous test if running
+                if (currentTest != null && currentTest.Outcome == TestOutcome.Running)
+                {
+                    currentTest.Outcome = TestOutcome.Passed; // Assume passed if no failure seen
+                    if (inTestOutput)
+                    {
+                        currentTest.StdOut = testOutput.ToString();
+                        testOutput.Clear();
+                    }
+                }
+                pendingTestName = null;
+                inTestOutput = false;
+                result.Framework = "Catch2";
+                return;
+            }
+
+            // Catch2 test name (line after separator)
+            if (pendingTestName == null && !string.IsNullOrWhiteSpace(line) && !line.StartsWith(" ") &&
+                !line.Contains("test case") && !line.Contains("assertion") && !line.Contains("FAILED") &&
+                !line.Contains("PASSED") && !line.Contains("All tests") && result.Framework == "Catch2")
+            {
+                // This might be a test name
+                pendingTestName = line.Trim();
+                return;
+            }
+
+            // Catch2 source location line
+            if (pendingTestName != null && line.Contains("..............."))
+            {
+                // Previous line was test name, now we have location
+                currentTest = new TestCaseResult
+                {
+                    Name = pendingTestName,
+                    FullName = pendingTestName,
+                    Outcome = TestOutcome.Running
+                };
+                currentSuite.TestCases.Add(currentTest);
+                pendingTestName = null;
+                inTestOutput = true;
+                testOutput.Clear();
+
+                UpdateTestProgress(windowControl, currentTest.FullName, result);
+                return;
+            }
+
+            // Catch2 FAILED assertion
+            var catch2FailedMatch = Catch2TestFailedPattern.Match(line);
+            if (catch2FailedMatch.Success && currentTest != null)
+            {
+                currentTest.Outcome = TestOutcome.Failed;
+                string file = catch2FailedMatch.Groups["file"].Value;
+                int.TryParse(catch2FailedMatch.Groups["line"].Value, out int lineNum);
+                currentTest.SourceFile = NormalizeFilePath(file, projectDir);
+                currentTest.SourceLine = lineNum;
+                return;
+            }
+
+            // doctest summary
+            var doctestMatch = DoctestSummaryPattern.Match(line);
+            if (doctestMatch.Success)
+            {
+                int.TryParse(doctestMatch.Groups["total"].Value, out int total);
+                int.TryParse(doctestMatch.Groups["passed"].Value, out int passed);
+                int.TryParse(doctestMatch.Groups["failed"].Value, out int failed);
+
+                result.TotalTests = total;
+                result.Passed = passed;
+                result.Failed = failed;
+                result.Framework = "doctest";
+                return;
+            }
+
+            // cforge builtin test framework: [RUN] TestName
+            var builtinRunMatch = BuiltinRunPattern.Match(line);
+            if (builtinRunMatch.Success)
+            {
+                // Finalize previous test
+                if (currentTest != null && currentTest.Outcome == TestOutcome.Running)
+                {
+                    currentTest.Outcome = TestOutcome.Passed;
+                    if (inTestOutput)
+                    {
+                        currentTest.StdOut = testOutput.ToString();
+                        testOutput.Clear();
+                    }
+                }
+
+                string testName = builtinRunMatch.Groups["name"].Value.Trim();
+                string suiteName = "Tests";
+                string localTestName = testName;
+
+                // Check for Category.TestName format
+                int dotIndex = testName.IndexOf('.');
+                if (dotIndex > 0)
+                {
+                    suiteName = testName.Substring(0, dotIndex);
+                    localTestName = testName.Substring(dotIndex + 1);
+                }
+
+                // Find or create suite
+                var suite = result.Suites.FirstOrDefault(s => s.Name == suiteName);
+                if (suite == null)
+                {
+                    suite = new TestSuiteResult { Name = suiteName };
+                    result.Suites.Add(suite);
+                }
+
+                currentTest = new TestCaseResult
+                {
+                    Name = localTestName,
+                    FullName = testName,
+                    Outcome = TestOutcome.Running
+                };
+                suite.TestCases.Add(currentTest);
+                inTestOutput = true;
+                testOutput.Clear();
+                result.Framework = "cforge builtin";
+
+                UpdateTestProgress(windowControl, testName, result);
+                return;
+            }
+
+            // cforge builtin: [PASS] TestName
+            var builtinPassMatch = BuiltinPassPattern.Match(line);
+            if (builtinPassMatch.Success)
+            {
+                string testName = builtinPassMatch.Groups["name"].Value.Trim();
+                var test = FindTestByFullName(result, testName);
+                if (test != null)
+                {
+                    test.Outcome = TestOutcome.Passed;
+                    if (inTestOutput)
+                    {
+                        test.StdOut = testOutput.ToString();
+                        testOutput.Clear();
+                    }
+                }
+                inTestOutput = false;
+                currentTest = null;
+
+                UpdateTestProgress(windowControl, null, result);
+                return;
+            }
+
+            // cforge builtin: [FAIL] TestName
+            var builtinFailMatch = BuiltinFailPattern.Match(line);
+            if (builtinFailMatch.Success)
+            {
+                string testName = builtinFailMatch.Groups["name"].Value.Trim();
+                var test = FindTestByFullName(result, testName);
+                if (test != null)
+                {
+                    test.Outcome = TestOutcome.Failed;
+                    if (inTestOutput)
+                    {
+                        test.StdOut = testOutput.ToString();
+                        testOutput.Clear();
+                    }
+                }
+                inTestOutput = false;
+                currentTest = null;
+
+                UpdateTestProgress(windowControl, null, result);
+                return;
+            }
+
+            // cforge builtin assertion failure: Assertion failed: expr at file:line
+            var builtinAssertMatch = BuiltinAssertionPattern.Match(line);
+            if (builtinAssertMatch.Success && currentTest != null)
+            {
+                currentTest.Outcome = TestOutcome.Failed;
+                currentTest.ErrorMessage = $"Assertion failed: {builtinAssertMatch.Groups["expr"].Value}";
+                string file = builtinAssertMatch.Groups["file"].Value;
+                int.TryParse(builtinAssertMatch.Groups["line"].Value, out int lineNum);
+                currentTest.SourceFile = NormalizeFilePath(file, projectDir);
+                currentTest.SourceLine = lineNum;
+                return;
+            }
+
+            // cforge output formatter style: "test test_name ... ok" or "test test_name ... FAILED"
+            var cforgeTestMatch = CforgeTestResultPattern.Match(line);
+            if (cforgeTestMatch.Success)
+            {
+                string testName = cforgeTestMatch.Groups["name"].Value;
+                string resultStr = cforgeTestMatch.Groups["result"].Value;
+
+                // Find or create the test
+                string suiteName = "Tests";
+                string localTestName = testName;
+                int dotIndex = testName.IndexOf('.');
+                if (dotIndex > 0)
+                {
+                    suiteName = testName.Substring(0, dotIndex);
+                    localTestName = testName.Substring(dotIndex + 1);
+                }
+
+                var test = FindOrCreateTest(result, suiteName, localTestName);
+                test.FullName = testName;
+
+                switch (resultStr.ToLower())
+                {
+                    case "ok":
+                        test.Outcome = TestOutcome.Passed;
+                        break;
+                    case "failed":
+                    case "timeout":
+                        test.Outcome = TestOutcome.Failed;
+                        break;
+                    case "ignored":
+                        test.Outcome = TestOutcome.Skipped;
+                        break;
+                }
+
+                result.Framework = "cforge";
+                UpdateTestProgress(windowControl, null, result);
+                return;
+            }
+
+            // cforge summary: "test result: ok. X passed; Y failed"
+            var cforgeSummaryMatch = CforgeSummaryPattern.Match(line);
+            if (cforgeSummaryMatch.Success)
+            {
+                int.TryParse(cforgeSummaryMatch.Groups["passed"].Value, out int passed);
+                int.TryParse(cforgeSummaryMatch.Groups["failed"].Value, out int failed);
+                result.Passed = passed;
+                result.Failed = failed;
+                result.TotalTests = passed + failed;
+                return;
+            }
+
+            // cforge Finished line: "Finished 40 passed in 2.60s" or "Failed 5 passed, 2 failed in 1.00s"
+            var cforgeFinishedMatch = CforgeFinishedPattern.Match(line);
+            if (cforgeFinishedMatch.Success)
+            {
+                int.TryParse(cforgeFinishedMatch.Groups["passed"].Value, out int passed);
+                int failed = 0;
+                if (cforgeFinishedMatch.Groups["failed"].Success)
+                {
+                    int.TryParse(cforgeFinishedMatch.Groups["failed"].Value, out failed);
+                }
+                result.Passed = passed;
+                result.Failed = failed;
+                result.TotalTests = passed + failed;
+                result.Framework = "cforge";
+                return;
+            }
+
+            // Capture test output
+            if (inTestOutput && currentTest != null)
+            {
+                testOutput.AppendLine(line);
+            }
+        }
+
+        private static TestCaseResult? FindTestByFullName(TestRunResult result, string fullName)
+        {
+            foreach (var suite in result.Suites)
+            {
+                var test = suite.TestCases.FirstOrDefault(t => t.FullName == fullName || t.Name == fullName);
+                if (test != null) return test;
+            }
+            return null;
+        }
+
+        private static TestCaseResult FindOrCreateTest(TestRunResult result, string suiteName, string testName)
+        {
+            var suite = result.Suites.FirstOrDefault(s => s.Name == suiteName);
+            if (suite == null)
+            {
+                suite = new TestSuiteResult { Name = suiteName };
+                result.Suites.Add(suite);
+            }
+
+            var test = suite.TestCases.FirstOrDefault(t => t.Name == testName);
+            if (test == null)
+            {
+                test = new TestCaseResult
+                {
+                    Name = testName,
+                    FullName = $"{suiteName}.{testName}"
+                };
+                suite.TestCases.Add(test);
+            }
+            return test;
+        }
+
+        private static void ParseTestSummary(List<string> lines, TestRunResult result, TestSuiteResult defaultSuite)
+        {
+            foreach (var line in lines)
+            {
+                // Catch2 summary
+                var catch2Match = Catch2SummaryPattern.Match(line);
+                if (catch2Match.Success)
+                {
+                    if (line.Contains("All tests passed"))
+                    {
+                        // Count from other output
+                        result.Framework = "Catch2";
+                    }
+                    else
+                    {
+                        int.TryParse(catch2Match.Groups["total"].Value, out int total);
+                        int.TryParse(catch2Match.Groups["passed"].Value, out int passed);
+                        int.TryParse(catch2Match.Groups["failed"].Value, out int failed);
+
+                        result.TotalTests = total;
+                        result.Passed = passed;
+                        result.Failed = failed;
+                        result.Framework = "Catch2";
+                    }
+                    continue;
+                }
+
+                // Google Test summary
+                var gtestSummaryMatch = GTestSummaryPattern.Match(line);
+                if (gtestSummaryMatch.Success)
+                {
+                    int.TryParse(gtestSummaryMatch.Groups["total"].Value, out int total);
+                    result.TotalTests = total;
+                    result.Framework = "Google Test";
+                    continue;
+                }
+
+                var gtestPassedMatch = GTestPassedSummaryPattern.Match(line);
+                if (gtestPassedMatch.Success)
+                {
+                    int.TryParse(gtestPassedMatch.Groups["count"].Value, out int passed);
+                    result.Passed = passed;
+                    continue;
+                }
+
+                var gtestFailedSummaryMatch = GTestFailedSummaryPattern.Match(line);
+                if (gtestFailedSummaryMatch.Success)
+                {
+                    int.TryParse(gtestFailedSummaryMatch.Groups["count"].Value, out int failed);
+                    result.Failed = failed;
+                    continue;
+                }
+
+                // doctest summary
+                var doctestMatch = DoctestSummaryPattern.Match(line);
+                if (doctestMatch.Success)
+                {
+                    int.TryParse(doctestMatch.Groups["total"].Value, out int total);
+                    int.TryParse(doctestMatch.Groups["passed"].Value, out int passed);
+                    int.TryParse(doctestMatch.Groups["failed"].Value, out int failed);
+
+                    result.TotalTests = total;
+                    result.Passed = passed;
+                    result.Failed = failed;
+                    result.Framework = "doctest";
+                    continue;
+                }
+
+                // cforge summary: "test result: ok. X passed; Y failed"
+                var cforgeSummaryMatch = CforgeSummaryPattern.Match(line);
+                if (cforgeSummaryMatch.Success)
+                {
+                    int.TryParse(cforgeSummaryMatch.Groups["passed"].Value, out int passed);
+                    int.TryParse(cforgeSummaryMatch.Groups["failed"].Value, out int failed);
+                    result.Passed = passed;
+                    result.Failed = failed;
+                    result.TotalTests = passed + failed;
+                    result.Framework = "cforge";
+                    continue;
+                }
+
+                // cforge Finished line: "Finished 40 passed in 2.60s"
+                var cforgeFinishedMatch = CforgeFinishedPattern.Match(line);
+                if (cforgeFinishedMatch.Success)
+                {
+                    int.TryParse(cforgeFinishedMatch.Groups["passed"].Value, out int passed);
+                    int failed = 0;
+                    if (cforgeFinishedMatch.Groups["failed"].Success)
+                    {
+                        int.TryParse(cforgeFinishedMatch.Groups["failed"].Value, out failed);
+                    }
+                    result.Passed = passed;
+                    result.Failed = failed;
+                    result.TotalTests = passed + failed;
+                    result.Framework = "cforge";
+                    continue;
+                }
+            }
+
+            // If we parsed totals but no individual tests, create placeholder tests
+            if (result.TotalTests > 0 && defaultSuite.TestCases.Count == 0)
+            {
+                for (int i = 0; i < result.Passed; i++)
+                {
+                    defaultSuite.TestCases.Add(new TestCaseResult
+                    {
+                        Name = $"Test {i + 1}",
+                        FullName = $"Tests.Test {i + 1}",
+                        Outcome = TestOutcome.Passed
+                    });
+                }
+                for (int i = 0; i < result.Failed; i++)
+                {
+                    defaultSuite.TestCases.Add(new TestCaseResult
+                    {
+                        Name = $"Failed Test {i + 1}",
+                        FullName = $"Tests.Failed Test {i + 1}",
+                        Outcome = TestOutcome.Failed
+                    });
+                }
+            }
+        }
+
+        private static void UpdateTestProgress(TestResultsWindowControl? windowControl, string? currentTest, TestRunResult result)
+        {
+            if (windowControl == null) return;
+
+            int passed = 0, failed = 0, total = 0;
+            foreach (var suite in result.Suites)
+            {
+                foreach (var test in suite.TestCases)
+                {
+                    total++;
+                    if (test.Outcome == TestOutcome.Passed) passed++;
+                    else if (test.Outcome == TestOutcome.Failed) failed++;
+                }
+            }
+
+            var args = new TestProgressEventArgs
+            {
+                CurrentTest = currentTest,
+                CompletedCount = passed + failed,
+                TotalCount = total,
+                PassedCount = passed,
+                FailedCount = failed
+            };
+
+            windowControl.UpdateProgress(args);
+            OnTestProgress(args);
+        }
+
+        #endregion
+
+        #region Workspace Support
+
+        /// <summary>
+        /// Runs a cforge command for a specific workspace member.
+        /// </summary>
+        public static async Task<bool> RunForMemberAsync(string command, string? memberPath)
+        {
+            // If we have a specific member, build in that directory
+            if (!string.IsNullOrEmpty(memberPath))
+            {
+                string? workspaceDir = await GetProjectDirectoryAsync();
+                if (!string.IsNullOrEmpty(workspaceDir))
+                {
+                    string memberDir = Path.Combine(workspaceDir, memberPath);
+                    return await RunAsync(command, memberDir);
+                }
+            }
+
+            // Otherwise run in workspace root
+            return await RunAsync(command);
+        }
+
+        /// <summary>
+        /// Gets the executable path for the active project (workspace-aware).
+        /// </summary>
+        public static async Task<string?> GetActiveProjectExecutableAsync(string configuration = "Debug")
+        {
+            // Check if we're in a workspace with an active member
+            if (WorkspaceState.Instance.IsWorkspace)
+            {
+                return WorkspaceState.Instance.GetActiveProjectExecutable(configuration);
+            }
+
+            // Single project mode
+            string? projectDir = await GetProjectDirectoryAsync();
+            if (string.IsNullOrEmpty(projectDir))
+                return null;
+
+            var project = CforgeTomlParser.ParseProject(projectDir);
+            if (project == null || project.Type != "executable")
+                return null;
+
+            return CforgeTomlParser.FindExecutable(projectDir, project, configuration);
+        }
+
+        /// <summary>
+        /// Builds the active project (workspace-aware).
+        /// </summary>
+        public static async Task<bool> BuildActiveProjectAsync(string configuration = "Debug")
+        {
+            string buildArgs = configuration == "Release" ? "build -c Release" : "build";
+
+            if (WorkspaceState.Instance.IsWorkspace)
+            {
+                string? memberPath = WorkspaceState.Instance.ActiveMemberPath;
+                return await RunForMemberAsync(buildArgs, memberPath);
+            }
+
+            return await RunAsync(buildArgs);
+        }
+
+        /// <summary>
+        /// Runs the active project (workspace-aware).
+        /// </summary>
+        public static async Task<bool> RunActiveProjectAsync(string configuration = "Debug")
+        {
+            if (WorkspaceState.Instance.IsWorkspace)
+            {
+                string? targetDir = WorkspaceState.Instance.GetBuildTargetDir();
+                if (!string.IsNullOrEmpty(targetDir))
+                {
+                    return await BuildAndRunInConsoleAsync(targetDir, configuration);
+                }
+            }
+
+            return await BuildAndRunInConsoleAsync(null, configuration);
+        }
+
+        /// <summary>
+        /// Debugs the active project (workspace-aware).
+        /// </summary>
+        public static async Task<bool> DebugActiveProjectAsync(string configuration = "Debug")
+        {
+            if (WorkspaceState.Instance.IsWorkspace)
+            {
+                string? targetDir = WorkspaceState.Instance.GetBuildTargetDir();
+                if (!string.IsNullOrEmpty(targetDir))
+                {
+                    return await BuildAndDebugAsync(targetDir, configuration);
+                }
+            }
+
+            return await BuildAndDebugAsync(null, configuration);
+        }
+
+        #endregion
+
+        #region Event Helpers
+
+        private static void OnBuildProgress(BuildProgressEventArgs args)
+        {
+            BuildProgress?.Invoke(null, args);
+        }
+
+        private static void OnBuildCompleted(BuildResult result)
+        {
+            _currentBuildResult = result;
+            BuildCompleted?.Invoke(null, new BuildCompletedEventArgs(result));
+        }
+
+        private static void OnTestProgress(TestProgressEventArgs args)
+        {
+            TestProgress?.Invoke(null, args);
+        }
+
+        private static void OnTestCompleted(TestRunResult result)
+        {
+            _currentTestResult = result;
+            TestCompleted?.Invoke(null, new TestCompletedEventArgs(result));
+        }
+
+        #endregion
     }
 }

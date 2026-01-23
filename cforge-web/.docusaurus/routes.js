@@ -38,6 +38,11 @@ export default [
     exact: true
   },
   {
+    path: '/cforge/packages',
+    component: ComponentCreator('/cforge/packages', '08f'),
+    exact: true
+  },
+  {
     path: '/cforge/docs',
     component: ComponentCreator('/cforge/docs', '955'),
     routes: [

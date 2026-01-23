@@ -196,6 +196,18 @@
         "title": "Stop Watch Mode",
         "category": "cforge",
         "icon": "$(debug-stop)"
+      },
+      {
+        "command": "cforge.cache",
+        "title": "Manage Cache",
+        "category": "cforge",
+        "icon": "$(database)"
+      },
+      {
+        "command": "cforge.upgrade",
+        "title": "Upgrade cforge",
+        "category": "cforge",
+        "icon": "$(cloud-download)"
       }
     ],
     "views": {

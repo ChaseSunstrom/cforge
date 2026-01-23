@@ -33,11 +33,39 @@ namespace CforgeVS
         private string _configuration = "Debug";
         private string? _projectDir;
         private ProjectTreeItem? _selectedItem;
+        private bool _isWorkspace;
+        private bool _isUpdatingMemberCombo;
 
         public CforgeExplorerWindowControl()
         {
             InitializeComponent();
             Loaded += OnLoaded;
+
+            // Subscribe to workspace state changes
+            WorkspaceState.Instance.ActiveProjectChanged += OnActiveProjectChanged;
+            WorkspaceState.Instance.WorkspaceReloaded += OnWorkspaceReloaded;
+        }
+
+        private void OnActiveProjectChanged(object? sender, ActiveProjectChangedEventArgs e)
+        {
+            _ = ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
+            {
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                await LoadProjectAsync();
+            });
+        }
+
+        private void OnWorkspaceReloaded(object? sender, WorkspaceReloadedEventArgs e)
+        {
+            _ = ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
+            {
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                UpdateMemberComboVisibility(e.IsWorkspace);
+                if (e.IsWorkspace && e.Workspace != null)
+                {
+                    PopulateMemberCombo(e.Workspace);
+                }
+            });
         }
 
         private void AddDirectoryNode(ProjectTreeItem parent, string dirName, string displayName, ImageMoniker icon)
@@ -172,23 +200,39 @@ namespace CforgeVS
 
         private async void BuildButton_Click(object sender, RoutedEventArgs e)
         {
-            if (string.IsNullOrEmpty(_projectDir)) return;
-            SetStatus("Building...");
-            ProgressBar.Visibility = Visibility.Visible;
-            string configArg = _configuration == "Release" ? " -c Release" : "";
-            await CforgeRunner.RunAsync($"build{configArg}", _projectDir);
-            ProgressBar.Visibility = Visibility.Collapsed;
-            SetStatus("Build complete");
-            await LoadProjectAsync();
+            try
+            {
+                if (string.IsNullOrEmpty(_projectDir)) return;
+                SetStatus("Building...");
+                ProgressBar.Visibility = Visibility.Visible;
+                string configArg = _configuration == "Release" ? " -c Release" : "";
+                await CforgeRunner.RunAsync($"build{configArg}", _projectDir);
+                ProgressBar.Visibility = Visibility.Collapsed;
+                SetStatus("Build complete");
+                await LoadProjectAsync();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error in BuildButton_Click: {ex.Message}");
+                SetStatus($"Build error: {ex.Message}");
+            }
         }
 
         private async void CleanButton_Click(object sender, RoutedEventArgs e)
         {
-            if (string.IsNullOrEmpty(_projectDir)) return;
-            SetStatus("Cleaning...");
-            await CforgeRunner.RunAsync("clean", _projectDir);
-            SetStatus("Cleaned");
-            await LoadProjectAsync();
+            try
+            {
+                if (string.IsNullOrEmpty(_projectDir)) return;
+                SetStatus("Cleaning...");
+                await CforgeRunner.RunAsync("clean", _projectDir);
+                SetStatus("Cleaned");
+                await LoadProjectAsync();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error in CleanButton_Click: {ex.Message}");
+                SetStatus($"Clean error: {ex.Message}");
+            }
         }
 
         private void ConfigCombo_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
@@ -199,7 +243,7 @@ namespace CforgeVS
                 // Update build status for new config
                 if (!string.IsNullOrEmpty(_projectDir))
                 {
-                    var project = CforgeTomlParser.ParseProject(_projectDir);
+                    var project = CforgeTomlParser.ParseProject(_projectDir!);
                     if (project != null)
                     {
                         UpdateBuildStatus(project);
@@ -327,10 +371,18 @@ namespace CforgeVS
 
         private async void DebugButton_Click(object sender, RoutedEventArgs e)
         {
-            if (string.IsNullOrEmpty(_projectDir)) return;
-            SetStatus("Starting debugger...");
-            await CforgeRunner.BuildAndDebugAsync(_projectDir);
-            SetStatus("Ready");
+            try
+            {
+                if (string.IsNullOrEmpty(_projectDir)) return;
+                SetStatus("Starting debugger...");
+                await CforgeRunner.BuildAndDebugAsync(_projectDir);
+                SetStatus("Ready");
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error in DebugButton_Click: {ex.Message}");
+                SetStatus($"Debug error: {ex.Message}");
+            }
         }
 
         private bool IsCppFile(string path)
@@ -362,9 +414,9 @@ namespace CforgeVS
             }
 
             // Check if this is a workspace first
-            if (CforgeTomlParser.IsWorkspace(_projectDir))
+            if (CforgeTomlParser.IsWorkspace(_projectDir!))
             {
-                var workspace = CforgeTomlParser.ParseWorkspace(_projectDir);
+                var workspace = CforgeTomlParser.ParseWorkspace(_projectDir!);
                 if (workspace != null)
                 {
                     ProjectNameText.Text = workspace.Name;
@@ -376,7 +428,7 @@ namespace CforgeVS
             }
 
             // Regular project
-            var project = CforgeTomlParser.ParseProject(_projectDir);
+            var project = CforgeTomlParser.ParseProject(_projectDir!);
             if (project != null)
             {
                 ProjectNameText.Text = project.Name;
@@ -388,25 +440,39 @@ namespace CforgeVS
 
         private async void NewClass_Click(object sender, RoutedEventArgs e)
         {
-            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-
-            string? className = InputDialog.Show("New Class", "Enter class name (e.g., MyClass, utils/Helper):");
-            if (!string.IsNullOrWhiteSpace(className))
+            try
             {
-                await CforgeRunner.RunAsync($"new class {className}", _projectDir);
-                await LoadProjectAsync();
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+
+                string? className = InputDialog.Show("New Class", "Enter class name (e.g., MyClass, utils/Helper):");
+                if (!string.IsNullOrWhiteSpace(className))
+                {
+                    await CforgeRunner.RunAsync($"new class {className}", _projectDir);
+                    await LoadProjectAsync();
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error in NewClass_Click: {ex.Message}");
             }
         }
 
         private async void NewHeader_Click(object sender, RoutedEventArgs e)
         {
-            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-
-            string? headerName = InputDialog.Show("New Header", "Enter header name:");
-            if (!string.IsNullOrWhiteSpace(headerName))
+            try
             {
-                await CforgeRunner.RunAsync($"new header {headerName}", _projectDir);
-                await LoadProjectAsync();
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+
+                string? headerName = InputDialog.Show("New Header", "Enter header name:");
+                if (!string.IsNullOrWhiteSpace(headerName))
+                {
+                    await CforgeRunner.RunAsync($"new header {headerName}", _projectDir);
+                    await LoadProjectAsync();
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error in NewHeader_Click: {ex.Message}");
             }
         }
 
@@ -424,9 +490,16 @@ namespace CforgeVS
 
         private async void OpenFile_Click(object sender, RoutedEventArgs e)
         {
-            if (_selectedItem?.FullPath != null && File.Exists(_selectedItem.FullPath))
+            try
             {
-                await VS.Documents.OpenAsync(_selectedItem.FullPath);
+                if (_selectedItem?.FullPath != null && File.Exists(_selectedItem.FullPath))
+                {
+                    await VS.Documents.OpenAsync(_selectedItem.FullPath);
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error in OpenFile_Click: {ex.Message}");
             }
         }
 
@@ -447,11 +520,18 @@ namespace CforgeVS
 
         private async void OpenTomlButton_Click(object sender, RoutedEventArgs e)
         {
-            if (string.IsNullOrEmpty(_projectDir)) return;
-            string tomlPath = Path.Combine(_projectDir, "cforge.toml");
-            if (File.Exists(tomlPath))
+            try
             {
-                await VS.Documents.OpenAsync(tomlPath);
+                if (string.IsNullOrEmpty(_projectDir)) return;
+                string tomlPath = Path.Combine(_projectDir, "cforge.toml");
+                if (File.Exists(tomlPath))
+                {
+                    await VS.Documents.OpenAsync(tomlPath);
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error in OpenTomlButton_Click: {ex.Message}");
             }
         }
 
@@ -697,36 +777,60 @@ namespace CforgeVS
 
         private async void ProjectTree_MouseDoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
         {
-            if (_selectedItem == null) return;
+            try
+            {
+                if (_selectedItem == null) return;
 
-            if (_selectedItem.ItemType == TreeItemType.File && !string.IsNullOrEmpty(_selectedItem.FullPath))
-            {
-                await VS.Documents.OpenAsync(_selectedItem.FullPath);
+                if (_selectedItem.ItemType == TreeItemType.File && !string.IsNullOrEmpty(_selectedItem.FullPath))
+                {
+                    await VS.Documents.OpenAsync(_selectedItem.FullPath);
+                }
+                else if (_selectedItem.ItemType == TreeItemType.Executable && !string.IsNullOrEmpty(_selectedItem.FullPath))
+                {
+                    // Run the executable
+                    await CforgeRunner.BuildAndRunInConsoleAsync(_projectDir!, _configuration);
+                }
             }
-            else if (_selectedItem.ItemType == TreeItemType.Executable && !string.IsNullOrEmpty(_selectedItem.FullPath))
+            catch (Exception ex)
             {
-                // Run the executable
-                await CforgeRunner.BuildAndRunInConsoleAsync(_projectDir!, _configuration);
+                System.Diagnostics.Debug.WriteLine($"Error in ProjectTree_MouseDoubleClick: {ex.Message}");
             }
         }
 
         private void ProjectTree_SelectedItemChanged(object sender, RoutedPropertyChangedEventArgs<object> e)
         {
             _selectedItem = e.NewValue as ProjectTreeItem;
+            UpdateContextMenuForSelection();
         }
 
         private async void RefreshButton_Click(object sender, RoutedEventArgs e)
         {
-            SetStatus("Refreshing...");
-            await LoadProjectAsync();
+            try
+            {
+                SetStatus("Refreshing...");
+                await LoadProjectAsync();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error in RefreshButton_Click: {ex.Message}");
+                SetStatus($"Refresh error: {ex.Message}");
+            }
         }
 
         private async void RunButton_Click(object sender, RoutedEventArgs e)
         {
-            if (string.IsNullOrEmpty(_projectDir)) return;
-            SetStatus("Running...");
-            await CforgeRunner.BuildAndRunInConsoleAsync(_projectDir, _configuration);
-            SetStatus("Ready");
+            try
+            {
+                if (string.IsNullOrEmpty(_projectDir)) return;
+                SetStatus("Running...");
+                await CforgeRunner.BuildAndRunInConsoleAsync(_projectDir, _configuration);
+                SetStatus("Ready");
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error in RunButton_Click: {ex.Message}");
+                SetStatus($"Run error: {ex.Message}");
+            }
         }
 
         private void SetBuildStatus(string text, bool isBuilt)
@@ -734,13 +838,15 @@ namespace CforgeVS
             BuildStatusText.Text = text;
             if (isBuilt)
             {
-                BuildStatusBorder.Background = new SolidColorBrush(Color.FromRgb(76, 175, 80));
+                // Use a green that works well in both light and dark themes
+                BuildStatusBorder.Background = new SolidColorBrush(Color.FromRgb(40, 167, 69)); // Bootstrap success green
                 BuildStatusText.Foreground = Brushes.White;
             }
             else
             {
-                BuildStatusBorder.Background = new SolidColorBrush(Color.FromRgb(158, 158, 158));
-                BuildStatusText.Foreground = Brushes.White;
+                // Use VS theme color for secondary/muted status
+                BuildStatusBorder.Background = (Brush)FindResource(VsBrushes.CommandBarGradientKey);
+                BuildStatusText.Foreground = (Brush)FindResource(VsBrushes.GrayTextKey);
             }
         }
 
@@ -751,19 +857,29 @@ namespace CforgeVS
 
         private async void TestButton_Click(object sender, RoutedEventArgs e)
         {
-            if (string.IsNullOrEmpty(_projectDir)) return;
-            SetStatus("Running tests...");
-            ProgressBar.Visibility = Visibility.Visible;
-            await CforgeRunner.RunAsync("test", _projectDir);
-            ProgressBar.Visibility = Visibility.Collapsed;
-            SetStatus("Tests complete");
+            try
+            {
+                if (string.IsNullOrEmpty(_projectDir)) return;
+                SetStatus("Running tests...");
+                ProgressBar.Visibility = Visibility.Visible;
+                // Use RunTestAsync to open Test Results window and capture results
+                var result = await CforgeRunner.RunTestAsync(_projectDir);
+                ProgressBar.Visibility = Visibility.Collapsed;
+                SetStatus(result.Failed > 0 ? $"Tests: {result.Failed} failed" : $"Tests: {result.Passed} passed");
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error in TestButton_Click: {ex.Message}");
+                ProgressBar.Visibility = Visibility.Collapsed;
+                SetStatus($"Test error: {ex.Message}");
+            }
         }
 
         private void UpdateBuildStatus(CforgeProject project)
         {
             if (string.IsNullOrEmpty(_projectDir)) return;
 
-            string? exePath = CforgeTomlParser.FindExecutable(_projectDir, project, _configuration);
+            string? exePath = CforgeTomlParser.FindExecutable(_projectDir!, project, _configuration);
             if (exePath != null && File.Exists(exePath))
             {
                 var fileInfo = new FileInfo(exePath);
@@ -779,6 +895,166 @@ namespace CforgeVS
                 SetBuildStatus("Not built", false);
             }
         }
+
+        #region Workspace Support
+
+        private void UpdateMemberComboVisibility(bool isWorkspace)
+        {
+            _isWorkspace = isWorkspace;
+            MemberCombo.Visibility = isWorkspace ? Visibility.Visible : Visibility.Collapsed;
+
+            // Update context menu visibility
+            UpdateContextMenuForSelection();
+        }
+
+        private void PopulateMemberCombo(CforgeWorkspace workspace)
+        {
+            _isUpdatingMemberCombo = true;
+            MemberCombo.Items.Clear();
+
+            foreach (var member in workspace.Members)
+            {
+                var memberDir = Path.Combine(_projectDir!, member);
+                var memberProject = CforgeTomlParser.ParseProject(memberDir);
+                string memberName = memberProject?.Name ?? Path.GetFileName(member);
+
+                var wsProject = workspace.Projects.Find(p => p.Path == member || p.Name == memberName);
+                bool isStartup = wsProject?.IsStartup ?? false;
+
+                var item = new ComboBoxItem
+                {
+                    Content = isStartup ? $"{memberName} (startup)" : memberName,
+                    Tag = member,
+                    FontWeight = isStartup ? FontWeights.Bold : FontWeights.Normal
+                };
+
+                MemberCombo.Items.Add(item);
+
+                // Select active member
+                if (member == WorkspaceState.Instance.ActiveMemberPath)
+                {
+                    MemberCombo.SelectedItem = item;
+                }
+            }
+
+            _isUpdatingMemberCombo = false;
+        }
+
+        private void MemberCombo_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+        {
+            if (_isUpdatingMemberCombo) return;
+
+            if (MemberCombo.SelectedItem is ComboBoxItem item && item.Tag is string memberPath)
+            {
+                string memberName = item.Content?.ToString()?.Replace(" (startup)", "") ?? memberPath;
+                _ = WorkspaceState.Instance.SetActiveMemberAsync(memberPath, memberName);
+            }
+        }
+
+        private void UpdateContextMenuForSelection()
+        {
+            bool showMemberMenu = _isWorkspace && _selectedItem?.ItemType == TreeItemType.WorkspaceMember;
+
+            SetStartupProjectMenuItem.Visibility = showMemberMenu ? Visibility.Visible : Visibility.Collapsed;
+            BuildMemberMenuItem.Visibility = showMemberMenu ? Visibility.Visible : Visibility.Collapsed;
+            RunMemberMenuItem.Visibility = showMemberMenu ? Visibility.Visible : Visibility.Collapsed;
+            DebugMemberMenuItem.Visibility = showMemberMenu ? Visibility.Visible : Visibility.Collapsed;
+            MemberMenuSeparator.Visibility = showMemberMenu ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        private async void SetStartupProject_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (_selectedItem?.ItemType == TreeItemType.WorkspaceMember && !string.IsNullOrEmpty(_selectedItem.FullPath))
+                {
+                    // Get relative path from project dir
+                    string relativePath = GetRelativePath(_projectDir!, _selectedItem.FullPath);
+                    await WorkspaceState.Instance.SetActiveMemberAsync(relativePath, _selectedItem.Name);
+
+                    SetStatus($"Set {_selectedItem.Name} as startup project");
+                    await LoadProjectAsync();
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error in SetStartupProject_Click: {ex.Message}");
+                SetStatus($"Error: {ex.Message}");
+            }
+        }
+
+        private async void BuildMember_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (_selectedItem?.ItemType == TreeItemType.WorkspaceMember && !string.IsNullOrEmpty(_selectedItem.FullPath))
+                {
+                    SetStatus($"Building {_selectedItem.Name}...");
+                    ProgressBar.Visibility = Visibility.Visible;
+
+                    string configArg = _configuration == "Release" ? " -c Release" : "";
+                    await CforgeRunner.RunAsync($"build{configArg}", _selectedItem.FullPath);
+
+                    ProgressBar.Visibility = Visibility.Collapsed;
+                    SetStatus($"Build of {_selectedItem.Name} complete");
+                    await LoadProjectAsync();
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error in BuildMember_Click: {ex.Message}");
+                ProgressBar.Visibility = Visibility.Collapsed;
+                SetStatus($"Build error: {ex.Message}");
+            }
+        }
+
+        private async void RunMember_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (_selectedItem?.ItemType == TreeItemType.WorkspaceMember && !string.IsNullOrEmpty(_selectedItem.FullPath))
+                {
+                    SetStatus($"Running {_selectedItem.Name}...");
+                    await CforgeRunner.BuildAndRunInConsoleAsync(_selectedItem.FullPath, _configuration);
+                    SetStatus("Ready");
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error in RunMember_Click: {ex.Message}");
+                SetStatus($"Run error: {ex.Message}");
+            }
+        }
+
+        private async void DebugMember_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (_selectedItem?.ItemType == TreeItemType.WorkspaceMember && !string.IsNullOrEmpty(_selectedItem.FullPath))
+                {
+                    SetStatus($"Starting debugger for {_selectedItem.Name}...");
+                    await CforgeRunner.BuildAndDebugAsync(_selectedItem.FullPath, _configuration);
+                    SetStatus("Ready");
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error in DebugMember_Click: {ex.Message}");
+                SetStatus($"Debug error: {ex.Message}");
+            }
+        }
+
+        private static string GetRelativePath(string basePath, string fullPath)
+        {
+            if (fullPath.StartsWith(basePath, StringComparison.OrdinalIgnoreCase))
+            {
+                string relative = fullPath.Substring(basePath.Length);
+                return relative.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            }
+            return fullPath;
+        }
+
+        #endregion
     }
 
     /// <summary>

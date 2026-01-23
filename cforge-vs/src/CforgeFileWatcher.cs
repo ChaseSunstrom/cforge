@@ -61,7 +61,7 @@ namespace CforgeVS
         {
             if (!string.IsNullOrEmpty(folder))
             {
-                Instance.StartWatching(folder);
+                Instance.StartWatching(folder!);
             }
         }
 

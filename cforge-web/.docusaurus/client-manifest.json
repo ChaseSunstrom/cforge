@@ -66,6 +66,10 @@
     "449695dd": [
       568
     ],
+    "4c94c16d": [
+      869,
+      25
+    ],
     "4d54d076": [
       459
     ],
@@ -171,6 +175,7 @@
       133
     ],
     "styles": [
+      25,
       48,
       80,
       209,
@@ -201,6 +206,15 @@
           "file": "assets/js/9d9f8394.f93fcc53.js",
           "hash": "78b6372562380006",
           "publicPath": "/cforge/assets/js/9d9f8394.f93fcc53.js"
+        }
+      ]
+    },
+    "25": {
+      "js": [
+        {
+          "file": "assets/js/4c94c16d.b1c3e18b.js",
+          "hash": "56cea34cac38cf1d",
+          "publicPath": "/cforge/assets/js/4c94c16d.b1c3e18b.js"
         }
       ]
     },
@@ -315,9 +329,9 @@
     "354": {
       "js": [
         {
-          "file": "assets/js/runtime~main.0efdbc9a.js",
-          "hash": "d9d172e2a977aaf0",
-          "publicPath": "/cforge/assets/js/runtime~main.0efdbc9a.js"
+          "file": "assets/js/runtime~main.7514ce36.js",
+          "hash": "bbf612083221bd70",
+          "publicPath": "/cforge/assets/js/runtime~main.7514ce36.js"
         }
       ]
     },
@@ -423,9 +437,9 @@
     "634": {
       "js": [
         {
-          "file": "assets/js/c4f5d8e4.1af8006e.js",
-          "hash": "ca68f5599cfaea77",
-          "publicPath": "/cforge/assets/js/c4f5d8e4.1af8006e.js"
+          "file": "assets/js/c4f5d8e4.cd23165d.js",
+          "hash": "6bf8ff7c21ada4e7",
+          "publicPath": "/cforge/assets/js/c4f5d8e4.cd23165d.js"
         }
       ]
     },
@@ -477,9 +491,9 @@
     "792": {
       "js": [
         {
-          "file": "assets/js/main.ad8e3b1e.js",
-          "hash": "6348c8d131894b6f",
-          "publicPath": "/cforge/assets/js/main.ad8e3b1e.js"
+          "file": "assets/js/main.f5b683cc.js",
+          "hash": "6818c916aa3d295b",
+          "publicPath": "/cforge/assets/js/main.f5b683cc.js"
         }
       ]
     },
@@ -558,9 +572,9 @@
     "869": {
       "css": [
         {
-          "file": "assets/css/styles.8ef73789.css",
-          "hash": "c568366e08b671d3",
-          "publicPath": "/cforge/assets/css/styles.8ef73789.css"
+          "file": "assets/css/styles.2ba9e490.css",
+          "hash": "d5b8c1383e6d2986",
+          "publicPath": "/cforge/assets/css/styles.2ba9e490.css"
         }
       ]
     },

@@ -16,6 +16,7 @@ namespace CforgeVS
     [ProvideToolWindow(typeof(OutputToolWindow.Pane), Style = VsDockStyle.Tabbed, Window = "34e76e81-ee4a-11d0-ae2e-00a0c90fffc3")]
     [ProvideToolWindow(typeof(ProjectPropertiesWindow.Pane), Style = VsDockStyle.Tabbed, Window = "3ae79031-e1bc-11d0-8f78-00a0c9110057")]
     [ProvideToolWindow(typeof(CforgeExplorerWindow.Pane), Style = VsDockStyle.Float)]
+    [ProvideToolWindow(typeof(TestResultsWindow.Pane), Style = VsDockStyle.Tabbed, Window = "34e76e81-ee4a-11d0-ae2e-00a0c90fffc3")]
     [ProvideAutoLoad(VSConstants.UICONTEXT.SolutionExists_string, PackageAutoLoadFlags.BackgroundLoad)]
     [ProvideAutoLoad(VSConstants.UICONTEXT.FolderOpened_string, PackageAutoLoadFlags.BackgroundLoad)]
     [ProvideOptionPage(typeof(CforgeOptionsPage), "cforge", "General", 0, 0, true)]
@@ -64,6 +65,11 @@ namespace CforgeVS
             await DoctorCommand.InitializeAsync(this);
             await ProjectInfoCommand.InitializeAsync(this);
             await CleanGeneratedFilesCommand.InitializeAsync(this);
+            await CacheListCommand.InitializeAsync(this);
+            await CacheStatsCommand.InitializeAsync(this);
+            await CacheCleanCommand.InitializeAsync(this);
+            await UpgradeCommand.InitializeAsync(this);
+            await CircularCommand.InitializeAsync(this);
 
             // Register project/template commands
             await InitProjectCommand.InitializeAsync(this);
@@ -81,6 +87,17 @@ namespace CforgeVS
 
             // Register tool window commands
             await OpenCforgeExplorerCommand.InitializeAsync(this);
+            await OpenTestResultsCommand.InitializeAsync(this);
+
+            // Register additional dependency commands
+            await DepsSearchCommand.InitializeAsync(this);
+            await DepsListCommand.InitializeAsync(this);
+            await DepsInfoCommand.InitializeAsync(this);
+            await DepsTreeCommand.InitializeAsync(this);
+
+            // Register cache commands
+            await CachePruneCommand.InitializeAsync(this);
+            await CachePathCommand.InitializeAsync(this);
 
             // Register toolbar commands
             await ToolbarBuildCommand.InitializeAsync(this);
@@ -104,6 +121,9 @@ namespace CforgeVS
 
             // Initialize vcxproj generator (generates .vcxproj from cforge.toml)
             await VcxprojGenerator.InitializeAsync();
+
+            // Initialize workspace state
+            await WorkspaceState.Instance.RefreshAsync();
         }
     }
 }

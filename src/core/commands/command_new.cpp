@@ -213,19 +213,38 @@ bool generate_test(const fs::path &path, const std::string &test_name,
     file << "TEST_F(" << pascal_name << "Test, BasicTest) {\n";
     file << "    EXPECT_TRUE(true);\n";
     file << "}\n";
+  } else if (test_framework == "doctest") {
+    file << "#define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN\n";
+    file << "#include <doctest/doctest.h>\n\n";
+    file << "TEST_CASE(\"" << pascal_name << " tests\") {\n";
+    file << "    SUBCASE(\"basic test\") {\n";
+    file << "        CHECK(true);\n";
+    file << "    }\n";
+    file << "}\n";
   } else {
-    // Basic test without framework
-    file << "#include <cassert>\n";
-    file << "#include <iostream>\n\n";
-    file << "void test_" << to_snake_case(test_name) << "() {\n";
-    file << "    // TODO: Add test code here\n";
-    file << "    assert(true);\n";
-    file << "    std::cout << \"" << pascal_name
-         << " tests passed!\" << std::endl;\n";
+    // Use cforge's builtin test framework
+    file << "/**\n";
+    file << " * @file " << test_name << "_test.cpp\n";
+    file << " * @brief Tests for " << pascal_name << "\n";
+    file << " *\n";
+    file << " * Uses cforge's builtin test framework.\n";
+    file << " * Run with: cforge test\n";
+    file << " */\n\n";
+    file << "#include \"test_framework.h\"\n\n";
+    file << "// Test functions return 0 on success, non-zero on failure\n\n";
+    file << "TEST(" << pascal_name << ", BasicTest) {\n";
+    file << "    // TODO: Add test assertions\n";
+    file << "    cf_assert(true);\n";
+    file << "    cf_assert_eq(1 + 1, 2);\n";
+    file << "    return 0;\n";
+    file << "}\n\n";
+    file << "TEST(" << pascal_name << ", AnotherTest) {\n";
+    file << "    // Add more tests here\n";
+    file << "    cf_assert(1 == 1);\n";
+    file << "    return 0;\n";
     file << "}\n\n";
     file << "int main() {\n";
-    file << "    test_" << to_snake_case(test_name) << "();\n";
-    file << "    return 0;\n";
+    file << "    return cf_run_tests();\n";
     file << "}\n";
   }
 

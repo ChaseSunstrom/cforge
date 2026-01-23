@@ -14,7 +14,8 @@ namespace CforgeVS
     {
         protected override async Task ExecuteAsync(OleMenuCmdEventArgs e)
         {
-            await CforgeRunner.RunAsync("build");
+            // Use workspace-aware build
+            await CforgeRunner.BuildActiveProjectAsync("Debug");
         }
     }
 
@@ -23,7 +24,8 @@ namespace CforgeVS
     {
         protected override async Task ExecuteAsync(OleMenuCmdEventArgs e)
         {
-            await CforgeRunner.RunAsync("build -c Release");
+            // Use workspace-aware build
+            await CforgeRunner.BuildActiveProjectAsync("Release");
         }
     }
 
@@ -32,8 +34,18 @@ namespace CforgeVS
     {
         protected override async Task ExecuteAsync(OleMenuCmdEventArgs e)
         {
-            await CforgeRunner.RunAsync("clean");
-            await CforgeRunner.RunAsync("build");
+            // Workspace-aware clean and build
+            if (WorkspaceState.Instance.IsWorkspace)
+            {
+                string? memberPath = WorkspaceState.Instance.ActiveMemberPath;
+                await CforgeRunner.RunForMemberAsync("clean", memberPath);
+                await CforgeRunner.RunForMemberAsync("build", memberPath);
+            }
+            else
+            {
+                await CforgeRunner.RunAsync("clean");
+                await CforgeRunner.RunAsync("build");
+            }
         }
     }
 
@@ -42,7 +54,16 @@ namespace CforgeVS
     {
         protected override async Task ExecuteAsync(OleMenuCmdEventArgs e)
         {
-            await CforgeRunner.RunAsync("clean");
+            // Workspace-aware clean
+            if (WorkspaceState.Instance.IsWorkspace)
+            {
+                string? memberPath = WorkspaceState.Instance.ActiveMemberPath;
+                await CforgeRunner.RunForMemberAsync("clean", memberPath);
+            }
+            else
+            {
+                await CforgeRunner.RunAsync("clean");
+            }
         }
     }
 
@@ -51,7 +72,8 @@ namespace CforgeVS
     {
         protected override async Task ExecuteAsync(OleMenuCmdEventArgs e)
         {
-            await CforgeRunner.BuildAndRunInConsoleAsync();
+            // Use workspace-aware run
+            await CforgeRunner.RunActiveProjectAsync("Debug");
         }
     }
 
@@ -60,7 +82,8 @@ namespace CforgeVS
     {
         protected override async Task ExecuteAsync(OleMenuCmdEventArgs e)
         {
-            await CforgeRunner.BuildAndDebugAsync();
+            // Use workspace-aware debug
+            await CforgeRunner.DebugActiveProjectAsync("Debug");
         }
     }
 
@@ -69,7 +92,16 @@ namespace CforgeVS
     {
         protected override async Task ExecuteAsync(OleMenuCmdEventArgs e)
         {
-            await CforgeRunner.RunAsync("test");
+            // Workspace-aware test with auto-open Test Results window
+            if (WorkspaceState.Instance.IsWorkspace)
+            {
+                string? targetDir = WorkspaceState.Instance.GetBuildTargetDir();
+                await CforgeRunner.RunTestAsync(targetDir);
+            }
+            else
+            {
+                await CforgeRunner.RunTestAsync();
+            }
         }
     }
 
@@ -191,7 +223,7 @@ namespace CforgeVS
             string? projectDir = await CforgeRunner.GetProjectDirectoryAsync();
             if (!string.IsNullOrEmpty(projectDir))
             {
-                await VcxprojGenerator.GenerateProjectFilesAsync(projectDir);
+                await VcxprojGenerator.GenerateProjectFilesAsync(projectDir!);
             }
         }
     }
@@ -309,7 +341,7 @@ namespace CforgeVS
     {
         protected override async Task ExecuteAsync(OleMenuCmdEventArgs e)
         {
-            await CforgeRunner.RunAsync("build");
+            await CforgeRunner.BuildActiveProjectAsync("Debug");
         }
     }
 
@@ -318,7 +350,7 @@ namespace CforgeVS
     {
         protected override async Task ExecuteAsync(OleMenuCmdEventArgs e)
         {
-            await CforgeRunner.BuildAndRunInConsoleAsync();
+            await CforgeRunner.RunActiveProjectAsync("Debug");
         }
     }
 
@@ -327,7 +359,7 @@ namespace CforgeVS
     {
         protected override async Task ExecuteAsync(OleMenuCmdEventArgs e)
         {
-            await CforgeRunner.BuildAndDebugAsync();
+            await CforgeRunner.DebugActiveProjectAsync("Debug");
         }
     }
 
@@ -336,7 +368,16 @@ namespace CforgeVS
     {
         protected override async Task ExecuteAsync(OleMenuCmdEventArgs e)
         {
-            await CforgeRunner.RunAsync("test");
+            // Workspace-aware test with auto-open Test Results window
+            if (WorkspaceState.Instance.IsWorkspace)
+            {
+                string? targetDir = WorkspaceState.Instance.GetBuildTargetDir();
+                await CforgeRunner.RunTestAsync(targetDir);
+            }
+            else
+            {
+                await CforgeRunner.RunTestAsync();
+            }
         }
     }
 
@@ -412,10 +453,10 @@ namespace CforgeVS
             try
             {
                 // Clean the generated vcxproj/sln files
-                VcxprojGenerator.CleanupGeneratedFiles(projectDir);
+                VcxprojGenerator.CleanupGeneratedFiles(projectDir!);
 
                 // Also clean the .vs folder config files we generated
-                string vsDir = Path.Combine(projectDir, ".vs");
+                string vsDir = Path.Combine(projectDir!, ".vs");
                 string[] filesToDelete = new[]
                 {
                     Path.Combine(vsDir, "tasks.vs.json"),
@@ -424,7 +465,7 @@ namespace CforgeVS
                     Path.Combine(vsDir, "cforge.runsettings"),
                     Path.Combine(vsDir, "testsettings.json"),
                     Path.Combine(vsDir, "ProjectSettings.json"),
-                    Path.Combine(projectDir, "CMakeSettings.json")
+                    Path.Combine(projectDir!, "CMakeSettings.json")
                 };
 
                 int cleanedCount = 0;

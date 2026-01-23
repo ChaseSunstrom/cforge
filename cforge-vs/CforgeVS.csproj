@@ -3,6 +3,8 @@
   <PropertyGroup>
     <MinimumVisualStudioVersion>17.0</MinimumVisualStudioVersion>
     <VSToolsPath Condition="'$(VSToolsPath)' == ''">$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)</VSToolsPath>
+    <!-- Suppress Newtonsoft.Json version check warning from Community.VisualStudio.Toolkit -->
+    <CVST_DisableNewtonsoftJsonVersionCheck>true</CVST_DisableNewtonsoftJsonVersionCheck>
   </PropertyGroup>
   <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
   <PropertyGroup>
@@ -59,6 +61,9 @@
     <Compile Include="src\OpenFolderSupport.cs" />
     <Compile Include="src\VcxprojGenerator.cs" />
     <Compile Include="src\PackageIds.cs" />
+    <Compile Include="src\WorkspaceState.cs" />
+    <Compile Include="src\Models\BuildModels.cs" />
+    <Compile Include="src\Models\TestModels.cs" />
     <Compile Include="src\CforgeOptionsPage.cs">
       <SubType>Component</SubType>
     </Compile>
@@ -83,6 +88,11 @@
     <Compile Include="ToolWindows\CforgeExplorerWindow.cs" />
     <Compile Include="ToolWindows\CforgeExplorerWindow.xaml.cs">
       <DependentUpon>CforgeExplorerWindow.xaml</DependentUpon>
+    </Compile>
+    <!-- TestResultsWindow -->
+    <Compile Include="ToolWindows\TestResultsWindow.cs" />
+    <Compile Include="ToolWindows\TestResultsWindow.xaml.cs">
+      <DependentUpon>TestResultsWindow.xaml</DependentUpon>
     </Compile>
     <!-- Dialogs -->
     <Compile Include="Dialogs\InputDialog.xaml.cs">
@@ -116,6 +126,10 @@
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>
+    <Page Include="ToolWindows\TestResultsWindow.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
     <Page Include="ToolWindows\Dialogs\AddDependencyDialog.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
@@ -143,6 +157,7 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Community.VisualStudio.Toolkit.17" Version="17.0.507" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.1" />
     <PackageReference Include="Microsoft.VSSDK.BuildTools" Version="17.11.414">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>

@@ -20,7 +20,6 @@ namespace CforgeVS
         private IVsSolutionBuildManager2? _buildManager;
         private uint _cookie;
         private DTE2? _dte;
-        private CommandEvents? _buildCommandEvents;
         private CommandEvents? _debugCommandEvents;
         private CommandEvents? _runCommandEvents;
 

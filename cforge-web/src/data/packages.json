@@ -1,0 +1,1684 @@
+{
+  "generated": "2026-01-23T19:42:58.318Z",
+  "count": 70,
+  "packages": [
+    {
+      "name": "argparse",
+      "description": "Argument Parser for Modern C++",
+      "repository": "https://github.com/p-ranav/argparse.git",
+      "homepage": "https://github.com/p-ranav/argparse",
+      "documentation": "https://github.com/p-ranav/argparse",
+      "license": "MIT",
+      "keywords": [
+        "cli",
+        "options",
+        "parser",
+        "command-line",
+        "header-only"
+      ],
+      "categories": [
+        "command-line",
+        "parsing"
+      ],
+      "primaryCategory": "command-line",
+      "verified": true,
+      "target": "argparse::argparse",
+      "headerOnly": true,
+      "icon": "Package",
+      "color": "#f97316"
+    },
+    {
+      "name": "asio",
+      "description": "Cross-platform C++ library for network and low-level I/O programming",
+      "repository": "https://github.com/chriskohlhoff/asio.git",
+      "homepage": "https://think-async.com/Asio/",
+      "documentation": "https://think-async.com/Asio/asio-1.30.2/doc/",
+      "license": "BSL-1.0",
+      "keywords": [
+        "networking",
+        "async",
+        "io",
+        "sockets",
+        "coroutines"
+      ],
+      "categories": [
+        "networking",
+        "asynchronous"
+      ],
+      "primaryCategory": "networking",
+      "verified": true,
+      "target": "asio::asio",
+      "headerOnly": true,
+      "icon": "Globe",
+      "color": "#0ea5e9"
+    },
+    {
+      "name": "backward-cpp",
+      "description": "A beautiful stack trace pretty printer for C++",
+      "repository": "https://github.com/bombela/backward-cpp.git",
+      "homepage": "https://github.com/bombela/backward-cpp",
+      "documentation": "https://github.com/bombela/backward-cpp",
+      "license": "MIT",
+      "keywords": [
+        "stacktrace",
+        "debugging",
+        "crash",
+        "header-only"
+      ],
+      "categories": [
+        "debugging",
+        "utilities"
+      ],
+      "primaryCategory": "debugging",
+      "verified": true,
+      "target": "Backward::Backward",
+      "headerOnly": true,
+      "icon": "Eye",
+      "color": "#ef4444"
+    },
+    {
+      "name": "benchmark",
+      "description": "A microbenchmark support library",
+      "repository": "https://github.com/google/benchmark.git",
+      "homepage": "https://github.com/google/benchmark",
+      "documentation": "https://github.com/google/benchmark/blob/main/docs/user_guide.md",
+      "license": "Apache-2.0",
+      "keywords": [
+        "benchmark",
+        "performance",
+        "profiling",
+        "microbenchmark"
+      ],
+      "categories": [
+        "development-tools",
+        "profiling"
+      ],
+      "primaryCategory": "development-tools",
+      "verified": true,
+      "target": "benchmark::benchmark_main",
+      "headerOnly": false,
+      "icon": "Code",
+      "color": "#f97316"
+    },
+    {
+      "name": "boost-headers",
+      "description": "Boost C++ Libraries (header-only subset)",
+      "repository": "https://github.com/boostorg/boost.git",
+      "homepage": "https://www.boost.org/",
+      "documentation": "https://www.boost.org/doc/",
+      "license": "BSL-1.0",
+      "keywords": [
+        "boost",
+        "header-only",
+        "utilities"
+      ],
+      "categories": [
+        "utilities"
+      ],
+      "primaryCategory": "utilities",
+      "verified": true,
+      "target": "Boost::headers",
+      "headerOnly": true,
+      "icon": "Settings",
+      "color": "#8b5cf6"
+    },
+    {
+      "name": "box2d",
+      "description": "A 2D physics engine for games",
+      "repository": "https://github.com/erincatto/box2d.git",
+      "homepage": "https://box2d.org/",
+      "documentation": "https://box2d.org/documentation/",
+      "license": "MIT",
+      "keywords": [
+        "physics",
+        "2d",
+        "game",
+        "simulation"
+      ],
+      "categories": [
+        "game-development",
+        "simulation"
+      ],
+      "primaryCategory": "game-development",
+      "verified": true,
+      "target": "box2d::box2d",
+      "headerOnly": false,
+      "icon": "Zap",
+      "color": "#eab308"
+    },
+    {
+      "name": "bullet3",
+      "description": "Bullet Physics SDK: real-time collision detection and multi-physics simulation",
+      "repository": "https://github.com/bulletphysics/bullet3.git",
+      "homepage": "https://pybullet.org/wordpress/",
+      "documentation": "https://pybullet.org/wordpress/",
+      "license": "Zlib",
+      "keywords": [
+        "physics",
+        "3d",
+        "game",
+        "simulation",
+        "collision"
+      ],
+      "categories": [
+        "game-development",
+        "simulation"
+      ],
+      "primaryCategory": "game-development",
+      "verified": true,
+      "target": "Bullet3Common",
+      "headerOnly": false,
+      "icon": "Zap",
+      "color": "#eab308"
+    },
+    {
+      "name": "catch2",
+      "description": "A modern, C++-native, test framework for unit-tests",
+      "repository": "https://github.com/catchorg/Catch2.git",
+      "homepage": "https://github.com/catchorg/Catch2",
+      "documentation": "https://github.com/catchorg/Catch2/blob/devel/docs/Readme.md",
+      "license": "BSL-1.0",
+      "keywords": [
+        "testing",
+        "unit-test",
+        "tdd",
+        "bdd"
+      ],
+      "categories": [
+        "development-tools",
+        "testing"
+      ],
+      "primaryCategory": "development-tools",
+      "verified": true,
+      "target": "Catch2::Catch2WithMain",
+      "headerOnly": false,
+      "icon": "Code",
+      "color": "#f97316"
+    },
+    {
+      "name": "cereal",
+      "description": "A C++11 library for serialization",
+      "repository": "https://github.com/USCiLab/cereal.git",
+      "homepage": "https://uscilab.github.io/cereal/",
+      "documentation": "https://uscilab.github.io/cereal/",
+      "license": "BSD-3-Clause",
+      "keywords": [
+        "serialization",
+        "json",
+        "xml",
+        "binary",
+        "header-only"
+      ],
+      "categories": [
+        "encoding",
+        "serialization"
+      ],
+      "primaryCategory": "encoding",
+      "verified": true,
+      "target": "cereal::cereal",
+      "headerOnly": true,
+      "icon": "Code",
+      "color": "#ec4899"
+    },
+    {
+      "name": "cli11",
+      "description": "Command line parser for C++11 and beyond with subcommands and validation",
+      "repository": "https://github.com/CLIUtils/CLI11.git",
+      "homepage": "https://cliutils.github.io/CLI11/book/",
+      "documentation": "https://cliutils.github.io/CLI11/book/",
+      "license": "BSD-3-Clause",
+      "keywords": [
+        "cli",
+        "options",
+        "parser",
+        "command-line",
+        "header-only"
+      ],
+      "categories": [
+        "command-line",
+        "parsing"
+      ],
+      "primaryCategory": "command-line",
+      "verified": true,
+      "target": "CLI11::CLI11",
+      "headerOnly": true,
+      "icon": "Package",
+      "color": "#f97316"
+    },
+    {
+      "name": "concurrentqueue",
+      "description": "A fast multi-producer, multi-consumer lock-free concurrent queue",
+      "repository": "https://github.com/cameron314/concurrentqueue.git",
+      "homepage": "https://github.com/cameron314/concurrentqueue",
+      "documentation": "https://github.com/cameron314/concurrentqueue",
+      "license": "BSD-2-Clause",
+      "keywords": [
+        "queue",
+        "lock-free",
+        "concurrent",
+        "header-only"
+      ],
+      "categories": [
+        "concurrency",
+        "data-structures"
+      ],
+      "primaryCategory": "concurrency",
+      "verified": true,
+      "target": "concurrentqueue",
+      "headerOnly": true,
+      "icon": "RefreshCw",
+      "color": "#14b8a6"
+    },
+    {
+      "name": "cpr",
+      "description": "C++ Requests: Curl for People - a simple wrapper around libcurl",
+      "repository": "https://github.com/libcpr/cpr.git",
+      "homepage": "https://docs.libcpr.org/",
+      "documentation": "https://docs.libcpr.org/",
+      "license": "MIT",
+      "keywords": [
+        "http",
+        "curl",
+        "networking",
+        "rest",
+        "api"
+      ],
+      "categories": [
+        "networking",
+        "web"
+      ],
+      "primaryCategory": "networking",
+      "verified": true,
+      "target": "cpr::cpr",
+      "headerOnly": false,
+      "icon": "Globe",
+      "color": "#0ea5e9"
+    },
+    {
+      "name": "curl",
+      "description": "A command line tool and library for transferring data with URL syntax",
+      "repository": "https://github.com/curl/curl.git",
+      "homepage": "https://curl.se/",
+      "documentation": "https://curl.se/docs/",
+      "license": "MIT",
+      "keywords": [
+        "http",
+        "ftp",
+        "networking",
+        "transfer"
+      ],
+      "categories": [
+        "networking"
+      ],
+      "primaryCategory": "networking",
+      "verified": true,
+      "target": "CURL::libcurl",
+      "headerOnly": false,
+      "icon": "Globe",
+      "color": "#0ea5e9"
+    },
+    {
+      "name": "cxxopts",
+      "description": "Lightweight C++ command line option parser",
+      "repository": "https://github.com/jarro2783/cxxopts.git",
+      "homepage": "https://github.com/jarro2783/cxxopts",
+      "documentation": "https://github.com/jarro2783/cxxopts",
+      "license": "MIT",
+      "keywords": [
+        "cli",
+        "options",
+        "parser",
+        "command-line",
+        "header-only"
+      ],
+      "categories": [
+        "command-line",
+        "parsing"
+      ],
+      "primaryCategory": "command-line",
+      "verified": true,
+      "target": "cxxopts::cxxopts",
+      "headerOnly": true,
+      "icon": "Package",
+      "color": "#f97316"
+    },
+    {
+      "name": "date",
+      "description": "Howard Hinnant's date and time library (basis for C++20 chrono)",
+      "repository": "https://github.com/HowardHinnant/date.git",
+      "homepage": "https://howardhinnant.github.io/date/date.html",
+      "documentation": "https://howardhinnant.github.io/date/date.html",
+      "license": "MIT",
+      "keywords": [
+        "date",
+        "time",
+        "chrono",
+        "header-only"
+      ],
+      "categories": [
+        "utilities"
+      ],
+      "primaryCategory": "utilities",
+      "verified": true,
+      "target": "date::date",
+      "headerOnly": true,
+      "icon": "Settings",
+      "color": "#8b5cf6"
+    },
+    {
+      "name": "doctest",
+      "description": "The fastest feature-rich C++11/14/17/20/23 single-header testing framework",
+      "repository": "https://github.com/doctest/doctest.git",
+      "homepage": "https://github.com/doctest/doctest",
+      "documentation": "https://github.com/doctest/doctest/blob/master/doc/markdown/readme.md",
+      "license": "MIT",
+      "keywords": [
+        "testing",
+        "unit-test",
+        "header-only",
+        "tdd",
+        "bdd"
+      ],
+      "categories": [
+        "development-tools",
+        "testing"
+      ],
+      "primaryCategory": "development-tools",
+      "verified": true,
+      "target": "doctest::doctest",
+      "headerOnly": true,
+      "icon": "Code",
+      "color": "#f97316"
+    },
+    {
+      "name": "eigen",
+      "description": "C++ template library for linear algebra: matrices, vectors, numerical solvers",
+      "repository": "https://gitlab.com/libeigen/eigen.git",
+      "homepage": "https://eigen.tuxfamily.org/",
+      "documentation": "https://eigen.tuxfamily.org/",
+      "license": "MPL-2.0",
+      "keywords": [
+        "math",
+        "linear-algebra",
+        "matrix",
+        "header-only"
+      ],
+      "categories": [
+        "math",
+        "scientific"
+      ],
+      "primaryCategory": "math",
+      "verified": true,
+      "target": "Eigen3::Eigen",
+      "headerOnly": true,
+      "icon": "Code",
+      "color": "#6366f1"
+    },
+    {
+      "name": "entt",
+      "description": "Gaming meets modern C++ - a fast and reliable entity component system (ECS)",
+      "repository": "https://github.com/skypjack/entt.git",
+      "homepage": "https://github.com/skypjack/entt",
+      "documentation": "https://skypjack.github.io/entt/",
+      "license": "MIT",
+      "keywords": [
+        "ecs",
+        "entity",
+        "component",
+        "game",
+        "header-only"
+      ],
+      "categories": [
+        "game-development",
+        "data-structures"
+      ],
+      "primaryCategory": "game-development",
+      "verified": true,
+      "target": "EnTT::EnTT",
+      "headerOnly": true,
+      "icon": "Zap",
+      "color": "#eab308"
+    },
+    {
+      "name": "flatbuffers",
+      "description": "Memory Efficient Serialization Library",
+      "repository": "https://github.com/google/flatbuffers.git",
+      "homepage": "https://flatbuffers.dev/",
+      "documentation": "https://flatbuffers.dev/",
+      "license": "Apache-2.0",
+      "keywords": [
+        "serialization",
+        "binary",
+        "schema",
+        "zero-copy"
+      ],
+      "categories": [
+        "encoding",
+        "serialization"
+      ],
+      "primaryCategory": "encoding",
+      "verified": true,
+      "target": "flatbuffers::flatbuffers",
+      "headerOnly": false,
+      "icon": "Code",
+      "color": "#ec4899"
+    },
+    {
+      "name": "fmt",
+      "description": "A modern formatting library for C++",
+      "repository": "https://github.com/fmtlib/fmt.git",
+      "homepage": "https://fmt.dev",
+      "documentation": "https://fmt.dev/latest/",
+      "license": "MIT",
+      "keywords": [
+        "formatting",
+        "strings",
+        "printf",
+        "iostream"
+      ],
+      "categories": [
+        "text-processing",
+        "utilities"
+      ],
+      "primaryCategory": "text-processing",
+      "verified": true,
+      "target": "fmt::fmt",
+      "headerOnly": false,
+      "icon": "FileText",
+      "color": "#3b82f6"
+    },
+    {
+      "name": "freetype",
+      "description": "FreeType is a freely available software library to render fonts",
+      "repository": "https://github.com/freetype/freetype.git",
+      "homepage": "https://freetype.org/",
+      "documentation": "https://freetype.org/",
+      "license": "FTL",
+      "keywords": [
+        "font",
+        "text",
+        "rendering",
+        "truetype"
+      ],
+      "categories": [
+        "graphics",
+        "text"
+      ],
+      "primaryCategory": "graphics",
+      "verified": true,
+      "target": "Freetype::Freetype",
+      "headerOnly": false,
+      "icon": "Monitor",
+      "color": "#f43f5e"
+    },
+    {
+      "name": "ftxui",
+      "description": "C++ Functional Terminal User Interface",
+      "repository": "https://github.com/ArthurSonzogni/FTXUI.git",
+      "homepage": "https://arthursonzogni.github.io/FTXUI/",
+      "documentation": "https://arthursonzogni.github.io/FTXUI/",
+      "license": "MIT",
+      "keywords": [
+        "terminal",
+        "tui",
+        "ui",
+        "functional"
+      ],
+      "categories": [
+        "terminal",
+        "ui"
+      ],
+      "primaryCategory": "terminal",
+      "verified": true,
+      "target": "ftxui::screen;ftxui::dom;ftxui::component",
+      "headerOnly": false,
+      "icon": "Package",
+      "color": "#f97316"
+    },
+    {
+      "name": "glad",
+      "description": "Multi-Language GL/GLES/EGL/GLX/WGL Loader-Generator",
+      "repository": "https://github.com/Dav1dde/glad.git",
+      "homepage": "https://glad.dav1d.de/",
+      "documentation": "https://glad.dav1d.de/",
+      "license": "MIT",
+      "keywords": [
+        "opengl",
+        "graphics",
+        "loader",
+        "vulkan"
+      ],
+      "categories": [
+        "graphics"
+      ],
+      "primaryCategory": "graphics",
+      "verified": true,
+      "target": "",
+      "headerOnly": false,
+      "icon": "Monitor",
+      "color": "#f43f5e"
+    },
+    {
+      "name": "glfw",
+      "description": "A multi-platform library for OpenGL, OpenGL ES, Vulkan, window and input",
+      "repository": "https://github.com/glfw/glfw.git",
+      "homepage": "https://www.glfw.org",
+      "documentation": "https://www.glfw.org/documentation.html",
+      "license": "Zlib",
+      "keywords": [
+        "opengl",
+        "vulkan",
+        "window",
+        "input",
+        "graphics"
+      ],
+      "categories": [
+        "graphics",
+        "gui",
+        "game-development"
+      ],
+      "primaryCategory": "graphics",
+      "verified": true,
+      "target": "glfw",
+      "headerOnly": false,
+      "icon": "Monitor",
+      "color": "#f43f5e"
+    },
+    {
+      "name": "glm",
+      "description": "OpenGL Mathematics (GLM) header-only math library for graphics software",
+      "repository": "https://github.com/g-truc/glm.git",
+      "homepage": "https://glm.g-truc.net/",
+      "documentation": "https://glm.g-truc.net/",
+      "license": "MIT",
+      "keywords": [
+        "math",
+        "graphics",
+        "opengl",
+        "linear-algebra",
+        "header-only"
+      ],
+      "categories": [
+        "math",
+        "graphics"
+      ],
+      "primaryCategory": "math",
+      "verified": true,
+      "target": "glm::glm",
+      "headerOnly": true,
+      "icon": "Code",
+      "color": "#6366f1"
+    },
+    {
+      "name": "googletest",
+      "description": "Google's C++ testing and mocking framework",
+      "repository": "https://github.com/google/googletest.git",
+      "homepage": "https://google.github.io/googletest/",
+      "documentation": "https://google.github.io/googletest/",
+      "license": "BSD-3-Clause",
+      "keywords": [
+        "testing",
+        "unit-test",
+        "mocking",
+        "gtest",
+        "gmock"
+      ],
+      "categories": [
+        "development-tools",
+        "testing"
+      ],
+      "primaryCategory": "development-tools",
+      "verified": true,
+      "target": "GTest::gtest_main",
+      "headerOnly": false,
+      "icon": "Code",
+      "color": "#f97316"
+    },
+    {
+      "name": "grpc",
+      "description": "The C based gRPC (C++, Python, Ruby, Objective-C, PHP, C#)",
+      "repository": "https://github.com/grpc/grpc.git",
+      "homepage": "https://grpc.io/",
+      "documentation": "https://grpc.io/docs/",
+      "license": "Apache-2.0",
+      "keywords": [
+        "rpc",
+        "protobuf",
+        "networking",
+        "microservices"
+      ],
+      "categories": [
+        "networking",
+        "rpc"
+      ],
+      "primaryCategory": "networking",
+      "verified": true,
+      "target": "gRPC::grpc++",
+      "headerOnly": false,
+      "icon": "Globe",
+      "color": "#0ea5e9"
+    },
+    {
+      "name": "gsl",
+      "description": "Guidelines Support Library - implementation of C++ Core Guidelines types",
+      "repository": "https://github.com/microsoft/GSL.git",
+      "homepage": "https://github.com/microsoft/GSL",
+      "documentation": "https://github.com/microsoft/GSL",
+      "license": "MIT",
+      "keywords": [
+        "guidelines",
+        "span",
+        "not_null",
+        "header-only"
+      ],
+      "categories": [
+        "utilities"
+      ],
+      "primaryCategory": "utilities",
+      "verified": true,
+      "target": "Microsoft.GSL::GSL",
+      "headerOnly": true,
+      "icon": "Settings",
+      "color": "#8b5cf6"
+    },
+    {
+      "name": "httplib",
+      "description": "A C++ header-only HTTP/HTTPS server and client library",
+      "repository": "https://github.com/yhirose/cpp-httplib.git",
+      "homepage": "https://github.com/yhirose/cpp-httplib",
+      "documentation": "https://github.com/yhirose/cpp-httplib",
+      "license": "MIT",
+      "keywords": [
+        "http",
+        "https",
+        "server",
+        "client",
+        "header-only"
+      ],
+      "categories": [
+        "networking",
+        "web"
+      ],
+      "primaryCategory": "networking",
+      "verified": true,
+      "target": "httplib::httplib",
+      "headerOnly": true,
+      "icon": "Globe",
+      "color": "#0ea5e9"
+    },
+    {
+      "name": "imgui",
+      "description": "Bloat-free Graphical User interface for C++ with minimal dependencies",
+      "repository": "https://github.com/ocornut/imgui.git",
+      "homepage": "https://github.com/ocornut/imgui",
+      "documentation": "https://github.com/ocornut/imgui/wiki",
+      "license": "MIT",
+      "keywords": [
+        "gui",
+        "ui",
+        "immediate-mode",
+        "graphics",
+        "gamedev"
+      ],
+      "categories": [
+        "gui",
+        "graphics",
+        "game-development"
+      ],
+      "primaryCategory": "gui",
+      "verified": true,
+      "target": "",
+      "headerOnly": false,
+      "icon": "Package",
+      "color": "#f97316"
+    },
+    {
+      "name": "indicators",
+      "description": "Activity Indicators for Modern C++ (progress bars, spinners, etc.)",
+      "repository": "https://github.com/p-ranav/indicators.git",
+      "homepage": "https://github.com/p-ranav/indicators",
+      "documentation": "https://github.com/p-ranav/indicators",
+      "license": "MIT",
+      "keywords": [
+        "progress",
+        "terminal",
+        "spinner",
+        "header-only"
+      ],
+      "categories": [
+        "terminal",
+        "ui"
+      ],
+      "primaryCategory": "terminal",
+      "verified": true,
+      "target": "indicators::indicators",
+      "headerOnly": true,
+      "icon": "Package",
+      "color": "#f97316"
+    },
+    {
+      "name": "libpng",
+      "description": "The official PNG reference library",
+      "repository": "https://github.com/pnggroup/libpng.git",
+      "homepage": "http://www.libpng.org/pub/png/libpng.html",
+      "documentation": "http://www.libpng.org/pub/png/libpng.html",
+      "license": "Libpng",
+      "keywords": [
+        "image",
+        "png",
+        "encoding",
+        "decoding"
+      ],
+      "categories": [
+        "graphics",
+        "encoding"
+      ],
+      "primaryCategory": "graphics",
+      "verified": true,
+      "target": "PNG::PNG",
+      "headerOnly": false,
+      "icon": "Monitor",
+      "color": "#f43f5e"
+    },
+    {
+      "name": "libuv",
+      "description": "Cross-platform asynchronous I/O library",
+      "repository": "https://github.com/libuv/libuv.git",
+      "homepage": "https://libuv.org/",
+      "documentation": "http://docs.libuv.org/",
+      "license": "MIT",
+      "keywords": [
+        "async",
+        "io",
+        "event-loop",
+        "networking"
+      ],
+      "categories": [
+        "async",
+        "networking"
+      ],
+      "primaryCategory": "async",
+      "verified": true,
+      "target": "uv",
+      "headerOnly": false,
+      "icon": "Package",
+      "color": "#f97316"
+    },
+    {
+      "name": "lz4",
+      "description": "Extremely Fast Compression algorithm",
+      "repository": "https://github.com/lz4/lz4.git",
+      "homepage": "https://lz4.org/",
+      "documentation": "https://lz4.org/",
+      "license": "BSD-2-Clause",
+      "keywords": [
+        "compression",
+        "fast",
+        "lossless"
+      ],
+      "categories": [
+        "compression"
+      ],
+      "primaryCategory": "compression",
+      "verified": true,
+      "target": "lz4::lz4",
+      "headerOnly": false,
+      "icon": "Package",
+      "color": "#78716c"
+    },
+    {
+      "name": "magic_enum",
+      "description": "Static reflection for enums (to string, from string, iteration) for modern C++",
+      "repository": "https://github.com/Neargye/magic_enum.git",
+      "homepage": "https://github.com/Neargye/magic_enum",
+      "documentation": "https://github.com/Neargye/magic_enum",
+      "license": "MIT",
+      "keywords": [
+        "enum",
+        "reflection",
+        "header-only",
+        "meta"
+      ],
+      "categories": [
+        "utilities"
+      ],
+      "primaryCategory": "utilities",
+      "verified": true,
+      "target": "magic_enum::magic_enum",
+      "headerOnly": true,
+      "icon": "Settings",
+      "color": "#8b5cf6"
+    },
+    {
+      "name": "miniaudio",
+      "description": "Audio playback and capture library in a single source file",
+      "repository": "https://github.com/mackron/miniaudio.git",
+      "homepage": "https://miniaud.io/",
+      "documentation": "https://miniaud.io/",
+      "license": "MIT",
+      "keywords": [
+        "audio",
+        "sound",
+        "single-header",
+        "header-only"
+      ],
+      "categories": [
+        "audio",
+        "multimedia"
+      ],
+      "primaryCategory": "audio",
+      "verified": true,
+      "target": "",
+      "headerOnly": true,
+      "icon": "Monitor",
+      "color": "#d946ef"
+    },
+    {
+      "name": "msgpack",
+      "description": "MessagePack implementation for C/C++ (efficient binary serialization)",
+      "repository": "https://github.com/msgpack/msgpack-c.git",
+      "homepage": "https://msgpack.org/",
+      "documentation": "https://msgpack.org/",
+      "license": "BSL-1.0",
+      "keywords": [
+        "serialization",
+        "binary",
+        "messagepack"
+      ],
+      "categories": [
+        "encoding",
+        "serialization"
+      ],
+      "primaryCategory": "encoding",
+      "verified": true,
+      "target": "msgpack-cxx",
+      "headerOnly": true,
+      "icon": "Code",
+      "color": "#ec4899"
+    },
+    {
+      "name": "nameof",
+      "description": "Nameof operator for modern C++, simply obtain the name of a variable, type, function, macro, and enum",
+      "repository": "https://github.com/Neargye/nameof.git",
+      "homepage": "https://github.com/Neargye/nameof",
+      "documentation": "https://github.com/Neargye/nameof",
+      "license": "MIT",
+      "keywords": [
+        "reflection",
+        "nameof",
+        "compile-time",
+        "header-only"
+      ],
+      "categories": [
+        "utilities"
+      ],
+      "primaryCategory": "utilities",
+      "verified": true,
+      "target": "nameof::nameof",
+      "headerOnly": true,
+      "icon": "Settings",
+      "color": "#8b5cf6"
+    },
+    {
+      "name": "nanobench",
+      "description": "Simple, fast, accurate single-header microbenchmarking functionality for C++11/14/17/20",
+      "repository": "https://github.com/martinus/nanobench.git",
+      "homepage": "https://nanobench.ankerl.com/",
+      "documentation": "https://nanobench.ankerl.com/",
+      "license": "MIT",
+      "keywords": [
+        "benchmark",
+        "performance",
+        "testing",
+        "header-only"
+      ],
+      "categories": [
+        "testing",
+        "benchmark"
+      ],
+      "primaryCategory": "testing",
+      "verified": true,
+      "target": "nanobench",
+      "headerOnly": true,
+      "icon": "CheckCircle",
+      "color": "#22c55e"
+    },
+    {
+      "name": "nlohmann-json",
+      "description": "JSON for Modern C++",
+      "repository": "https://github.com/nlohmann/json.git",
+      "homepage": "https://json.nlohmann.me",
+      "documentation": "https://json.nlohmann.me/api/basic_json/",
+      "license": "MIT",
+      "keywords": [
+        "json",
+        "serialization",
+        "parsing",
+        "header-only"
+      ],
+      "categories": [
+        "parser",
+        "data-structures",
+        "encoding"
+      ],
+      "primaryCategory": "parser",
+      "verified": true,
+      "target": "nlohmann_json::nlohmann_json",
+      "headerOnly": true,
+      "icon": "FileText",
+      "color": "#06b6d4"
+    },
+    {
+      "name": "openal-soft",
+      "description": "OpenAL Soft is a software implementation of the OpenAL 3D audio API",
+      "repository": "https://github.com/kcat/openal-soft.git",
+      "homepage": "https://www.openal-soft.org/",
+      "documentation": "https://www.openal-soft.org/",
+      "license": "LGPL-2.0",
+      "keywords": [
+        "audio",
+        "3d",
+        "sound",
+        "openal"
+      ],
+      "categories": [
+        "audio",
+        "multimedia"
+      ],
+      "primaryCategory": "audio",
+      "verified": true,
+      "target": "OpenAL::OpenAL",
+      "headerOnly": false,
+      "icon": "Monitor",
+      "color": "#d946ef"
+    },
+    {
+      "name": "opencv",
+      "description": "Open Source Computer Vision Library",
+      "repository": "https://github.com/opencv/opencv.git",
+      "homepage": "https://opencv.org/",
+      "documentation": "https://docs.opencv.org/",
+      "license": "Apache-2.0",
+      "keywords": [
+        "computer-vision",
+        "image-processing",
+        "machine-learning"
+      ],
+      "categories": [
+        "computer-vision",
+        "graphics"
+      ],
+      "primaryCategory": "computer-vision",
+      "verified": true,
+      "target": "opencv_core;opencv_imgproc;opencv_highgui",
+      "headerOnly": false,
+      "icon": "Package",
+      "color": "#f97316"
+    },
+    {
+      "name": "parallel-hashmap",
+      "description": "A set of very fast and memory-friendly hashmap and btree containers",
+      "repository": "https://github.com/greg7mdp/parallel-hashmap.git",
+      "homepage": "https://greg7mdp.github.io/parallel-hashmap/",
+      "documentation": "https://greg7mdp.github.io/parallel-hashmap/",
+      "license": "Apache-2.0",
+      "keywords": [
+        "hashmap",
+        "hashtable",
+        "btree",
+        "header-only",
+        "concurrent"
+      ],
+      "categories": [
+        "data-structures",
+        "concurrency"
+      ],
+      "primaryCategory": "data-structures",
+      "verified": true,
+      "target": "phmap",
+      "headerOnly": true,
+      "icon": "Layers",
+      "color": "#a855f7"
+    },
+    {
+      "name": "protobuf",
+      "description": "Protocol Buffers - Google's data interchange format",
+      "repository": "https://github.com/protocolbuffers/protobuf.git",
+      "homepage": "https://protobuf.dev/",
+      "documentation": "https://protobuf.dev/",
+      "license": "BSD-3-Clause",
+      "keywords": [
+        "serialization",
+        "protocol-buffers",
+        "encoding"
+      ],
+      "categories": [
+        "encoding",
+        "serialization"
+      ],
+      "primaryCategory": "encoding",
+      "verified": true,
+      "target": "protobuf::libprotobuf",
+      "headerOnly": false,
+      "icon": "Code",
+      "color": "#ec4899"
+    },
+    {
+      "name": "pugixml",
+      "description": "Light-weight, simple and fast XML parser for C++ with XPath support",
+      "repository": "https://github.com/zeux/pugixml.git",
+      "homepage": "https://pugixml.org/",
+      "documentation": "https://pugixml.org/",
+      "license": "MIT",
+      "keywords": [
+        "xml",
+        "parser",
+        "xpath"
+      ],
+      "categories": [
+        "parsing",
+        "encoding"
+      ],
+      "primaryCategory": "parsing",
+      "verified": true,
+      "target": "pugixml::pugixml",
+      "headerOnly": false,
+      "icon": "Package",
+      "color": "#f97316"
+    },
+    {
+      "name": "pybind11",
+      "description": "Seamless operability between C++11 and Python",
+      "repository": "https://github.com/pybind/pybind11.git",
+      "homepage": "https://pybind11.readthedocs.io/",
+      "documentation": "https://pybind11.readthedocs.io/",
+      "license": "BSD-3-Clause",
+      "keywords": [
+        "python",
+        "binding",
+        "scripting",
+        "header-only"
+      ],
+      "categories": [
+        "scripting",
+        "ffi"
+      ],
+      "primaryCategory": "scripting",
+      "verified": true,
+      "target": "pybind11::pybind11",
+      "headerOnly": true,
+      "icon": "Package",
+      "color": "#f97316"
+    },
+    {
+      "name": "quill",
+      "description": "Asynchronous Low Latency C++ Logging Library",
+      "repository": "https://github.com/odygrd/quill.git",
+      "homepage": "https://github.com/odygrd/quill",
+      "documentation": "https://quillcpp.readthedocs.io/",
+      "license": "MIT",
+      "keywords": [
+        "logging",
+        "async",
+        "low-latency",
+        "performance"
+      ],
+      "categories": [
+        "logging"
+      ],
+      "primaryCategory": "logging",
+      "verified": true,
+      "target": "quill::quill",
+      "headerOnly": false,
+      "icon": "Package",
+      "color": "#f97316"
+    },
+    {
+      "name": "range-v3",
+      "description": "Range library for C++14/17/20, basis for C++20's std::ranges",
+      "repository": "https://github.com/ericniebler/range-v3.git",
+      "homepage": "https://github.com/ericniebler/range-v3",
+      "documentation": "https://ericniebler.github.io/range-v3/",
+      "license": "BSL-1.0",
+      "keywords": [
+        "ranges",
+        "functional",
+        "algorithms",
+        "header-only"
+      ],
+      "categories": [
+        "algorithms",
+        "utilities"
+      ],
+      "primaryCategory": "algorithms",
+      "verified": true,
+      "target": "range-v3::range-v3",
+      "headerOnly": true,
+      "icon": "Package",
+      "color": "#f97316"
+    },
+    {
+      "name": "rapidjson",
+      "description": "A fast JSON parser/generator for C++ with both SAX/DOM style API",
+      "repository": "https://github.com/Tencent/rapidjson.git",
+      "homepage": "https://rapidjson.org/",
+      "documentation": "https://rapidjson.org/",
+      "license": "MIT",
+      "keywords": [
+        "json",
+        "parser",
+        "serialization",
+        "header-only"
+      ],
+      "categories": [
+        "parsing",
+        "encoding"
+      ],
+      "primaryCategory": "parsing",
+      "verified": true,
+      "target": "rapidjson",
+      "headerOnly": true,
+      "icon": "Package",
+      "color": "#f97316"
+    },
+    {
+      "name": "raylib",
+      "description": "A simple and easy-to-use library to enjoy videogames programming",
+      "repository": "https://github.com/raysan5/raylib.git",
+      "homepage": "https://www.raylib.com/",
+      "documentation": "https://www.raylib.com/cheatsheet/cheatsheet.html",
+      "license": "Zlib",
+      "keywords": [
+        "graphics",
+        "game",
+        "opengl",
+        "simple"
+      ],
+      "categories": [
+        "game-development",
+        "graphics"
+      ],
+      "primaryCategory": "game-development",
+      "verified": true,
+      "target": "raylib",
+      "headerOnly": false,
+      "icon": "Zap",
+      "color": "#eab308"
+    },
+    {
+      "name": "robin-hood-hashing",
+      "description": "Fast & memory efficient hashtable based on robin hood hashing",
+      "repository": "https://github.com/martinus/robin-hood-hashing.git",
+      "homepage": "https://github.com/martinus/robin-hood-hashing",
+      "documentation": "https://github.com/martinus/robin-hood-hashing",
+      "license": "MIT",
+      "keywords": [
+        "hashmap",
+        "hashtable",
+        "performance",
+        "header-only"
+      ],
+      "categories": [
+        "data-structures"
+      ],
+      "primaryCategory": "data-structures",
+      "verified": true,
+      "target": "robin_hood::robin_hood",
+      "headerOnly": true,
+      "icon": "Layers",
+      "color": "#a855f7"
+    },
+    {
+      "name": "scope_guard",
+      "description": "A modern C++ scope guard that is easy to use but hard to misuse",
+      "repository": "https://github.com/ricab/scope_guard.git",
+      "homepage": "https://github.com/ricab/scope_guard",
+      "documentation": "https://github.com/ricab/scope_guard",
+      "license": "Unlicense",
+      "keywords": [
+        "raii",
+        "scope",
+        "guard",
+        "header-only"
+      ],
+      "categories": [
+        "utilities"
+      ],
+      "primaryCategory": "utilities",
+      "verified": true,
+      "target": "scope_guard",
+      "headerOnly": true,
+      "icon": "Settings",
+      "color": "#8b5cf6"
+    },
+    {
+      "name": "sdl2",
+      "description": "Simple DirectMedia Layer - cross-platform multimedia library",
+      "repository": "https://github.com/libsdl-org/SDL.git",
+      "homepage": "https://www.libsdl.org/",
+      "documentation": "https://wiki.libsdl.org/",
+      "license": "Zlib",
+      "keywords": [
+        "graphics",
+        "audio",
+        "input",
+        "game",
+        "multimedia"
+      ],
+      "categories": [
+        "game-development",
+        "graphics",
+        "multimedia"
+      ],
+      "primaryCategory": "game-development",
+      "verified": true,
+      "target": "SDL2::SDL2",
+      "headerOnly": false,
+      "icon": "Zap",
+      "color": "#eab308"
+    },
+    {
+      "name": "simdjson",
+      "description": "Parsing gigabytes of JSON per second using SIMD instructions",
+      "repository": "https://github.com/simdjson/simdjson.git",
+      "homepage": "https://simdjson.org/",
+      "documentation": "https://simdjson.org/",
+      "license": "Apache-2.0",
+      "keywords": [
+        "json",
+        "parser",
+        "simd",
+        "performance"
+      ],
+      "categories": [
+        "parsing",
+        "encoding"
+      ],
+      "primaryCategory": "parsing",
+      "verified": true,
+      "target": "simdjson::simdjson",
+      "headerOnly": false,
+      "icon": "Package",
+      "color": "#f97316"
+    },
+    {
+      "name": "sol2",
+      "description": "A C++ <-> Lua API wrapper with advanced features and top notch performance",
+      "repository": "https://github.com/ThePhD/sol2.git",
+      "homepage": "https://sol2.readthedocs.io/",
+      "documentation": "https://sol2.readthedocs.io/",
+      "license": "MIT",
+      "keywords": [
+        "lua",
+        "scripting",
+        "binding",
+        "header-only"
+      ],
+      "categories": [
+        "scripting",
+        "ffi"
+      ],
+      "primaryCategory": "scripting",
+      "verified": true,
+      "target": "sol2::sol2",
+      "headerOnly": true,
+      "icon": "Package",
+      "color": "#f97316"
+    },
+    {
+      "name": "spdlog",
+      "description": "Fast C++ logging library",
+      "repository": "https://github.com/gabime/spdlog.git",
+      "homepage": "https://github.com/gabime/spdlog",
+      "documentation": "https://github.com/gabime/spdlog/wiki",
+      "license": "MIT",
+      "keywords": [
+        "logging",
+        "log",
+        "async",
+        "formatting"
+      ],
+      "categories": [
+        "development-tools",
+        "debugging"
+      ],
+      "primaryCategory": "development-tools",
+      "verified": true,
+      "target": "spdlog::spdlog",
+      "headerOnly": false,
+      "icon": "Code",
+      "color": "#f97316"
+    },
+    {
+      "name": "sqlite-modern-cpp",
+      "description": "A modern C++ wrapper around sqlite library",
+      "repository": "https://github.com/SqliteModernCpp/sqlite_modern_cpp.git",
+      "homepage": "https://github.com/SqliteModernCpp/sqlite_modern_cpp",
+      "documentation": "https://github.com/SqliteModernCpp/sqlite_modern_cpp",
+      "license": "MIT",
+      "keywords": [
+        "database",
+        "sql",
+        "sqlite",
+        "header-only"
+      ],
+      "categories": [
+        "database"
+      ],
+      "primaryCategory": "database",
+      "verified": true,
+      "target": "sqlite_modern_cpp",
+      "headerOnly": true,
+      "icon": "Layers",
+      "color": "#0891b2"
+    },
+    {
+      "name": "sqlite3",
+      "description": "SQLite is a C-language library that implements a small, fast, self-contained SQL database",
+      "repository": "https://github.com/nickolay/sqlite-amalgamation.git",
+      "homepage": "https://www.sqlite.org/",
+      "documentation": "https://www.sqlite.org/docs.html",
+      "license": "Public Domain",
+      "keywords": [
+        "database",
+        "sql",
+        "embedded"
+      ],
+      "categories": [
+        "database"
+      ],
+      "primaryCategory": "database",
+      "verified": true,
+      "target": "sqlite3",
+      "headerOnly": false,
+      "icon": "Layers",
+      "color": "#0891b2"
+    },
+    {
+      "name": "stb",
+      "description": "Single-file public domain libraries for C/C++ (image, audio, font, etc.)",
+      "repository": "https://github.com/nothings/stb.git",
+      "homepage": "https://github.com/nothings/stb",
+      "documentation": "https://github.com/nothings/stb",
+      "license": "MIT",
+      "keywords": [
+        "image",
+        "audio",
+        "font",
+        "header-only",
+        "single-file"
+      ],
+      "categories": [
+        "graphics",
+        "multimedia",
+        "utilities"
+      ],
+      "primaryCategory": "graphics",
+      "verified": true,
+      "target": "",
+      "headerOnly": true,
+      "icon": "Monitor",
+      "color": "#f43f5e"
+    },
+    {
+      "name": "tabulate",
+      "description": "Table Maker for Modern C++ (formatted tables in terminal)",
+      "repository": "https://github.com/p-ranav/tabulate.git",
+      "homepage": "https://github.com/p-ranav/tabulate",
+      "documentation": "https://github.com/p-ranav/tabulate",
+      "license": "MIT",
+      "keywords": [
+        "table",
+        "terminal",
+        "formatting",
+        "header-only"
+      ],
+      "categories": [
+        "terminal",
+        "formatting"
+      ],
+      "primaryCategory": "terminal",
+      "verified": true,
+      "target": "tabulate::tabulate",
+      "headerOnly": true,
+      "icon": "Package",
+      "color": "#f97316"
+    },
+    {
+      "name": "taskflow",
+      "description": "A fast C++ header-only library for task-based parallel programming",
+      "repository": "https://github.com/taskflow/taskflow.git",
+      "homepage": "https://taskflow.github.io/",
+      "documentation": "https://taskflow.github.io/",
+      "license": "MIT",
+      "keywords": [
+        "parallel",
+        "concurrency",
+        "async",
+        "task",
+        "header-only"
+      ],
+      "categories": [
+        "concurrency",
+        "async"
+      ],
+      "primaryCategory": "concurrency",
+      "verified": true,
+      "target": "Taskflow::Taskflow",
+      "headerOnly": true,
+      "icon": "RefreshCw",
+      "color": "#14b8a6"
+    },
+    {
+      "name": "tinyxml2",
+      "description": "A simple, small, efficient C++ XML parser",
+      "repository": "https://github.com/leethomason/tinyxml2.git",
+      "homepage": "https://github.com/leethomason/tinyxml2",
+      "documentation": "http://leethomason.github.io/tinyxml2/",
+      "license": "Zlib",
+      "keywords": [
+        "xml",
+        "parser",
+        "lightweight"
+      ],
+      "categories": [
+        "parsing",
+        "encoding"
+      ],
+      "primaryCategory": "parsing",
+      "verified": true,
+      "target": "tinyxml2::tinyxml2",
+      "headerOnly": false,
+      "icon": "Package",
+      "color": "#f97316"
+    },
+    {
+      "name": "tl-expected",
+      "description": "C++11/14/17 std::expected with functional-style extensions",
+      "repository": "https://github.com/TartanLlama/expected.git",
+      "homepage": "https://tl.tartanllama.xyz/",
+      "documentation": "https://tl.tartanllama.xyz/en/latest/api/expected.html",
+      "license": "CC0-1.0",
+      "keywords": [
+        "expected",
+        "error-handling",
+        "functional",
+        "header-only"
+      ],
+      "categories": [
+        "utilities",
+        "error-handling"
+      ],
+      "primaryCategory": "utilities",
+      "verified": true,
+      "target": "tl::expected",
+      "headerOnly": true,
+      "icon": "Settings",
+      "color": "#8b5cf6"
+    },
+    {
+      "name": "tomlplusplus",
+      "description": "Header-only TOML config file parser and serializer for C++17",
+      "repository": "https://github.com/marzer/tomlplusplus.git",
+      "homepage": "https://github.com/marzer/tomlplusplus.git",
+      "documentation": "https://marzer.github.io/tomlplusplus/",
+      "license": "MIT",
+      "keywords": [
+        "toml",
+        "parser",
+        "config",
+        "serializer",
+        "header-only"
+      ],
+      "categories": [
+        "parsing",
+        "config"
+      ],
+      "primaryCategory": "parsing",
+      "verified": false,
+      "target": "tomlplusplus::tomlplusplus",
+      "headerOnly": true,
+      "icon": "Package",
+      "color": "#f97316"
+    },
+    {
+      "name": "utf8cpp",
+      "description": "UTF-8 with C++ in a Portable Way",
+      "repository": "https://github.com/nemtrif/utfcpp.git",
+      "homepage": "https://github.com/nemtrif/utfcpp",
+      "documentation": "https://github.com/nemtrif/utfcpp",
+      "license": "BSL-1.0",
+      "keywords": [
+        "utf8",
+        "unicode",
+        "encoding",
+        "header-only"
+      ],
+      "categories": [
+        "text",
+        "encoding"
+      ],
+      "primaryCategory": "text",
+      "verified": true,
+      "target": "utf8cpp",
+      "headerOnly": true,
+      "icon": "Package",
+      "color": "#f97316"
+    },
+    {
+      "name": "vulkan-headers",
+      "description": "Vulkan Header files and API registry",
+      "repository": "https://github.com/KhronosGroup/Vulkan-Headers.git",
+      "homepage": "https://vulkan.lunarg.com/",
+      "documentation": "https://vulkan.lunarg.com/",
+      "license": "Apache-2.0",
+      "keywords": [
+        "vulkan",
+        "graphics",
+        "gpu",
+        "header-only"
+      ],
+      "categories": [
+        "graphics"
+      ],
+      "primaryCategory": "graphics",
+      "verified": true,
+      "target": "Vulkan::Headers",
+      "headerOnly": true,
+      "icon": "Monitor",
+      "color": "#f43f5e"
+    },
+    {
+      "name": "websocketpp",
+      "description": "C++ websocket client/server library",
+      "repository": "https://github.com/zaphoyd/websocketpp.git",
+      "homepage": "https://www.zaphoyd.com/websocketpp",
+      "documentation": "https://www.zaphoyd.com/websocketpp",
+      "license": "BSD-3-Clause",
+      "keywords": [
+        "websocket",
+        "networking",
+        "server",
+        "client",
+        "header-only"
+      ],
+      "categories": [
+        "networking",
+        "web"
+      ],
+      "primaryCategory": "networking",
+      "verified": true,
+      "target": "websocketpp::websocketpp",
+      "headerOnly": true,
+      "icon": "Globe",
+      "color": "#0ea5e9"
+    },
+    {
+      "name": "yaml-cpp",
+      "description": "A YAML parser and emitter in C++",
+      "repository": "https://github.com/jbeder/yaml-cpp.git",
+      "homepage": "https://github.com/jbeder/yaml-cpp",
+      "documentation": "https://github.com/jbeder/yaml-cpp/wiki",
+      "license": "MIT",
+      "keywords": [
+        "yaml",
+        "parser",
+        "config"
+      ],
+      "categories": [
+        "parsing",
+        "config"
+      ],
+      "primaryCategory": "parsing",
+      "verified": true,
+      "target": "yaml-cpp::yaml-cpp",
+      "headerOnly": false,
+      "icon": "Package",
+      "color": "#f97316"
+    },
+    {
+      "name": "zlib",
+      "description": "A massively spiffy yet delicately unobtrusive compression library",
+      "repository": "https://github.com/madler/zlib.git",
+      "homepage": "https://www.zlib.net/",
+      "documentation": "https://www.zlib.net/",
+      "license": "Zlib",
+      "keywords": [
+        "compression",
+        "deflate",
+        "gzip"
+      ],
+      "categories": [
+        "compression"
+      ],
+      "primaryCategory": "compression",
+      "verified": true,
+      "target": "ZLIB::ZLIB",
+      "headerOnly": false,
+      "icon": "Package",
+      "color": "#78716c"
+    },
+    {
+      "name": "zstd",
+      "description": "Zstandard - Fast real-time compression algorithm",
+      "repository": "https://github.com/facebook/zstd.git",
+      "homepage": "https://facebook.github.io/zstd/",
+      "documentation": "https://facebook.github.io/zstd/",
+      "license": "BSD-3-Clause",
+      "keywords": [
+        "compression",
+        "fast",
+        "lossless"
+      ],
+      "categories": [
+        "compression"
+      ],
+      "primaryCategory": "compression",
+      "verified": true,
+      "target": "zstd::libzstd",
+      "headerOnly": false,
+      "icon": "Package",
+      "color": "#78716c"
+    }
+  ]
+}

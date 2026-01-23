@@ -105,9 +105,9 @@ int main(int argc, char** argv) {
     if (!category.empty() && cat != category) continue;
     if (!test_filters.empty() && std::find(test_filters.begin(), test_filters.end(), name) == test_filters.end()) continue;
     ++run_count;
-    printf(COLOR_CYAN "[RUN] %s" COLOR_RESET "\n", tc.full);
+    printf(CF_COLOR_CYAN "[RUN] %s" CF_COLOR_RESET "\n", tc.full);
     int res = tc.fn();
-    if (res) { printf(COLOR_RED "[FAIL] %s" COLOR_RESET "\n", tc.full); ++failures; } else { printf(COLOR_GREEN "[PASS] %s" COLOR_RESET "\n", tc.full); }
+    if (res) { printf(CF_COLOR_RED "[FAIL] %s" CF_COLOR_RESET "\n", tc.full); ++failures; } else { printf(CF_COLOR_GREEN "[PASS] %s" CF_COLOR_RESET "\n", tc.full); }
   }
   printf("Ran %zu tests: %d failures\n", run_count, failures);
   return failures;

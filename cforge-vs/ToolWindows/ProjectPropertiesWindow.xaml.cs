@@ -307,9 +307,16 @@ namespace CforgeVS
 
         private async void OpenTomlButton_Click(object sender, RoutedEventArgs e)
         {
-            if (!string.IsNullOrEmpty(_tomlPath) && File.Exists(_tomlPath))
+            try
             {
-                await VS.Documents.OpenAsync(_tomlPath);
+                if (!string.IsNullOrEmpty(_tomlPath) && File.Exists(_tomlPath))
+                {
+                    await VS.Documents.OpenAsync(_tomlPath!);
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error in OpenTomlButton_Click: {ex.Message}");
             }
         }
     }

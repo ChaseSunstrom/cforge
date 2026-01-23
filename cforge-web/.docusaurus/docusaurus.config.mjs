@@ -119,6 +119,11 @@ export default {
           "label": "Documentation"
         },
         {
+          "to": "/packages",
+          "label": "Packages",
+          "position": "left"
+        },
+        {
           "to": "/blog",
           "label": "Blog",
           "position": "left"
@@ -148,6 +153,10 @@ export default {
             {
               "label": "Command Reference",
               "to": "/docs/command-reference"
+            },
+            {
+              "label": "Packages",
+              "to": "/packages"
             }
           ]
         },

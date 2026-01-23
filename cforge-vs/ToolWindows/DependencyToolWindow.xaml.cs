@@ -244,7 +244,7 @@ namespace CforgeVS
 
             if (!string.IsNullOrWhiteSpace(result))
             {
-                foreach (var line in result.Split('\n'))
+                foreach (var line in result!.Split('\n'))
                 {
                     string trimmedLine = line.Trim();
                     if (string.IsNullOrEmpty(trimmedLine) ||
@@ -328,44 +328,52 @@ namespace CforgeVS
 
         private async void OutdatedButton_Click(object sender, RoutedEventArgs e)
         {
-            SetStatus("Checking for outdated packages...", true);
-
-            var result = await CforgeRunner.RunAndCaptureAsync("deps outdated");
-
-            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-            OutdatedPackages.Clear();
-
-            if (!string.IsNullOrWhiteSpace(result))
+            try
             {
-                foreach (var line in result.Split('\n'))
+                SetStatus("Checking for outdated packages...", true);
+
+                var result = await CforgeRunner.RunAndCaptureAsync("deps outdated");
+
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                OutdatedPackages.Clear();
+
+                if (!string.IsNullOrWhiteSpace(result))
                 {
-                    if (line.Contains("->"))
+                    foreach (var line in result!.Split('\n'))
                     {
-                        var parts = line.Split(':');
-                        if (parts.Length >= 2)
+                        if (line.Contains("->"))
                         {
-                            string name = parts[0].Trim();
-                            string versionPart = parts[1].Trim();
-                            var versions = versionPart.Split(new[] { "->" }, StringSplitOptions.None);
-                            if (versions.Length == 2)
+                            var parts = line.Split(':');
+                            if (parts.Length >= 2)
                             {
-                                OutdatedPackages.Add(new OutdatedPackage
+                                string name = parts[0].Trim();
+                                string versionPart = parts[1].Trim();
+                                var versions = versionPart.Split(new[] { "->" }, StringSplitOptions.None);
+                                if (versions.Length == 2)
                                 {
-                                    Name = name,
-                                    CurrentVersion = versions[0].Trim(),
-                                    LatestVersion = versions[1].Trim()
-                                });
+                                    OutdatedPackages.Add(new OutdatedPackage
+                                    {
+                                        Name = name,
+                                        CurrentVersion = versions[0].Trim(),
+                                        LatestVersion = versions[1].Trim()
+                                    });
+                                }
                             }
                         }
                     }
                 }
+
+                NoUpdatesPanel.Visibility = OutdatedPackages.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+                OutdatedPackagesList.Visibility = OutdatedPackages.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+
+                SetStatus($"{OutdatedPackages.Count} outdated packages found");
+                MainTabControl.SelectedIndex = 3; // Switch to Updates tab
             }
-
-            NoUpdatesPanel.Visibility = OutdatedPackages.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-            OutdatedPackagesList.Visibility = OutdatedPackages.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
-
-            SetStatus($"{OutdatedPackages.Count} outdated packages found");
-            MainTabControl.SelectedIndex = 3; // Switch to Updates tab
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error in OutdatedButton_Click: {ex.Message}");
+                SetStatus($"Error: {ex.Message}");
+            }
         }
 
         private void SearchBox_KeyDown(object sender, KeyEventArgs e)
@@ -417,7 +425,7 @@ namespace CforgeVS
 
             if (!string.IsNullOrWhiteSpace(result))
             {
-                foreach (var line in result.Split('\n'))
+                foreach (var line in result!.Split('\n'))
                 {
                     if (line.ToLower().Contains("latest") || line.ToLower().Contains("version"))
                     {
@@ -500,14 +508,21 @@ namespace CforgeVS
 
         private async void ViewInToml_Click(object sender, RoutedEventArgs e)
         {
-            string? projectDir = await CforgeRunner.GetProjectDirectoryAsync();
-            if (!string.IsNullOrEmpty(projectDir))
+            try
             {
-                string tomlPath = Path.Combine(projectDir, "cforge.toml");
-                if (File.Exists(tomlPath))
+                string? projectDir = await CforgeRunner.GetProjectDirectoryAsync();
+                if (!string.IsNullOrEmpty(projectDir))
                 {
-                    await VS.Documents.OpenAsync(tomlPath);
+                    string tomlPath = Path.Combine(projectDir!, "cforge.toml");
+                    if (File.Exists(tomlPath))
+                    {
+                        await VS.Documents.OpenAsync(tomlPath);
+                    }
                 }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error in ViewInToml_Click: {ex.Message}");
             }
         }
 
@@ -523,9 +538,16 @@ namespace CforgeVS
 
         private async void DetailInfoButton_Click(object sender, RoutedEventArgs e)
         {
-            if (_selectedDependency != null)
+            try
             {
-                await CforgeRunner.RunAsync($"deps info {_selectedDependency.Name}");
+                if (_selectedDependency != null)
+                {
+                    await CforgeRunner.RunAsync($"deps info {_selectedDependency.Name}");
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error in DetailInfoButton_Click: {ex.Message}");
             }
         }
 
@@ -540,18 +562,33 @@ namespace CforgeVS
 
         private async void PackageInfoButton_Click(object sender, RoutedEventArgs e)
         {
-            if (sender is Button btn && btn.Tag is string packageName)
+            try
             {
-                await CforgeRunner.RunAsync($"deps info {packageName}");
+                if (sender is Button btn && btn.Tag is string packageName)
+                {
+                    await CforgeRunner.RunAsync($"deps info {packageName}");
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error in PackageInfoButton_Click: {ex.Message}");
             }
         }
 
         private async void RefreshTreeButton_Click(object sender, RoutedEventArgs e)
         {
-            SetStatus("Loading dependency tree...", true);
-            var result = await CforgeRunner.RunAndCaptureAsync("deps tree");
-            DependencyTreeText.Text = result ?? "No dependency tree available";
-            SetStatus("Dependency tree loaded");
+            try
+            {
+                SetStatus("Loading dependency tree...", true);
+                var result = await CforgeRunner.RunAndCaptureAsync("deps tree");
+                DependencyTreeText.Text = result ?? "No dependency tree available";
+                SetStatus("Dependency tree loaded");
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error in RefreshTreeButton_Click: {ex.Message}");
+                SetStatus($"Error: {ex.Message}");
+            }
         }
 
         private void UpdateOutdatedPackage_Click(object sender, RoutedEventArgs e)
