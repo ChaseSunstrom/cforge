@@ -401,11 +401,17 @@ cforge_int_t cforge_cmd_deps(const cforge_context_t *ctx) {
     }
   }
 
-  // If no subcommand or help requested, show help
-  if (subcommand.empty() || subcommand == "-h" || subcommand == "--help" ||
-      subcommand == "help") {
+  // Explicit help request
+  if (subcommand == "-h" || subcommand == "--help" || subcommand == "help") {
     cforge::command_registry::instance().print_command_help("deps");
     return 0;
+  }
+
+  // No subcommand specified
+  if (subcommand.empty()) {
+    cforge::logger::print_error("No subcommand specified for 'deps'");
+    cforge::command_registry::instance().print_command_help("deps");
+    return 1;
   }
 
   // Dispatch to appropriate subcommand
@@ -423,24 +429,34 @@ cforge_int_t cforge_cmd_deps(const cforge_context_t *ctx) {
   } else if (subcommand == "update") {
     // deps update is like 'update --packages'
     cforge_context_t sub_ctx = *ctx;
-    // Inject --packages flag
-    std::vector<char *> new_args;
-    new_args.push_back(strdup("update"));
-    new_args.push_back(strdup("--packages"));
-    // Copy any additional args (skip "update")
+
+    // Count extra args (skip subcommand at position 0)
+    cforge_int_t extra_count = 0;
     for (cforge_int_t i = 1; i < ctx->args.arg_count; i++) {
-      new_args.push_back(strdup(ctx->args.args[i]));
+      extra_count++;
     }
+
+    // Allocate fixed array: "update" + "--packages" + extra args
+    cforge_int_t total_count = 2 + extra_count;
+    char **new_args = static_cast<char **>(malloc(
+        static_cast<size_t>(total_count) * sizeof(char *)));
+    new_args[0] = strdup("update");
+    new_args[1] = strdup("--packages");
+    for (cforge_int_t i = 1; i < ctx->args.arg_count; i++) {
+      new_args[2 + (i - 1)] = strdup(ctx->args.args[i]);
+    }
+
     sub_ctx.args.command = new_args[0];
-    sub_ctx.args.args = new_args.data();
-    sub_ctx.args.arg_count = static_cast<cforge_int_t>(new_args.size());
+    sub_ctx.args.args = new_args;
+    sub_ctx.args.arg_count = total_count;
 
     cforge_int_t result = cforge_cmd_update(&sub_ctx);
 
     // Clean up
-    for (auto arg : new_args) {
-      free(arg);
+    for (cforge_int_t i = 0; i < total_count; i++) {
+      free(new_args[i]);
     }
+    free(new_args);
 
     return result;
   } else if (subcommand == "search") {

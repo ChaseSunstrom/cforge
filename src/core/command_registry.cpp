@@ -225,7 +225,7 @@ void command_registry::print_general_help() const {
 
   std::vector<category> categories = {
       {"Project", {"init", "build", "run", "clean", "test", "bench"}},
-      {"Dependencies", {"deps"}},
+      {"Dependencies", {"deps", "vcpkg"}},
       {"Code Quality", {"fmt", "lint", "circular"}},
       {"IDE & Tools", {"ide", "watch", "doc", "new"}},
       {"Package", {"package", "install"}},
@@ -402,6 +402,22 @@ void register_builtin_commands() {
       {},
       false,
       cforge_cmd_deps,
+      nullptr,
+  });
+
+  // Vcpkg command (convenience alias for 'deps vcpkg')
+  reg.register_command({
+      "vcpkg",
+      {},
+      "Manage vcpkg integration",
+      "Set up, update, and manage vcpkg for the project.\n"
+      "This is a convenience alias for 'cforge deps vcpkg'.",
+      "vcpkg <setup|update|list>",
+      {},
+      {"cforge vcpkg setup", "cforge vcpkg update", "cforge vcpkg list"},
+      {"deps"},
+      false,
+      cforge_cmd_vcpkg,
       nullptr,
   });
 

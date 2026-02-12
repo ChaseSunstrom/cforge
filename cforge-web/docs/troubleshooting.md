@@ -33,8 +33,8 @@ Common issues and their solutions.
 
 **Solution:**
 ```bash
-# Reset vcpkg state
-cforge vcpkg clean
+# Set up vcpkg integration
+cforge vcpkg setup
 
 # Update vcpkg
 cforge vcpkg update
@@ -100,10 +100,10 @@ error: type mismatch in template instantiation
 **Solution:**
 ```bash
 # Search for the package
-cforge vcpkg search xyz
+cforge deps search xyz
 
 # The package might have a different name
-cforge vcpkg search json  # might be 'nlohmann-json'
+cforge deps search json  # might be 'nlohmann-json'
 ```
 
 ### Version conflicts

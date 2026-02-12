@@ -118,7 +118,7 @@ Or use the CLI:
 
 ```bash
 cforge deps add boost --vcpkg
-cforge vcpkg install openssl
+cforge deps add openssl --vcpkg
 ```
 
 CForge will automatically:

@@ -25,7 +25,7 @@ cforge_int_t cforge_cmd_info(const cforge_context_t *ctx) {
 
   for (cforge_int_t i = 0; i < ctx->args.arg_count; ++i) {
     std::string arg = ctx->args.args[i];
-    if (arg == "--versions" || arg == "-v") {
+    if (arg == "--versions" || arg == "-V") {
       show_versions = true;
     } else if (arg == "--no-features") {
       show_features = false;

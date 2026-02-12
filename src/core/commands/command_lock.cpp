@@ -39,7 +39,7 @@ cforge_int_t cforge_cmd_lock(const cforge_context_t *ctx) {
       continue;
     std::string arg = ctx->args.args[i];
 
-    if (arg == "--verify" || arg == "-v") {
+    if (arg == "--verify") {
       verify_only = true;
     } else if (arg == "--clean" || arg == "-c") {
       clean_lock = true;
@@ -50,7 +50,7 @@ cforge_int_t cforge_cmd_lock(const cforge_context_t *ctx) {
       cforge::logger::print_usage("cforge lock [options]");
 
       cforge::logger::print_help_section("OPTIONS");
-      cforge::logger::print_option("--verify, -v", "Verify dependencies match lock file");
+      cforge::logger::print_option("--verify", "Verify dependencies match lock file");
       cforge::logger::print_option("--clean, -c", "Remove the lock file");
       cforge::logger::print_option("--force, -f", "Force regeneration even if lock exists");
       cforge::logger::print_option("--help, -h", "Show this help message");

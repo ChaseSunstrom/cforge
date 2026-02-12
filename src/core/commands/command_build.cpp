@@ -46,6 +46,7 @@
  *
  * @return bool True if Visual Studio is available
  */
+#ifdef _WIN32
 static bool is_visual_studio_available() {
   // Check common Visual Studio installation paths
   std::vector<std::string> vs_paths = {
@@ -71,22 +72,24 @@ static bool is_visual_studio_available() {
 
   return false;
 }
+#else
+static bool is_visual_studio_available() {
+  return false;
+}
+#endif
 
 /**
  * @brief Check if CMake is available on the system
  *
  * @return bool True if CMake is available
  */
-[[maybe_unused]] static bool is_cmake_available() {
+static bool is_cmake_available() {
   bool available = cforge::is_command_available("cmake");
   if (!available) {
     cforge::logger::print_warning("CMake not found in PATH using detection check");
     cforge::logger::print_verbose(
         "Please install CMake from https://cmake.org/download/ and make sure "
         "it's in your PATH");
-    cforge::logger::print_verbose(
-        "We'll still attempt to run the cmake command in case "
-        "this is a false negative");
 
     // Suggest alternative build methods
     if (is_visual_studio_available()) {
@@ -99,7 +102,7 @@ static bool is_visual_studio_available() {
           "4. Visual Studio will automatically configure the CMake project");
     }
   }
-  return true; // Always return true to allow the build to proceed
+  return available;
 }
 
 /**
@@ -1725,6 +1728,14 @@ cforge_int_t cforge_cmd_build(const cforge_context_t *ctx) {
       cforge::command_registry::instance().print_command_help("build");
       return 0;
     }
+  }
+
+  // Verify CMake is available
+  if (!is_cmake_available()) {
+    cforge::logger::print_error(
+        "CMake is required but not found. Please install CMake from "
+        "https://cmake.org/download/ and ensure it is in your PATH.");
+    return 1;
   }
 
   // Start build timer
