@@ -270,3 +270,11 @@ cforge_int_t cforge_cmd_doctor(const cforge_context_t *ctx);
  * @return cforge_int_t Exit code (0 for success)
  */
 cforge_int_t cforge_cmd_cache(const cforge_context_t *ctx);
+
+/**
+ * @brief Handle the 'flash' command to upload firmware to embedded targets
+ *
+ * @param ctx Context containing parsed arguments
+ * @return cforge_int_t Exit code (0 for success)
+ */
+cforge_int_t cforge_cmd_flash(const cforge_context_t *ctx);

@@ -31,6 +31,9 @@ cforge init --template lib
 # Header-only library
 cforge init --template header-only
 
+# Embedded bare-metal project
+cforge init blink --template embedded
+
 # With tests enabled
 cforge init --with-tests
 
@@ -200,5 +203,6 @@ cforge ide vs
 
 - [Project Configuration](./project-configuration) - Full configuration reference
 - [Dependencies](./dependencies) - Dependency management guide
+- [Cross-Compilation](./cross-compilation) - Cross-compilation and embedded development
 - [Command Reference](./command-reference) - All available commands
 - [Workspaces](./workspaces) - Multi-project setups

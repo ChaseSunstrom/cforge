@@ -29,7 +29,8 @@ cforge run
 - **Package registry** - Search and install packages with `cforge deps add <package>`
 - **Multiple dependency sources** - Registry, Git, vcpkg, and system libraries
 - **Workspaces** - Manage multi-project repositories
-- **Cross-compilation** - Android, iOS, Raspberry Pi, WebAssembly
+- **Cross-compilation** - Android, iOS, Raspberry Pi, WebAssembly, embedded bare-metal
+- **Embedded development** - Bare-metal targets with post-build commands, flash/upload
 - **IDE integration** - VS Code, CLion, Visual Studio, Xcode
 - **Testing & benchmarks** - Integrated test runner with Catch2, GTest, doctest
 - **Developer tools** - Formatting, linting, watch mode, documentation
@@ -84,9 +85,14 @@ name = "myapp"
 version = "1.0.0"
 cpp_standard = "17"
 binary_type = "executable"
+# languages = ["C", "CXX", "ASM"]  # Override auto-detected languages
+# c_extensions = true               # Enable C GNU extensions (gnu11 instead of c11)
+# cpp_extensions = true             # Enable C++ GNU extensions (gnu++17 instead of c++17)
 
 [build]
 build_type = "Release"
+source_dirs = ["src"]               # Source directories (default: ["src"])
+include_dirs = ["include"]          # Include directories (default: ["include"])
 export_compile_commands = true
 
 [build.config.debug]
@@ -117,7 +123,8 @@ spdlog = "1.12.0"
 | `cforge run` | Build and run the project |
 | `cforge clean` | Clean build artifacts |
 | `cforge install` | Install project to system |
-| `cforge circular` | Check for circular dependencies | 
+| `cforge flash` | Flash firmware to embedded target |
+| `cforge circular` | Check for circular dependencies |
 
 ### Dependencies
 
@@ -175,6 +182,7 @@ cforge init --type=shared_lib          # Create a shared library
 cforge init --std=c++20                # Use C++20
 cforge init --with-tests               # Include test infrastructure
 cforge init --template lib             # Use library template
+cforge init blink --template embedded  # Embedded bare-metal project
 ```
 
 ### Create a Workspace
@@ -208,6 +216,7 @@ cforge build -t mytarget               # Build specific target
 cforge build --force-regenerate        # Clean rebuild with fresh CMake
 cforge build --skip-deps               # Skip updating Git dependencies
 cforge build --profile android-arm64   # Cross-compile with profile
+cforge flash --profile avr            # Flash firmware to embedded target
 ```
 
 ### In Workspaces
@@ -495,14 +504,83 @@ variables = { ANDROID_ABI = "arm64-v8a" }
 [cross.profile.raspberry-pi]
 system = "Linux"
 processor = "arm"
-c_compiler = "arm-linux-gnueabihf-gcc"
-cxx_compiler = "arm-linux-gnueabihf-g++"
+compilers = { c = "arm-linux-gnueabihf-gcc", cxx = "arm-linux-gnueabihf-g++" }
 ```
 
 ```bash
 cforge build --profile android-arm64
 cforge build --profile raspberry-pi
 ```
+
+---
+
+## Embedded / Bare-Metal Development
+
+Cross-compilation profiles support embedded-specific options for bare-metal targets:
+
+```toml
+[project]
+name = "blink"
+version = "0.1.0"
+c_standard = "99"
+c_extensions = true            # GNU extensions (gnu99)
+languages = ["C", "ASM"]      # Enable C and assembly
+binary_type = "executable"
+
+[build]
+source_dirs = ["src"]
+include_dirs = ["include"]
+defines = ["F_CPU=16000000UL"]
+
+[build.config.release]
+optimize = "size"
+
+[compiler.gcc]
+flags = ["-mmcu=atmega328p", "-funsigned-char", "-ffunction-sections", "-fdata-sections"]
+
+[linker]
+scripts = ["link/linker.ld"]
+flags = ["-mmcu=atmega328p"]
+dead_code_strip = true
+map_file = true
+
+[cross.profile.avr]
+system = "Generic"
+processor = "avr"
+compilers = { c = "avr-gcc", cxx = "avr-g++" }
+variables = { CMAKE_ASM_COMPILER = "avr-gcc" }
+nostdlib = true
+nostartfiles = true
+nodefaultlibs = true
+post_build = [
+    "avr-objcopy -R .eeprom -O ihex $<TARGET_FILE:${PROJECT_NAME}> $<TARGET_FILE_DIR:${PROJECT_NAME}>/${PROJECT_NAME}.hex",
+    "avr-size --mcu=atmega328p -C $<TARGET_FILE:${PROJECT_NAME}>"
+]
+flash = "avrdude -c arduino -p atmega328p -P /dev/ttyUSB0 -b 115200 -D -U flash:w:$<TARGET_FILE_DIR:${PROJECT_NAME}>/${PROJECT_NAME}.hex"
+```
+
+```bash
+# Create an embedded project from template
+cforge init blink --template embedded
+
+# Build for target
+cforge build --profile avr
+
+# Flash firmware
+cforge flash --profile avr
+```
+
+### Embedded Profile Options
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `nostdlib` | `bool` | Link with `-nostdlib` (no standard library) |
+| `nostartfiles` | `bool` | Link with `-nostartfiles` (no default startup code) |
+| `nodefaultlibs` | `bool` | Link with `-nodefaultlibs` (no default libraries) |
+| `post_build` | `[string]` | Commands to run after build (e.g., ELF to HEX conversion) |
+| `flash` | `string` | Command to flash/upload firmware to device |
+
+Post-build commands run automatically after `cforge build --profile <name>`. Flash commands are invoked with `cforge flash --profile <name>`.
 
 ---
 

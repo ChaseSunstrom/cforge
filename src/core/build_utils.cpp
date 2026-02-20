@@ -9,49 +9,73 @@
 
 namespace cforge {
 
+// Cache cmake --help output per process to avoid repeated invocations
+static std::string g_cmake_help_cache;
+static bool g_cmake_help_cached = false;
+
+static const std::string& get_cmake_help_output() {
+  if (!g_cmake_help_cached) {
+    process_result pr =
+        execute_process("cmake", {"--help"}, "", nullptr, nullptr, 10);
+    if (pr.success) {
+      g_cmake_help_cache = std::move(pr.stdout_output);
+    }
+    g_cmake_help_cached = true;
+  }
+  return g_cmake_help_cache;
+}
+
 bool is_generator_valid(const std::string &gen) {
-  process_result pr =
-      execute_process("cmake", {"--help"}, "", nullptr, nullptr, 10);
-  if (!pr.success) {
-    // CMake check failed - log warning and return false to indicate invalid
+  const auto &help_output = get_cmake_help_output();
+  if (help_output.empty()) {
     logger::print_warning("Could not verify CMake generator '" + gen +
                           "' - cmake --help failed");
     return false;
   }
-  bool valid = pr.stdout_output.find(gen) != std::string::npos;
+  bool valid = help_output.find(gen) != std::string::npos;
   if (!valid) {
     logger::print_verbose("CMake generator '" + gen + "' not found in available generators");
   }
   return valid;
 }
 
+// Cache the detected generator per process
+static std::string g_cached_generator;
+static bool g_generator_cached = false;
+
 std::string get_cmake_generator() {
+  if (g_generator_cached) {
+    return g_cached_generator;
+  }
+
 #ifdef _WIN32
   // Prefer Ninja Multi-Config if available and supported
   if (is_command_available("ninja", 15) &&
       is_generator_valid("Ninja Multi-Config")) {
     logger::print_verbose("Using Ninja Multi-Config generator");
-    return "Ninja Multi-Config";
+    g_cached_generator = "Ninja Multi-Config";
   }
-
   // Try Visual Studio 17 2022
-  if (is_generator_valid("Visual Studio 17 2022")) {
+  else if (is_generator_valid("Visual Studio 17 2022")) {
     logger::print_verbose("Using Visual Studio 17 2022 generator");
-    return "Visual Studio 17 2022";
+    g_cached_generator = "Visual Studio 17 2022";
   }
-
   // Fallback to Visual Studio 16 2019 if available
-  if (is_generator_valid("Visual Studio 16 2019")) {
+  else if (is_generator_valid("Visual Studio 16 2019")) {
     logger::print_verbose("Using Visual Studio 16 2019 generator");
-    return "Visual Studio 16 2019";
+    g_cached_generator = "Visual Studio 16 2019";
   }
-
   // Last resort: Ninja Multi-Config
-  logger::print_verbose("Falling back to Ninja Multi-Config generator");
-  return "Ninja Multi-Config";
+  else {
+    logger::print_verbose("Falling back to Ninja Multi-Config generator");
+    g_cached_generator = "Ninja Multi-Config";
+  }
 #else
-  return "Unix Makefiles";
+  g_cached_generator = "Unix Makefiles";
 #endif
+
+  g_generator_cached = true;
+  return g_cached_generator;
 }
 
 std::filesystem::path
@@ -156,12 +180,12 @@ bool ensure_cmake_configured(const std::filesystem::path &project_dir,
                              const std::string &config, bool verbose,
                              const std::vector<std::string> &extra_args) {
 
+  std::string generator = get_cmake_generator();
   std::vector<std::string> cmake_args = {"-B", build_dir.string(),
                                          "-S", project_dir.string(),
-                                         "-G", get_cmake_generator()};
+                                         "-G", generator};
 
-  // Add config for multi-config generators
-  std::string generator = get_cmake_generator();
+  // Add config for single-config generators
   if (!is_multi_config_generator(generator)) {
     cmake_args.push_back("-DCMAKE_BUILD_TYPE=" + config);
   }

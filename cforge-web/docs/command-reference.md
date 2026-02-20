@@ -17,6 +17,7 @@ CForge provides a comprehensive set of commands for building, testing, and manag
 | `run`        | Run built executable                     | `cforge run -- arg1 arg2`          |
 | `test`       | Execute tests (CTest integration)        | `cforge test --filter MyTest`      |
 | `install`    | Install project binaries                 | `cforge install --prefix /usr/local`|
+| `flash`      | Flash firmware to embedded target        | `cforge flash --profile avr`       |
 | `deps`       | Manage dependencies                      | `cforge deps add fmt`              |
 | `package`    | Package project binaries                 | `cforge package --type zip`        |
 
@@ -97,6 +98,9 @@ cforge init --name=my_project --cpp=20 --with-tests --with-git
 
 # Create a workspace with projects
 cforge init --workspace my_workspace --projects app lib tests
+
+# Create an embedded bare-metal project
+cforge init blink --template embedded
 ```
 
 **Options:**
@@ -106,7 +110,7 @@ cforge init --workspace my_workspace --projects app lib tests
 | `--workspace` | Create a workspace |
 | `--projects` | Create multiple projects |
 | `--cpp` | Set C++ standard (11, 14, 17, 20, 23) |
-| `--template` | Use template (exe, lib, header-only) |
+| `--template` | Use template (exe, lib, header-only, embedded) |
 | `--with-tests` | Add test infrastructure |
 | `--with-git` | Initialize Git repository |
 
@@ -131,6 +135,31 @@ cforge build -v
    Compiling src/main.cpp
    Compiling src/utils.cpp
     Finished Debug target(s) in 2.34s
+```
+
+### flash
+
+Flash firmware to an embedded target using the flash command configured in a cross-compilation profile.
+
+```bash
+# Flash using a cross profile
+cforge flash --profile avr
+
+# Flash with specific config
+cforge flash --profile esp32 --config Release
+```
+
+**Options:**
+| Option | Description |
+|--------|-------------|
+| `-P, --profile <name>` | Cross-compilation profile to use (required) |
+| `-j, --jobs <N>` | Number of parallel build jobs |
+
+The flash command requires a `flash` field in the cross profile configuration:
+
+```toml
+[cross.profile.avr]
+flash = "avrdude -c arduino -p atmega328p -P /dev/ttyUSB0 -U flash:w:${PROJECT_NAME}.hex"
 ```
 
 ### run

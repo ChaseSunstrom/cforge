@@ -1286,6 +1286,19 @@ static bool build_project(const std::filesystem::path &project_dir,
 
         // Read variables as inline table
         cross_variables = project_config.get_string_map(profile_key + ".variables");
+
+        // Read embedded/bare-metal options from profile
+        if (project_config.get_bool(profile_key + ".nostdlib", false)) {
+          cross_variables["CFORGE_NOSTDLIB"] = "ON";
+        }
+        if (project_config.get_bool(profile_key + ".nostartfiles", false)) {
+          cross_variables["CFORGE_NOSTARTFILES"] = "ON";
+        }
+        if (project_config.get_bool(profile_key + ".nodefaultlibs", false)) {
+          cross_variables["CFORGE_NODEFAULTLIBS"] = "ON";
+        }
+        // Pass active profile name so CMake knows which post_build/flash targets to use
+        cross_variables["CFORGE_CROSS_PROFILE"] = cross_profile;
       } else {
         cforge::logger::print_error("Cross-compilation profile '" + cross_profile + "' not found");
         return false;
@@ -1311,6 +1324,17 @@ static bool build_project(const std::filesystem::path &project_dir,
 
       // Read [cross.variables] as inline table
       cross_variables = project_config.get_string_map("cross.variables");
+
+      // Read embedded/bare-metal options from default cross section
+      if (project_config.get_bool("cross.nostdlib", false)) {
+        cross_variables["CFORGE_NOSTDLIB"] = "ON";
+      }
+      if (project_config.get_bool("cross.nostartfiles", false)) {
+        cross_variables["CFORGE_NOSTARTFILES"] = "ON";
+      }
+      if (project_config.get_bool("cross.nodefaultlibs", false)) {
+        cross_variables["CFORGE_NODEFAULTLIBS"] = "ON";
+      }
     }
 
     // Apply cross-compilation settings to CMake args
@@ -2085,6 +2109,24 @@ cforge_int_t cforge_cmd_build(const cforge_context_t *ctx) {
     if (!build_project(current_dir, config_name, num_jobs, verbose, target,
                        nullptr, skip_deps, cross_profile)) {
       return 1;
+    }
+
+    // Auto-run post-build target for active cross profile (if it has post_build commands)
+    if (!cross_profile.empty()) {
+      std::filesystem::path toml_check = current_dir / CFORGE_FILE;
+      if (std::filesystem::exists(toml_check)) {
+        cforge::toml_reader pb_cfg(toml::parse_file(toml_check.string()));
+        std::string profile_key = "cross.profile." + cross_profile;
+        auto post_build_cmds = pb_cfg.get_string_array(profile_key + ".post_build");
+        if (!post_build_cmds.empty()) {
+          cforge::logger::print_action("Running", "post-build commands for profile '" + cross_profile + "'");
+          std::string build_dir_str = (current_dir / DEFAULT_BUILD_DIR).string();
+          std::string post_build_target = "post_build_" + cross_profile;
+          if (!cforge::run_cmake_build(build_dir_str, config_name, post_build_target, num_jobs, verbose)) {
+            cforge::logger::print_warning("Post-build commands failed for profile '" + cross_profile + "'");
+          }
+        }
+      }
     }
 
     // Post-build script support (single project)

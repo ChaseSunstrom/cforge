@@ -443,6 +443,76 @@ static bool create_cforge_toml(const std::filesystem::path &project_path,
 
   config << "# Project configuration for " << project_name << "\n\n";
 
+  // Embedded template generates a completely different cforge.toml
+  if (g_template_name == "embedded" || g_template_name == "bare-metal" ||
+      g_template_name == "bare_metal") {
+    config << "[project]\n";
+    config << "name = \"" << project_name << "\"\n";
+    config << "version = \"0.1.0\"\n";
+    config << "description = \"An embedded project created with cforge\"\n";
+    config << "binary_type = \"executable\"\n";
+    config << "c_standard = \"99\"\n";
+    config << "c_extensions = true         # Enable GNU extensions (e.g., gnu99)\n";
+    config << "languages = [\"C\", \"ASM\"]   # Enable C and assembly support\n";
+    config << "authors = [\"Your Name <your.email@example.com>\"]\n";
+    config << "license = \"MIT\"\n\n";
+
+    config << "[build]\n";
+    config << "build_type = \"Release\"\n";
+    config << "directory = \"build\"\n";
+    config << "source_dirs = [\"src\"]\n";
+    config << "include_dirs = [\"include\"]\n";
+    config << "export_compile_commands = true\n";
+    config << "# Add hardware-specific defines here\n";
+    config << "# defines = [\"F_CPU=16000000UL\", \"MY_MCU\"]\n\n";
+
+    config << "[build.config.release]\n";
+    config << "optimize = \"size\"          # Optimize for code size\n";
+    config << "warnings = \"all\"\n";
+    config << "defines = [\"NDEBUG\"]\n\n";
+
+    config << "[build.config.debug]\n";
+    config << "optimize = \"debug\"\n";
+    config << "debug_info = true\n";
+    config << "warnings = \"all\"\n";
+    config << "defines = [\"DEBUG=1\"]\n\n";
+
+    config << "# Compiler flags (adjust for your target MCU)\n";
+    config << "[compiler.gcc]\n";
+    config << "# flags = [\"-mmcu=YOUR_MCU\", \"-funsigned-char\", \"-ffunction-sections\", \"-fdata-sections\"]\n\n";
+
+    config << "# Linker configuration\n";
+    config << "[linker]\n";
+    config << "# scripts = [\"link/linker.ld\"]   # Custom linker script\n";
+    config << "# flags = [\"-mmcu=YOUR_MCU\"]     # MCU-specific linker flags\n";
+    config << "dead_code_strip = true              # Remove unused code sections\n";
+    config << "map_file = true                     # Generate memory map file\n\n";
+
+    config << "# Cross-compilation profile (configure for your target)\n";
+    config << "[cross.profile.target]\n";
+    config << "system = \"Generic\"                # Bare-metal target\n";
+    config << "# processor = \"avr\"              # Target processor architecture\n";
+    config << "# compilers = { c = \"avr-gcc\", cxx = \"avr-g++\" }\n";
+    config << "# variables = { CMAKE_ASM_COMPILER = \"avr-gcc\" }\n";
+    config << "nostdlib = true                     # No standard library\n";
+    config << "nostartfiles = true                 # No default startup code\n";
+    config << "nodefaultlibs = true                # No default libraries\n";
+    config << "\n";
+    config << "# Post-build commands (e.g., generate .hex from .elf)\n";
+    config << "# post_build = [\n";
+    config << "#     \"avr-objcopy -R .eeprom -O ihex $<TARGET_FILE:${PROJECT_NAME}> $<TARGET_FILE_DIR:${PROJECT_NAME}>/${PROJECT_NAME}.hex\",\n";
+    config << "#     \"avr-size --mcu=YOUR_MCU -C $<TARGET_FILE:${PROJECT_NAME}>\"\n";
+    config << "# ]\n";
+    config << "\n";
+    config << "# Flash/upload command\n";
+    config << "# flash = \"avrdude -c arduino -p YOUR_MCU -P /dev/ttyUSB0 -b 115200 -D -U flash:w:$<TARGET_FILE_DIR:${PROJECT_NAME}>/${PROJECT_NAME}.hex\"\n";
+
+    config.close();
+    cforge::logger::print_verbose("Created embedded cforge.toml");
+    return true;
+  }
+
+  // Standard (non-embedded) project header
   config << "[project]\n";
   config << "name = \"" << project_name << "\"\n";
   config << "version = \"0.1.0\"\n";
@@ -668,6 +738,61 @@ static bool create_main_cpp(const std::filesystem::path &project_path,
 
   if (!std::filesystem::exists(src_dir)) {
     std::filesystem::create_directories(src_dir);
+  }
+
+  // Create main.c for embedded/bare-metal projects
+  if (g_template_name == "embedded" || g_template_name == "bare-metal" ||
+      g_template_name == "bare_metal") {
+    std::filesystem::path main_c_path = src_dir / "main.c";
+
+    if (std::filesystem::exists(main_c_path) && !g_force_overwrite) {
+      cforge::logger::print_warning("main.c already exists, skipping");
+      return true;
+    }
+
+    std::ofstream main_c(main_c_path);
+    if (!main_c.is_open()) {
+      cforge::logger::print_error("Failed to create main.c file");
+      return false;
+    }
+
+    main_c << "/**\n";
+    main_c << " * @file main.c\n";
+    main_c << " * @brief Main entry point for " << project_name << "\n";
+    main_c << " *\n";
+    main_c << " * Bare-metal firmware entry point.\n";
+    main_c << " * Configure your target MCU, toolchain, and linker script\n";
+    main_c << " * in cforge.toml under [cross.profile.target].\n";
+    main_c << " */\n\n";
+
+    main_c << "#include <stdint.h>\n\n";
+
+    main_c << "/**\n";
+    main_c << " * @brief Application entry point\n";
+    main_c << " *\n";
+    main_c << " * For bare-metal targets, this is called after startup code\n";
+    main_c << " * initializes .data and .bss sections.\n";
+    main_c << " */\n";
+    main_c << "int main(void) {\n";
+    main_c << "    // Initialize hardware\n\n";
+    main_c << "    // Main loop\n";
+    main_c << "    while (1) {\n";
+    main_c << "        // Your application code here\n";
+    main_c << "    }\n\n";
+    main_c << "    return 0;\n";
+    main_c << "}\n";
+
+    main_c.close();
+    cforge::logger::created("src/main.c");
+
+    // Also create a placeholder linker script directory
+    std::filesystem::path link_dir = project_path / "link";
+    if (!std::filesystem::exists(link_dir)) {
+      std::filesystem::create_directories(link_dir);
+      cforge::logger::created("link/");
+    }
+
+    return true;
   }
 
   // Create main.cpp only for executable (app) projects

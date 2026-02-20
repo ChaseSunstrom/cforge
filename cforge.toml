@@ -23,7 +23,7 @@ warnings = "all"
 defines = ["DEBUG=1", "FMT_UNICODE=0"]
 
 [build.config.release]
-optimize = "agressive"
+optimize = "aggressive"
 warnings = "all"
 lto = true
 defines = ["NDEBUG=1", "FMT_UNICODE=0"]

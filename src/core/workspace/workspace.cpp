@@ -1275,6 +1275,27 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
     return false;
   }
 
+  // Path to CMakeLists.txt in project directory
+  std::filesystem::path cmakelists_path = project_dir / "CMakeLists.txt";
+  bool file_exists = std::filesystem::exists(cmakelists_path);
+
+  // Quick timestamp check: if CMakeLists.txt exists and is newer than cforge.toml,
+  // and we have a stored hash, skip the expensive hash computation
+  std::string stored_toml_hash = dep_hashes.get_hash("cforge.toml");
+  if (file_exists && !stored_toml_hash.empty()) {
+    try {
+      auto toml_mtime = std::filesystem::last_write_time(toml_path);
+      auto cmake_mtime = std::filesystem::last_write_time(cmakelists_path);
+      if (cmake_mtime >= toml_mtime) {
+        logger::print_verbose(
+            "CMakeLists.txt is up to date (timestamp check), skipping generation");
+        return true;
+      }
+    } catch (const std::filesystem::filesystem_error &) {
+      // Fall through to hash-based check on timestamp error
+    }
+  }
+
   // Read file content to verify it's not empty
   std::string toml_content;
   {
@@ -1293,10 +1314,6 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
   }
 
   std::string toml_hash = dep_hashes.calculate_file_content_hash(toml_content);
-  // Path to CMakeLists.txt in project directory
-  std::filesystem::path cmakelists_path = project_dir / "CMakeLists.txt";
-  bool file_exists = std::filesystem::exists(cmakelists_path);
-  std::string stored_toml_hash = dep_hashes.get_hash("cforge.toml");
 
   // Debug logging for hash comparison
   logger::print_verbose("Current cforge.toml hash: " + toml_hash);
@@ -1389,9 +1406,23 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
   std::string cmake_min_version = project_config.get_string("cmake.version", "3.15");
   cmakelists << "cmake_minimum_required(VERSION " << cmake_min_version << ")\n\n";
 
+  // Determine project languages
   cmakelists << "# Project configuration\n";
+  auto explicit_languages = project_config.get_string_array("project.languages");
+  std::string languages_str;
+  if (!explicit_languages.empty()) {
+    // Use explicitly specified languages
+    for (const auto &lang : explicit_languages) {
+      languages_str += lang + " ";
+    }
+  } else {
+    // Auto-detect from standards
+    if (!c_standard.empty()) languages_str += "C ";
+    if (!cpp_standard.empty()) languages_str += "CXX ";
+  }
+  if (languages_str.empty()) languages_str = "CXX ";
   cmakelists << "project(" << project_name << " VERSION " << project_version
-             << " LANGUAGES " << (c_standard.empty() ? "" : "C ") <<  (cpp_standard.empty() ? "" : "CXX ") << ")\n\n";
+             << " LANGUAGES " << languages_str << ")\n\n";
 
   // Include implicit system directories in compile_commands.json for IDE support
   cmakelists << "# Include compiler's implicit include directories in compile_commands.json\n";
@@ -1451,17 +1482,19 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
 
   // Set C++ standard
   if (!cpp_standard.empty()) {
+    bool cpp_ext = project_config.get_bool("project.cpp_extensions", false);
     cmakelists << "# Set C++ standard\n";
     cmakelists << "set(CMAKE_CXX_STANDARD " << cpp_standard << ")\n";
     cmakelists << "set(CMAKE_CXX_STANDARD_REQUIRED ON)\n";
-    cmakelists << "set(CMAKE_CXX_EXTENSIONS OFF)\n\n";
+    cmakelists << "set(CMAKE_CXX_EXTENSIONS " << (cpp_ext ? "ON" : "OFF") << ")\n\n";
   }
-  
+
   if (!c_standard.empty()) {
+    bool c_ext = project_config.get_bool("project.c_extensions", false);
     cmakelists << "# Set C standard\n";
     cmakelists << "set(CMAKE_C_STANDARD " << c_standard << ")\n";
     cmakelists << "set(CMAKE_C_STANDARD_REQUIRED ON)\n";
-    cmakelists << "set(CMAKE_C_EXTENSIONS OFF)\n\n";
+    cmakelists << "set(CMAKE_C_EXTENSIONS " << (c_ext ? "ON" : "OFF") << ")\n\n";
   }
 
   // platform detection
@@ -1554,11 +1587,36 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
     configure_index_dependencies_phase1(project_dir, project_config, deps_dir, cmakelists);
   }
 
-  // Source files - use the original project source directory
+  // Source files - use configured source directories or default to src/
+  auto source_dirs = project_config.get_string_array("build.source_dirs");
+  if (source_dirs.empty()) {
+    source_dirs.push_back("src");
+  }
+
+  // Check if ASM language is enabled
+  auto languages = project_config.get_string_array("project.languages");
+  bool asm_enabled = false;
+  for (const auto &lang : languages) {
+    std::string lang_upper = lang;
+    std::transform(lang_upper.begin(), lang_upper.end(), lang_upper.begin(),
+                   [](unsigned char c) { return std::toupper(c); });
+    if (lang_upper == "ASM" || lang_upper == "ASM-ATT" || lang_upper == "ASM_NASM") {
+      asm_enabled = true;
+      break;
+    }
+  }
+
   cmakelists << "# Add source files\n";
   cmakelists << "file(GLOB_RECURSE SOURCES\n";
-  cmakelists << "    \"${SOURCE_DIR}/src/*.cpp\"\n";
-  cmakelists << "    \"${SOURCE_DIR}/src/*.c\"\n";
+  for (const auto &dir : source_dirs) {
+    cmakelists << "    \"${SOURCE_DIR}/" << dir << "/*.cpp\"\n";
+    cmakelists << "    \"${SOURCE_DIR}/" << dir << "/*.c\"\n";
+    if (asm_enabled) {
+      cmakelists << "    \"${SOURCE_DIR}/" << dir << "/*.S\"\n";
+      cmakelists << "    \"${SOURCE_DIR}/" << dir << "/*.s\"\n";
+      cmakelists << "    \"${SOURCE_DIR}/" << dir << "/*.asm\"\n";
+    }
+  }
   cmakelists << ")\n\n";
 
   // Check for additional sources
@@ -1629,18 +1687,19 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
   cmakelists << "    PROJECT_VERSION_PATCH=${PROJECT_VERSION_PATCH}\n";
   cmakelists << ")\n\n";
 
-  // Add include directories - use the original project include directory
-  if (binary_type == "header_only") {
-    cmakelists << "# Include directories\n";
-    cmakelists << "target_include_directories(${PROJECT_NAME} INTERFACE\n";
-    cmakelists << "    \"${SOURCE_DIR}/include\"\n";
-    cmakelists << ")\n\n";
-  } else {
-    cmakelists << "# Include directories\n";
-    cmakelists << "target_include_directories(${PROJECT_NAME} PUBLIC\n";
-    cmakelists << "    \"${SOURCE_DIR}/include\"\n";
-    cmakelists << ")\n\n";
+  // Add include directories - use configured include directories or default to include/
+  auto include_dirs = project_config.get_string_array("build.include_dirs");
+  if (include_dirs.empty()) {
+    include_dirs.push_back("include");
   }
+
+  std::string inc_visibility = (binary_type == "header_only") ? "INTERFACE" : "PUBLIC";
+  cmakelists << "# Include directories\n";
+  cmakelists << "target_include_directories(${PROJECT_NAME} " << inc_visibility << "\n";
+  for (const auto &inc_dir : include_dirs) {
+    cmakelists << "    \"${SOURCE_DIR}/" << inc_dir << "\"\n";
+  }
+  cmakelists << ")\n\n";
 
   // Handle index dependencies phase 2 (target_link_libraries - after target)
   if (use_fetch_content) {
@@ -2064,6 +2123,90 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
     }
   }
 
+  // Embedded/bare-metal support via cross profiles
+  // Generate nostdlib/nostartfiles/nodefaultlibs flags controlled by CMake variables
+  {
+    bool any_profile_has_embedded = false;
+    // Check all cross profiles for embedded options
+    if (project_config.has_key("cross.profile")) {
+      auto profile_names = project_config.get_table_keys("cross.profile");
+      for (const auto &pname : profile_names) {
+        std::string pkey = "cross.profile." + pname;
+        if (project_config.get_bool(pkey + ".nostdlib", false) ||
+            project_config.get_bool(pkey + ".nostartfiles", false) ||
+            project_config.get_bool(pkey + ".nodefaultlibs", false)) {
+          any_profile_has_embedded = true;
+          break;
+        }
+      }
+    }
+    // Also check default [cross] section
+    if (!any_profile_has_embedded) {
+      any_profile_has_embedded =
+          project_config.get_bool("cross.nostdlib", false) ||
+          project_config.get_bool("cross.nostartfiles", false) ||
+          project_config.get_bool("cross.nodefaultlibs", false);
+    }
+
+    if (any_profile_has_embedded && binary_type != "header_only") {
+      cmakelists << "# Embedded/bare-metal linker options (activated via cross profile)\n";
+      cmakelists << "if(CFORGE_NOSTDLIB)\n";
+      cmakelists << "    target_link_options(${PROJECT_NAME} PRIVATE -nostdlib)\n";
+      cmakelists << "endif()\n";
+      cmakelists << "if(CFORGE_NOSTARTFILES)\n";
+      cmakelists << "    target_link_options(${PROJECT_NAME} PRIVATE -nostartfiles)\n";
+      cmakelists << "endif()\n";
+      cmakelists << "if(CFORGE_NODEFAULTLIBS)\n";
+      cmakelists << "    target_link_options(${PROJECT_NAME} PRIVATE -nodefaultlibs)\n";
+      cmakelists << "endif()\n\n";
+    }
+  }
+
+  // Generate post-build and flash custom targets for each cross profile
+  {
+    auto generate_profile_targets = [&](const std::string &profile_name,
+                                        const std::string &profile_key) {
+      auto post_build_cmds = project_config.get_string_array(profile_key + ".post_build");
+      std::string flash_cmd = project_config.get_string(profile_key + ".flash", "");
+
+      if (!post_build_cmds.empty()) {
+        cmakelists << "# Post-build commands for cross profile '" << profile_name << "'\n";
+        cmakelists << "add_custom_target(post_build_" << profile_name << "\n";
+        for (const auto &cmd : post_build_cmds) {
+          // Split command into tool and arguments for CMake COMMAND syntax
+          // Commands can use CMake generator expressions like $<TARGET_FILE:...>
+          cmakelists << "    COMMAND " << cmd << "\n";
+        }
+        cmakelists << "    DEPENDS ${PROJECT_NAME}\n";
+        cmakelists << "    COMMENT \"Running post-build commands for profile '" << profile_name << "'\"\n";
+        cmakelists << "    VERBATIM\n";
+        cmakelists << ")\n\n";
+      }
+
+      if (!flash_cmd.empty()) {
+        std::string depends_target = post_build_cmds.empty()
+            ? "${PROJECT_NAME}"
+            : "post_build_" + profile_name;
+        cmakelists << "# Flash target for cross profile '" << profile_name << "'\n";
+        cmakelists << "add_custom_target(flash_" << profile_name << "\n";
+        cmakelists << "    COMMAND " << flash_cmd << "\n";
+        cmakelists << "    DEPENDS " << depends_target << "\n";
+        cmakelists << "    COMMENT \"Flashing firmware using profile '" << profile_name << "'\"\n";
+        cmakelists << "    VERBATIM\n";
+        cmakelists << ")\n\n";
+      }
+    };
+
+    // Process all cross profiles
+    if (project_config.has_key("cross.profile")) {
+      auto profile_names = project_config.get_table_keys("cross.profile");
+      for (const auto &pname : profile_names) {
+        std::string pkey = "cross.profile." + pname;
+        generate_profile_targets(pname, pkey);
+      }
+    }
+  }
+
   // Add config-specific build.config.<config>.defines
   {
     std::string defs_key =
@@ -2083,29 +2226,9 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
     }
   }
 
-  // platform-specific defines
-  {
-    std::string plat_defs_key =
-        std::string("platform.") + cforge_platform + ".defines";
-    if (project_config.has_key(plat_defs_key)) {
-      auto plat_defs = project_config.get_string_array(plat_defs_key);
-      if (!plat_defs.empty()) {
-        cmakelists << "# platform-specific defines for " << cforge_platform
-                   << "\n";
-        for (const auto &d : plat_defs) {
-          if (binary_type == "header_only") {
-            cmakelists
-                << "target_compile_definitions(${PROJECT_NAME} INTERFACE " << d
-                << ")\n";
-          } else {
-            cmakelists << "target_compile_definitions(${PROJECT_NAME} PUBLIC "
-                       << d << ")\n";
-          }
-        }
-        cmakelists << "\n";
-      }
-    }
-  }
+  // NOTE: Platform-specific defines are already handled via CMake-side
+  // CFORGE_PLATFORM detection (see platform-specific configuration section above).
+  // Using CMake-side detection is correct for cross-compilation.
 
   // System dependencies (find_package, pkg_config, manual)
   if (project_config.has_key("dependencies.system")) {
@@ -2370,18 +2493,25 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
     }
   }
 
-  // Add compiler options
-  cmakelists << "# compiler options\n";
-  if (binary_type == "header_only") {
-    // Header-only libraries don't have compile options
-    cmakelists << "# No compile options for header-only libraries\n\n";
-  } else {
-    cmakelists << "if(MSVC)\n";
-    cmakelists << "    target_compile_options(${PROJECT_NAME} PRIVATE /W4)\n";
-    cmakelists << "else()\n";
-    cmakelists << "    target_compile_options(${PROJECT_NAME} PRIVATE -Wall "
-                  "-Wextra -Wpedantic)\n";
-    cmakelists << "endif()\n\n";
+  // Add default compiler warning options (only if user hasn't specified warnings via portable flags)
+  if (binary_type != "header_only") {
+    bool user_specified_warnings = false;
+    std::vector<std::string> check_configs = {"debug", "release", "relwithdebinfo", "minsizerel"};
+    for (const auto &cfg : check_configs) {
+      if (project_config.has_key("build.config." + cfg + ".warnings")) {
+        user_specified_warnings = true;
+        break;
+      }
+    }
+    if (!user_specified_warnings) {
+      cmakelists << "# Default compiler warning options\n";
+      cmakelists << "if(MSVC)\n";
+      cmakelists << "    target_compile_options(${PROJECT_NAME} PRIVATE /W4)\n";
+      cmakelists << "else()\n";
+      cmakelists << "    target_compile_options(${PROJECT_NAME} PRIVATE -Wall "
+                    "-Wextra -Wpedantic)\n";
+      cmakelists << "endif()\n\n";
+    }
   }
 
   // Add tests if available

@@ -224,7 +224,7 @@ void command_registry::print_general_help() const {
   };
 
   std::vector<category> categories = {
-      {"Project", {"init", "build", "run", "clean", "test", "bench"}},
+      {"Project", {"init", "build", "run", "clean", "test", "bench", "flash"}},
       {"Dependencies", {"deps", "vcpkg"}},
       {"Code Quality", {"fmt", "lint", "circular"}},
       {"IDE & Tools", {"ide", "watch", "doc", "new"}},
@@ -330,8 +330,10 @@ void register_builtin_commands() {
           {"", "--lib", "Create a library project", "", "", false},
           {"", "--exe", "Create an executable project (default)", "", "", false},
           {"", "--cpp", "C++ standard to use", "STANDARD", "17", false},
+          {"", "--template", "Project template (default, embedded)", "NAME", "default", false},
       },
-      {"cforge init myproject", "cforge init mylib --lib --cpp 20"},
+      {"cforge init myproject", "cforge init mylib --lib --cpp 20",
+       "cforge init blink --template embedded"},
       {"build"},
       false,
       cforge_cmd_init,
@@ -605,6 +607,26 @@ void register_builtin_commands() {
       {"lint"},
       false,
       cforge_cmd_circular,
+      nullptr,
+  });
+
+  // Flash command
+  reg.register_command({
+      "flash",
+      {"upload"},
+      "Flash firmware to embedded target",
+      "Upload firmware to an embedded device using the flash command\n"
+      "configured in a cross-compilation profile.\n"
+      "Requires a --profile argument specifying which cross profile to use.",
+      "flash --profile <name> [options]",
+      {
+          {"-P", "--profile", "Cross-compilation profile to use", "NAME", "", true},
+          {"-j", "--jobs", "Number of parallel jobs", "N", "", false},
+      },
+      {"cforge flash --profile avr", "cforge flash -P esp32 --config Release"},
+      {"build"},
+      false,
+      cforge_cmd_flash,
       nullptr,
   });
 

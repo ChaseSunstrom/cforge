@@ -84,7 +84,7 @@ export default {
       "classic",
       {
         "docs": {
-          "sidebarPath": "C:\\Projects\\CPP\\cforge-fresh\\cforge-web\\sidebars.js",
+          "sidebarPath": "D:\\Projects\\CPP\\cforge-fresh\\cforge-web\\sidebars.js",
           "editUrl": "https://github.com/chasesunstrom/cforge/edit/main/docs/"
         },
         "blog": {
@@ -93,7 +93,7 @@ export default {
           "authorsMapPath": "blog/authors.yml"
         },
         "theme": {
-          "customCss": "C:\\Projects\\CPP\\cforge-fresh\\cforge-web\\src\\css\\custom.css"
+          "customCss": "D:\\Projects\\CPP\\cforge-fresh\\cforge-web\\src\\css\\custom.css"
         }
       }
     ]

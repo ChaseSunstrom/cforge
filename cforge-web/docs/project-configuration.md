@@ -59,12 +59,30 @@ vendor = "Your Name"
 | `[project]` | `cpp_standard` | C++ standard (11, 14, 17, 20, 23) |
 | `[project]` | `c_standard` | C standard (99, 11, 17) |
 | `[project]` | `binary_type` | Output type (executable, shared_library, static_library, header_only) |
+| `[project]` | `languages` | Override CMake project languages (e.g., `["C", "CXX", "ASM"]`) |
+| `[project]` | `c_extensions` | Enable C GNU extensions, e.g., gnu99 instead of c99 (`true`/`false`) |
+| `[project]` | `cpp_extensions` | Enable C++ GNU extensions, e.g., gnu++17 instead of c++17 (`true`/`false`) |
 | `[project]` | `authors` | List of authors |
 | `[project]` | `license` | License identifier |
 | `[build]` | `build_type` | Default build type (Debug, Release, RelWithDebInfo, MinSizeRel) |
 | `[build]` | `directory` | Build output directory |
-| `[build]` | `source_dirs` | Source file directories |
-| `[build]` | `include_dirs` | Header file directories |
+| `[build]` | `source_dirs` | Source file directories (default: `["src"]`) |
+| `[build]` | `include_dirs` | Header file directories (default: `["include"]`) |
+
+### Language and Extension Settings
+
+By default, cforge auto-detects project languages from `c_standard` and `cpp_standard`. You can override this with `languages` to add assembly support or limit to a specific language:
+
+```toml
+[project]
+c_standard = "99"
+c_extensions = true         # Use gnu99 instead of c99
+languages = ["C", "ASM"]   # Enable C and assembly (adds .S, .s, .asm globbing)
+```
+
+Supported language values: `C`, `CXX`, `ASM`, `ASM-ATT`, `ASM_NASM`
+
+When `c_extensions` or `cpp_extensions` is `true`, CMake will use GNU extension modes (e.g., `-std=gnu99` instead of `-std=c99`). This is useful for embedded development where GNU extensions are commonly required.
 
 ### Using Version in Code
 
