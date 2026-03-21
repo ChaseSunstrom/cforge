@@ -26,6 +26,25 @@ struct dependency_info {
   std::vector<std::string> children;
 };
 
+// New: single directed edge in the inter-project graph
+struct project_graph_edge {
+  std::string from; // workspace project name
+  std::string to;   // target workspace project name
+};
+
+// New: one external dep occurrence, keyed per project
+struct dep_occurrence {
+  std::string project; // workspace project that owns this dep
+  std::string version; // version string (may be empty)
+  std::string type;    // "index", "git", "vcpkg", "system", "project"
+};
+
+// New: conflict report for a single dep name
+struct dep_conflict {
+  std::string dep_name;
+  std::vector<dep_occurrence> occurrences; // only entries with mismatched versions
+};
+
 /**
  * @brief Print a tree branch
  */
@@ -243,6 +262,215 @@ void print_tree_branch(const std::string &name, const dependency_info &info,
   }
 }
 
+/**
+ * @brief Scan all workspace projects for inter-project dependency edges.
+ *
+ * A dep is "inter-project" when:
+ *   1. [dependencies.project] subtable exists with a key matching another
+ *      workspace project name, OR
+ *   2. A new-style dep entry has .path or .project key whose resolved name
+ *      matches a sibling workspace project name.
+ * Returns one edge per (from, to) pair found. Duplicates suppressed.
+ */
+std::vector<project_graph_edge>
+collect_project_dependencies(const cforge::workspace &ws) {
+  static const std::set<std::string> special_keys = {
+      "directory", "git", "vcpkg", "system", "project", "fetch_content"};
+
+  // Build a set of workspace project names for fast lookup
+  std::set<std::string> ws_names;
+  for (const auto &p : ws.get_projects()) {
+    ws_names.insert(p.name);
+  }
+
+  std::vector<project_graph_edge> edges;
+  // Track (from,to) pairs already added
+  std::set<std::pair<std::string, std::string>> seen;
+
+  auto add_edge = [&](const std::string &from, const std::string &to) {
+    if (from == to) return; // no self-edges
+    auto key = std::make_pair(from, to);
+    if (seen.insert(key).second) {
+      edges.push_back({from, to});
+    }
+  };
+
+  for (const auto &proj : ws.get_projects()) {
+    fs::path proj_toml = proj.path / "cforge.toml";
+    if (!fs::exists(proj_toml)) continue;
+
+    cforge::toml_reader config;
+    config.load(proj_toml.string());
+
+    // Old-style: [dependencies.project] subtable
+    if (config.has_key("dependencies.project")) {
+      auto proj_deps = config.get_table_keys("dependencies.project");
+      for (const auto &dep : proj_deps) {
+        if (ws_names.count(dep)) {
+          add_edge(proj.name, dep);
+        }
+      }
+    }
+
+    // New-style: top-level [dependencies] entries with .path or .project key
+    if (config.has_key("dependencies")) {
+      auto dep_keys = config.get_table_keys("dependencies");
+      for (const auto &dep : dep_keys) {
+        if (special_keys.count(dep)) continue;
+        std::string key = "dependencies." + dep;
+        if (config.has_key(key + ".path") || config.has_key(key + ".project")) {
+          // The dep name itself may match a workspace project
+          if (ws_names.count(dep)) {
+            add_edge(proj.name, dep);
+          }
+        }
+      }
+    }
+  }
+
+  return edges;
+}
+
+/**
+ * @brief Render the "Project graph:" block.
+ */
+void print_project_graph(const std::vector<std::string> &project_names,
+                         const std::vector<project_graph_edge> &edges) {
+  // Build adjacency: name -> sorted list of targets
+  std::map<std::string, std::vector<std::string>> adj;
+  for (const auto &n : project_names) adj[n] = {};
+  for (const auto &e : edges) adj[e.from].push_back(e.to);
+
+  size_t max_len = 0;
+  for (const auto &n : project_names)
+    max_len = std::max(max_len, n.size());
+
+  cforge::logger::print_plain("  Project graph:");
+  for (const auto &n : project_names) {
+    std::string padded = fmt::format("{:>{}}", "", max_len - n.size())
+                       + fmt::format(fg(fmt::color::green) | fmt::emphasis::bold, "{}", n);
+    const auto &targets = adj[n];
+    std::string rhs;
+    if (targets.empty()) {
+      rhs = fmt::format(fg(fmt::color::gray) | fmt::emphasis::faint, "(none)");
+    } else {
+      for (size_t i = 0; i < targets.size(); ++i) {
+        if (i) rhs += ", ";
+        rhs += fmt::format(fg(fmt::color::green) | fmt::emphasis::bold, "{}", targets[i]);
+      }
+    }
+    cforge::logger::print_plain("  " + padded + " -> " + rhs);
+  }
+  cforge::logger::print_blank();
+}
+
+/**
+ * @brief Groups external deps across all workspace projects by name.
+ * Returns only names that appear at two or more distinct non-empty versions.
+ * "project"-type deps are excluded (inter-project refs are not conflicts).
+ */
+std::vector<dep_conflict>
+detect_conflicts(const std::vector<std::pair<std::string, dependency_info>> &roots,
+                 const std::map<std::string, dependency_info> &all_deps) {
+  std::map<std::string, std::vector<dep_occurrence>> by_name;
+
+  for (const auto &[proj_name, proj_info] : roots) {
+    for (const auto &child_name : proj_info.children) {
+      auto it = all_deps.find(child_name);
+      if (it == all_deps.end()) continue;
+      const auto &dep = it->second;
+      if (dep.type == "project") continue;
+      by_name[child_name].push_back({proj_name, dep.version, dep.type});
+    }
+  }
+
+  std::vector<dep_conflict> conflicts;
+  for (const auto &[name, occurrences] : by_name) {
+    std::set<std::string> versions;
+    for (const auto &o : occurrences) {
+      if (!o.version.empty()) versions.insert(o.version);
+    }
+    if (versions.size() > 1) {
+      conflicts.push_back({name, occurrences});
+    }
+  }
+
+  return conflicts;
+}
+
+/**
+ * @brief Print conflict warnings.
+ * brief=true  -> single-line warning per conflict, no exit code change.
+ * brief=false -> detailed block output (used with --check).
+ */
+void print_conflicts(const std::vector<dep_conflict> &conflicts, bool brief) {
+  if (brief) {
+    for (const auto &dep : conflicts) {
+      std::string msg = dep.dep_name + " has conflicting versions: ";
+      for (size_t i = 0; i < dep.occurrences.size(); ++i) {
+        if (i) msg += ", ";
+        msg += dep.occurrences[i].version + " (" + dep.occurrences[i].project + ")";
+      }
+      cforge::logger::print_warning(msg);
+    }
+  } else {
+    cforge::logger::print_plain("  Conflicts:");
+    for (const auto &c : conflicts) {
+      cforge::logger::print_warning(c.dep_name + " has conflicting versions");
+      for (const auto &o : c.occurrences) {
+        cforge::logger::print_plain(
+            fmt::format("             {} requires {} ({})",
+                        o.project, o.version, o.type));
+      }
+    }
+    cforge::logger::print_plain(
+        fmt::format("  {} dependency conflict{} found",
+                    conflicts.size(), conflicts.size() == 1 ? "" : "s"));
+  }
+}
+
+/**
+ * @brief Write a Graphviz DOT representation to stdout.
+ * Project nodes are box/green; external dep nodes are ellipse/blue.
+ * Only direct external deps of each project are emitted.
+ */
+void emit_dot(const std::string &workspace_name,
+              const std::vector<std::string> &project_names,
+              const std::vector<project_graph_edge> &edges,
+              const std::vector<std::pair<std::string, dependency_info>> &roots,
+              const std::map<std::string, dependency_info> &all_deps) {
+  cforge::logger::print_plain("digraph \"" + workspace_name + "\" {");
+  cforge::logger::print_plain("  rankdir=LR;");
+
+  // Declare all project nodes
+  for (const auto &n : project_names) {
+    cforge::logger::print_plain("  \"" + n + "\" [shape=box, color=green];");
+  }
+
+  // Inter-project edges
+  for (const auto &e : edges) {
+    cforge::logger::print_plain("  \"" + e.from + "\" -> \"" + e.to + "\";");
+  }
+
+  // External dep nodes and edges
+  std::set<std::string> declared_ext;
+  for (const auto &[proj_name, proj_info] : roots) {
+    for (const auto &child_name : proj_info.children) {
+      auto it = all_deps.find(child_name);
+      if (it == all_deps.end()) continue;
+      const auto &dep = it->second;
+      if (dep.type == "project") continue; // already covered by inter-project edges
+
+      if (declared_ext.insert(child_name).second) {
+        cforge::logger::print_plain("  \"" + child_name + "\" [shape=ellipse, color=blue];");
+      }
+      cforge::logger::print_plain("  \"" + proj_name + "\" -> \"" + child_name + "\";");
+    }
+  }
+
+  cforge::logger::print_plain("}");
+}
+
 } // anonymous namespace
 
 /**
@@ -255,6 +483,8 @@ cforge_int_t cforge_cmd_tree(const cforge_context_t *ctx) {
   [[maybe_unused]] bool show_all = false;
   cforge_int_t max_depth = 10;
   [[maybe_unused]] bool inverted = false;
+  bool check_mode = false;
+  bool dot_format = false;
 
   for (cforge_int_t i = 0; i < ctx->args.arg_count; i++) {
     std::string arg = ctx->args.args[i];
@@ -266,6 +496,11 @@ cforge_int_t cforge_cmd_tree(const cforge_context_t *ctx) {
       }
     } else if (arg == "-i" || arg == "--inverted") {
       inverted = true;
+    } else if (arg == "--check") {
+      check_mode = true;
+    } else if (arg == "--format" && i + 1 < ctx->args.arg_count) {
+      std::string fmt_val = ctx->args.args[++i];
+      if (fmt_val == "dot") dot_format = true;
     }
   }
 
@@ -309,6 +544,90 @@ cforge_int_t cforge_cmd_tree(const cforge_context_t *ctx) {
         roots.push_back({proj.name, proj_info});
       }
     }
+
+    // 1. Collect inter-project graph
+    std::vector<project_graph_edge> proj_edges = collect_project_dependencies(ws);
+
+    // 2. Build project name list (workspace order)
+    std::vector<std::string> proj_names;
+    for (const auto &p : ws.get_projects()) proj_names.push_back(p.name);
+
+    // 3. DOT short-circuit (replaces all normal output)
+    if (dot_format) {
+      emit_dot(ws.get_name(), proj_names, proj_edges, roots, all_deps);
+      return 0;
+    }
+
+    // 4. Print project graph section (before "External dependencies:")
+    cforge::logger::print_blank();
+    print_project_graph(proj_names, proj_edges);
+    cforge::logger::print_plain("  External dependencies:");
+
+    if (roots.empty() && all_deps.empty()) {
+      cforge::logger::print_dim("  (no dependencies)");
+      return 0;
+    }
+
+    // Print tree
+    std::set<std::string> visited;
+    for (cforge_size_t i = 0; i < roots.size(); i++) {
+      bool is_last = (i == roots.size() - 1);
+      print_tree_branch(roots[i].first, roots[i].second, all_deps, "  ", is_last,
+                        visited, max_depth, 0);
+    }
+
+    // Print summary
+    cforge::logger::print_blank();
+    cforge_int_t index_count = 0, git_count = 0, vcpkg_count = 0, sys_count = 0,
+                 proj_count = 0;
+    for (const auto &[name, info] : all_deps) {
+      if (info.type == "index")
+        index_count++;
+      else if (info.type == "git")
+        git_count++;
+      else if (info.type == "vcpkg")
+        vcpkg_count++;
+      else if (info.type == "system")
+        sys_count++;
+      else if (info.type == "project")
+        proj_count++;
+    }
+
+    std::vector<std::string> summary_parts;
+    if (index_count > 0)
+      summary_parts.push_back(std::to_string(index_count) + " index");
+    if (git_count > 0)
+      summary_parts.push_back(std::to_string(git_count) + " git");
+    if (vcpkg_count > 0)
+      summary_parts.push_back(std::to_string(vcpkg_count) + " vcpkg");
+    if (sys_count > 0)
+      summary_parts.push_back(std::to_string(sys_count) + " system");
+    if (proj_count > 0)
+      summary_parts.push_back(std::to_string(proj_count) + " project");
+
+    if (!summary_parts.empty()) {
+      std::string summary = "Dependencies: ";
+      for (cforge_size_t i = 0; i < summary_parts.size(); i++) {
+        if (i > 0)
+          summary += ", ";
+        summary += summary_parts[i];
+      }
+      cforge::logger::print_plain(summary);
+    }
+
+    // 5. Conflict detection (always run after summary)
+    auto conflicts = detect_conflicts(roots, all_deps);
+    if (!conflicts.empty()) {
+      if (check_mode) {
+        print_conflicts(conflicts, /*brief=*/false);
+        return 1;
+      } else {
+        print_conflicts(conflicts, /*brief=*/true);
+      }
+    }
+
+    return 0;
+
   } else {
     // Single project
     fs::path config_file = current_dir / "cforge.toml";
@@ -337,59 +656,76 @@ cforge_int_t cforge_cmd_tree(const cforge_context_t *ctx) {
     for (const auto &[name, info] : all_deps) {
       roots.push_back({name, info});
     }
-  }
 
-  if (roots.empty() && all_deps.empty()) {
-    cforge::logger::print_dim("  (no dependencies)");
+    // DOT format for single project
+    if (dot_format) {
+      std::vector<std::string> proj_names = {project_name};
+      std::vector<project_graph_edge> no_edges;
+      // Build a synthetic root list for emit_dot
+      dependency_info proj_info;
+      proj_info.name = project_name;
+      proj_info.type = "project";
+      for (const auto &[name, info] : all_deps) {
+        proj_info.children.push_back(name);
+      }
+      std::vector<std::pair<std::string, dependency_info>> single_roots = {
+          {project_name, proj_info}};
+      emit_dot(project_name, proj_names, no_edges, single_roots, all_deps);
+      return 0;
+    }
+
+    if (roots.empty() && all_deps.empty()) {
+      cforge::logger::print_dim("  (no dependencies)");
+      return 0;
+    }
+
+    // Print tree
+    std::set<std::string> visited;
+    for (cforge_size_t i = 0; i < roots.size(); i++) {
+      bool is_last = (i == roots.size() - 1);
+      print_tree_branch(roots[i].first, roots[i].second, all_deps, "", is_last,
+                        visited, max_depth, 0);
+    }
+
+    // Print summary
+    cforge::logger::print_blank();
+    cforge_int_t index_count = 0, git_count = 0, vcpkg_count = 0, sys_count = 0,
+                 proj_count = 0;
+    for (const auto &[name, info] : all_deps) {
+      if (info.type == "index")
+        index_count++;
+      else if (info.type == "git")
+        git_count++;
+      else if (info.type == "vcpkg")
+        vcpkg_count++;
+      else if (info.type == "system")
+        sys_count++;
+      else if (info.type == "project")
+        proj_count++;
+    }
+
+    std::vector<std::string> summary_parts;
+    if (index_count > 0)
+      summary_parts.push_back(std::to_string(index_count) + " index");
+    if (git_count > 0)
+      summary_parts.push_back(std::to_string(git_count) + " git");
+    if (vcpkg_count > 0)
+      summary_parts.push_back(std::to_string(vcpkg_count) + " vcpkg");
+    if (sys_count > 0)
+      summary_parts.push_back(std::to_string(sys_count) + " system");
+    if (proj_count > 0)
+      summary_parts.push_back(std::to_string(proj_count) + " project");
+
+    if (!summary_parts.empty()) {
+      std::string summary = "Dependencies: ";
+      for (cforge_size_t i = 0; i < summary_parts.size(); i++) {
+        if (i > 0)
+          summary += ", ";
+        summary += summary_parts[i];
+      }
+      cforge::logger::print_plain(summary);
+    }
+
     return 0;
   }
-
-  // Print tree
-  std::set<std::string> visited;
-  for (cforge_size_t i = 0; i < roots.size(); i++) {
-    bool is_last = (i == roots.size() - 1);
-    print_tree_branch(roots[i].first, roots[i].second, all_deps, "", is_last,
-                      visited, max_depth, 0);
-  }
-
-  // Print summary
-  cforge::logger::print_blank();
-  cforge_int_t index_count = 0, git_count = 0, vcpkg_count = 0, sys_count = 0,
-               proj_count = 0;
-  for (const auto &[name, info] : all_deps) {
-    if (info.type == "index")
-      index_count++;
-    else if (info.type == "git")
-      git_count++;
-    else if (info.type == "vcpkg")
-      vcpkg_count++;
-    else if (info.type == "system")
-      sys_count++;
-    else if (info.type == "project")
-      proj_count++;
-  }
-
-  std::vector<std::string> summary_parts;
-  if (index_count > 0)
-    summary_parts.push_back(std::to_string(index_count) + " index");
-  if (git_count > 0)
-    summary_parts.push_back(std::to_string(git_count) + " git");
-  if (vcpkg_count > 0)
-    summary_parts.push_back(std::to_string(vcpkg_count) + " vcpkg");
-  if (sys_count > 0)
-    summary_parts.push_back(std::to_string(sys_count) + " system");
-  if (proj_count > 0)
-    summary_parts.push_back(std::to_string(proj_count) + " project");
-
-  if (!summary_parts.empty()) {
-    std::string summary = "Dependencies: ";
-    for (cforge_size_t i = 0; i < summary_parts.size(); i++) {
-      if (i > 0)
-        summary += ", ";
-      summary += summary_parts[i];
-    }
-    cforge::logger::print_plain(summary);
-  }
-
-  return 0;
 }
