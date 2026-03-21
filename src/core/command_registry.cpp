@@ -224,10 +224,10 @@ void command_registry::print_general_help() const {
   };
 
   std::vector<category> categories = {
-      {"Project", {"init", "build", "run", "clean", "test", "bench", "flash"}},
+      {"Project", {"init", "migrate", "build", "run", "clean", "test", "bench", "flash"}},
       {"Dependencies", {"deps", "vcpkg"}},
       {"Code Quality", {"fmt", "lint", "circular"}},
-      {"IDE & Tools", {"ide", "watch", "doc", "new"}},
+      {"IDE & Tools", {"ide", "watch", "hot", "doc", "new"}},
       {"Package", {"package", "install"}},
       {"Cache", {"cache"}},
       {"Other", {"version", "upgrade", "doctor", "completions", "help"}},
@@ -558,6 +558,37 @@ void register_builtin_commands() {
       nullptr,
   });
 
+  // Hot reload command
+  reg.register_command({
+      "hot",
+      {"hot-reload"},
+      "Start a hot reload session",
+      "Build the module as a shared library, launch the host executable, then\n"
+      "watch source files for changes.  On change the shared library is rebuilt\n"
+      "and a signal file is written so the host can swap it in without restarting.\n\n"
+      "Requires a [hot_reload] section in cforge.toml:\n\n"
+      "  [hot_reload]\n"
+      "  enabled     = true\n"
+      "  host        = \"src/host_main.cpp\"\n"
+      "  module      = \"src/game.cpp\"\n"
+      "  entry_point = \"game_update\"   # optional\n"
+      "  watch_dirs  = [\"src\"]         # optional",
+      "hot [options]",
+      {
+          {"-c", "--config",   "Build configuration (Debug, Release, ...)", "CONFIG", "Debug", false},
+          {"",   "--interval", "Poll interval in milliseconds",              "MS",     "500",   false},
+      },
+      {
+          "cforge hot",
+          "cforge hot --config Release",
+          "cforge hot --interval 250",
+      },
+      {"watch", "build"},
+      false,
+      cforge_cmd_hot,
+      nullptr,
+  });
+
   // Doc command
   reg.register_command({
       "doc",
@@ -627,6 +658,31 @@ void register_builtin_commands() {
       {"build"},
       false,
       cforge_cmd_flash,
+      nullptr,
+  });
+
+  // Migrate command
+  reg.register_command({
+      "migrate",
+      {"import"},
+      "Import CMakeLists.txt into cforge.toml",
+      "Parse an existing CMakeLists.txt and generate a cforge.toml.\n"
+      "Extraction is best-effort; review the output before building.",
+      "migrate [path] [options]",
+      {
+          {"-n", "--dry-run",  "Show generated toml without writing", "", "", false},
+          {"-b", "--backup",   "Back up existing cforge.toml before overwriting", "", "", false},
+          {"-o", "--output",   "Output file path", "FILE", "cforge.toml", false},
+      },
+      {
+          "cforge migrate",
+          "cforge migrate ./my-project",
+          "cforge migrate --dry-run",
+          "cforge migrate --backup --output my.toml",
+      },
+      {"init", "build"},
+      false,
+      cforge_cmd_migrate,
       nullptr,
   });
 

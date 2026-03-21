@@ -278,3 +278,23 @@ cforge_int_t cforge_cmd_cache(const cforge_context_t *ctx);
  * @return cforge_int_t Exit code (0 for success)
  */
 cforge_int_t cforge_cmd_flash(const cforge_context_t *ctx);
+
+/**
+ * @brief Handle the 'migrate' command to import CMakeLists.txt into cforge.toml
+ *
+ * @param ctx Context containing parsed arguments
+ * @return cforge_int_t Exit code (0 for success)
+ */
+cforge_int_t cforge_cmd_migrate(const cforge_context_t *ctx);
+
+/**
+ * @brief Handle the 'hot' command for hot reload sessions
+ *
+ * Builds the module as a shared library, launches the host executable,
+ * then watches for source changes and reloads the module in-place by
+ * writing .cforge/hot_reload_signal.
+ *
+ * @param ctx Context containing parsed arguments
+ * @return cforge_int_t Exit code (0 for success)
+ */
+cforge_int_t cforge_cmd_hot(const cforge_context_t *ctx);
