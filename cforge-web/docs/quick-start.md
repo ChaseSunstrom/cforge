@@ -14,10 +14,29 @@ Get up and running with CForge in minutes.
 cforge init my_project
 cd my_project
 
-# Or create in current directory
+# Or create in current directory — launches interactive setup
 mkdir my_project && cd my_project
 cforge init
 ```
+
+> **Interactive mode:** Running `cforge init` with no arguments launches an interactive prompt that guides you through project name, C++ standard, template, and other options. Use `-y` / `--yes` to accept all defaults without prompting.
+
+## Migrating an Existing CMake Project
+
+Already have a `CMakeLists.txt`? Import it into cforge without rewriting it from scratch:
+
+```bash
+# Preview what will be imported (no files written)
+cforge migrate --dry-run
+
+# Import and back up the original CMakeLists.txt
+cforge migrate --backup
+
+# Write config to a custom path
+cforge migrate --output path/to/cforge.toml
+```
+
+`cforge migrate` (alias: `cforge import`) reads the nearest `CMakeLists.txt` and generates a `cforge.toml` that mirrors its targets, flags, and include paths. See [Advanced Topics](./advanced-topics#cmake-migration) for limitations.
 
 ### Project Templates
 

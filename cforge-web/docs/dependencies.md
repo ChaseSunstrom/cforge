@@ -290,6 +290,44 @@ Dependencies are color-coded by type:
 - **Yellow**: System dependencies
 - **Green**: Project dependencies (workspace)
 
+#### Conflict Detection
+
+Use `--check` to detect version conflicts across the dependency graph. The command exits with code `1` when conflicts are found, making it suitable for CI pipelines:
+
+```bash
+# Detect version conflicts; exit 1 on conflict
+cforge deps tree --check
+```
+
+**Example output when conflicts are detected:**
+```
+myproject v1.0.0
+├── spdlog @ 1.12.0 (index)
+│   └── fmt @ 10.1.0 (index)   <-- conflict
+└── fmt @ 11.1.4 (index)       <-- conflict
+
+CONFLICT: fmt required at 10.1.0 (via spdlog) and 11.1.4 (direct)
+```
+
+#### Graphviz Output
+
+Export the dependency graph as a [Graphviz](https://graphviz.org/) DOT file for visual rendering:
+
+```bash
+# Print DOT to stdout
+cforge deps tree --format dot
+
+# Save to file and render as PNG
+cforge deps tree --format dot > deps.dot
+dot -Tpng deps.dot -o deps.png
+```
+
+The `--format dot` flag can be combined with `--depth` and `--check`:
+
+```bash
+cforge deps tree --format dot --depth 3 --check > deps.dot
+```
+
 ### Managing Dependencies
 
 All dependency operations use the unified `cforge deps` command:

@@ -13,13 +13,16 @@ cforge simplifies C/C++ project management with a clean TOML configuration, auto
 # Install cforge
 curl -fsSL https://raw.githubusercontent.com/ChaseSunstrom/cforge/master/scripts/install.sh | bash
 
-# Create a new project
+# Create a new project (interactive prompts guide you through setup)
 cforge init myapp
 cd myapp
 
 # Build and run
 cforge build
 cforge run
+
+# Or skip prompts with flags
+cforge init myapp --template executable --cpp 17 --with-tests --license MIT -y
 ```
 
 ## Features
@@ -34,8 +37,11 @@ cforge run
 - **IDE integration** - VS Code, CLion, Visual Studio, Xcode
 - **Testing & benchmarks** - Integrated test runner with Catch2, GTest, doctest
 - **Developer tools** - Formatting, linting, watch mode, documentation
+- **Hot reload** - Shared library live-swapping for rapid iteration
+- **CMake migration** - Import existing CMakeLists.txt projects with `cforge migrate`
 - **Lock files** - Reproducible builds with exact dependency versions
 - **Shell completions** - Bash, Zsh, PowerShell, Fish
+- **CI integration** - GitHub Action for automated builds and caching
 
 ## Installation
 
@@ -117,7 +123,8 @@ spdlog = "1.12.0"
 
 | Command | Description |
 |---------|-------------|
-| `cforge init [name]` | Initialize a new project in current or new directory |
+| `cforge init [name]` | Initialize a new project (interactive if no args given) |
+| `cforge migrate [path]` | Import CMakeLists.txt into cforge.toml |
 | `cforge new <template> <name>` | Create files from templates (class, header, interface, test) |
 | `cforge build` | Build the project |
 | `cforge run` | Build and run the project |
@@ -135,7 +142,7 @@ spdlog = "1.12.0"
 | `cforge deps search <query>` | Search package registry |
 | `cforge deps info <pkg>` | Show package details |
 | `cforge deps list` | List current dependencies |
-| `cforge deps tree` | Visualize dependency tree |
+| `cforge deps tree` | Visualize dependency tree (with conflict detection) |
 | `cforge deps lock` | Manage lock file for reproducible builds |
 | `cforge deps update` | Update package registry |
 | `cforge deps outdated` | Show dependencies with newer versions |
@@ -156,6 +163,7 @@ spdlog = "1.12.0"
 |---------|-------------|
 | `cforge ide` | Generate IDE project files |
 | `cforge watch` | Watch for changes and auto-rebuild |
+| `cforge hot` | Hot reload session (shared library live-swapping) |
 | `cforge package` | Create distributable packages |
 | `cforge cache` | Manage binary cache |
 | `cforge completions` | Generate shell completions |
@@ -175,15 +183,25 @@ spdlog = "1.12.0"
 
 ### Create a New Project
 
+Running `cforge init` without arguments starts an interactive setup wizard with arrow-key selection:
+
 ```bash
-cforge init myapp                      # Create in new directory
-cforge init                            # Initialize in current directory
-cforge init --type=shared_lib          # Create a shared library
-cforge init --std=c++20                # Use C++20
-cforge init --with-tests               # Include test infrastructure
-cforge init --template lib             # Use library template
-cforge init blink --template embedded  # Embedded bare-metal project
+cforge init                            # Interactive mode (prompts for template, standard, etc.)
+cforge init myapp                      # Interactive, project name pre-filled
+cforge init myapp -y                   # Accept all defaults (no prompts)
+cforge init myapp --template shared-library --cpp 20 --with-tests --license Apache-2.0
 ```
+
+All flags skip their corresponding prompt. Available flags:
+
+| Flag | Description |
+|------|-------------|
+| `--template <type>` | executable, static-lib, shared-library, header-only, embedded |
+| `--cpp <std>` | C++ standard: 11, 14, 17, 20, 23 |
+| `--with-tests` / `-t` | Include test infrastructure |
+| `--with-git` / `-g` | Initialize git repository |
+| `--license <type>` | MIT, Apache-2.0, GPL-3.0, BSD-2-Clause, None |
+| `-y` / `--yes` | Accept all defaults without prompting |
 
 ### Create a Workspace
 
@@ -313,7 +331,12 @@ Commit `cforge.lock` to version control for reproducible builds.
 cforge deps tree                       # Show dependency tree
 cforge deps tree -a                    # Include all details
 cforge deps tree -d 2                  # Limit depth
+cforge deps tree --check               # Detect version conflicts (exit code 1 if found)
+cforge deps tree --format dot          # Graphviz DOT output
+cforge deps tree --format dot | dot -Tpng -o deps.png  # Generate graph image
 ```
+
+In workspaces, `cforge deps tree` also shows the inter-project dependency graph and warns about version conflicts across projects.
 
 ---
 
@@ -490,6 +513,43 @@ cforge watch --interval 1000           # Custom poll interval (ms)
 
 Watches `.cpp`, `.cc`, `.cxx`, `.c`, `.hpp`, `.hxx`, `.h`, `.toml` files.
 
+### Hot Reload
+
+Live-swap shared libraries without restarting your application. Ideal for game dev, UI work, and rapid iteration.
+
+```toml
+[hot_reload]
+enabled = true
+host = "src/host_main.cpp"        # Host application source
+module = "src/game.cpp"           # Hot-reloadable module source
+entry_point = "game_update"       # Function to reload (optional)
+```
+
+```bash
+cforge hot                             # Start hot reload session
+```
+
+In your host application, include the runtime library:
+
+```c
+#include <cforge/cforge_hot.h>
+
+int main() {
+    cforge_hot_ctx *ctx = cforge_hot_load("build/lib/game.so");
+    typedef void (*update_fn)(float dt);
+
+    while (running) {
+        cforge_hot_reload(ctx);  // Non-blocking check for new version
+        update_fn update = (update_fn)cforge_hot_get_symbol(ctx, "game_update");
+        if (update) update(delta_time);
+    }
+
+    cforge_hot_unload(ctx);
+}
+```
+
+Build failures keep the old module running — no crashes during iteration.
+
 ---
 
 ## Cross-Compilation
@@ -627,6 +687,22 @@ cforge install --from https://github.com/user/repo.git  # From URL
 
 ---
 
+## Migrating from CMake
+
+Import an existing CMakeLists.txt project into cforge:
+
+```bash
+cforge migrate                         # Convert CMakeLists.txt in current dir
+cforge migrate path/to/project         # Convert from specific path
+cforge migrate --dry-run               # Preview without writing
+cforge migrate --backup                # Back up existing cforge.toml first
+cforge migrate --output custom.toml    # Write to specific file
+```
+
+The migration extracts project name, version, C++ standard, binary type, source/include directories, dependencies (`find_package`, `FetchContent`), compiler definitions, and link libraries. The result is a best-effort conversion — review the generated `cforge.toml` before building.
+
+---
+
 ## CMake Options
 
 ```toml
@@ -680,6 +756,24 @@ cforge clean --cmake-files             # Also clean CMake files
 cforge clean --regenerate              # Regenerate after clean
 cforge clean --deep                    # Remove dependencies too
 ```
+
+---
+
+## CI / GitHub Actions
+
+Use the official GitHub Action to install cforge in CI:
+
+```yaml
+- uses: ChaseSunstrom/cforge-action@v1
+  with:
+    version: '3.1.0'    # optional, default: latest
+    cache: true          # optional, cache vendor/ dir
+
+- run: cforge build -c Release
+- run: cforge test -c Release
+```
+
+The action handles binary installation, PATH setup, and dependency caching across Linux, macOS, and Windows runners.
 
 ---
 

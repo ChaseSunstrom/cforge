@@ -20,6 +20,8 @@ CForge provides a comprehensive set of commands for building, testing, and manag
 | `flash`      | Flash firmware to embedded target        | `cforge flash --profile avr`       |
 | `deps`       | Manage dependencies                      | `cforge deps add fmt`              |
 | `package`    | Package project binaries                 | `cforge package --type zip`        |
+| `migrate`    | Import CMakeLists.txt into cforge.toml   | `cforge migrate --dry-run`         |
+| `hot`        | Start a hot reload session               | `cforge hot`                       |
 
 ## Developer Tools
 
@@ -113,6 +115,10 @@ cforge init blink --template embedded
 | `--template` | Use template (exe, lib, header-only, embedded) |
 | `--with-tests` | Add test infrastructure |
 | `--with-git` | Initialize Git repository |
+| `-y, --yes` | Accept all defaults non-interactively |
+| `--license` | Add a LICENSE file (e.g., `--license MIT`) |
+
+> **Interactive mode:** Running `cforge init` with no arguments or no project name launches an interactive prompt. Pass `-y` / `--yes` to skip prompts and accept defaults.
 
 ### build
 
@@ -292,6 +298,12 @@ cforge deps tree --depth 2
 
 # Show all details
 cforge deps tree -a
+
+# Detect version conflicts; exit 1 if any found
+cforge deps tree --check
+
+# Export as Graphviz DOT format
+cforge deps tree --format dot > deps.dot
 ```
 
 **Output:**
@@ -304,6 +316,14 @@ my_app v1.0.0
 
 Dependencies: 2 index, 1 project
 ```
+
+**Options:**
+| Option | Description |
+|--------|-------------|
+| `--depth <N>` | Limit tree depth |
+| `-a` | Show all details |
+| `--check` | Detect version conflicts; exit 1 on conflict |
+| `--format dot` | Output Graphviz DOT instead of tree text |
 
 ### new
 
@@ -501,3 +521,52 @@ cforge list targets
 # List configurations
 cforge list configs
 ```
+
+### migrate
+
+Import an existing `CMakeLists.txt` into a `cforge.toml`. Alias: `cforge import`.
+
+```bash
+# Preview changes without writing any files
+cforge migrate --dry-run
+cforge migrate -n
+
+# Import and keep a backup of CMakeLists.txt
+cforge migrate --backup
+cforge migrate -b
+
+# Write the generated config to a custom path
+cforge migrate --output path/to/cforge.toml
+cforge migrate -o path/to/cforge.toml
+
+# Migrate a project in a different directory
+cforge migrate path/to/project
+```
+
+**Options:**
+| Option | Description |
+|--------|-------------|
+| `-n, --dry-run` | Print what would be written; make no changes |
+| `-b, --backup` | Back up `CMakeLists.txt` before migrating |
+| `-o, --output <path>` | Custom output path for `cforge.toml` |
+
+See [Advanced Topics](./advanced-topics#cmake-migration) for limitations.
+
+### hot
+
+Start a hot reload session that recompiles and reloads changed translation units without restarting the process. Alias: `cforge hot-reload`.
+
+```bash
+# Start hot reload (requires [hot_reload] section in cforge.toml)
+cforge hot
+```
+
+**cforge.toml configuration:**
+```toml
+[hot_reload]
+enabled = true
+watch_dirs = ["src", "include"]
+exclude = ["src/generated"]
+```
+
+See [Advanced Topics](./advanced-topics#hot-reload) for the runtime API and full configuration reference.
