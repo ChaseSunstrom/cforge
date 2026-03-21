@@ -11,6 +11,7 @@
 #include "core/process_utils.hpp"
 #include "core/toml_reader.hpp"
 #include "core/types.h"
+#include "core/utils/terminal_prompt.hpp"
 #include "core/workspace.hpp"
 
 #include <algorithm>
@@ -1084,7 +1085,17 @@ static bool create_test_files(const std::filesystem::path &project_path,
  * @return bool Success flag
  */
 static bool create_license_file(const std::filesystem::path &project_path,
-                                const std::string &project_name) {
+                                const std::string &project_name,
+                                const std::string &license_type = "MIT") {
+  // Skip license file creation if "None" selected
+  auto to_lower = [](std::string s) {
+    std::transform(s.begin(), s.end(), s.begin(), ::tolower);
+    return s;
+  };
+  if (to_lower(license_type) == "none") {
+    return true;
+  }
+
   std::filesystem::path license_path = project_path / "LICENSE";
 
   if (std::filesystem::exists(license_path) && !g_force_overwrite) {
@@ -1107,39 +1118,125 @@ static bool create_license_file(const std::filesystem::path &project_path,
   std::tm *time_info = std::localtime(&current_time);
   cforge_int_t current_year = time_info->tm_year + 1900;
 
-  license << "MIT License\n\n";
-  license << "Copyright (c) " << current_year << " " << project_name << "\n\n";
-  license << "Permission is hereby granted, free of charge, to any person "
-             "obtaining a copy\n";
-  license << "of this software and associated documentation files (the "
-             "\"Software\"), to deal\n";
-  license << "in the Software without restriction, including without "
-             "limitation the rights\n";
-  license << "to use, copy, modify, merge, publish, distribute, sublicense, "
-             "and/or sell\n";
-  license << "copies of the Software, and to permit persons to whom the "
-             "Software is\n";
-  license << "furnished to do so, subject to the following conditions:\n\n";
-  license << "The above copyright notice and this permission notice shall be "
-             "included in all\n";
-  license << "copies or substantial portions of the Software.\n\n";
-  license << "THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY "
-             "KIND, EXPRESS OR\n";
-  license << "IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF "
-             "MERCHANTABILITY,\n";
-  license << "FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO "
-             "EVENT SHALL THE\n";
-  license << "AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR "
-             "OTHER\n";
-  license << "LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, "
-             "ARISING FROM,\n";
-  license << "OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER "
-             "DEALINGS IN THE\n";
-  license << "SOFTWARE.\n";
+  if (license_type == "MIT") {
+    license << "MIT License\n\n";
+    license << "Copyright (c) " << current_year << " " << project_name
+            << "\n\n";
+    license << "Permission is hereby granted, free of charge, to any person "
+               "obtaining a copy\n";
+    license << "of this software and associated documentation files (the "
+               "\"Software\"), to deal\n";
+    license << "in the Software without restriction, including without "
+               "limitation the rights\n";
+    license << "to use, copy, modify, merge, publish, distribute, sublicense, "
+               "and/or sell\n";
+    license << "copies of the Software, and to permit persons to whom the "
+               "Software is\n";
+    license << "furnished to do so, subject to the following conditions:\n\n";
+    license << "The above copyright notice and this permission notice shall be "
+               "included in all\n";
+    license << "copies or substantial portions of the Software.\n\n";
+    license << "THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY "
+               "KIND, EXPRESS OR\n";
+    license << "IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF "
+               "MERCHANTABILITY,\n";
+    license << "FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO "
+               "EVENT SHALL THE\n";
+    license << "AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES "
+               "OR OTHER\n";
+    license << "LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR "
+               "OTHERWISE, ARISING FROM,\n";
+    license << "OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER "
+               "DEALINGS IN THE\n";
+    license << "SOFTWARE.\n";
+  } else if (license_type == "Apache-2.0") {
+    license << "                              Apache License\n";
+    license << "                        Version 2.0, January 2004\n";
+    license << "                     http://www.apache.org/licenses/\n\n";
+    license << "Copyright " << current_year << " " << project_name << "\n\n";
+    license << "Licensed under the Apache License, Version 2.0 (the "
+               "\"License\");\n";
+    license << "you may not use this file except in compliance with the "
+               "License.\n";
+    license << "You may obtain a copy of the License at\n\n";
+    license << "    http://www.apache.org/licenses/LICENSE-2.0\n\n";
+    license << "Unless required by applicable law or agreed to in writing, "
+               "software\n";
+    license << "distributed under the License is distributed on an \"AS IS\" "
+               "BASIS,\n";
+    license << "WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express "
+               "or implied.\n";
+    license << "See the License for the specific language governing "
+               "permissions and\n";
+    license << "limitations under the License.\n";
+  } else if (license_type == "GPL-3.0") {
+    license << project_name << "\n";
+    license << "Copyright (C) " << current_year << " " << project_name
+            << "\n\n";
+    license << "This program is free software: you can redistribute it and/or "
+               "modify\n";
+    license << "it under the terms of the GNU General Public License as "
+               "published by\n";
+    license << "the Free Software Foundation, either version 3 of the "
+               "License, or\n";
+    license << "(at your option) any later version.\n\n";
+    license << "This program is distributed in the hope that it will be "
+               "useful,\n";
+    license << "but WITHOUT ANY WARRANTY; without even the implied warranty "
+               "of\n";
+    license << "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See "
+               "the\n";
+    license << "GNU General Public License for more details.\n\n";
+    license << "You should have received a copy of the GNU General Public "
+               "License\n";
+    license << "along with this program. If not, see "
+               "<https://www.gnu.org/licenses/>.\n";
+  } else if (license_type == "BSD-2-Clause") {
+    license << "BSD 2-Clause License\n\n";
+    license << "Copyright (c) " << current_year << ", " << project_name
+            << "\n\n";
+    license << "Redistribution and use in source and binary forms, with or "
+               "without\n";
+    license << "modification, are permitted provided that the following "
+               "conditions are met:\n\n";
+    license << "1. Redistributions of source code must retain the above "
+               "copyright notice, this\n";
+    license << "   list of conditions and the following disclaimer.\n\n";
+    license << "2. Redistributions in binary form must reproduce the above "
+               "copyright notice,\n";
+    license << "   this list of conditions and the following disclaimer in the "
+               "documentation\n";
+    license << "   and/or other materials provided with the distribution.\n\n";
+    license << "THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND "
+               "CONTRIBUTORS \"AS IS\"\n";
+    license << "AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT "
+               "LIMITED TO, THE\n";
+    license << "IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A "
+               "PARTICULAR PURPOSE ARE\n";
+    license << "DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR "
+               "CONTRIBUTORS BE LIABLE\n";
+    license << "FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR "
+               "CONSEQUENTIAL\n";
+    license << "DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF "
+               "SUBSTITUTE GOODS OR\n";
+    license << "SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS "
+               "INTERRUPTION) HOWEVER\n";
+    license << "CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, "
+               "STRICT LIABILITY,\n";
+    license << "OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY "
+               "OUT OF THE USE\n";
+    license << "OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH "
+               "DAMAGE.\n";
+  } else {
+    // Fallback to MIT
+    license << "MIT License\n\n";
+    license << "Copyright (c) " << current_year << " " << project_name
+            << "\n";
+  }
 
   license.close();
 
-  cforge::logger::created("LICENSE (MIT)");
+  cforge::logger::created("LICENSE (" + license_type + ")");
   return true;
 }
 
@@ -1344,7 +1441,8 @@ static bool create_project(const std::filesystem::path &project_path,
                            const std::string &cpp_version, bool /*with_git*/,
                            bool with_tests,
                            const std::string & /*cmake_preset*/ = "",
-                           const std::string & /*build_type*/ = "Debug") {
+                           const std::string & /*build_type*/ = "Debug",
+                           const std::string &license_type = "MIT") {
   try {
     // Create the project directory if it doesn't exist
     if (!std::filesystem::exists(project_path)) {
@@ -1405,7 +1503,7 @@ static bool create_project(const std::filesystem::path &project_path,
     }
 
     // Create license file
-    if (!create_license_file(project_path, project_name)) {
+    if (!create_license_file(project_path, project_name, license_type)) {
       cforge::logger::print_error("Failed to create LICENSE file");
       return false;
     }
@@ -1453,11 +1551,31 @@ cforge_int_t cforge_cmd_init(const cforge_context_t *ctx) {
     std::string template_name = "executable";
     bool has_projects_flag = false;
 
+    // Interactive mode tracking
+    bool yes_flag = false;
+    std::string license_type = "MIT";
+    bool has_name_flag = false;
+    bool has_template_flag = false;
+    bool has_cpp_flag = false;
+    bool has_tests_flag = false;
+    bool has_git_flag = false;
+    bool has_license_flag = false;
+
+    // Option arrays for interactive prompts
+    static const std::vector<std::string> template_options =
+        {"executable", "static-lib", "shared-library", "header-only",
+         "embedded"};
+    static const std::vector<std::string> standard_options =
+        {"17", "11", "14", "20", "23"};
+    static const std::vector<std::string> license_options =
+        {"MIT", "Apache-2.0", "GPL-3.0", "BSD-2-Clause", "None"};
+
     // Process command line arguments - improved parsing
     if (ctx->args.args) {
       // First check for positional project name (before any flag)
       if (ctx->args.arg_count > 0 && ctx->args.args[0][0] != '-') {
         project_name = ctx->args.args[0];
+        has_name_flag = true;
       }
 
       // Parse flag arguments
@@ -1476,12 +1594,14 @@ cforge_int_t cforge_cmd_init(const cforge_context_t *ctx) {
         else if (arg == "--name" || arg == "-n") {
           if (i + 1 < ctx->args.arg_count && ctx->args.args[i + 1][0] != '-') {
             project_name = ctx->args.args[i + 1];
+            has_name_flag = true;
             i++; // Skip the value in next iteration
           }
         }
         // Handle --name=VALUE format
         else if (arg.compare(0, 7, "--name=") == 0) {
           project_name = arg.substr(7);
+          has_name_flag = true;
         }
         // Handle --workspace or -w parameter
         else if (arg == "--workspace" || arg == "-w") {
@@ -1541,37 +1661,155 @@ cforge_int_t cforge_cmd_init(const cforge_context_t *ctx) {
         else if (arg == "--cpp" || arg == "-c") {
           if (i + 1 < ctx->args.arg_count) {
             cpp_standard = ctx->args.args[i + 1];
+            has_cpp_flag = true;
             i++; // Skip the value in next iteration
           }
         }
         // Handle --cpp=VALUE format
         else if (arg.compare(0, 6, "--cpp=") == 0) {
           cpp_standard = arg.substr(6);
+          has_cpp_flag = true;
         }
         // Handle --with-tests or -t flag
         else if (arg == "--with-tests" || arg == "-t") {
           with_tests = true;
+          has_tests_flag = true;
         }
         // Handle --with-git or -g flag
         else if (arg == "--with-git" || arg == "-g") {
           with_git = true;
+          has_git_flag = true;
         }
         // Handle --template parameter
         else if (arg == "--template") {
           if (i + 1 < ctx->args.arg_count) {
             template_name = ctx->args.args[i + 1];
+            has_template_flag = true;
             i++; // Skip the value in next iteration
           }
         }
         // Handle --template=VALUE format
         else if (arg.compare(0, 11, "--template=") == 0) {
           template_name = arg.substr(11);
+          has_template_flag = true;
+        }
+        // Handle -y / --yes flag (accept all defaults)
+        else if (arg == "-y" || arg == "--yes") {
+          yes_flag = true;
+        }
+        // Handle --license parameter
+        else if (arg == "--license") {
+          if (i + 1 < ctx->args.arg_count) {
+            std::string raw_license = ctx->args.args[++i];
+            has_license_flag = true;
+            auto to_lower_fn = [](std::string s) {
+              std::transform(s.begin(), s.end(), s.begin(), ::tolower);
+              return s;
+            };
+            std::string raw_lower = to_lower_fn(raw_license);
+            bool valid = false;
+            for (const auto &opt : license_options) {
+              if (to_lower_fn(opt) == raw_lower) {
+                license_type = opt; // Store canonical form
+                valid = true;
+                break;
+              }
+            }
+            if (!valid) {
+              cforge::logger::print_error(
+                  "Invalid license type: " + raw_license +
+                  ". Valid values: MIT, Apache-2.0, GPL-3.0, BSD-2-Clause, None");
+              return 1;
+            }
+          }
+        }
+        // Handle --license=VALUE format
+        else if (arg.compare(0, 10, "--license=") == 0) {
+          std::string raw_license = arg.substr(10);
+          has_license_flag = true;
+          auto to_lower_fn = [](std::string s) {
+            std::transform(s.begin(), s.end(), s.begin(), ::tolower);
+            return s;
+          };
+          std::string raw_lower = to_lower_fn(raw_license);
+          bool valid = false;
+          for (const auto &opt : license_options) {
+            if (to_lower_fn(opt) == raw_lower) {
+              license_type = opt;
+              valid = true;
+              break;
+            }
+          }
+          if (!valid) {
+            cforge::logger::print_error(
+                "Invalid license type: " + raw_license +
+                ". Valid values: MIT, Apache-2.0, GPL-3.0, BSD-2-Clause, None");
+            return 1;
+          }
         }
       }
     }
 
     // Apply selected template
     g_template_name = template_name;
+
+    // Interactive mode: only for single-project, non-workspace flows with a TTY
+    bool needs_interactive = cforge::is_interactive_terminal() && !yes_flag &&
+                             !is_workspace && !from_file && !has_projects_flag;
+
+    if (needs_interactive) {
+      cforge::logger::print_action("Creating", "new project");
+      cforge::logger::print_blank();
+
+      if (!has_name_flag)
+        project_name =
+            cforge::prompt_text("Project name", project_name);
+      if (!has_template_flag) {
+        int idx =
+            cforge::prompt_select("Template", template_options, 0);
+        template_name = template_options[idx];
+      }
+      if (!has_cpp_flag) {
+        int idx =
+            cforge::prompt_select("C++ standard", standard_options, 0);
+        cpp_standard = standard_options[idx];
+      }
+      if (!has_tests_flag)
+        with_tests = cforge::prompt_confirm("Include tests", true);
+      if (!has_git_flag)
+        with_git = cforge::prompt_confirm("Initialize git", true);
+      if (!has_license_flag) {
+        int idx =
+            cforge::prompt_select("License", license_options, 0);
+        license_type = license_options[idx];
+      }
+
+      // Show summary and confirm
+      cforge::logger::print_blank();
+      cforge::logger::print_rule(34);
+      fmt::print(fmt::emphasis::bold, "{:>12}", "Name");
+      fmt::print(": {}\n", project_name);
+      fmt::print(fmt::emphasis::bold, "{:>12}", "Template");
+      fmt::print(": {}\n", template_name);
+      fmt::print(fmt::emphasis::bold, "{:>12}", "C++");
+      fmt::print(": {}\n", cpp_standard);
+      fmt::print(fmt::emphasis::bold, "{:>12}", "Tests");
+      fmt::print(": {}\n", with_tests ? "yes" : "no");
+      fmt::print(fmt::emphasis::bold, "{:>12}", "Git");
+      fmt::print(": {}\n", with_git ? "yes" : "no");
+      fmt::print(fmt::emphasis::bold, "{:>12}", "License");
+      fmt::print(": {}\n", license_type);
+      cforge::logger::print_rule(34);
+      cforge::logger::print_blank();
+
+      if (!cforge::prompt_confirm("Continue", true)) {
+        cforge::logger::print_action("Aborted", "project creation");
+        return 0;
+      }
+
+      // Propagate interactive selections
+      g_template_name = template_name;
+    }
 
     // If user didn't set workspace flag but specified projects, don't force
     // workspace mode
@@ -1863,7 +2101,7 @@ cforge_int_t cforge_cmd_init(const cforge_context_t *ctx) {
 
       // Create the project with detailed logging
       if (!create_project(project_dir, project_name, cpp_standard, with_git,
-                          with_tests, cmake_preset, build_type)) {
+                          with_tests, cmake_preset, build_type, license_type)) {
         cforge::logger::print_error("Failed to create project '" + project_name + "'");
         return 1;
       }
