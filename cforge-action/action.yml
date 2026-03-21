@@ -1,0 +1,91 @@
+name: 'Setup cforge'
+description: 'Install cforge C/C++ build tool and cache dependencies'
+author: 'ChaseSunstrom'
+
+branding:
+  icon: 'package'
+  color: 'blue'
+
+inputs:
+  version:
+    description: 'cforge version to install (e.g. 3.1.0). Defaults to latest release.'
+    required: false
+    default: 'latest'
+  cache:
+    description: 'Cache the vendor/ directory between runs.'
+    required: false
+    default: 'true'
+  cache-key:
+    description: 'Optional suffix appended to the cache key.'
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    # --- 1. Resolve version ---
+    - name: Resolve cforge version
+      id: resolve-version
+      shell: bash
+      run: |
+        if [ "${{ inputs.version }}" = "latest" ]; then
+          VERSION=$(curl -fsSL https://api.github.com/repos/ChaseSunstrom/cforge/releases/latest \
+            | grep '"tag_name"' | sed 's/.*"v\([^"]*\)".*/\1/')
+        else
+          VERSION="${{ inputs.version }}"
+        fi
+        echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+    # --- 2. Cache: cforge binary ---
+    - name: Cache cforge binary
+      id: cache-binary
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.local/share/cforge
+          ${{ runner.os == 'Windows' && '%LOCALAPPDATA%\cforge' || '' }}
+        key: cforge-binary-${{ runner.os }}-${{ runner.arch }}-${{ steps.resolve-version.outputs.version }}
+
+    # --- 3. Install cforge (if binary cache missed) ---
+    - name: Install cforge (Linux / macOS)
+      if: steps.cache-binary.outputs.cache-hit != 'true' && runner.os != 'Windows'
+      shell: bash
+      run: |
+        bash "${{ github.action_path }}/scripts/install.sh" "${{ steps.resolve-version.outputs.version }}"
+
+    - name: Install cforge (Windows)
+      if: steps.cache-binary.outputs.cache-hit != 'true' && runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        & "${{ github.action_path }}\scripts\install.ps1" -Version "${{ steps.resolve-version.outputs.version }}"
+
+    # --- 4. Add cforge to PATH ---
+    - name: Add cforge to PATH (Linux / macOS)
+      if: runner.os != 'Windows'
+      shell: bash
+      run: echo "$HOME/.local/share/cforge/installed/cforge/bin" >> "$GITHUB_PATH"
+
+    - name: Add cforge to PATH (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        $bin = "$env:LOCALAPPDATA\cforge\installed\cforge\bin"
+        echo $bin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+    # --- 5. Cache vendor/ directory ---
+    - name: Cache vendor directory
+      if: inputs.cache == 'true'
+      uses: actions/cache@v4
+      with:
+        path: |
+          vendor/
+          build/
+        key: cforge-deps-${{ runner.os }}-${{ runner.arch }}-${{ steps.resolve-version.outputs.version }}-${{ hashFiles('**/cforge.toml', '**/cforge.lock') }}${{ inputs.cache-key != '' && format('-{0}', inputs.cache-key) || '' }}
+        restore-keys: |
+          cforge-deps-${{ runner.os }}-${{ runner.arch }}-${{ steps.resolve-version.outputs.version }}-
+          cforge-deps-${{ runner.os }}-${{ runner.arch }}-
+
+    # --- 6. Update package registry ---
+    - name: Update cforge registry
+      shell: bash
+      run: cforge deps update
