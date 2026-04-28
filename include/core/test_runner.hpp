@@ -201,6 +201,24 @@ private:
    * @param section TOML section name (e.g., "test.gtest")
    */
   void load_framework_config(test_framework fw, const std::string &section);
+
+  /**
+   * @brief Write the cforge builtin test framework header into the build dir
+   * @param gen_dir The test target's generation directory
+   * @return Path to the directory the user's #include "test_framework.h" should
+   *         resolve through (added to target_include_directories).
+   */
+  std::filesystem::path write_builtin_header(const std::filesystem::path &gen_dir);
+
+  /**
+   * @brief Generate a test main if no user source defines one
+   * @param target The test target
+   * @param gen_dir Generation directory for the target
+   * @return Path to the generated source file (empty if none was needed)
+   */
+  std::filesystem::path
+  generate_main_if_needed(const test_target &target,
+                          const std::filesystem::path &gen_dir);
 };
 
 /**

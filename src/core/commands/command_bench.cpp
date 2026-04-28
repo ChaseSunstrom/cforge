@@ -137,31 +137,32 @@ cforge_int_t cforge_cmd_bench(const cforge_context_t *ctx) {
 
     cforge::logger::print_help_section("TO ADD BENCHMARKS");
     cforge::logger::print_list_item("Create a " + bench_dir_str + "/ directory", "1.", 4);
-    cforge::logger::print_list_item("Add benchmark source files (e.g., bench_main.cpp)", "2.", 4);
-    cforge::logger::print_list_item("Use Google Benchmark, nanobench, or Catch2 BENCHMARK", "3.", 4);
+    cforge::logger::print_list_item(
+        "Drop in any .cpp/.c file with BENCH() macros — that's it.", "2.", 4);
+    cforge::logger::print_list_item(
+        "Or use Google Benchmark / nanobench / Catch2 — auto-detected.", "3.", 4);
     cforge::logger::print_blank();
 
-    cforge::logger::print_help_section("EXAMPLE CODE");
-    cforge::logger::print_dim("bench/bench_main.cpp with Google Benchmark:", 4);
+    cforge::logger::print_help_section("EXAMPLE (built-in, no dependencies)");
+    cforge::logger::print_dim(bench_dir_str + "/bench_example.cpp:", 4);
     cforge::logger::print_config_block({
-      "#include <benchmark/benchmark.h>",
+      "#include \"bench_framework.h\"",
       "",
-      "static void BM_Example(benchmark::State& state) {",
-      "    for (auto _ : state) {",
-      "        // Code to benchmark",
-      "    }",
+      "BENCH(VectorPush) {",
+      "    std::vector<int> v;",
+      "    for (int i = 0; i < 1000; ++i) v.push_back(i);",
+      "    cf_clobber_();",
       "}",
-      "BENCHMARK(BM_Example);",
       "",
-      "BENCHMARK_MAIN();"
+      "// No main() needed — cforge generates one."
     });
     cforge::logger::print_blank();
 
-    cforge::logger::print_help_section("CONFIGURATION");
+    cforge::logger::print_help_section("CONFIGURATION (optional)");
     cforge::logger::print_config_block({
       "[benchmark]",
       "directory = \"bench\"",
-      "framework = \"google\""
+      "framework = \"auto\"   # or builtin / google / nanobench / catch2"
     });
     return 0;
   }

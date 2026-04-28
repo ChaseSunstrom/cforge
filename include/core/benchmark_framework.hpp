@@ -23,6 +23,7 @@ namespace cforge {
  */
 enum class benchmark_framework {
   Auto,           // Auto-detect from source
+  Builtin,        // cforge's BENCH() macro — zero-config, no fetch
   GoogleBench,    // Google Benchmark
   Nanobench,      // nanobench (header-only)
   Catch2Bench,    // Catch2's BENCHMARK macro
@@ -119,6 +120,8 @@ inline std::string benchmark_framework_to_string(benchmark_framework fw) {
   switch (fw) {
   case benchmark_framework::Auto:
     return "auto";
+  case benchmark_framework::Builtin:
+    return "builtin";
   case benchmark_framework::GoogleBench:
     return "google";
   case benchmark_framework::Nanobench:
@@ -140,6 +143,8 @@ inline std::string benchmark_framework_to_string(benchmark_framework fw) {
 inline benchmark_framework string_to_benchmark_framework(const std::string &str) {
   if (str == "auto")
     return benchmark_framework::Auto;
+  if (str == "builtin" || str == "cforge")
+    return benchmark_framework::Builtin;
   if (str == "google" || str == "googlebenchmark" || str == "gbench")
     return benchmark_framework::GoogleBench;
   if (str == "nanobench" || str == "nano")

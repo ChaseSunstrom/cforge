@@ -93,10 +93,18 @@ public:
 
 private:
   std::filesystem::path m_project_dir;
+  std::filesystem::path m_build_base_dir; // resolved from build.directory
   const toml_reader &m_project_config;
   benchmark_config m_bench_config;
   std::vector<benchmark_result> m_results;
   std::string m_error;
+
+  std::filesystem::path get_bench_gen_dir(const std::string &target_name) const;
+  std::filesystem::path get_bench_build_dir(const std::string &target_name) const;
+  std::filesystem::path write_builtin_header(const std::filesystem::path &gen_dir);
+  std::filesystem::path
+  generate_main_if_needed(const benchmark_target &target,
+                          const std::filesystem::path &gen_dir);
 
   // Framework adapters (lazily created)
   std::map<benchmark_framework, std::unique_ptr<i_benchmark_framework_adapter>> m_adapters;

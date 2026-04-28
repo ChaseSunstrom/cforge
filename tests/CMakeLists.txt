@@ -10,6 +10,7 @@ set(TEST_SRCS
     test_test.cpp
     test_version.cpp
     test_lockfile.cpp
+    test_framework_self.cpp
 )
 
 add_executable(${PROJECT_NAME} ${TEST_SRCS})
