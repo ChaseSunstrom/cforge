@@ -6,6 +6,7 @@
 #pragma once
 
 #include "cforge/log.hpp"
+#include <filesystem>
 #include <regex>
 #include <string>
 #include <vector>
@@ -75,6 +76,30 @@ struct error_summary {
  * @return Formatted error messages
  */
 std::string format_build_errors(const std::string &error_output);
+
+/**
+ * @brief Persist the raw stderr+stdout of a build so `cforge errors` /
+ *        `cforge warnings` can re-display the diagnostics later.
+ *
+ * The file is overwritten on every build. It contains the unprocessed text
+ * — `extract_diagnostics` is run fresh each time so any improvements to the
+ *  parser/formatter automatically apply to historical builds.
+ *
+ * @param project_dir Project root (cwd at build time).
+ * @param raw_output  The combined stderr+stdout produced by the build tool.
+ */
+void save_last_build_diagnostics(const std::filesystem::path &project_dir,
+                                 const std::string &raw_output);
+
+/**
+ * @brief Load the last build's raw output.
+ *
+ * @param project_dir Project root.
+ * @param out_text    Filled with the contents on success.
+ * @return true on success, false if no log exists yet.
+ */
+bool load_last_build_diagnostics(const std::filesystem::path &project_dir,
+                                 std::string &out_text);
 
 /**
  * @brief Print a diagnostic in a Rust-like style

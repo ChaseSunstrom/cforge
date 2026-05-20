@@ -152,13 +152,13 @@ endif()
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
     # Portable compiler flags
     if(MSVC AND NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-        target_compile_options(${PROJECT_NAME} PRIVATE /W4 /GL /EHsc /GR)
+        target_compile_options(${PROJECT_NAME} PRIVATE /Ox /W4 /GL /EHsc /GR)
         target_link_options(${PROJECT_NAME} PRIVATE /LTCG)
     elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-        target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra -flto -fdiagnostics-color=always)
+        target_compile_options(${PROJECT_NAME} PRIVATE -O3 -Wall -Wextra -flto -fdiagnostics-color=always)
         target_link_options(${PROJECT_NAME} PRIVATE -flto)
     elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-        target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra -flto -fcolor-diagnostics)
+        target_compile_options(${PROJECT_NAME} PRIVATE -O3 -Wall -Wextra -flto -fcolor-diagnostics)
         target_link_options(${PROJECT_NAME} PRIVATE -flto)
     endif()
 endif()
@@ -169,19 +169,9 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
   target_compile_definitions(${PROJECT_NAME} PUBLIC FMT_UNICODE=0)
 endif()
 
-# platform-specific defines for windows
-target_compile_definitions(${PROJECT_NAME} PUBLIC NOMINMAX)
-
 # Link libraries
 target_link_libraries(${PROJECT_NAME} PUBLIC
 )
-
-# compiler options
-if(MSVC)
-    target_compile_options(${PROJECT_NAME} PRIVATE /W4)
-else()
-    target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra -Wpedantic)
-endif()
 
 # Tests
 if(BUILD_TESTING)

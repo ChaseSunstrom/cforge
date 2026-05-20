@@ -141,9 +141,11 @@ private:
    * @brief Build a specific test target
    * @param target The test target
    * @param build_config Build configuration
+   * @param verbose Stream cmake/build output live (otherwise show progress bar)
    * @return true if build succeeded
    */
-  bool build_target(const test_target &target, const std::string &build_config);
+  bool build_target(const test_target &target, const std::string &build_config,
+                    bool verbose = false);
 
   /**
    * @brief Find test executable for a target

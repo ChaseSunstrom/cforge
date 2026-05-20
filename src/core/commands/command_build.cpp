@@ -2093,19 +2093,13 @@ cforge_int_t cforge_cmd_build(const cforge_context_t *ctx) {
 
     return 0;
   } else {
-    // Single project build outside workspace
-    // Always check if CMakeLists.txt needs regeneration (hash comparison inside)
-    std::filesystem::path toml_file = current_dir / CFORGE_FILE;
-    if (std::filesystem::exists(toml_file)) {
-      cforge::logger::print_verbose("Checking if CMakeLists.txt needs regeneration");
-      cforge::toml_reader proj_cfg(toml::parse_file(toml_file.string()));
-      if (!cforge::generate_cmakelists_from_toml(current_dir, proj_cfg, verbose)) {
-        cforge::logger::print_error(
-            "Failed to generate CMakeLists.txt for project build");
-        return 1;
-      }
-    }
-    // Build the standalone project
+    // Single project build outside workspace. build_project() runs the
+    // CMakeLists regeneration check itself (build_project → line ~1153),
+    // so doing it here would just produce a duplicate
+    //   "Regenerating CMakeLists.txt from cforge.toml (configuration changed)"
+    //   "  Generating CMakeLists.txt from cforge.toml"
+    //   "    Finished CMakeLists.txt target(s)"
+    // block before the real one.
     if (!build_project(current_dir, config_name, num_jobs, verbose, target,
                        nullptr, skip_deps, cross_profile)) {
       return 1;

@@ -4,6 +4,7 @@
  */
 
 #include "core/benchmark_runner.hpp"
+#include "core/build_utils.hpp"
 #include "core/process_utils.hpp"
 #include "core/workspace.hpp"
 #include "cforge/log.hpp"
@@ -1162,32 +1163,19 @@ bool benchmark_runner::configure_cmake(const benchmark_target &target,
 }
 
 bool benchmark_runner::build_target(const benchmark_target &target,
-                                     const std::string &build_config) {
+                                     const std::string &build_config,
+                                     bool verbose) {
   fs::path build_dir = get_bench_build_dir(target.name);
 
-  std::vector<std::string> args = {
-      "--build", to_cmake_path(build_dir),
-      "--config", build_config
-  };
-
-  // Stream output so users see compile errors directly (cmake --build sometimes
-  // exits 0 on MSBuild failures — the post-check below catches that).
-  auto result = execute_process(
-      "cmake", args, m_project_dir.string(),
-      [](const std::string &line) { logger::print_plain(line); },
-      [](const std::string &line) { logger::print_error(line); },
-      600);
-
-  if (result.exit_code != 0) {
-    m_error = "cmake --build exited with code " +
-              std::to_string(result.exit_code);
+  // Match `cforge build` UX: progress bar in non-verbose, structured per-line
+  // output in verbose, formatted error block on failure. (cmake --build can
+  // exit 0 on MSBuild compile errors, so the post-build exe check below is
+  // still required to catch silent failures.)
+  if (!run_cmake_build(build_dir, build_config, "", 0, verbose)) {
+    m_error = "Build failed";
     return false;
   }
 
-  // Sanity check: cmake --build can return 0 even when compilation failed
-  // (MSBuild quirk). If we cannot find the produced executable afterwards,
-  // surface that as a build failure rather than letting an "executable not
-  // found" message bubble up later.
   fs::path exe = find_benchmark_executable(target, build_config);
   if (exe.empty()) {
     m_error = "Build reported success but no executable was produced for " +
@@ -1198,7 +1186,7 @@ bool benchmark_runner::build_target(const benchmark_target &target,
   return true;
 }
 
-bool benchmark_runner::build_benchmarks(const std::string &config, [[maybe_unused]] bool verbose) {
+bool benchmark_runner::build_benchmarks(const std::string &config, bool verbose) {
   auto targets = discover_targets();
 
   if (targets.empty()) {
@@ -1220,7 +1208,7 @@ bool benchmark_runner::build_benchmarks(const std::string &config, [[maybe_unuse
     }
 
     logger::print_action("Building", target.name);
-    if (!build_target(target, config)) {
+    if (!build_target(target, config, verbose)) {
       m_error = "Failed to build benchmark: " + target.name;
       return false;
     }
@@ -1282,20 +1270,40 @@ std::vector<benchmark_result> benchmark_runner::run_target(
     args.insert(args.end(), json_args.begin(), json_args.end());
   }
 
-  std::string output;
   // Benchmarks run many iterations × multiple samples and can take a while.
   // Allow up to 30 minutes per target by default; CI / pathological cases
   // should use --filter or --min-time-ms to keep things bounded.
   const cforge_int_t kBenchTimeoutSec = 30 * 60;
+
+  // In non-verbose mode capture silently and let the summary formatter print
+  // the clean table — streaming the raw [BRUN]/[BENCH] lines and then also
+  // printing the parsed table produced a wall of duplicated/noisy output.
+  // Verbose / --json / --csv users still get live output so they can pipe it.
+  const bool stream_live =
+      options.verbose || options.json_output || options.csv_output ||
+      logger::get_verbosity() == log_verbosity::VERBOSITY_VERBOSE;
+
+  std::function<void(const std::string &)> stdout_cb = nullptr;
+  std::function<void(const std::string &)> stderr_cb = nullptr;
+  if (stream_live) {
+    // fwrite directly: print_plain would append an extra '\n' to chunks that
+    // already end in '\n', doubling blank lines.
+    stdout_cb = [](const std::string &chunk) {
+      if (!chunk.empty()) {
+        std::fwrite(chunk.data(), 1, chunk.size(), stdout);
+        std::fflush(stdout);
+      }
+    };
+    stderr_cb = [](const std::string &chunk) {
+      if (!chunk.empty()) {
+        std::fwrite(chunk.data(), 1, chunk.size(), stderr);
+        std::fflush(stderr);
+      }
+    };
+  }
+
   auto result = execute_process(exe.string(), args, m_project_dir.string(),
-                               [&output](const std::string &line) {
-                                 output += line + "\n";
-                                 logger::print_plain(line);
-                               },
-                               [](const std::string &line) {
-                                 logger::print_error(line);
-                               },
-                               kBenchTimeoutSec);
+                                stdout_cb, stderr_cb, kBenchTimeoutSec);
 
   if (result.exit_code != 0) {
     benchmark_result error_result;
@@ -1303,12 +1311,16 @@ std::vector<benchmark_result> benchmark_runner::run_target(
     error_result.success = false;
     error_result.error_message = "Benchmark exited with code " +
                                   std::to_string(result.exit_code);
+    if (!stream_live && !result.stderr_output.empty()) {
+      // Surface error text the user didn't see streamed.
+      logger::print_error(result.stderr_output);
+    }
     return {error_result};
   }
 
   // Strip ANSI escapes before regex parsing — benchmark binaries can emit
   // colored output that would otherwise break the parsers.
-  return adapter->parse_output(strip_ansi(output));
+  return adapter->parse_output(strip_ansi(result.stdout_output));
 }
 
 benchmark_summary benchmark_runner::run_benchmarks(const benchmark_run_options &options) {

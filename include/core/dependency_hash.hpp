@@ -83,9 +83,9 @@ public:
   calculate_directory_hash(const std::filesystem::path &dir_path);
 
   /**
-   * @brief Check if hash file exists
+   * @brief Check if the build cache (hash) data exists yet.
    * @param project_dir Project or workspace directory
-   * @return true if cforge.hash exists
+   * @return true if cforge.lock exists (it carries the buildcache sections)
    */
   static bool exists(const std::filesystem::path &project_dir) {
     return std::filesystem::exists(project_dir / HASH_FILE);
@@ -102,7 +102,10 @@ public:
 private:
   std::unordered_map<std::string, std::string> hashes;
   std::unordered_map<std::string, std::string> versions;
-  static constexpr const char *HASH_FILE = "cforge.hash";
+  // cforge.hash used to be its own file. It's now folded into cforge.lock
+  // under [buildcache] and [buildcache.dependency.<name>] sections — see the
+  // implementation for the read/write merge with the lockfile.
+  static constexpr const char *HASH_FILE = "cforge.lock";
 
   // FNV-1a hash constants
   static constexpr uint64_t FNV_PRIME = 1099511628211ULL;

@@ -14,6 +14,7 @@
  *          error: cannot find value
  */
 
+#include <cmath>
 #include <iostream>
 #include <vector>
 
@@ -252,50 +253,34 @@ void logger::cleaning(const std::string &target) {
 static bool s_progress_initialized = false;
 
 void logger::compiling_file(const std::string &file, cforge_int_t current,
-                            cforge_int_t total, cforge_double_t duration_secs) {
+                            cforge_int_t total,
+                            [[maybe_unused]] cforge_double_t duration_secs) {
   if (s_verbosity == log_verbosity::VERBOSITY_QUIET)
     return;
 
   std::string action = "Compiling";
   std::string display_file = file;
 
-  // Check if this is a link action (indicated by "[link] " prefix)
   if (file.rfind("[link] ", 0) == 0) {
     action = "Linking";
-    display_file = file.substr(7);  // Remove "[link] " prefix
+    display_file = file.substr(7);
   }
 
-  // Truncate long filenames for cleaner display
-  if (display_file.length() > 35) {
-    display_file = display_file.substr(0, 32) + "...";
+  // The progress bar (if any) is currently sitting on this line. Clear it
+  // first, then print the new permanent file line on top. The caller is
+  // responsible for redrawing the bar on the next line below.
+  if (s_progress_initialized) {
+    fmt::print(stderr, "\r\033[K");
   }
 
-  if (!s_progress_initialized) {
-    // First time: just print the filename line, then create space for progress bar
-    fmt::print(stderr, fg(fmt::color::green) | fmt::emphasis::bold, "{:>{}}", action, STATUS_WIDTH);
-    fmt::print(stderr, " {}", display_file);
-    if (current > 0 && total > 0) {
-      fmt::print(stderr, fg(fmt::color::dim_gray), " [{}/{}]", current, total);
-    }
-    fmt::print(stderr, "\n");  // Newline after filename
-    s_progress_initialized = true;
-  } else {
-    // Subsequent updates: move up, clear, reprint filename, move back down
-    fmt::print(stderr, "\033[A\r\033[K");  // Move up, go to start, clear line
-    fmt::print(stderr, fg(fmt::color::green) | fmt::emphasis::bold, "{:>{}}", action, STATUS_WIDTH);
-    fmt::print(stderr, " {}", display_file);
-    if (current > 0 && total > 0) {
-      fmt::print(stderr, fg(fmt::color::dim_gray), " [{}/{}]", current, total);
-    }
-    if (duration_secs >= 0) {
-      if (duration_secs >= 10.0) {
-        fmt::print(stderr, fg(fmt::color::yellow), " ({:.1f}s slow)", duration_secs);
-      } else if (duration_secs >= 1.0) {
-        fmt::print(stderr, fg(fmt::color::gray), " ({:.1f}s)", duration_secs);
-      }
-    }
-    fmt::print(stderr, "\n");  // Move back to progress bar line
+  fmt::print(stderr, fg(fmt::color::green) | fmt::emphasis::bold, "{:>{}}",
+             action, STATUS_WIDTH);
+  fmt::print(stderr, " {}", display_file);
+  if (current > 0 && total > 0) {
+    fmt::print(stderr, fg(fmt::color::dim_gray), " [{}/{}]", current, total);
   }
+  fmt::print(stderr, "\n");
+  s_progress_initialized = true;
   std::fflush(stderr);
 }
 
@@ -307,27 +292,8 @@ void logger::progress_bar(cforge_int_t current, cforge_int_t total, bool in_plac
                           cforge_double_t elapsed_secs) {
   if (s_verbosity == log_verbosity::VERBOSITY_QUIET)
     return;
-  if (total <= 0)
-    return;
 
-  const cforge_int_t bar_width = 30;
-  cforge_double_t progress = static_cast<cforge_double_t>(current) / static_cast<cforge_double_t>(total);
-  cforge_int_t filled = static_cast<cforge_int_t>(progress * bar_width);
-  cforge_int_t percent = static_cast<cforge_int_t>(progress * 100);
-
-  // Build ASCII progress bar
-  std::string bar;
-  for (cforge_int_t i = 0; i < bar_width; ++i) {
-    if (i < filled) {
-      bar += "=";
-    } else if (i == filled && current < total) {
-      bar += ">";
-    } else {
-      bar += " ";
-    }
-  }
-
-  // Format elapsed time if provided
+  // Format elapsed time
   std::string time_str;
   if (elapsed_secs >= 0) {
     if (elapsed_secs < 60.0) {
@@ -340,21 +306,88 @@ void logger::progress_bar(cforge_int_t current, cforge_int_t total, bool in_plac
   }
 
   if (in_place) {
-    // Progress bar on its own line below the compiling file line
-    // Aligned to start at same position as "Compiling" (3 spaces indent)
-    fmt::print(stderr, "\r\033[K");  // Clear current line
-    fmt::print(stderr, "   ");  // 3 spaces to align with "Compiling"
-    fmt::print(stderr, fg(fmt::color::cyan), "[{}]", bar);
-    fmt::print(stderr, " {:3d}%", percent);
+    // Cargo-style bar: right-aligned "Building" status word in bold green, then
+    // a bracketed bar with green '=' fill, green '>' cursor at the leading edge,
+    // and plain spaces for unfilled space. Counts + elapsed appear after.
+    fmt::print(stderr, "\r\033[K");
+    fmt::print(stderr, fg(fmt::color::green) | fmt::emphasis::bold, "{:>{}}",
+               "Building", STATUS_WIDTH);
+
+    const cforge_int_t bar_width = 30;
+    if (total > 0) {
+      cforge_double_t progress =
+          static_cast<cforge_double_t>(current) / static_cast<cforge_double_t>(total);
+      cforge_int_t filled = static_cast<cforge_int_t>(progress * bar_width);
+      if (filled > bar_width) filled = bar_width;
+
+      fmt::print(stderr, " [");
+      for (cforge_int_t i = 0; i < filled; ++i) {
+        fmt::print(stderr, fg(fmt::color::green), "=");
+      }
+      if (filled < bar_width && current < total) {
+        fmt::print(stderr, fg(fmt::color::green), ">");
+        for (cforge_int_t i = filled + 1; i < bar_width; ++i) {
+          fmt::print(stderr, " ");
+        }
+      } else {
+        for (cforge_int_t i = filled; i < bar_width; ++i) {
+          fmt::print(stderr, " ");
+        }
+      }
+      fmt::print(stderr, "] {}/{}", current, total);
+    } else {
+      // Indeterminate spinner: total unknown (the MSBuild bare-filename case).
+      // A 6-char highlight bounces left↔right across the bar so the display
+      // stays alive even during long silent phases like linking. Cycles every
+      // ~6 seconds.
+      const cforge_int_t hl_width = 6;
+      const cforge_double_t period = 6.0; // seconds for a full back-and-forth
+      cforge_double_t t = elapsed_secs >= 0 ? elapsed_secs : 0.0;
+      cforge_double_t phase = std::fmod(t, period) / period; // 0..1
+      // Triangle wave: 0→1→0
+      cforge_double_t tri = phase < 0.5 ? (phase * 2.0) : (2.0 - phase * 2.0);
+      cforge_int_t hl_start =
+          static_cast<cforge_int_t>(tri * (bar_width - hl_width));
+      if (hl_start < 0) hl_start = 0;
+      if (hl_start > bar_width - hl_width) hl_start = bar_width - hl_width;
+
+      fmt::print(stderr, " [");
+      for (cforge_int_t i = 0; i < bar_width; ++i) {
+        if (i >= hl_start && i < hl_start + hl_width) {
+          if (i == hl_start + hl_width - 1) {
+            fmt::print(stderr, fg(fmt::color::green), ">");
+          } else {
+            fmt::print(stderr, fg(fmt::color::green), "=");
+          }
+        } else {
+          fmt::print(stderr, " ");
+        }
+      }
+      fmt::print(stderr, "] {} files", current);
+    }
+
     if (!time_str.empty()) {
-      fmt::print(stderr, fg(fmt::color::yellow), "  {}", time_str);
+      fmt::print(stderr, fg(fmt::color::dim_gray), " ({})", time_str);
     }
     std::fflush(stderr);
   } else {
-    // Full progress bar on new line
-    fmt::print(stderr, "   ");  // 3 spaces to align with "Compiling"
-    fmt::print(stderr, fg(fmt::color::cyan), "[{}]", bar);
-    fmt::print(stderr, " {:3d}%", percent);
+    if (total <= 0) return;
+    const cforge_int_t bar_width = 30;
+    cforge_double_t progress =
+        static_cast<cforge_double_t>(current) / static_cast<cforge_double_t>(total);
+    cforge_int_t filled = static_cast<cforge_int_t>(progress * bar_width);
+    if (filled > bar_width) filled = bar_width;
+    fmt::print(stderr, "   [");
+    for (cforge_int_t i = 0; i < filled; ++i) {
+      fmt::print(stderr, fg(fmt::color::green), "=");
+    }
+    if (filled < bar_width && current < total) {
+      fmt::print(stderr, fg(fmt::color::green), ">");
+      for (cforge_int_t i = filled + 1; i < bar_width; ++i) fmt::print(stderr, " ");
+    } else {
+      for (cforge_int_t i = filled; i < bar_width; ++i) fmt::print(stderr, " ");
+    }
+    fmt::print(stderr, "] {}/{}", current, total);
     if (!time_str.empty()) {
       fmt::print(stderr, "  {}", time_str);
     }
@@ -684,20 +717,27 @@ void logger::print_error_pointer(int column_start, int length, int gutter_width)
 }
 
 void logger::print_diag_note(const std::string &message) {
-  fmt::print(stderr, fg(fmt::color::cyan) | fmt::emphasis::bold, "       note: ");
-  fmt::print(stderr, fg(fmt::color::light_gray), "{}\n", message);
+  // Cargo aligns auxiliary lines under the gutter so they visually connect to
+  // the `   |` of the code snippet:  "   = note: <msg>"
+  fmt::print(stderr, fg(fmt::color::steel_blue), "   = ");
+  fmt::print(stderr, fg(fmt::color::cyan) | fmt::emphasis::bold, "note");
+  fmt::print(stderr, fg(fmt::color::light_gray), ": {}\n", message);
 }
 
 void logger::print_diag_help(const std::string &message) {
-  fmt::print(stderr, fg(fmt::color::medium_sea_green) | fmt::emphasis::bold, "       help: ");
-  fmt::print(stderr, fg(fmt::color::light_gray), "{}\n", message);
+  fmt::print(stderr, fg(fmt::color::steel_blue), "   = ");
+  fmt::print(stderr, fg(fmt::color::medium_sea_green) | fmt::emphasis::bold, "help");
+  fmt::print(stderr, fg(fmt::color::light_gray), ": {}\n", message);
 }
 
 void logger::print_diag_fix(const std::string &description,
                             const std::string &replacement) {
-  fmt::print(stderr, fg(fmt::color::magenta) | fmt::emphasis::bold, "        fix: ");
-  fmt::print(stderr, fg(fmt::color::light_gray), "{}", description);
-  if (!replacement.empty() && replacement.length() < 40) {
+  fmt::print(stderr, fg(fmt::color::steel_blue), "   = ");
+  fmt::print(stderr, fg(fmt::color::magenta) | fmt::emphasis::bold, "fix");
+  fmt::print(stderr, fg(fmt::color::light_gray), ": {}", description);
+  // Be generous with the inline-replacement length cap — 40 chars cuts off a
+  // lot of useful suggestions like `[[maybe_unused]] explicit_destructor`.
+  if (!replacement.empty() && replacement.length() < 80) {
     fmt::print(stderr, fg(fmt::color::gray), " -> ");
     fmt::print(stderr, fg(fmt::color::lime_green), "`{}`", replacement);
   }

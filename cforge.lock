@@ -14,3 +14,8 @@ version = "3.4.0"
 url = "https://github.com/marzer/tomlplusplus.git"
 resolved = "v3.4.0"
 
+[buildcache]
+# Auto-generated. Tracks change detection for incremental builds.
+generated = "2026-05-20T19:05:23Z"
+config_hash = "6d9155dfd7d48095"
+

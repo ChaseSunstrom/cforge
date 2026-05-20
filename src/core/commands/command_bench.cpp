@@ -18,6 +18,8 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <fmt/color.h>
+#include <fmt/core.h>
 #include <fstream>
 #include <iomanip>
 #include <regex>
@@ -28,45 +30,78 @@ namespace fs = std::filesystem;
 namespace {
 
 /**
- * @brief Print benchmark results summary
+ * @brief Format a non-negative integer with thousands separators.
+ */
+static std::string with_commas(cforge_int_t n) {
+  std::string s = std::to_string(n);
+  std::string out;
+  int count = 0;
+  for (auto it = s.rbegin(); it != s.rend(); ++it) {
+    if (count != 0 && count % 3 == 0) out.push_back(',');
+    out.push_back(*it);
+    ++count;
+  }
+  std::reverse(out.begin(), out.end());
+  return out;
+}
+
+/**
+ * @brief Print benchmark results in a cargo-bench-shaped, column-aligned form.
+ *
+ *   running N benchmarks
+ *   benchmark <padded name>  ...  <right-aligned time>/iter (n=<commas>)
+ *   ...
+ *   benchmark result: ok. 0 failed; N measured; finished in T
  */
 void print_benchmark_summary(const cforge::benchmark_summary &summary) {
-  cforge::logger::print_blank();
-  cforge::logger::print_header("Benchmark Summary");
-  cforge::logger::print_blank();
+  fmt::print("\nrunning {} {}\n", summary.total,
+             summary.total == 1 ? "benchmark" : "benchmarks");
 
   if (summary.results.empty()) {
-    cforge::logger::print_plain("  No benchmark results collected");
+    fmt::print("\nbenchmark result: ok. 0 failed; 0 measured; finished in "
+               "{:.2f}s\n",
+               summary.total_duration.count() / 1000.0);
     return;
   }
 
-  // Print results table
-  std::vector<int> widths = {40, 15, 15, 12};
-  cforge::logger::print_table_header({"Benchmark", "Time", "CPU", "Iterations"}, widths, 2);
-
-  for (const auto &result : summary.results) {
-    if (result.success) {
-      cforge::logger::print_table_row({
-          result.name,
-          cforge::format_bench_time(result.time_ns),
-          cforge::format_bench_time(result.cpu_time_ns),
-          std::to_string(result.iterations)
-      }, widths, 2);
-    } else {
-      cforge::logger::print_error("  " + result.name + " FAILED: " + result.error_message);
+  // Two passes: compute alignment widths so the time column reads vertically.
+  size_t name_width = 0;
+  size_t time_width = 0;
+  for (const auto &r : summary.results) {
+    if (r.name.size() > name_width) name_width = r.name.size();
+    if (r.success) {
+      auto t = cforge::format_bench_time(r.time_ns);
+      if (t.size() > time_width) time_width = t.size();
     }
   }
 
-  cforge::logger::print_blank();
-  cforge::logger::print_plain("  Ran " + std::to_string(summary.total) + " benchmark(s) in " +
-                              fmt::format("{:.2f}s", summary.total_duration.count() / 1000.0));
+  for (const auto &result : summary.results) {
+    fmt::print("benchmark {:<{}} ... ", result.name, name_width);
+    if (result.success) {
+      fmt::print(fmt::fg(fmt::color::green) | fmt::emphasis::bold,
+                 "{:>{}}", cforge::format_bench_time(result.time_ns),
+                 time_width);
+      fmt::print("/iter");
+      if (result.iterations > 0) {
+        fmt::print(fmt::fg(fmt::color::dim_gray), " (n={})",
+                   with_commas(result.iterations));
+      }
+      fmt::print("\n");
+    } else {
+      fmt::print(fmt::emphasis::bold | fmt::fg(fmt::color::red),
+                 "FAILED: {}\n", result.error_message);
+    }
+  }
 
-  if (summary.failed > 0) {
-    cforge::logger::print_error("  " + std::to_string(summary.failed) + " failed");
+  fmt::print("\nbenchmark result: ");
+  if (summary.failed == 0) {
+    fmt::print(fmt::fg(fmt::color::green) | fmt::emphasis::bold, "ok");
+  } else {
+    fmt::print(fmt::fg(fmt::color::red) | fmt::emphasis::bold, "FAILED");
   }
-  if (summary.successful > 0) {
-    cforge::logger::print_success(std::to_string(summary.successful) + " passed");
-  }
+  fmt::print(". {} failed; {} measured; finished in {:.2f}s\n",
+             summary.failed, summary.successful,
+             summary.total_duration.count() / 1000.0);
 }
 
 } // anonymous namespace
@@ -188,16 +223,12 @@ cforge_int_t cforge_cmd_bench(const cforge_context_t *ctx) {
     return 0;
   }
 
-  cforge::logger::print_header("Running Benchmarks");
-  cforge::logger::print_blank();
-
   for (const auto &target : targets) {
     cforge::logger::print_action("Found",
                                  target.name + " (" +
                                  cforge::benchmark_framework_to_string(target.framework) +
                                  ")");
   }
-  cforge::logger::print_blank();
 
   // Run benchmarks
   auto summary = runner.run_benchmarks(options);

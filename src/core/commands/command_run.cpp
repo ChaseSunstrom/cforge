@@ -598,15 +598,18 @@ cforge_int_t cforge_cmd_run(const cforge_context_t *ctx) {
       }
 
       cforge::logger::running(executable.string());
+      cforge::logger::print_blank();
 
-      // Display program output header
-      cforge::logger::print_action("", "Program Output\n");
-
-      // Create callbacks to display raw program output
-      // Note: We only print stdout immediately; stderr is captured and formatted later
-      // to avoid duplicated error output
+      // Forward the program's stdout bytes verbatim — print_plain would append
+      // its own '\n' to each chunk, doubling every blank line the program
+      // emits. fwrite preserves the exact byte stream.
       std::function<void(const std::string &)> stdout_callback =
-          [](const std::string &chunk) { cforge::logger::print_plain(chunk); };
+          [](const std::string &chunk) {
+            if (!chunk.empty()) {
+              std::fwrite(chunk.data(), 1, chunk.size(), stdout);
+              std::fflush(stdout);
+            }
+          };
 
       // Capture stderr for later formatting - don't print immediately to avoid duplication
       std::string captured_stderr;

@@ -298,3 +298,15 @@ cforge_int_t cforge_cmd_migrate(const cforge_context_t *ctx);
  * @return cforge_int_t Exit code (0 for success)
  */
 cforge_int_t cforge_cmd_hot(const cforge_context_t *ctx);
+
+/**
+ * @brief Handle the 'errors' command — re-prints the errors from the most
+ *        recent build that produced diagnostics, using the same formatter.
+ */
+cforge_int_t cforge_cmd_errors(const cforge_context_t *ctx);
+
+/**
+ * @brief Handle the 'warnings' / 'warns' command — re-prints the warnings
+ *        from the most recent build, using the same formatter.
+ */
+cforge_int_t cforge_cmd_warnings(const cforge_context_t *ctx);

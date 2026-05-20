@@ -6,6 +6,7 @@
 #include "core/dependency_hash.hpp"
 #include "core/types.h"
 #include <algorithm>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -15,129 +16,224 @@
 
 namespace cforge {
 
+// Section names used to live in their own cforge.hash file. They now live
+// inside cforge.lock under `[buildcache]` and `[buildcache.dependency.<name>]`
+// so the lockfile class's own sections (`[metadata]`, `[dependency.<name>]`)
+// are left untouched.
+namespace {
+
+constexpr const char *kBuildcacheSection = "buildcache";
+constexpr const char *kBuildcacheDepPrefix = "buildcache.dependency.";
+
+// True if a section name belongs to this class (and therefore should be
+// rewritten on save; sections we don't own are preserved verbatim).
+bool is_buildcache_section(const std::string &name) {
+  return name == kBuildcacheSection ||
+         name.rfind(kBuildcacheDepPrefix, 0) == 0;
+}
+
+// Read the entire file, returning a vector of (section_header_line, body_lines)
+// so we can rewrite only our sections and keep everything else byte-for-byte.
+// A section starts at a `[...]` line and continues until the next one.
+// Leading lines before any section (comments/blank/metadata header) are
+// returned in the first entry with an empty section_header.
+struct raw_section {
+  std::string header;        // e.g. "[metadata]" — empty for preamble
+  std::string section_name;  // e.g. "metadata"  — empty for preamble
+  std::vector<std::string> lines; // including blank lines / comments
+};
+
+std::vector<raw_section> read_sections(const std::filesystem::path &p) {
+  std::vector<raw_section> out;
+  std::ifstream in(p);
+  if (!in.is_open()) {
+    return out;
+  }
+  raw_section current;
+  std::string line;
+  while (std::getline(in, line)) {
+    std::string trimmed = line;
+    // strip trailing CR for Windows-line-ending tolerance
+    while (!trimmed.empty() && (trimmed.back() == '\r' || trimmed.back() == '\n')) {
+      trimmed.pop_back();
+    }
+    std::string t = trimmed;
+    // trim leading whitespace for the section check only
+    cforge_size_t s = t.find_first_not_of(" \t");
+    if (s != std::string::npos) t = t.substr(s);
+    if (!t.empty() && t.front() == '[' && t.back() == ']') {
+      if (!current.header.empty() || !current.lines.empty()) {
+        out.push_back(std::move(current));
+        current = raw_section{};
+      }
+      current.header = trimmed;
+      current.section_name = t.substr(1, t.size() - 2);
+      continue;
+    }
+    current.lines.push_back(trimmed);
+  }
+  if (!current.header.empty() || !current.lines.empty()) {
+    out.push_back(std::move(current));
+  }
+  return out;
+}
+
+} // namespace
+
 bool dependency_hash::load(const std::filesystem::path &project_dir) {
-  std::filesystem::path hash_file = project_dir / HASH_FILE;
-  if (!std::filesystem::exists(hash_file)) {
+  std::filesystem::path lock_file = project_dir / HASH_FILE;
+
+  // One-time migration: if an old cforge.hash exists, read it once and let
+  // the next save() consolidate the data into cforge.lock. After save the
+  // legacy file is removed by save().
+  std::filesystem::path legacy = project_dir / "cforge.hash";
+  std::filesystem::path source = std::filesystem::exists(lock_file)
+                                     ? lock_file
+                                     : (std::filesystem::exists(legacy) ? legacy
+                                                                        : lock_file);
+  if (!std::filesystem::exists(source)) {
     return false;
   }
+  auto sections = read_sections(source);
 
-  std::ifstream file(hash_file);
-  if (!file.is_open()) {
-    return false;
+  // Legacy cforge.hash used [config] and [dependency.X] section names that
+  // collide with cforge.lock's lockfile entries. Translate them on the fly
+  // when reading the legacy file so load() returns consistent data.
+  const bool legacy_mode = (source == legacy);
+  if (legacy_mode) {
+    for (auto &sec : sections) {
+      if (sec.section_name == "config") {
+        sec.section_name = kBuildcacheSection;
+      } else if (sec.section_name.rfind("dependency.", 0) == 0) {
+        sec.section_name = kBuildcacheDepPrefix +
+                           sec.section_name.substr(std::strlen("dependency."));
+      }
+    }
   }
-
   hashes.clear();
   versions.clear();
 
-  std::string line;
-  std::string current_section;
-  std::string current_dep;
+  for (const auto &sec : sections) {
+    if (!is_buildcache_section(sec.section_name)) continue;
 
-  while (std::getline(file, line)) {
-    // Skip empty lines and comments
-    line = trim(line);
-    if (line.empty() || line[0] == '#') {
-      continue;
+    std::string dep_name;
+    if (sec.section_name.rfind(kBuildcacheDepPrefix, 0) == 0) {
+      dep_name = sec.section_name.substr(std::strlen(kBuildcacheDepPrefix));
     }
 
-    // Check for section header [section] or [dependency.name]
-    if (line[0] == '[' && line.back() == ']') {
-      current_section = line.substr(1, line.length() - 2);
-
-      // Check if it's a dependency section
-      if (current_section.find("dependency.") == 0) {
-        current_dep = current_section.substr(11); // Remove "dependency."
-      } else {
-        current_dep.clear();
-      }
-      continue;
-    }
-
-    // Parse key = "value" pairs
-    cforge_size_t eq_pos = line.find('=');
-    if (eq_pos != std::string::npos) {
+    for (const auto &raw_line : sec.lines) {
+      std::string line = trim(raw_line);
+      if (line.empty() || line[0] == '#') continue;
+      cforge_size_t eq_pos = line.find('=');
+      if (eq_pos == std::string::npos) continue;
       std::string key = trim(line.substr(0, eq_pos));
       std::string value = trim(line.substr(eq_pos + 1));
-
-      // Remove quotes if present
-      if (value.length() >= 2 && value.front() == '"' && value.back() == '"') {
-        value = value.substr(1, value.length() - 2);
+      if (value.size() >= 2 && value.front() == '"' && value.back() == '"') {
+        value = value.substr(1, value.size() - 2);
       }
-
-      // Handle config section (for cforge.toml hash, etc.)
-      if (current_section == "config") {
-        if (key == "hash") {
+      if (dep_name.empty()) {
+        // top-level [buildcache] section: config & workspace hashes
+        if (key == "config_hash" || key == "hash") {
           hashes["cforge.toml"] = value;
         } else if (key == "workspace_hash") {
           hashes["cforge.workspace.toml"] = value;
         }
-      }
-      // Handle dependency sections
-      else if (!current_dep.empty()) {
+      } else {
+        // per-dependency [buildcache.dependency.<name>] section
         if (key == "hash") {
-          hashes[current_dep] = value;
+          hashes[dep_name] = value;
         } else if (key == "version") {
-          versions[current_dep] = value;
+          versions[dep_name] = value;
         }
       }
     }
   }
-
   return true;
 }
 
 bool dependency_hash::save(const std::filesystem::path &project_dir) const {
-  std::filesystem::path hash_file = project_dir / HASH_FILE;
-  std::ofstream file(hash_file);
-  if (!file.is_open()) {
-    return false;
+  std::filesystem::path lock_file = project_dir / HASH_FILE;
+
+  // Migration: if a legacy cforge.hash is still on disk, remove it now that
+  // the data lives in cforge.lock. We don't need to read it again — load()
+  // already pulled the contents into `hashes`/`versions` before save().
+  std::error_code ec;
+  std::filesystem::path legacy = project_dir / "cforge.hash";
+  if (std::filesystem::exists(legacy)) {
+    std::filesystem::remove(legacy, ec);
   }
 
-  // Write header
-  file << "# cforge.hash - Build cache file\n";
-  file << "# This file is auto-generated to track dependency state for "
-          "incremental builds.\n";
-  file << "# Do not commit to version control.\n\n";
-
-  // Write metadata
-  file << "[metadata]\n";
-  file << "generated = \"" << get_timestamp() << "\"\n\n";
-
-  // Write config hashes (cforge.toml, workspace config, etc.)
-  bool has_config = false;
-  for (const auto &[name, hash] : hashes) {
-    if (name == "cforge.toml" || name == "cforge.workspace.toml") {
-      if (!has_config) {
-        file << "[config]\n";
-        has_config = true;
-      }
-      if (name == "cforge.toml") {
-        file << "hash = \"" << hash << "\"\n";
-      } else if (name == "cforge.workspace.toml") {
-        file << "workspace_hash = \"" << hash << "\"\n";
-      }
+  // Read everything currently in cforge.lock and keep sections that belong
+  // to the lockfile class (or anyone else) verbatim. We only rewrite our
+  // own [buildcache.*] sections at the end.
+  auto sections = read_sections(lock_file);
+  std::vector<raw_section> preserved;
+  preserved.reserve(sections.size());
+  for (auto &s : sections) {
+    if (!is_buildcache_section(s.section_name)) {
+      preserved.push_back(std::move(s));
     }
   }
-  if (has_config) {
+
+  std::ofstream file(lock_file, std::ios::trunc);
+  if (!file.is_open()) return false;
+
+  bool wrote_anything_yet = false;
+  // If the original file had no preamble at all, emit our own header so the
+  // file remains self-documenting after a fresh save.
+  if (preserved.empty()) {
+    file << "# cforge.lock - DO NOT EDIT MANUALLY\n"
+         << "# Tracks dependency versions AND build-cache state for "
+            "incremental rebuilds.\n\n";
+  }
+
+  for (const auto &sec : preserved) {
+    if (!sec.header.empty()) {
+      file << sec.header << "\n";
+    }
+    for (const auto &l : sec.lines) {
+      file << l << "\n";
+    }
+    wrote_anything_yet = true;
+  }
+
+  if (wrote_anything_yet && (!preserved.empty() &&
+                             (preserved.back().lines.empty() ||
+                              !preserved.back().lines.back().empty()))) {
     file << "\n";
   }
 
-  // Write dependency hashes
+  // Top-level buildcache: cforge.toml / workspace hashes.
+  bool emitted_buildcache_header = false;
+  auto emit_header = [&]() {
+    if (!emitted_buildcache_header) {
+      file << "[" << kBuildcacheSection << "]\n";
+      file << "# Auto-generated. Tracks change detection for incremental "
+              "builds.\n";
+      file << "generated = \"" << get_timestamp() << "\"\n";
+      emitted_buildcache_header = true;
+    }
+  };
   for (const auto &[name, hash] : hashes) {
-    // Skip config entries (already written above)
-    if (name == "cforge.toml" || name == "cforge.workspace.toml") {
-      continue;
+    if (name == "cforge.toml") {
+      emit_header();
+      file << "config_hash = \"" << hash << "\"\n";
+    } else if (name == "cforge.workspace.toml") {
+      emit_header();
+      file << "workspace_hash = \"" << hash << "\"\n";
     }
+  }
+  if (emitted_buildcache_header) file << "\n";
 
-    file << "[dependency." << name << "]\n";
+  // Per-dependency [buildcache.dependency.X].
+  for (const auto &[name, hash] : hashes) {
+    if (name == "cforge.toml" || name == "cforge.workspace.toml") continue;
+    file << "[" << kBuildcacheDepPrefix << name << "]\n";
     file << "hash = \"" << hash << "\"\n";
-
-    // Include version if available
-    auto version_it = versions.find(name);
-    if (version_it != versions.end() && !version_it->second.empty()) {
-      file << "version = \"" << version_it->second << "\"\n";
+    auto v = versions.find(name);
+    if (v != versions.end() && !v->second.empty()) {
+      file << "version = \"" << v->second << "\"\n";
     }
-
     file << "\n";
   }
 

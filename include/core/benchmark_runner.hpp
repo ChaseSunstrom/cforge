@@ -133,9 +133,11 @@ private:
    * @brief Build a specific benchmark target
    * @param target The benchmark target
    * @param build_config Build configuration
+   * @param verbose Stream cmake/build output live (otherwise show progress bar)
    * @return true if build succeeded
    */
-  bool build_target(const benchmark_target &target, const std::string &build_config);
+  bool build_target(const benchmark_target &target,
+                    const std::string &build_config, bool verbose = false);
 
   /**
    * @brief Find benchmark executable for a target

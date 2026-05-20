@@ -115,38 +115,60 @@ bool build_progress::parse_make_progress(const std::string &line) {
 }
 
 bool build_progress::parse_msbuild_progress(const std::string &line) {
-  // MSBuild format varies, common patterns:
-  // ClCompile: main.cpp
-  // cl /c ... main.cpp
-  // Compiling main.cpp
+  // MSBuild emits compile events in a few shapes:
+  //   ClCompile: main.cpp
+  //   cl /c ... main.cpp
+  //   Compiling main.cpp
+  //   <indent>main.cpp           <- the common case in `cmake --build` MSBuild logs
+  //   <indent>foo.vcxproj -> D:\path\foo.exe    <- link output
   static std::regex msbuild_regex(
       R"((?:ClCompile|Compiling|cl\s.*/c).*?([^\\/\s]+\.(?:cpp|c|cc|cxx)))",
       std::regex::icase);
+  // Bare filename line — the dominant MSBuild output. Match: optional leading
+  // whitespace, optional "N>" project-prefix, then just a filename. Reject
+  // junk like "1>Checking Build System" by requiring the .cpp/.c/.cc/.cxx
+  // extension and disallowing path separators.
+  static std::regex bare_file_regex(
+      R"(^\s*(?:\d+>)?\s*([A-Za-z_][\w\-]*\.(?:cpp|c|cc|cxx|cpp\.obj))\s*$)",
+      std::regex::icase);
+  // Link/output line: "foo.vcxproj -> D:\path\foo.exe|.lib|.dll"
+  static std::regex link_regex(
+      R"(\s*\d*>?\s*[^\s]+\.vcxproj\s*->\s*([^\s]+\.(?:exe|dll|lib)))",
+      std::regex::icase);
 
+  std::string captured;
   std::smatch match;
   if (std::regex_search(line, match, msbuild_regex)) {
-    std::lock_guard<std::mutex> lock(mutex_);
-
-    // Finish previous file
-    if (!current_file_.empty()) {
-      file_timing timing;
-      timing.filename = current_file_;
-      timing.start_time = current_file_start_;
-      timing.end_time = std::chrono::steady_clock::now();
-      timing.duration_seconds =
-          std::chrono::duration<double>(timing.end_time - timing.start_time)
-              .count();
-      timings_.emplace_back(timing);
-    }
-
-    current_step_++;
-    has_progress_ = true;
-    current_file_ = match[1].str();
-    current_file_start_ = std::chrono::steady_clock::now();
-
-    return true;
+    captured = match[1].str();
+  } else if (std::regex_search(line, match, link_regex)) {
+    std::string p = match[1].str();
+    cforge_size_t slash = p.find_last_of("/\\");
+    captured = "[link] " + (slash != std::string::npos ? p.substr(slash + 1) : p);
+  } else if (std::regex_match(line, match, bare_file_regex)) {
+    captured = match[1].str();
+  } else {
+    return false;
   }
-  return false;
+
+  std::lock_guard<std::mutex> lock(mutex_);
+
+  if (!current_file_.empty()) {
+    file_timing timing;
+    timing.filename = current_file_;
+    timing.start_time = current_file_start_;
+    timing.end_time = std::chrono::steady_clock::now();
+    timing.duration_seconds =
+        std::chrono::duration<double>(timing.end_time - timing.start_time)
+            .count();
+    timings_.emplace_back(timing);
+  }
+
+  current_step_++;
+  has_progress_ = true;
+  current_file_ = captured;
+  current_file_start_ = std::chrono::steady_clock::now();
+
+  return true;
 }
 
 std::string build_progress::extract_filename(const std::string &line) {

@@ -272,26 +272,28 @@ std::string format_diagnostic_to_string(const diagnostic &diag) {
     }
   }
 
-  // Notes - matches logger::print_diag_note() format
+  // Notes/help/fix all share the cargo "   = label: msg" layout so they hang
+  // visually beneath the gutter of the code snippet.
   for (const auto &note : diag.notes) {
-    ss << fmt::format(fg(fmt::color::cyan) | fmt::emphasis::bold, "       note: ");
-    ss << fmt::format(fg(fmt::color::light_gray), "{}\n", note);
+    ss << fmt::format(fg(fmt::color::steel_blue), "   = ");
+    ss << fmt::format(fg(fmt::color::cyan) | fmt::emphasis::bold, "note");
+    ss << fmt::format(fg(fmt::color::light_gray), ": {}\n", note);
   }
 
-  // Help text - matches logger::print_diag_help() format
   std::string help = diag.help.empty() ? diag.help_text : diag.help;
   if (!help.empty()) {
-    ss << fmt::format(fg(fmt::color::medium_sea_green) | fmt::emphasis::bold, "       help: ");
-    ss << fmt::format(fg(fmt::color::light_gray), "{}\n", help);
+    ss << fmt::format(fg(fmt::color::steel_blue), "   = ");
+    ss << fmt::format(fg(fmt::color::medium_sea_green) | fmt::emphasis::bold, "help");
+    ss << fmt::format(fg(fmt::color::light_gray), ": {}\n", help);
   }
 
-  // Fix suggestions - matches logger::print_diag_fix() format
   if (!diag.fixes.empty()) {
     for (cforge_size_t i = 0; i < diag.fixes.size() && i < 3; ++i) {
       const auto &fix = diag.fixes[i];
-      ss << fmt::format(fg(fmt::color::magenta) | fmt::emphasis::bold, "        fix: ");
-      ss << fmt::format(fg(fmt::color::light_gray), "{}", fix.description);
-      if (!fix.replacement.empty() && fix.replacement.length() < 40) {
+      ss << fmt::format(fg(fmt::color::steel_blue), "   = ");
+      ss << fmt::format(fg(fmt::color::magenta) | fmt::emphasis::bold, "fix");
+      ss << fmt::format(fg(fmt::color::light_gray), ": {}", fix.description);
+      if (!fix.replacement.empty() && fix.replacement.length() < 80) {
         ss << fmt::format(fg(fmt::color::gray), " -> ");
         ss << fmt::format(fg(fmt::color::lime_green), "`{}`", fix.replacement);
       }
@@ -299,7 +301,7 @@ std::string format_diagnostic_to_string(const diagnostic &diag) {
     }
     if (diag.fixes.size() > 3) {
       ss << fmt::format(fg(fmt::color::gray),
-                        "            ... and {} more suggestion(s)\n",
+                        "     ... and {} more suggestion(s)\n",
                         diag.fixes.size() - 3);
     }
   }
@@ -638,12 +640,18 @@ std::vector<diagnostic>
 parse_gcc_clang_errors(const std::string &error_output) {
   std::vector<diagnostic> diagnostics;
 
-  // Regular expression to match GCC/Clang error format
-  // Example: file.cpp:10:15: error: 'foo' was not declared in this scope
-  // Also capture compiler-specific error codes like [-Wunused-variable]
+  // Regular expression to match GCC/Clang error format.
+  //   file.cpp:10:15: error: 'foo' was not declared in this scope
+  //   file.cpp:10:15: warning: format '%d' expects ... type 'std::string' [-Wformat=]
+  //
+  // Previous version used ([^:]+) for the message, which would truncate at the
+  // first ':' in messages like "'std::string'" (i.e. mid-token). We now capture
+  // the rest of the line and post-extract the [-Wflag] code in the body.
   std::regex error_regex(
-      R"(([^:]+):(\d+):(\d+):\s+(error|warning|note):\s+([^:]+)(?:\[([-\w]+)\])?)"
-      R"(|([^:]+):(\d+):\s+(error|warning|note):\s+([^:]+)(?:\[([-\w]+)\])?)");
+      R"(([^:\n]+):(\d+):(\d+):\s+(error|warning|note):\s+(.+))"
+      R"(|([^:\n]+):(\d+):\s+(error|warning|note):\s+(.+))");
+  // Pulls a trailing "[-Wfoo]" or "[-Wfoo=]" code off the end of the message.
+  static const std::regex wcode_re(R"(\s*\[(-W[\w=+-]+)\]\s*$)");
 
   // Also try to match more specific error codes that might be present
   std::regex error_code_regex(R"(error\s+(\d+):)"); // For GCC error numbers
@@ -657,8 +665,10 @@ parse_gcc_clang_errors(const std::string &error_output) {
     if (std::regex_search(line, matches, error_regex)) {
       diagnostic diag;
 
-      // Determine which pattern matched and extract fields accordingly
-      if (matches[4].matched) { // First pattern with column number
+      // Determine which pattern matched and extract fields accordingly.
+      // First pattern (file:line:col: level: message) captures into 1..5.
+      // Second pattern (file:line: level: message) captures into 6..9.
+      if (matches[4].matched) {
         diag.file_path = matches[1].str();
         diag.line_number = std::stoi(matches[2].str());
         diag.column_number = std::stoi(matches[3].str());
@@ -666,10 +676,16 @@ parse_gcc_clang_errors(const std::string &error_output) {
         std::string level_str = matches[4].str();
         diag.message = matches[5].str();
 
-        // Use the actual compiler warning/error code if provided
-        if (matches[6].matched && !matches[6].str().empty()) {
-          // Extract the warning code (like -Wunused-variable)
-          diag.code = matches[6].str();
+        // Pull the "[-Wfoo]" suffix off the message and use it as the code.
+        std::smatch wm;
+        if (std::regex_search(diag.message, wm, wcode_re)) {
+          diag.code = wm[1].str();
+          diag.message = wm.prefix().str();
+          // Trim trailing whitespace from the message.
+          while (!diag.message.empty() &&
+                 std::isspace(static_cast<unsigned char>(diag.message.back()))) {
+            diag.message.pop_back();
+          }
         } else {
           // Look for error code in the message
           std::smatch code_match;
@@ -721,19 +737,23 @@ parse_gcc_clang_errors(const std::string &error_output) {
           diag.level = diagnostic_level::NOTE;
         }
       }
-      // ... similar changes for the second pattern without column number
-      else if (matches[9].matched) { // Second pattern without column number
-        diag.file_path = matches[7].str();
-        diag.line_number = std::stoi(matches[8].str());
+      else if (matches[8].matched) { // Second pattern (no column): groups 6..9
+        diag.file_path = matches[6].str();
+        diag.line_number = std::stoi(matches[7].str());
         diag.column_number = 0;
 
-        std::string level_str = matches[9].str();
-        diag.message = matches[10].str();
+        std::string level_str = matches[8].str();
+        diag.message = matches[9].str();
 
-        // Use the actual compiler warning/error code if provided
-        if (matches[11].matched && !matches[11].str().empty()) {
-          // Extract the warning code (like -Wunused-variable)
-          diag.code = matches[11].str();
+        // Extract trailing "[-Wfoo]" as the code, just like the first pattern.
+        std::smatch wm;
+        if (std::regex_search(diag.message, wm, wcode_re)) {
+          diag.code = wm[1].str();
+          diag.message = wm.prefix().str();
+          while (!diag.message.empty() &&
+                 std::isspace(static_cast<unsigned char>(diag.message.back()))) {
+            diag.message.pop_back();
+          }
         } else {
           // Look for error code in the message
           std::smatch code_match;
@@ -2002,13 +2022,29 @@ deduplicate_diagnostics(std::vector<diagnostic> diagnostics) {
       } else {
         existing.occurrence_count++;
 
-        // Add file reference as a note if different location
-        if (!diag.file_path.empty() && diag.file_path != existing.file_path) {
+        // Add a cross-reference note only when it points at a *genuinely
+        // different* location AND the file_path actually looks like a path.
+        // Some upstream parsers occasionally populate file_path with a bare
+        // number (e.g. when they mis-identified a column or message segment as
+        // a path), which led to ugly "also in: 13:16" notes that were just
+        // duplicates of the primary --> location.
+        auto looks_like_path = [](const std::string &p) {
+          return !p.empty() &&
+                 (p.find('/') != std::string::npos ||
+                  p.find('\\') != std::string::npos ||
+                  p.find('.') != std::string::npos);
+        };
+        const bool different_file = looks_like_path(diag.file_path) &&
+                                    diag.file_path != existing.file_path;
+        const bool different_line = looks_like_path(diag.file_path) &&
+                                    diag.file_path == existing.file_path &&
+                                    diag.line_number > 0 &&
+                                    diag.line_number != existing.line_number;
+        if (different_file || different_line) {
           std::string note = "also in: " + diag.file_path;
           if (diag.line_number > 0) {
             note += ":" + std::to_string(diag.line_number);
           }
-          // Only add if we haven't exceeded note limit
           if (existing.notes.size() < 5) {
             existing.notes.push_back(note);
           } else if (existing.notes.size() == 5) {
@@ -3645,9 +3681,21 @@ std::vector<diagnostic> parse_test_framework_errors(const std::string &error_out
       R"(([^:]+):(\d+):\s*Failure)");
 
   // Google Test EXPECT/ASSERT failure
-  // file.cpp:123: error: Expected: (x) == (y), actual: 1 vs 2
+  //   file.cpp:123: error: Expected: (x) == (y), actual: 1 vs 2
+  //
+  // GCC/Clang errors look almost identical except they always carry a
+  // *column* between the line and the level word:
+  //   file.cpp:123:5: error: 'foo' was not declared in this scope
+  // The previous loose pattern (`([^:]+):(\d+):\s*error:...`) used
+  // regex_search and would happily start matching inside a GCC line at the
+  // "20:1: error:" substring, producing a bogus "error[GTEST] --> 20:1"
+  // duplicate of every real compiler error. Three restrictions kill that:
+  //   1. Anchor at start of line.
+  //   2. Require the file segment to look like a path (has a `.<ext>`).
+  //   3. Require at least one whitespace between `:line:` and `error:` —
+  //      GCC's `:col:` has no leading whitespace there, so this rejects it.
   std::regex gtest_expect_regex(
-      R"(([^:]+):(\d+):\s*error:\s*(.+))");
+      R"(^([^:\n]+\.[A-Za-z][\w]*):(\d+):\s+error:\s+(.+))");
 
   // Google Test death test
   std::regex gtest_death_regex(
@@ -5232,6 +5280,39 @@ std::vector<diagnostic> parse_abi_errors(const std::string &error_output) {
   }
 
   return diagnostics;
+}
+
+// ============================================================================
+// Build-diagnostics persistence (for `cforge errors` / `cforge warnings`)
+// ============================================================================
+
+namespace {
+// Lives next to the build directory so `clean` removes it along with the rest
+// of the cached state. Same file regardless of build config — last build wins.
+std::filesystem::path diagnostics_log_path(const std::filesystem::path &project_dir) {
+  return project_dir / "build" / ".cforge_diagnostics.log";
+}
+} // namespace
+
+void save_last_build_diagnostics(const std::filesystem::path &project_dir,
+                                 const std::string &raw_output) {
+  if (raw_output.empty()) return;
+  std::filesystem::path log = diagnostics_log_path(project_dir);
+  std::error_code ec;
+  std::filesystem::create_directories(log.parent_path(), ec);
+  std::ofstream out(log, std::ios::binary | std::ios::trunc);
+  if (out) out << raw_output;
+}
+
+bool load_last_build_diagnostics(const std::filesystem::path &project_dir,
+                                 std::string &out_text) {
+  std::filesystem::path log = diagnostics_log_path(project_dir);
+  std::ifstream in(log, std::ios::binary);
+  if (!in) return false;
+  std::ostringstream ss;
+  ss << in.rdbuf();
+  out_text = ss.str();
+  return !out_text.empty();
 }
 
 } // namespace cforge

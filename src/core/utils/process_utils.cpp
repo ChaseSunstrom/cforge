@@ -543,70 +543,52 @@ bool execute_tool(const std::string &command,
     progress.reset();
   }
 
-  // Variables for progress mode timing
-  auto build_start = std::chrono::steady_clock::now();
-  auto last_update = build_start;
-
   // Process stdout/stderr in real-time
   std::function<void(const std::string &)> stdout_callback = nullptr;
   std::function<void(const std::string &)> stderr_callback = nullptr;
 
+  auto build_start = std::chrono::steady_clock::now();
+
   if (show_progress) {
-    // Progress mode: parse build output and update display
-    stdout_callback = [&progress, &build_start, &last_update](const std::string &chunk) {
-      bool new_file = false;
+    // Cargo-style: each new file gets its own permanent "Compiling X" line,
+    // and a single progress bar lives on the bottom row — pushed down by every
+    // new file and re-rendered on idle ticks so its elapsed-time counter
+    // keeps moving during silent phases (e.g. linking).
+    auto handle_chunk = [&progress, &build_start](const std::string &chunk) {
+      auto get_elapsed = [&]() {
+        auto now = std::chrono::steady_clock::now();
+        return std::chrono::duration<double>(now - build_start).count();
+      };
 
-      // Parse any lines in the chunk
-      if (!chunk.empty()) {
-        std::string line;
-        std::istringstream ss(chunk);
-        while (std::getline(ss, line)) {
-          if (progress.parse_line(line)) {
-            new_file = true;
-          }
-        }
-      }
-
-      // Update timer even if no new file (handles empty ticks during linking)
-      auto now = std::chrono::steady_clock::now();
-      double elapsed = std::chrono::duration<double>(now - build_start).count();
-      auto since_last = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_update).count();
-
-      // Update display if: new file detected, OR 100ms since last update
-      if (new_file || since_last >= 100) {
+      // Empty chunk = idle tick. Refresh the bar so the timer keeps ticking.
+      if (chunk.empty()) {
         if (progress.has_progress()) {
-          logger::compiling_file(progress.get_current_file(),
-                                 progress.get_current_step(),
-                                 progress.get_total_steps());
           logger::progress_bar(progress.get_current_step(),
-                               progress.get_total_steps(), true, elapsed);
-          last_update = now;
+                               progress.get_total_steps(), true, get_elapsed());
         }
+        return;
       }
-    };
 
-    // Also parse stderr for progress (some build systems output there)
-    // and update timer to keep it running during linking
-    stderr_callback = [&progress, &build_start, &last_update](const std::string &chunk) {
+      bool advanced = false;
       std::string line;
       std::istringstream ss(chunk);
       while (std::getline(ss, line)) {
-        // Try to parse progress from stderr too
-        progress.parse_line(line);
+        if (progress.parse_line(line) && progress.has_progress()) {
+          // compiling_file clears the bar line, prints the new file row, and
+          // leaves the cursor parked on what is now the new bar row.
+          logger::compiling_file(progress.get_current_file(),
+                                 progress.get_current_step(),
+                                 progress.get_total_steps());
+          advanced = true;
+        }
       }
-
-      auto now = std::chrono::steady_clock::now();
-      auto since_last = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_update).count();
-      if (since_last >= 100 && progress.has_progress()) {
-        double elapsed = std::chrono::duration<double>(now - build_start).count();
-        logger::compiling_file(progress.get_current_file(),
-                               progress.get_current_step(),
-                               progress.get_total_steps());
+      if (advanced && progress.has_progress()) {
         logger::progress_bar(progress.get_current_step(),
-                             progress.get_total_steps(), true, elapsed);
-        last_update = now;
+                             progress.get_total_steps(), true, get_elapsed());
       }
     };
+    stdout_callback = handle_chunk;
+    stderr_callback = handle_chunk;
   } else if (verbose) {
     stdout_callback = [&tool_name](const std::string &chunk) {
       std::string line;
@@ -633,16 +615,59 @@ bool execute_tool(const std::string &command,
       execute_process(command, args, working_dir, stdout_callback,
                       stderr_callback, timeout_seconds);
 
-  // Clear both progress lines if we were showing progress
+  // Clear the final progress-bar line so the next status line lands cleanly
+  // on its own row rather than tacking onto the (now stale) bar.
   if (show_progress && progress.has_progress()) {
-    // Clear current line (progress bar)
     fmt::print(stderr, "\r\033[K");
-    // Move up and clear the compiling file line
-    fmt::print(stderr, "\033[A\r\033[K");
-    // Stay on this line - next output will appear here without extra spacing
     std::fflush(stderr);
-    // Reset progress display state for next build
+  }
+  if (show_progress) {
     logger::reset_progress_display();
+  }
+
+  // Persist build-tool stderr+stdout so `cforge errors` / `cforge warnings`
+  // can re-display the diagnostics later. We only do this for build tools so
+  // the log reflects compile/link output, not e.g. ad-hoc `cmake --version`.
+  //
+  // Crucially: an *incremental* build that doesn't recompile anything would
+  // otherwise overwrite the previous build's log with empty output, wiping
+  // useful warnings. Only persist when there's a diagnostic ("warning" or
+  // "error" keyword) in the output — false positives are fine, the formatter
+  // will just emit nothing. If there isn't, keep the existing log: those
+  // warnings still apply to the current source.
+  if (is_build_tool) {
+    std::string combined;
+    combined.reserve(result.stdout_output.size() + result.stderr_output.size() + 1);
+    combined += result.stderr_output;
+    if (!combined.empty() && combined.back() != '\n') combined += '\n';
+    combined += result.stdout_output;
+
+    auto has_diagnostic = [](const std::string &s) {
+      return s.find("warning:") != std::string::npos ||
+             s.find("Warning:") != std::string::npos ||
+             s.find("error:")   != std::string::npos ||
+             s.find("Error:")   != std::string::npos;
+    };
+
+    if (!combined.empty() && has_diagnostic(combined)) {
+      // `working_dir` and the process cwd are both unreliable here — by the
+      // time the build runs, callers like run_cmake_build() pass "" and the
+      // process has chdir'd into the build/ directory, so the natural choices
+      // both land us inside build/ and we'd end up writing build/build/.log.
+      // Walk up looking for cforge.toml to find the real project root.
+      std::filesystem::path start =
+          working_dir.empty() ? std::filesystem::current_path()
+                              : std::filesystem::path(working_dir);
+      std::filesystem::path project_dir = start;
+      for (auto p = start;; p = p.parent_path()) {
+        if (std::filesystem::exists(p / "cforge.toml")) {
+          project_dir = p;
+          break;
+        }
+        if (p == p.parent_path()) break; // reached filesystem root
+      }
+      save_last_build_diagnostics(project_dir, combined);
+    }
   }
 
   // Always show output/errors for failed commands regardless of verbose mode

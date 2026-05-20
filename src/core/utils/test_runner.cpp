@@ -5,6 +5,7 @@
 
 #include "core/test_runner.hpp"
 #include "cforge/log.hpp"
+#include "core/build_utils.hpp"
 #include "core/types.h"
 #include "core/process_utils.hpp"
 #include "core/test_adapters.hpp"
@@ -1032,25 +1033,16 @@ bool test_runner::configure_cmake(const test_target &target,
 }
 
 bool test_runner::build_target(const test_target &target,
-                               const std::string &build_config) {
+                               const std::string &build_config,
+                               bool verbose) {
   fs::path build_dir = get_test_build_dir(target.name);
 
-  std::vector<std::string> args = {
-    "--build", to_cmake_path(build_dir),
-    "--config", build_config
-  };
-
-  // Stream output live so compile errors are visible (cmake --build can exit 0
-  // even when MSBuild reports errors — we also do a post-build exe check).
-  auto result = execute_process(
-      "cmake", args, m_project_dir.string(),
-      [](const std::string &line) { logger::print_plain(line); },
-      [](const std::string &line) { logger::print_error(line); },
-      300);
-
-  if (!result.success) {
+  // Use run_cmake_build so we get the same UX as `cforge build`:
+  //   - non-verbose: a progress bar, no raw MSBuild noise
+  //   - verbose: structured per-line output
+  //   - on failure: formatted error block via execute_tool's error pipeline
+  if (!run_cmake_build(build_dir, build_config, "", 0, verbose)) {
     m_error = "Build failed";
-    logger::print_error("FAILED to build " + target.name);
     return false;
   }
 
@@ -1067,7 +1059,7 @@ bool test_runner::build_target(const test_target &target,
   return true;
 }
 
-bool test_runner::build_tests(const std::string &config, [[maybe_unused]] bool verbose) {
+bool test_runner::build_tests(const std::string &config, bool verbose) {
   // Discover targets if not already done
   if (m_test_config.targets.empty()) {
     discover_targets();
@@ -1093,7 +1085,7 @@ bool test_runner::build_tests(const std::string &config, [[maybe_unused]] bool v
     }
 
     // Build (error printed inside)
-    if (!build_target(target, config)) {
+    if (!build_target(target, config, verbose)) {
       all_success = false;
       continue;
     }

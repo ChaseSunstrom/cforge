@@ -392,6 +392,38 @@ void register_builtin_commands() {
       nullptr,
   });
 
+  // Errors — replay the most recent build's errors.
+  reg.register_command({
+      "errors",
+      {},
+      "Re-print errors from the last build",
+      "Replay the errors from the most recent build (or test/bench) using the\n"
+      "same Rust/Cargo-style formatter. The raw build output is cached under\n"
+      "build/.cforge_diagnostics.log and re-parsed each time.",
+      "errors",
+      {},
+      {"cforge errors"},
+      {"build", "warnings"},
+      false,
+      cforge_cmd_errors,
+      nullptr,
+  });
+
+  // Warnings — replay the most recent build's warnings. Two-name alias.
+  reg.register_command({
+      "warnings",
+      {"warns"},
+      "Re-print warnings from the last build",
+      "Replay the warnings from the most recent build using the same formatter.",
+      "warnings",
+      {},
+      {"cforge warnings", "cforge warns"},
+      {"build", "errors"},
+      false,
+      cforge_cmd_warnings,
+      nullptr,
+  });
+
   // Deps command
   reg.register_command({
       "deps",

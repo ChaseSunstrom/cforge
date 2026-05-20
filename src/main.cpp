@@ -99,11 +99,11 @@ cforge_int_t cforge_main_impl(cforge_int_t argc, cforge_string_t argv[]) {
   // Free allocated resources
   cforge_free_args(&ctx.args);
 
-  // Show completion message if command succeeded
+  // On failure, the command's own handlers print the actionable reason
+  // ("Failed to build project: ...", "no startup project set", etc.) — adding
+  // a generic "Command failed" line on top of that is just noise.
   if (result == 0 && !cforge_is_quiet()) {
     cforge_print_success("Command completed successfully");
-  } else if (result != 0) {
-    cforge_print_error("Command failed");
   }
 
   return result;

@@ -115,8 +115,13 @@ public:
 
   /**
    * @brief Print individual test result
+   *
+   * @param result          The test result to print.
+   * @param name_pad_width  If > 0, left-pad the test name to this column so
+   *                        the "... ok / FAILED" column lines up across rows.
+   *                        Compute it once from all results before iterating.
    */
-  void print_test_result(const test_result &result);
+  void print_test_result(const test_result &result, size_t name_pad_width = 0);
 
   /**
    * @brief Print detailed failure information

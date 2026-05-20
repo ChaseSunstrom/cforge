@@ -231,7 +231,9 @@ std::string test_output_formatter::format_test_list(
 // ============================================================================
 
 void test_output_formatter::print_run_start(cforge_int_t total_tests) {
-  logger::print_action("Running", std::to_string(total_tests) + " tests");
+  // Cargo format: blank line, then "running N tests" plain (no right-align).
+  fmt::print("\nrunning {} {}\n", total_tests,
+             total_tests == 1 ? "test" : "tests");
 }
 
 void test_output_formatter::print_build_start(const std::string &target_name,
@@ -243,11 +245,15 @@ void test_output_formatter::print_execution_start(const std::string &executable_
   logger::print_action("Running", shorten_path(executable_path));
 }
 
-void test_output_formatter::print_test_result(const test_result &result) {
-  // Right-aligned "Testing" followed by test name and result
-  constexpr int STATUS_WIDTH = 12;
-  fmt::print(fg(fmt::color::green) | fmt::emphasis::bold, "{:>{}}", "Testing", STATUS_WIDTH);
-  fmt::print(" {} ... ", result.name);
+void test_output_formatter::print_test_result(const test_result &result,
+                                               size_t name_pad_width) {
+  // Cargo format: "test <name> ... <status>". When name_pad_width is set,
+  // we left-pad the name so the "..." column lines up across all results.
+  if (name_pad_width > result.name.size()) {
+    fmt::print("test {:<{}} ... ", result.name, name_pad_width);
+  } else {
+    fmt::print("test {} ... ", result.name);
+  }
 
   switch (result.status) {
     case test_status::PASSED:
@@ -374,44 +380,36 @@ void test_output_formatter::print_all_failures(const std::vector<test_result> &r
   for (const auto &result : results) {
     print_failure_details(result);
   }
+
+  // Cargo also prints a flat name list right before the result line.
+  fmt::print("\n");
+  fmt::print(fmt::emphasis::bold, "failures:\n");
+  for (const auto &result : results) {
+    if (result.status == test_status::FAILED ||
+        result.status == test_status::TIMEOUT) {
+      fmt::print("    {}\n", result.name);
+    }
+  }
 }
 
 void test_output_formatter::print_summary(const test_summary &summary) {
-  constexpr int STATUS_WIDTH = 12;
+  const bool ok = summary.failed == 0 && summary.timeout == 0;
 
-  // List failed tests
-  if (!summary.failed_tests.empty()) {
-    fmt::print("\n");
-    fmt::print(fg(fmt::color::red) | fmt::emphasis::bold, "{:>{}}", "Failures", STATUS_WIDTH);
-    fmt::print("\n");
-    for (const auto &test : summary.failed_tests) {
-      fmt::print("{:>{}} {}\n", "", STATUS_WIDTH, test);
-    }
-  }
-
-  // Summary line with Finished style
-  fmt::print("\n");
-  if (summary.failed > 0 || summary.timeout > 0) {
-    fmt::print(fg(fmt::color::red) | fmt::emphasis::bold, "{:>{}}", "Failed", STATUS_WIDTH);
+  // Cargo format: "test result: ok. N passed; N failed; N ignored; finished in T"
+  fmt::print("\ntest result: ");
+  if (ok) {
+    fmt::print(fg(fmt::color::green) | fmt::emphasis::bold, "ok");
   } else {
-    fmt::print(fg(fmt::color::green) | fmt::emphasis::bold, "{:>{}}", "Finished", STATUS_WIDTH);
+    fmt::print(fg(fmt::color::red) | fmt::emphasis::bold, "FAILED");
   }
-
-  fmt::print(" ");
-  fmt::print(fg(fmt::color::green), "{} passed", summary.passed);
-  if (summary.failed > 0) {
-    fmt::print(", ");
-    fmt::print(fg(fmt::color::red), "{} failed", summary.failed);
-  }
-  if (summary.skipped > 0) {
-    fmt::print(", ");
-    fmt::print(fg(fmt::color::yellow), "{} ignored", summary.skipped);
-  }
+  fmt::print(". ");
+  fmt::print("{} passed", summary.passed);
+  fmt::print("; {} failed", summary.failed);
+  fmt::print("; {} ignored", summary.skipped);
   if (summary.timeout > 0) {
-    fmt::print(", ");
-    fmt::print(fg(fmt::color::red), "{} timed out", summary.timeout);
+    fmt::print("; {} timed out", summary.timeout);
   }
-  fmt::print(" in {}\n", format_duration(summary.total_duration));
+  fmt::print("; finished in {}\n", format_duration(summary.total_duration));
 }
 
 void test_output_formatter::print_test_list(const std::vector<std::string> &tests) {

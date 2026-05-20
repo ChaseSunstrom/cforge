@@ -962,89 +962,15 @@ static bool create_test_files(const std::filesystem::path &project_path,
     std::filesystem::create_directories(tests_dir);
   }
 
-  // Create CMakeLists.txt for tests
-  std::filesystem::path tests_cmake_path = tests_dir / "CMakeLists.txt";
+  // No `tests/CMakeLists.txt` is needed — cforge's test_runner discovers
+  // test files in tests/ at `cforge test` time, drops the builtin framework
+  // header into the build dir, and auto-generates a main if the user hasn't
+  // written one. Pulling in GoogleTest by default (the previous behavior)
+  // failed offline / when no GIT was configured, and it ran against cforge's
+  // own zero-config testing design.
 
-  if (std::filesystem::exists(tests_cmake_path) && !g_force_overwrite) {
-    cforge::logger::print_warning("tests/CMakeLists.txt already exists, skipping");
-  } else {
-    if (std::filesystem::exists(tests_cmake_path) && g_force_overwrite) {
-      cforge::logger::print_action("Overwriting", "tests/CMakeLists.txt");
-    }
-    std::ofstream tests_cmake(tests_cmake_path);
-    if (!tests_cmake.is_open()) {
-      return false;
-    }
-    tests_cmake << "# Tests CMakeLists.txt for " << project_name << "\n\n";
-    tests_cmake << "# Find GoogleTest\n";
-    tests_cmake << "include(FetchContent)\n";
-    tests_cmake << "FetchContent_Declare(\n";
-    tests_cmake << "  googletest\n";
-    tests_cmake
-        << "  GIT_REPOSITORY https://github.com/google/googletest.git\n";
-    tests_cmake << "  GIT_TAG release-1.12.1\n";
-    tests_cmake << ")\n\n";
-    tests_cmake << "# For Windows: Prevent overriding the parent project's "
-                   "compiler/linker settings\n";
-    tests_cmake << "set(gtest_force_shared_crt ON CACHE BOOL \"\" FORCE)\n";
-    tests_cmake << "FetchContent_MakeAvailable(googletest)\n\n";
-    tests_cmake << "# Enable testing\n";
-    tests_cmake << "enable_testing()\n\n";
-    tests_cmake << "# Include GoogleTest\n";
-    tests_cmake << "include(GoogleTest)\n\n";
-    tests_cmake << "# Create test executable\n";
-    tests_cmake << "# Convert build type to lowercase for naming\n";
-    tests_cmake
-        << "string(TOLOWER \"${CMAKE_BUILD_TYPE}\" build_type_lower)\n\n";
-    tests_cmake << "set(TEST_EXECUTABLE_NAME "
-                   "${PROJECT_NAME}_${build_type_lower}_tests)\n\n";
-    tests_cmake << "add_executable(${TEST_EXECUTABLE_NAME}\n";
-    tests_cmake << "  test_main.cpp\n";
-    tests_cmake << "  test_example.cpp\n";
-    tests_cmake << ")\n\n";
-    tests_cmake
-        << "target_include_directories(${TEST_EXECUTABLE_NAME} PRIVATE\n";
-    tests_cmake << "  ${CMAKE_SOURCE_DIR}/include\n";
-    tests_cmake << ")\n\n";
-    tests_cmake << "target_link_libraries(${TEST_EXECUTABLE_NAME} PRIVATE\n";
-    tests_cmake << "  ${PROJECT_NAME}\n";
-    tests_cmake << "  gtest_main\n";
-    tests_cmake << "  gmock_main\n";
-    tests_cmake << ")\n\n";
-    tests_cmake << "gtest_discover_tests(${TEST_EXECUTABLE_NAME})\n";
-    tests_cmake.close();
-  }
-
-  // Create test_main.cpp
-  std::filesystem::path test_main_path = tests_dir / "test_main.cpp";
-
-  if (std::filesystem::exists(test_main_path) && !g_force_overwrite) {
-    cforge::logger::print_warning("test_main.cpp already exists, skipping");
-  } else {
-    if (std::filesystem::exists(test_main_path) && g_force_overwrite) {
-      cforge::logger::print_action("Overwriting", "test_main.cpp");
-    }
-    std::ofstream test_main(test_main_path);
-    if (!test_main.is_open()) {
-      return false;
-    }
-    test_main << "/**\n";
-    test_main << " * @file test_main.cpp\n";
-    test_main << " * @brief Main test runner for " << project_name << "\n";
-    test_main << " */\n\n";
-    test_main << "#include <gtest/gtest.h>\n\n";
-    test_main << "// Let Google Test handle main\n";
-    test_main << "// This is not strictly necessary with gtest_main linkage\n";
-    test_main << "int main(int argc, char **argv) {\n";
-    test_main << "    ::testing::InitGoogleTest(&argc, argv);\n";
-    test_main << "    return RUN_ALL_TESTS();\n";
-    test_main << "}\n";
-    test_main.close();
-  }
-
-  // Create test_example.cpp
+  // Create a single example test using the builtin framework.
   std::filesystem::path test_example_path = tests_dir / "test_example.cpp";
-
   if (std::filesystem::exists(test_example_path) && !g_force_overwrite) {
     cforge::logger::print_warning("test_example.cpp already exists, skipping");
   } else {
@@ -1055,22 +981,25 @@ static bool create_test_files(const std::filesystem::path &project_path,
     if (!test_example.is_open()) {
       return false;
     }
-    test_example << "/**\n";
-    test_example << " * @file test_example.cpp\n";
-    test_example << " * @brief Example tests for " << project_name << "\n";
-    test_example << " */\n\n";
-    test_example << "#include <gtest/gtest.h>\n";
-    test_example << "#include \"" << project_name << "/example.hpp\"\n\n";
-    test_example << "// Example test case\n";
-    test_example << "TEST(ExampleTest, GetMessage) {\n";
-    test_example << "    // Arrange\n";
-    test_example << "    const char* message = " << project_name
-                 << "::get_example_message();\n";
-    test_example << "    \n";
-    test_example << "    // Act & Assert\n";
-    test_example << "    EXPECT_NE(message, nullptr);\n";
-    test_example << "    EXPECT_STRNE(message, \"\");\n";
-    test_example << "}\n";
+    test_example
+        << "/**\n"
+        << " * @file test_example.cpp\n"
+        << " * @brief Example tests for " << project_name << "\n"
+        << " *\n"
+        << " * Run with: `cforge test`. cforge provides the test framework —\n"
+        << " * no main() needed, no extra config, no external dependencies.\n"
+        << " */\n\n"
+        << "#include \"test_framework.h\"\n\n"
+        << "TEST(Example, BasicAssertions) {\n"
+        << "    cf_assert(1 + 1 == 2);\n"
+        << "    cf_assert_eq(2 * 3, 6);\n"
+        << "    return 0;\n"
+        << "}\n\n"
+        << "TEST(Example, StringCompare) {\n"
+        << "    const char *a = \"hello\";\n"
+        << "    cf_assert(a != nullptr);\n"
+        << "    return 0;\n"
+        << "}\n";
     test_example.close();
   }
 
