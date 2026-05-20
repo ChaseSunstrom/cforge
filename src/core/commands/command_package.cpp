@@ -5,6 +5,7 @@
  */
 
 #include "cforge/log.hpp"
+
 #include "core/command_registry.hpp"
 #include "core/commands.hpp"
 #include "core/constants.h"
@@ -42,22 +43,19 @@ const char PATH_SEPARATOR = '/';
  * @param config Build configuration (Release, Debug, etc.)
  * @return std::filesystem::path The configured build directory
  */
-static std::filesystem::path
-get_build_dir_for_config(const std::string &base_dir,
-                         const std::string &config) {
+static std::filesystem::path get_build_dir_for_config(const std::string &base_dir,
+                                                      const std::string &config) {
   // If config is empty, use the base dir as is
   if (config.empty()) {
     return base_dir;
   }
 
-  cforge::logger::print_verbose(
-      "Looking for build directory for configuration: " + config);
+  cforge::logger::print_verbose("Looking for build directory for configuration: " + config);
   cforge::logger::print_verbose("Base directory: " + base_dir);
 
   // Convert config to lowercase for comparison
   std::string config_lower = config;
-  std::transform(config_lower.begin(), config_lower.end(), config_lower.begin(),
-                 ::tolower);
+  std::transform(config_lower.begin(), config_lower.end(), config_lower.begin(), ::tolower);
 
   // Try multiple build directory formats
   std::vector<std::filesystem::path> common_formats;
@@ -77,8 +75,7 @@ get_build_dir_for_config(const std::string &base_dir,
   // Format: base_dir-Config
   if (base_dir != "build") {
     common_formats.push_back(std::filesystem::path(base_dir + "-" + config));
-    common_formats.push_back(
-        std::filesystem::path(base_dir + "-" + config_lower));
+    common_formats.push_back(std::filesystem::path(base_dir + "-" + config_lower));
   }
 
   // Format: config (standalone config directory)
@@ -94,8 +91,7 @@ get_build_dir_for_config(const std::string &base_dir,
   // Additional directories for specific configs
   if (config == "Debug" || config == "Release") {
     // Try build directory with parent path - common in workspaces
-    std::filesystem::path parent_dir =
-        std::filesystem::path(base_dir).parent_path();
+    std::filesystem::path parent_dir = std::filesystem::path(base_dir).parent_path();
     if (!parent_dir.empty()) {
       common_formats.push_back(parent_dir / ("build-" + config_lower));
       common_formats.push_back(parent_dir / "build" / config);
@@ -115,13 +111,11 @@ get_build_dir_for_config(const std::string &base_dir,
       // Also check if this path has CMakeCache.txt - that's a good sign it's a
       // build dir
       if (std::filesystem::exists(path / "CMakeCache.txt")) {
-        cforge::logger::print_verbose(
-            "Found existing build directory with CMakeCache.txt: " +
-            path.string());
+        cforge::logger::print_verbose("Found existing build directory with CMakeCache.txt: "
+                                      + path.string());
         return path;
       } else {
-        cforge::logger::print_verbose(
-            "Found directory but no CMakeCache.txt: " + path.string());
+        cforge::logger::print_verbose("Found directory but no CMakeCache.txt: " + path.string());
       }
     }
   }
@@ -129,31 +123,26 @@ get_build_dir_for_config(const std::string &base_dir,
   // Second pass - accept any existing directory even without CMakeCache.txt
   for (const auto &path : common_formats) {
     if (std::filesystem::exists(path)) {
-      cforge::logger::print_verbose(
-          "Using existing build directory (no CMakeCache.txt): " +
-          path.string());
+      cforge::logger::print_verbose("Using existing build directory (no CMakeCache.txt): "
+                                    + path.string());
       return path;
     }
   }
 
   // If no directory exists, return the most likely format based on project
-  cforge::logger::print_verbose(
-      "No existing build directory found, using recommended format");
+  cforge::logger::print_verbose("No existing build directory found, using recommended format");
 
   // Special handling for specific configurations
   if (config == "Debug") {
-    cforge::logger::print_verbose(
-        "Using standard format for Debug: build-debug");
+    cforge::logger::print_verbose("Using standard format for Debug: build-debug");
     return std::filesystem::path("build-debug");
   } else if (config == "Release") {
-    cforge::logger::print_verbose(
-        "Using standard format for Release: build-release");
+    cforge::logger::print_verbose("Using standard format for Release: build-release");
     return std::filesystem::path("build-release");
   }
 
   // For other configurations, use base-config format
-  cforge::logger::print_verbose("Using general format for " + config +
-                                ": build-" + config_lower);
+  cforge::logger::print_verbose("Using general format for " + config + ": build-" + config_lower);
   return std::filesystem::path("build-" + config_lower);
 }
 
@@ -166,22 +155,17 @@ static std::string get_simple_generator() {
 #ifdef _WIN32
   // Try to detect Visual Studio version
   // Check for VS2022
-  if (std::filesystem::exists(
-          "C:\\Program Files\\Microsoft Visual Studio\\2022")) {
+  if (std::filesystem::exists("C:\\Program Files\\Microsoft Visual Studio\\2022")) {
     return "\"Visual Studio 17 2022\"";
   }
   // Check for VS2019
-  else if (std::filesystem::exists(
-               "C:\\Program Files\\Microsoft Visual Studio\\2019") ||
-           std::filesystem::exists(
-               "C:\\Program Files (x86)\\Microsoft Visual Studio\\2019")) {
+  else if (std::filesystem::exists("C:\\Program Files\\Microsoft Visual Studio\\2019")
+           || std::filesystem::exists("C:\\Program Files (x86)\\Microsoft Visual Studio\\2019")) {
     return "\"Visual Studio 16 2019\"";
   }
   // Check for VS2017
-  else if (std::filesystem::exists(
-               "C:\\Program Files\\Microsoft Visual Studio\\2017") ||
-           std::filesystem::exists(
-               "C:\\Program Files (x86)\\Microsoft Visual Studio\\2017")) {
+  else if (std::filesystem::exists("C:\\Program Files\\Microsoft Visual Studio\\2017")
+           || std::filesystem::exists("C:\\Program Files (x86)\\Microsoft Visual Studio\\2017")) {
     return "\"Visual Studio 15 2017\"";
   }
   // Fallback to Ninja
@@ -213,8 +197,7 @@ static bool build_project(const cforge_context_t *ctx) {
   memset(&build_ctx, 0, sizeof(cforge_context_t));
 
   // Copy only the essential fields - working_dir is a char array
-  snprintf(build_ctx.working_dir, sizeof(build_ctx.working_dir), "%s",
-           ctx->working_dir);
+  snprintf(build_ctx.working_dir, sizeof(build_ctx.working_dir), "%s", ctx->working_dir);
 
   // Copy verbosity - but make it less verbose than the calling context
   // This way, the build output is more compact during packaging
@@ -234,29 +217,25 @@ static bool build_project(const cforge_context_t *ctx) {
   // Copy configuration if available
   if (ctx->args.config) {
     build_ctx.args.config = strdup(ctx->args.config);
-    cforge::logger::print_verbose("Building with configuration: " +
-                                  std::string(ctx->args.config));
+    cforge::logger::print_verbose("Building with configuration: " + std::string(ctx->args.config));
   } else {
     // Default to Release if not specified - this is important for packaging
     build_ctx.args.config = strdup("Release");
-    cforge::logger::print_verbose(
-        "No configuration specified, defaulting to Release for build");
+    cforge::logger::print_verbose("No configuration specified, defaulting to Release for build");
   }
 
   // Check for explicit config in args
   for (cforge_int_t i = 0; i < ctx->args.arg_count; ++i) {
-    if (ctx->args.args[i] &&
-        (strcmp(ctx->args.args[i], "--config") == 0 ||
-         strcmp(ctx->args.args[i], "-c") == 0) &&
-        i + 1 < ctx->args.arg_count && ctx->args.args[i + 1]) {
-
+    if (ctx->args.args[i]
+        && (strcmp(ctx->args.args[i], "--config") == 0 || strcmp(ctx->args.args[i], "-c") == 0)
+        && i + 1 < ctx->args.arg_count && ctx->args.args[i + 1]) {
       // Override the configuration with the one from args
       if (build_ctx.args.config) {
         free((void *)build_ctx.args.config);
       }
       build_ctx.args.config = strdup(ctx->args.args[i + 1]);
-      cforge::logger::print_verbose("Using configuration from args: " +
-                                    std::string(build_ctx.args.config));
+      cforge::logger::print_verbose("Using configuration from args: "
+                                    + std::string(build_ctx.args.config));
       break;
     }
   }
@@ -267,9 +246,9 @@ static bool build_project(const cforge_context_t *ctx) {
 
   // Allocate space for args to pass special flags to the build command
   // Use a simpler generator to avoid problems with Ninja Multi-Config
-  build_ctx.args.arg_count = 4; // -G "generator" + --config CONFIG_NAME
-  build_ctx.args.args = (cforge_string_t *)malloc(build_ctx.args.arg_count *
-                                                  sizeof(cforge_string_t));
+  build_ctx.args.arg_count = 4;  // -G "generator" + --config CONFIG_NAME
+  build_ctx.args.args =
+      (cforge_string_t *)malloc(build_ctx.args.arg_count * sizeof(cforge_string_t));
 
   // Set the generator flag
   build_ctx.args.args[0] = strdup("-G");
@@ -278,8 +257,7 @@ static bool build_project(const cforge_context_t *ctx) {
   // Add explicit --config parameter to ensure build uses correct config
   // This is needed to ensure we don't use Debug when Release is specified
   build_ctx.args.args[2] = strdup("--config");
-  build_ctx.args.args[3] =
-      strdup(build_ctx.args.config ? build_ctx.args.config : "Release");
+  build_ctx.args.args[3] = strdup(build_ctx.args.config ? build_ctx.args.config : "Release");
 
   // Build the project
   cforge_int_t result = cforge_cmd_build(&build_ctx);
@@ -318,12 +296,12 @@ static bool build_project(const cforge_context_t *ctx) {
  * @param workspace_dir Path to the cforge::workspace directory
  * @return bool Success flag
  */
-static bool
-create_workspace_package(const std::string &workspace_name,
-                         const std::vector<cforge::workspace_project> &projects,
-                         const std::string &build_config, bool verbose,
-                         const std::filesystem::path &workspace_dir) {
-  (void)verbose; // Used conditionally below
+static bool create_workspace_package(const std::string &workspace_name,
+                                     const std::vector<cforge::workspace_project> &projects,
+                                     const std::string &build_config,
+                                     bool verbose,
+                                     const std::filesystem::path &workspace_dir) {
+  (void)verbose;  // Used conditionally below
   cforge::logger::creating("consolidated cforge::workspace package");
 
   // Create a staging area for all project outputs
@@ -332,65 +310,58 @@ create_workspace_package(const std::string &workspace_name,
     try {
       std::filesystem::remove_all(staging_dir);
     } catch (const std::exception &ex) {
-      cforge::logger::print_warning("Failed to clean staging directory: " +
-                                    std::string(ex.what()));
+      cforge::logger::print_warning("Failed to clean staging directory: " + std::string(ex.what()));
     }
   }
 
   try {
     std::filesystem::create_directories(staging_dir);
-    cforge::logger::print_verbose("Created staging directory: " +
-                                  staging_dir.string());
+    cforge::logger::print_verbose("Created staging directory: " + staging_dir.string());
   } catch (const std::exception &ex) {
-    cforge::logger::print_error("Failed to create staging directory: " +
-                                std::string(ex.what()));
+    cforge::logger::print_error("Failed to create staging directory: " + std::string(ex.what()));
     return false;
   }
 
   // Determine cforge::workspace-level build directory
   std::string config_lower_ws = build_config;
-  std::transform(config_lower_ws.begin(), config_lower_ws.end(),
-                 config_lower_ws.begin(), ::tolower);
-  std::filesystem::path ws_build_dir =
-      get_build_dir_for_config("build", build_config);
+  std::transform(
+      config_lower_ws.begin(), config_lower_ws.end(), config_lower_ws.begin(), ::tolower);
+  std::filesystem::path ws_build_dir = get_build_dir_for_config("build", build_config);
   if (ws_build_dir.is_relative()) {
     ws_build_dir = workspace_dir / ws_build_dir;
   }
-  cforge::logger::print_verbose("Using cforge::workspace build directory: " +
-                                ws_build_dir.string());
+  cforge::logger::print_verbose("Using cforge::workspace build directory: "
+                                + ws_build_dir.string());
   if (!std::filesystem::exists(ws_build_dir)) {
-    cforge::logger::print_error("Workspace build directory not found: " +
-                                ws_build_dir.string());
+    cforge::logger::print_error("Workspace build directory not found: " + ws_build_dir.string());
     return false;
   }
 
   // For each project, find build outputs and copy to staging
   cforge_int_t copied_files = 0;
   for (const auto &project : projects) {
-    cforge::logger::print_verbose("Collecting outputs from project: " +
-                                  project.name);
+    cforge::logger::print_verbose("Collecting outputs from project: " + project.name);
 
     // Create a project-specific subdirectory in staging
     std::filesystem::path project_staging_dir = staging_dir / project.name;
     try {
       std::filesystem::create_directories(project_staging_dir);
     } catch (const std::exception &ex) {
-      cforge::logger::print_warning(
-          "Failed to create staging directory for project: " +
-          std::string(ex.what()));
+      cforge::logger::print_warning("Failed to create staging directory for project: "
+                                    + std::string(ex.what()));
       continue;
     }
 
     // Use cforge::workspace-level build directory for outputs
     std::filesystem::path build_dir = ws_build_dir;
-    cforge::logger::print_verbose(
-        "Using cforge::workspace build directory for project " + project.name +
-        ": " + build_dir.string());
+    cforge::logger::print_verbose("Using cforge::workspace build directory for project "
+                                  + project.name + ": " + build_dir.string());
 
     // Collect binaries - look in common locations
-    std::vector<std::filesystem::path> binary_locations = {
-        build_dir / "bin", build_dir / "bin" / build_config,
-        build_dir / "bin" / config_lower_ws, build_dir};
+    std::vector<std::filesystem::path> binary_locations = {build_dir / "bin",
+                                                           build_dir / "bin" / build_config,
+                                                           build_dir / "bin" / config_lower_ws,
+                                                           build_dir};
 
     // Flag to track if we found any binary
     bool found_binaries = false;
@@ -401,8 +372,7 @@ create_workspace_package(const std::string &workspace_name,
         continue;
       }
 
-      cforge::logger::print_verbose("Checking for binaries in: " +
-                                    loc.string());
+      cforge::logger::print_verbose("Checking for binaries in: " + loc.string());
 
       try {
         for (const auto &entry : std::filesystem::directory_iterator(loc)) {
@@ -417,39 +387,34 @@ create_workspace_package(const std::string &workspace_name,
           }
           // Check if it's an executable or DLL
           std::string ext = entry.path().extension().string();
-          if (ext == ".exe" || ext == ".dll" || ext == ".so" ||
-              ext == ".dylib" || (ext.empty() && entry.file_size() > 1000)) {
+          if (ext == ".exe" || ext == ".dll" || ext == ".so" || ext == ".dylib"
+              || (ext.empty() && entry.file_size() > 1000)) {
             // Copy to project staging dir
-            std::filesystem::path dest_path =
-                project_staging_dir / entry.path().filename();
+            std::filesystem::path dest_path = project_staging_dir / entry.path().filename();
             try {
-              std::filesystem::copy_file(
-                  entry.path(), dest_path,
-                  std::filesystem::copy_options::overwrite_existing);
-              cforge::logger::print_verbose("Copied binary: " +
-                                            entry.path().string());
+              std::filesystem::copy_file(entry.path(),
+                                         dest_path,
+                                         std::filesystem::copy_options::overwrite_existing);
+              cforge::logger::print_verbose("Copied binary: " + entry.path().string());
               found_binaries = true;
               copied_files++;
             } catch (const std::exception &ex) {
-              cforge::logger::print_warning("Failed to copy file: " +
-                                            std::string(ex.what()));
+              cforge::logger::print_warning("Failed to copy file: " + std::string(ex.what()));
             }
           }
         }
       } catch (const std::exception &ex) {
-        cforge::logger::print_warning("Error inspecting build directory: " +
-                                      std::string(ex.what()));
+        cforge::logger::print_warning("Error inspecting build directory: "
+                                      + std::string(ex.what()));
       }
     }
 
     // If no binaries found, try to find them recursively - this is a fallback
     if (!found_binaries) {
-      cforge::logger::print_verbose(
-          "Searching recursively for binaries in build directory...");
+      cforge::logger::print_verbose("Searching recursively for binaries in build directory...");
 
       try {
-        for (const auto &entry :
-             std::filesystem::recursive_directory_iterator(build_dir)) {
+        for (const auto &entry : std::filesystem::recursive_directory_iterator(build_dir)) {
           // Only consider regular files
           if (!entry.is_regular_file()) {
             continue;
@@ -460,29 +425,24 @@ create_workspace_package(const std::string &workspace_name,
             continue;
           }
           std::string ext = entry.path().extension().string();
-          if (ext == ".exe" || ext == ".dll" || ext == ".so" ||
-              ext == ".dylib") {
+          if (ext == ".exe" || ext == ".dll" || ext == ".so" || ext == ".dylib") {
             // Copy to project staging dir
-            std::filesystem::path dest_path =
-                project_staging_dir / entry.path().filename();
+            std::filesystem::path dest_path = project_staging_dir / entry.path().filename();
             try {
-              std::filesystem::copy_file(
-                  entry.path(), dest_path,
-                  std::filesystem::copy_options::overwrite_existing);
-              cforge::logger::print_verbose("Copied binary: " +
-                                            entry.path().string());
+              std::filesystem::copy_file(entry.path(),
+                                         dest_path,
+                                         std::filesystem::copy_options::overwrite_existing);
+              cforge::logger::print_verbose("Copied binary: " + entry.path().string());
               found_binaries = true;
               copied_files++;
             } catch (const std::exception &ex) {
-              cforge::logger::print_warning("Failed to copy file: " +
-                                            std::string(ex.what()));
+              cforge::logger::print_warning("Failed to copy file: " + std::string(ex.what()));
             }
           }
         }
       } catch (const std::exception &ex) {
-        cforge::logger::print_warning(
-            "Error recursively searching build directory: " +
-            std::string(ex.what()));
+        cforge::logger::print_warning("Error recursively searching build directory: "
+                                      + std::string(ex.what()));
       }
     }
 
@@ -491,20 +451,18 @@ create_workspace_package(const std::string &workspace_name,
     if (std::filesystem::exists(readme)) {
       try {
         std::filesystem::path dest_readme = project_staging_dir / "README.md";
-        std::filesystem::copy_file(
-            readme, dest_readme,
-            std::filesystem::copy_options::overwrite_existing);
+        std::filesystem::copy_file(readme,
+                                   dest_readme,
+                                   std::filesystem::copy_options::overwrite_existing);
         cforge::logger::print_verbose("Copied README for " + project.name);
       } catch (const std::exception &ex) {
-        cforge::logger::print_warning("Failed to copy README: " +
-                                      std::string(ex.what()));
+        cforge::logger::print_warning("Failed to copy README: " + std::string(ex.what()));
       }
     }
   }
 
   if (copied_files == 0) {
-    cforge::logger::print_warning(
-        "No binary files were found from any project");
+    cforge::logger::print_warning("No binary files were found from any project");
     return false;
   }
 
@@ -522,20 +480,18 @@ create_workspace_package(const std::string &workspace_name,
     readme_file << "\nEach project is in its own subdirectory.\n";
     readme_file.close();
   } catch (const std::exception &ex) {
-    cforge::logger::print_warning(
-        "Failed to create cforge::workspace README: " + std::string(ex.what()));
+    cforge::logger::print_warning("Failed to create cforge::workspace README: "
+                                  + std::string(ex.what()));
   }
 
   // Create the cforge::workspace package
   std::filesystem::path packages_dir = workspace_dir / "packages";
-  std::string config_lower = build_config;
-  std::transform(config_lower.begin(), config_lower.end(), config_lower.begin(),
-                 ::tolower);
+  std::string config_lower           = build_config;
+  std::transform(config_lower.begin(), config_lower.end(), config_lower.begin(), ::tolower);
 
   // Format package filename: cforge::workspace-version-platform-config.zip
-  std::string version = "1.0.0"; // Default version
-  std::string package_filename =
-      workspace_name + "-" + version + "-win64-" + config_lower + ".zip";
+  std::string version          = "1.0.0";  // Default version
+  std::string package_filename = workspace_name + "-" + version + "-win64-" + config_lower + ".zip";
   std::filesystem::path output_file = packages_dir / package_filename;
 
   // Remove existing package if it exists
@@ -543,8 +499,7 @@ create_workspace_package(const std::string &workspace_name,
     try {
       std::filesystem::remove(output_file);
     } catch (const std::exception &ex) {
-      cforge::logger::print_warning("Failed to remove existing package: " +
-                                    std::string(ex.what()));
+      cforge::logger::print_warning("Failed to remove existing package: " + std::string(ex.what()));
     }
   }
 
@@ -560,9 +515,8 @@ create_workspace_package(const std::string &workspace_name,
   cmd_args.push_back("-Command");
 
   // Create PowerShell command to compress staging directory
-  std::string ps_cmd = "Compress-Archive -Path \"" + staging_dir.string() +
-                       "\\*\" -DestinationPath \"" + output_file.string() +
-                       "\" -Force";
+  std::string ps_cmd = "Compress-Archive -Path \"" + staging_dir.string()
+                     + "\\*\" -DestinationPath \"" + output_file.string() + "\" -Force";
 
   // Ensure Windows path format
   std::string safe_ps_cmd = ps_cmd;
@@ -570,26 +524,22 @@ create_workspace_package(const std::string &workspace_name,
   cmd_args.push_back(safe_ps_cmd);
 
   // Print command for debugging
-  cforge::logger::print_verbose("Executing ZIP command: " + zip_cmd + " " +
-                                safe_ps_cmd);
+  cforge::logger::print_verbose("Executing ZIP command: " + zip_cmd + " " + safe_ps_cmd);
 
   // Execute the command with explicit capture of output
-  cforge::process_result result =
-      cforge::execute_process(zip_cmd, cmd_args, workspace_dir.string(),
-                              nullptr, nullptr, 60); // 60 second timeout
+  cforge::process_result result = cforge::execute_process(
+      zip_cmd, cmd_args, workspace_dir.string(), nullptr, nullptr, 60);  // 60 second timeout
 
   if (result.success) {
-    cforge::logger::print_verbose("PowerShell command output: " +
-                                  result.stdout_output);
+    cforge::logger::print_verbose("PowerShell command output: " + result.stdout_output);
     success = true;
   } else {
-    cforge::logger::print_error("PowerShell command failed with exit code: " +
-                                std::to_string(result.exit_code));
+    cforge::logger::print_error("PowerShell command failed with exit code: "
+                                + std::to_string(result.exit_code));
 
     // Use our fancy error formatter for the output
     if (!result.stderr_output.empty()) {
-      std::string formatted_output =
-          cforge::format_build_errors(result.stderr_output);
+      std::string formatted_output = cforge::format_build_errors(result.stderr_output);
       if (formatted_output.empty()) {
         // Successful formatting already printed the output
       } else {
@@ -608,9 +558,8 @@ create_workspace_package(const std::string &workspace_name,
 
   // Check if zip is available
   if (!cforge::is_command_available("zip")) {
-    cforge::logger::print_error(
-        "The 'zip' command is not available. Please install it "
-        "to create packages.");
+    cforge::logger::print_error("The 'zip' command is not available. Please install it "
+                                "to create packages.");
     return false;
   }
 
@@ -620,8 +569,8 @@ create_workspace_package(const std::string &workspace_name,
   cmd_args.push_back(".");
 
   // Execute the command from the staging directory
-  success = cforge::execute_tool(zip_cmd, cmd_args, staging_dir.string(),
-                                 "Workspace ZIP Package", verbose);
+  success = cforge::execute_tool(
+      zip_cmd, cmd_args, staging_dir.string(), "Workspace ZIP Package", verbose);
 #endif
 
   if (success) {
@@ -633,14 +582,13 @@ create_workspace_package(const std::string &workspace_name,
       try {
         std::filesystem::remove_all(staging_dir);
       } catch (const std::exception &ex) {
-        cforge::logger::print_verbose("Failed to clean up staging directory: " +
-                                      std::string(ex.what()));
+        cforge::logger::print_verbose("Failed to clean up staging directory: "
+                                      + std::string(ex.what()));
       }
 
       return true;
     } else {
-      cforge::logger::print_error(
-          "Command reported success but package file was not found");
+      cforge::logger::print_error("Command reported success but package file was not found");
       return false;
     }
   } else {
@@ -661,9 +609,8 @@ static std::string find_cpack_path() {
 
 #ifdef _WIN32
   // On Windows, check common installation paths
-  std::vector<std::string> common_paths = {
-      "C:\\Program Files\\CMake\\bin\\cpack.exe",
-      "C:\\Program Files (x86)\\CMake\\bin\\cpack.exe"};
+  std::vector<std::string> common_paths = {"C:\\Program Files\\CMake\\bin\\cpack.exe",
+                                           "C:\\Program Files (x86)\\CMake\\bin\\cpack.exe"};
 
   for (const auto &path : common_paths) {
     if (std::filesystem::exists(path)) {
@@ -677,7 +624,7 @@ static std::string find_cpack_path() {
       cforge::execute_process("where", {"cmake"}, "", nullptr, nullptr, 5);
   if (result.success && !result.stdout_output.empty()) {
     // Extract the first line
-    std::string cmake_path = result.stdout_output;
+    std::string cmake_path     = result.stdout_output;
     std::string::size_type pos = cmake_path.find('\n');
     if (pos != std::string::npos) {
       cmake_path = cmake_path.substr(0, pos);
@@ -687,8 +634,7 @@ static std::string find_cpack_path() {
     cmake_path.erase(cmake_path.find_last_not_of(" \n\r\t") + 1);
 
     // Replace cmake with cpack in the path
-    std::filesystem::path cpack_dir =
-        std::filesystem::path(cmake_path).parent_path();
+    std::filesystem::path cpack_dir = std::filesystem::path(cmake_path).parent_path();
     std::filesystem::path cpack_exe = cpack_dir / "cpack.exe";
 
     if (std::filesystem::exists(cpack_exe)) {
@@ -713,39 +659,31 @@ static std::vector<std::string> get_default_generators() {
 #if defined(_WIN32)
   generators.push_back("ZIP");
   // Only add NSIS if likely to be available
-  if (std::filesystem::exists("C:\\Program Files (x86)\\NSIS") ||
-      std::filesystem::exists("C:\\Program Files\\NSIS")) {
+  if (std::filesystem::exists("C:\\Program Files (x86)\\NSIS")
+      || std::filesystem::exists("C:\\Program Files\\NSIS")) {
     generators.push_back("NSIS");
   }
-  cforge::logger::print_verbose(
-      std::string("Using default Windows generators: ") +
-      (generators.size() > 1 ? "ZIP, NSIS" : "ZIP"));
+  cforge::logger::print_verbose(std::string("Using default Windows generators: ")
+                                + (generators.size() > 1 ? "ZIP, NSIS" : "ZIP"));
 #elif defined(__APPLE__)
   generators.push_back("TGZ");
   cforge::logger::print_verbose("Using default macOS generators: TGZ");
 #else
   generators.push_back("TGZ");
   // Only add DEB if likely to be available
-  if (cforge::is_command_available("dpkg-deb") ||
-      cforge::is_command_available("apt")) {
+  if (cforge::is_command_available("dpkg-deb") || cforge::is_command_available("apt")) {
     generators.push_back("DEB");
   }
   // Only add RPM if likely to be available
-  if (cforge::is_command_available("rpmbuild") ||
-      cforge::is_command_available("yum") ||
-      cforge::is_command_available("dnf")) {
+  if (cforge::is_command_available("rpmbuild") || cforge::is_command_available("yum")
+      || cforge::is_command_available("dnf")) {
     generators.push_back("RPM");
   }
   cforge::logger::print_verbose(
-      std::string("Using default Linux generators: TGZ") +
-      (std::find(generators.begin(), generators.end(), "DEB") !=
-               generators.end()
-           ? ", DEB"
-           : "") +
-      (std::find(generators.begin(), generators.end(), "RPM") !=
-               generators.end()
-           ? ", RPM"
-           : ""));
+      std::string("Using default Linux generators: TGZ")
+      + (std::find(generators.begin(), generators.end(), "DEB") != generators.end() ? ", DEB" : "")
+      + (std::find(generators.begin(), generators.end(), "RPM") != generators.end() ? ", RPM"
+                                                                                    : ""));
 #endif
 
   return generators;
@@ -759,13 +697,11 @@ static std::vector<std::string> get_default_generators() {
  */
 static bool download_and_install_nsis(bool verbose) {
 #ifdef _WIN32
-  cforge::logger::print_status(
-      "NSIS not found. Attempting to download and install "
-      "NSIS automatically");
+  cforge::logger::print_status("NSIS not found. Attempting to download and install "
+                               "NSIS automatically");
 
   // Create temp directory for download
-  std::filesystem::path temp_dir =
-      std::filesystem::temp_directory_path() / "cforge_nsis_install";
+  std::filesystem::path temp_dir = std::filesystem::temp_directory_path() / "cforge_nsis_install";
   if (!std::filesystem::exists(temp_dir)) {
     std::filesystem::create_directories(temp_dir);
   }
@@ -774,13 +710,13 @@ static bool download_and_install_nsis(bool verbose) {
 
   // Download NSIS installer
   cforge::logger::fetching("NSIS installer");
-  std::vector<std::string> curl_args = {
-      "-L", "-o", nsis_installer.string(),
-      "https://sourceforge.net/projects/nsis/files/NSIS%203/3.08/"
-      "nsis-3.08-setup.exe/download"};
+  std::vector<std::string> curl_args = {"-L",
+                                        "-o",
+                                        nsis_installer.string(),
+                                        "https://sourceforge.net/projects/nsis/files/NSIS%203/3.08/"
+                                        "nsis-3.08-setup.exe/download"};
 
-  bool download_success =
-      cforge::execute_tool("curl", curl_args, "", "NSIS Download", verbose);
+  bool download_success = cforge::execute_tool("curl", curl_args, "", "NSIS Download", verbose);
   if (!download_success) {
     cforge::logger::print_error("Failed to download NSIS installer");
     return false;
@@ -791,30 +727,26 @@ static bool download_and_install_nsis(bool verbose) {
 
   // First try with normal privileges
   std::vector<std::string> install_args = {
-      "/S" // Silent install
+      "/S"  // Silent install
   };
 
-  bool install_success = cforge::execute_tool(
-      nsis_installer.string(), install_args, "", "NSIS Install", verbose);
+  bool install_success =
+      cforge::execute_tool(nsis_installer.string(), install_args, "", "NSIS Install", verbose);
 
   if (!install_success) {
     // Try to run elevated (this might show a UAC prompt)
-    cforge::logger::print_status(
-        "Attempting to install NSIS with administrator privileges");
+    cforge::logger::print_status("Attempting to install NSIS with administrator privileges");
 
-    std::vector<std::string> runas_args = {"/trustlevel:0x20000",
-                                           nsis_installer.string(), "/S"};
+    std::vector<std::string> runas_args = {"/trustlevel:0x20000", nsis_installer.string(), "/S"};
 
-    install_success = cforge::execute_tool("runas", runas_args, "",
-                                           "NSIS Install (Admin)", verbose);
+    install_success =
+        cforge::execute_tool("runas", runas_args, "", "NSIS Install (Admin)", verbose);
   }
 
   if (!install_success) {
     cforge::logger::print_error("Failed to install NSIS");
-    cforge::logger::print_status(
-        "Please install NSIS manually from http://nsis.sourceforge.net");
-    cforge::logger::print_status(
-        "After installing NSIS, ensure 'makensis.exe' is in your PATH");
+    cforge::logger::print_status("Please install NSIS manually from http://nsis.sourceforge.net");
+    cforge::logger::print_status("After installing NSIS, ensure 'makensis.exe' is in your PATH");
     return false;
   }
 
@@ -825,10 +757,8 @@ static bool download_and_install_nsis(bool verbose) {
 
   return true;
 #else
-  cforge::logger::print_error(
-      "Automatic NSIS installation is only supported on Windows");
-  cforge::logger::print_status(
-      "Please install NSIS manually from http://nsis.sourceforge.net");
+  cforge::logger::print_error("Automatic NSIS installation is only supported on Windows");
+  cforge::logger::print_status("Please install NSIS manually from http://nsis.sourceforge.net");
   return false;
 #endif
 }
@@ -841,20 +771,40 @@ static bool download_and_install_nsis(bool verbose) {
  */
 static bool is_package_file(const std::string &filename) {
   // Common package extensions
-  static const std::vector<std::string> package_extensions = {
-      ".zip", ".tar.gz", ".tgz",    ".tar.bz2", ".tbz2",
-      ".tar", ".deb",    ".rpm",    ".dmg",     ".pkg",
-      ".msi", ".exe",    ".wixobj", ".wixpdb",  ".7z"};
+  static const std::vector<std::string> package_extensions = {".zip",
+                                                              ".tar.gz",
+                                                              ".tgz",
+                                                              ".tar.bz2",
+                                                              ".tbz2",
+                                                              ".tar",
+                                                              ".deb",
+                                                              ".rpm",
+                                                              ".dmg",
+                                                              ".pkg",
+                                                              ".msi",
+                                                              ".exe",
+                                                              ".wixobj",
+                                                              ".wixpdb",
+                                                              ".7z"};
 
   // Executable and recipe files to exclude
-  static const std::vector<std::string> excluded_patterns = {
-      "-setup.exe", "-installer.exe", "recipe.txt", "recipe.json", "recipe.xml",
-      ".wixobj",    ".wixpdb",        ".obj",       ".ilk",        ".pdb",
-      "CMakeFiles", "cmake_install",  ".vcxproj",   ".sln"};
+  static const std::vector<std::string> excluded_patterns = {"-setup.exe",
+                                                             "-installer.exe",
+                                                             "recipe.txt",
+                                                             "recipe.json",
+                                                             "recipe.xml",
+                                                             ".wixobj",
+                                                             ".wixpdb",
+                                                             ".obj",
+                                                             ".ilk",
+                                                             ".pdb",
+                                                             "CMakeFiles",
+                                                             "cmake_install",
+                                                             ".vcxproj",
+                                                             ".sln"};
 
   std::string lower_filename = filename;
-  std::transform(lower_filename.begin(), lower_filename.end(),
-                 lower_filename.begin(), ::tolower);
+  std::transform(lower_filename.begin(), lower_filename.end(), lower_filename.begin(), ::tolower);
 
   // Check if the file matches any exclusion pattern
   for (const auto &pattern : excluded_patterns) {
@@ -867,9 +817,9 @@ static bool is_package_file(const std::string &filename) {
   for (const auto &ext : package_extensions) {
     if (lower_filename.find(ext) != std::string::npos) {
       // Skip installer EXEs but allow packaged EXEs
-      if (ext == ".exe" &&
-          (lower_filename.find("-setup.exe") != std::string::npos ||
-           lower_filename.find("-installer.exe") != std::string::npos)) {
+      if (ext == ".exe"
+          && (lower_filename.find("-setup.exe") != std::string::npos
+              || lower_filename.find("-installer.exe") != std::string::npos)) {
         return false;
       }
       return true;
@@ -896,8 +846,8 @@ static bool is_package_file(const std::filesystem::path &path) {
  * @param recursive Whether to search recursively
  * @return std::vector<std::filesystem::path> List of package files
  */
-static std::vector<std::filesystem::path>
-find_package_files(const std::filesystem::path &dir, bool recursive = false) {
+static std::vector<std::filesystem::path> find_package_files(const std::filesystem::path &dir,
+                                                             bool recursive = false) {
   std::vector<std::filesystem::path> packages;
 
   if (!std::filesystem::exists(dir)) {
@@ -906,14 +856,12 @@ find_package_files(const std::filesystem::path &dir, bool recursive = false) {
 
   try {
     if (recursive) {
-      for (const auto &entry :
-           std::filesystem::recursive_directory_iterator(dir)) {
+      for (const auto &entry : std::filesystem::recursive_directory_iterator(dir)) {
         if (entry.is_regular_file()) {
           // Skip intermediate directories
-          if (entry.path().string().find("_CPack_Packages") !=
-                  std::string::npos ||
-              entry.path().string().find("temp") != std::string::npos ||
-              entry.path().string().find("_tmp") != std::string::npos) {
+          if (entry.path().string().find("_CPack_Packages") != std::string::npos
+              || entry.path().string().find("temp") != std::string::npos
+              || entry.path().string().find("_tmp") != std::string::npos) {
             continue;
           }
 
@@ -930,8 +878,7 @@ find_package_files(const std::filesystem::path &dir, bool recursive = false) {
       }
     }
   } catch (const std::exception &ex) {
-    cforge::logger::print_verbose("Error finding package files: " +
-                                  std::string(ex.what()));
+    cforge::logger::print_verbose("Error finding package files: " + std::string(ex.what()));
   }
 
   return packages;
@@ -944,29 +891,25 @@ find_package_files(const std::filesystem::path &dir, bool recursive = false) {
  * @param path Path to check
  * @return bool True if it's a final distribution package
  */
-[[maybe_unused]] static bool
-is_final_package(const std::filesystem::path &path) {
+[[maybe_unused]] static bool is_final_package(const std::filesystem::path &path) {
   // Only consider files directly in the packages directory (not in
   // subdirectories)
-  std::string path_str = path.string();
-  cforge_size_t packages_pos =
-      path_str.find("packages" + std::string(1, PATH_SEPARATOR));
+  std::string path_str       = path.string();
+  cforge_size_t packages_pos = path_str.find("packages" + std::string(1, PATH_SEPARATOR));
   if (packages_pos == std::string::npos) {
     return false;
   }
 
   // Exclude any files in subdirectories of the packages directory
-  std::string subpath =
-      path_str.substr(packages_pos + 9); // "packages/" is 9 chars
+  std::string subpath = path_str.substr(packages_pos + 9);  // "packages/" is 9 chars
   if (subpath.find(PATH_SEPARATOR) != std::string::npos) {
     return false;
   }
 
   // Only include specific extensions for distribution packages
   std::string ext = path.extension().string();
-  return ext == ".zip" || ext == ".exe" || ext == ".deb" || ext == ".rpm" ||
-         ext == ".dmg" || ext == ".msi" ||
-         (ext == ".gz" && path.string().find(".tar.gz") != std::string::npos);
+  return ext == ".zip" || ext == ".exe" || ext == ".deb" || ext == ".rpm" || ext == ".dmg"
+      || ext == ".msi" || (ext == ".gz" && path.string().find(".tar.gz") != std::string::npos);
 }
 
 /**
@@ -977,10 +920,9 @@ is_final_package(const std::filesystem::path &path) {
  * @param config_name Configuration name
  * @param project_name Project name
  */
-static void
-display_only_final_packages(const std::vector<std::filesystem::path> &packages,
-                            const std::string &config_name,
-                            const std::string &project_name) {
+static void display_only_final_packages(const std::vector<std::filesystem::path> &packages,
+                                        const std::string &config_name,
+                                        const std::string &project_name) {
   if (packages.empty()) {
     return;
   }
@@ -990,10 +932,10 @@ display_only_final_packages(const std::vector<std::filesystem::path> &packages,
   cforge_size_t count = 0;
   for (const auto &package : packages) {
     // Skip files in _CPack_Packages which are intermediates
-    if (package.string().find("_CPack_Packages") != std::string::npos ||
-        package.string().find("/temp/") != std::string::npos ||
-        package.string().find("\\temp\\") != std::string::npos ||
-        package.string().find("_tmp") != std::string::npos) {
+    if (package.string().find("_CPack_Packages") != std::string::npos
+        || package.string().find("/temp/") != std::string::npos
+        || package.string().find("\\temp\\") != std::string::npos
+        || package.string().find("_tmp") != std::string::npos) {
       continue;
     }
 
@@ -1004,16 +946,14 @@ display_only_final_packages(const std::vector<std::filesystem::path> &packages,
     }
 
     // Only display packages that match project name if specified
-    if (!project_name.empty() &&
-        filename.find(project_name) == std::string::npos) {
+    if (!project_name.empty() && filename.find(project_name) == std::string::npos) {
       continue;
     }
 
     // Only display packages that match config if specified
     if (!config_name.empty()) {
       std::string config_lower = config_name;
-      std::transform(config_lower.begin(), config_lower.end(),
-                     config_lower.begin(), ::tolower);
+      std::transform(config_lower.begin(), config_lower.end(), config_lower.begin(), ::tolower);
 
       // Skip packages that don't contain the config name (for multi-config
       // generators)
@@ -1028,8 +968,7 @@ display_only_final_packages(const std::vector<std::filesystem::path> &packages,
 
   // Add a note if we filtered out some packages
   if (count < packages.size()) {
-    cforge::logger::print_verbose(
-        "Some intermediate files were filtered out from the display");
+    cforge::logger::print_verbose("Some intermediate files were filtered out from the display");
   }
 }
 
@@ -1056,8 +995,9 @@ struct process_result_t {
  */
 static bool run_cpack(const std::filesystem::path &build_dir,
                       const std::vector<std::string> &generators,
-                      const std::string &config_name, bool verbose,
-                      const std::string &project_name = "",
+                      const std::string &config_name,
+                      bool verbose,
+                      const std::string &project_name    = "",
                       const std::string &project_version = "") {
   // Find cpack executable
   std::string cpack_command = find_cpack_path();
@@ -1068,15 +1008,13 @@ static bool run_cpack(const std::filesystem::path &build_dir,
 
   // Check if the build directory exists and contains CMakeCache.txt
   if (!std::filesystem::exists(build_dir)) {
-    cforge::logger::print_error("Build directory does not exist: " +
-                                build_dir.string());
+    cforge::logger::print_error("Build directory does not exist: " + build_dir.string());
     return false;
   }
 
   if (!std::filesystem::exists(build_dir / "CMakeCache.txt")) {
-    cforge::logger::print_error(
-        "CMakeCache.txt not found in build directory. Run "
-        "'cforge build' first.");
+    cforge::logger::print_error("CMakeCache.txt not found in build directory. Run "
+                                "'cforge build' first.");
     return false;
   }
 
@@ -1086,17 +1024,18 @@ static bool run_cpack(const std::filesystem::path &build_dir,
     cforge::logger::configuring("CMake for packaging (empty install prefix)");
     auto reconfig = cforge::execute_process(
         "cmake",
-        std::vector<std::string>{"-S", project_dir.string(), "-B",
-                                 build_dir.string(), "-DCMAKE_INSTALL_PREFIX="},
+        std::vector<std::string>{
+            "-S", project_dir.string(), "-B", build_dir.string(), "-DCMAKE_INSTALL_PREFIX="},
         "",
         [&](const std::string &line) {
-          if (verbose)
+          if (verbose) {
             cforge::logger::print_verbose(line);
+          }
         },
         [](const std::string &line) { cforge::logger::print_error(line); });
     if (!reconfig.success) {
-      cforge::logger::print_error("CMake reconfigure failed (exit code " +
-                                  std::to_string(reconfig.exit_code) + ")");
+      cforge::logger::print_error("CMake reconfigure failed (exit code "
+                                  + std::to_string(reconfig.exit_code) + ")");
       return false;
     }
   }
@@ -1106,25 +1045,22 @@ static bool run_cpack(const std::filesystem::path &build_dir,
   std::filesystem::path bin_dir = build_dir / "bin";
   if (std::filesystem::exists(bin_dir)) {
     try {
-      cforge::logger::print_verbose(
-          "Cleaning bin directory to avoid file conflicts: " +
-          bin_dir.string());
+      cforge::logger::print_verbose("Cleaning bin directory to avoid file conflicts: "
+                                    + bin_dir.string());
 
       // If a "Release" or "Debug" subdirectory exists, also clean it
       std::filesystem::path release_dir = bin_dir / "Release";
-      std::filesystem::path debug_dir = bin_dir / "Debug";
-      std::filesystem::path config_dir = bin_dir / config_name;
+      std::filesystem::path debug_dir   = bin_dir / "Debug";
+      std::filesystem::path config_dir  = bin_dir / config_name;
 
       if (std::filesystem::exists(release_dir)) {
         // For each EXE file in the directory, check if it has _release suffix
         // and remove it if so
-        for (const auto &entry :
-             std::filesystem::directory_iterator(release_dir)) {
+        for (const auto &entry : std::filesystem::directory_iterator(release_dir)) {
           if (entry.is_regular_file() && entry.path().extension() == ".exe") {
             std::string filename = entry.path().filename().string();
             if (filename.find("_release") != std::string::npos) {
-              cforge::logger::print_verbose("Removing conflicting file: " +
-                                            entry.path().string());
+              cforge::logger::print_verbose("Removing conflicting file: " + entry.path().string());
               std::filesystem::remove(entry.path());
             }
           }
@@ -1134,40 +1070,34 @@ static bool run_cpack(const std::filesystem::path &build_dir,
       if (std::filesystem::exists(debug_dir)) {
         // For each EXE file in the directory, check if it has _debug suffix and
         // remove it if so
-        for (const auto &entry :
-             std::filesystem::directory_iterator(debug_dir)) {
+        for (const auto &entry : std::filesystem::directory_iterator(debug_dir)) {
           if (entry.is_regular_file() && entry.path().extension() == ".exe") {
             std::string filename = entry.path().filename().string();
             if (filename.find("_debug") != std::string::npos) {
-              cforge::logger::print_verbose("Removing conflicting file: " +
-                                            entry.path().string());
+              cforge::logger::print_verbose("Removing conflicting file: " + entry.path().string());
               std::filesystem::remove(entry.path());
             }
           }
         }
       }
 
-      if (std::filesystem::exists(config_dir) && config_dir != release_dir &&
-          config_dir != debug_dir) {
+      if (std::filesystem::exists(config_dir) && config_dir != release_dir
+          && config_dir != debug_dir) {
         // For each EXE file in the directory, check if it has _config suffix
         // and remove it if so
-        for (const auto &entry :
-             std::filesystem::directory_iterator(config_dir)) {
+        for (const auto &entry : std::filesystem::directory_iterator(config_dir)) {
           if (entry.is_regular_file() && entry.path().extension() == ".exe") {
             std::string filename = entry.path().filename().string();
-            if (filename.find("_" + std::string(config_name.begin(),
-                                                config_name.end())) !=
-                std::string::npos) {
-              cforge::logger::print_verbose("Removing conflicting file: " +
-                                            entry.path().string());
+            if (filename.find("_" + std::string(config_name.begin(), config_name.end()))
+                != std::string::npos) {
+              cforge::logger::print_verbose("Removing conflicting file: " + entry.path().string());
               std::filesystem::remove(entry.path());
             }
           }
         }
       }
     } catch (const std::exception &ex) {
-      cforge::logger::print_verbose("Error cleaning bin directory: " +
-                                    std::string(ex.what()));
+      cforge::logger::print_verbose("Error cleaning bin directory: " + std::string(ex.what()));
       // Continue anyway
     }
   }
@@ -1190,8 +1120,9 @@ static bool run_cpack(const std::filesystem::path &build_dir,
     cpack_args.push_back("-G");
     std::string gen_str;
     for (cforge_size_t i = 0; i < generators.size(); ++i) {
-      if (i > 0)
+      if (i > 0) {
         gen_str += ";";
+      }
       gen_str += generators[i];
     }
     cpack_args.push_back(gen_str);
@@ -1208,17 +1139,15 @@ static bool run_cpack(const std::filesystem::path &build_dir,
 
   // Make sure the package directory is absolute
   package_dir = std::filesystem::absolute(package_dir);
-  cforge::logger::print_verbose("Package output directory: " +
-                                package_dir.string());
+  cforge::logger::print_verbose("Package output directory: " + package_dir.string());
 
   // IMPORTANT: Clean up any existing packages with the same base name
   try {
     std::string config_lower = config_name;
-    std::transform(config_lower.begin(), config_lower.end(),
-                   config_lower.begin(), ::tolower);
+    std::transform(config_lower.begin(), config_lower.end(), config_lower.begin(), ::tolower);
 
     // Get project info for cleanup
-    std::string pkg_name = project_name;
+    std::string pkg_name    = project_name;
     std::string pkg_version = project_version;
 
     // If not provided, try to get project info from CMakeCache.txt
@@ -1230,16 +1159,14 @@ static bool run_cpack(const std::filesystem::path &build_dir,
           std::ifstream cache_file(cmake_cache);
           std::string line;
           while (std::getline(cache_file, line)) {
-            if (pkg_name.empty() &&
-                line.find("CMAKE_PROJECT_NAME:") != std::string::npos) {
+            if (pkg_name.empty() && line.find("CMAKE_PROJECT_NAME:") != std::string::npos) {
               cforge_size_t pos = line.find('=');
               if (pos != std::string::npos) {
                 pkg_name = line.substr(pos + 1);
               }
-            } else if (pkg_version.empty() &&
-                       (line.find("CMAKE_PROJECT_VERSION:") !=
-                            std::string::npos ||
-                        line.find("PROJECT_VERSION:") != std::string::npos)) {
+            } else if (pkg_version.empty()
+                       && (line.find("CMAKE_PROJECT_VERSION:") != std::string::npos
+                           || line.find("PROJECT_VERSION:") != std::string::npos)) {
               cforge_size_t pos = line.find('=');
               if (pos != std::string::npos) {
                 pkg_version = line.substr(pos + 1);
@@ -1261,17 +1188,15 @@ static bool run_cpack(const std::filesystem::path &build_dir,
     }
 
     // First cleanup ALL packages and stray executables in the output directory
-    cforge::logger::print_verbose("Cleaning package directory: " +
-                                  package_dir.string());
+    cforge::logger::print_verbose("Cleaning package directory: " + package_dir.string());
     for (const auto &entry : std::filesystem::directory_iterator(package_dir)) {
       if (entry.is_regular_file()) {
         std::string filename = entry.path().filename().string();
-        std::string ext = entry.path().extension().string();
+        std::string ext      = entry.path().extension().string();
 
         // Remove files matching the project name (old packages)
         if (filename.find(pkg_name) != std::string::npos) {
-          cforge::logger::print_verbose("Removing existing package file: " +
-                                        entry.path().string());
+          cforge::logger::print_verbose("Removing existing package file: " + entry.path().string());
           std::filesystem::remove(entry.path());
         }
         // Also remove any stray executables that don't match the project name
@@ -1280,19 +1205,17 @@ static bool run_cpack(const std::filesystem::path &build_dir,
           // Check if it's actually an executable (not a package archive)
           std::string ext_lower = ext;
           std::transform(ext_lower.begin(), ext_lower.end(), ext_lower.begin(), ::tolower);
-          if (ext_lower != ".zip" && ext_lower != ".tar" && ext_lower != ".gz" &&
-              ext_lower != ".deb" && ext_lower != ".rpm" && ext_lower != ".msi" &&
-              ext_lower != ".nupkg") {
-            cforge::logger::print_verbose("Removing stray executable: " +
-                                          entry.path().string());
+          if (ext_lower != ".zip" && ext_lower != ".tar" && ext_lower != ".gz"
+              && ext_lower != ".deb" && ext_lower != ".rpm" && ext_lower != ".msi"
+              && ext_lower != ".nupkg") {
+            cforge::logger::print_verbose("Removing stray executable: " + entry.path().string());
             std::filesystem::remove(entry.path());
           }
         }
       }
     }
   } catch (const std::exception &ex) {
-    cforge::logger::print_verbose("Error cleaning packages: " +
-                                  std::string(ex.what()));
+    cforge::logger::print_verbose("Error cleaning packages: " + std::string(ex.what()));
     // Continue anyway
   }
 
@@ -1312,11 +1235,10 @@ static bool run_cpack(const std::filesystem::path &build_dir,
   // Add config to package filename - use proper format
   if (!config_name.empty()) {
     std::string config_lower = config_name;
-    std::transform(config_lower.begin(), config_lower.end(),
-                   config_lower.begin(), ::tolower);
+    std::transform(config_lower.begin(), config_lower.end(), config_lower.begin(), ::tolower);
 
     // Use project name/version from arguments if provided
-    std::string pkg_name = project_name;
+    std::string pkg_name    = project_name;
     std::string pkg_version = project_version;
 
     // If not provided, try to get project info from CMakeCache.txt
@@ -1328,16 +1250,14 @@ static bool run_cpack(const std::filesystem::path &build_dir,
           std::ifstream cache_file(cmake_cache);
           std::string line;
           while (std::getline(cache_file, line)) {
-            if (pkg_name.empty() &&
-                line.find("CMAKE_PROJECT_NAME:") != std::string::npos) {
+            if (pkg_name.empty() && line.find("CMAKE_PROJECT_NAME:") != std::string::npos) {
               cforge_size_t pos = line.find('=');
               if (pos != std::string::npos) {
                 pkg_name = line.substr(pos + 1);
               }
-            } else if (pkg_version.empty() &&
-                       (line.find("CMAKE_PROJECT_VERSION:") !=
-                            std::string::npos ||
-                        line.find("PROJECT_VERSION:") != std::string::npos)) {
+            } else if (pkg_version.empty()
+                       && (line.find("CMAKE_PROJECT_VERSION:") != std::string::npos
+                           || line.find("PROJECT_VERSION:") != std::string::npos)) {
               cforge_size_t pos = line.find('=');
               if (pos != std::string::npos) {
                 pkg_version = line.substr(pos + 1);
@@ -1368,39 +1288,39 @@ static bool run_cpack(const std::filesystem::path &build_dir,
 #else
     system_name = "linux";
 #endif
-    std::string package_file_name =
-        pkg_name + "-" + pkg_version + "-" + system_name + "-" + config_lower;
+    std::string package_file_name = pkg_name + "-" + pkg_version + "-" + system_name + "-"
+                                  + config_lower;
     cforge::logger::print_verbose("Package file name: " + package_file_name);
 
     // Clean up existing packages with the same name to prevent "exists" errors
     try {
-      cforge::logger::print_verbose(
-          "Cleaning up any existing packages with the same name pattern");
+      cforge::logger::print_verbose("Cleaning up any existing packages with the same name pattern");
       for (const auto &gen : generators) {
         std::string gen_lower = gen;
-        std::transform(gen_lower.begin(), gen_lower.end(), gen_lower.begin(),
-                       ::tolower);
+        std::transform(gen_lower.begin(), gen_lower.end(), gen_lower.begin(), ::tolower);
 
         // Construct common package filenames to check
-        std::vector<std::string> patterns_to_check = {
-            package_file_name + ".zip",    package_file_name + ".exe",
-            package_file_name + ".msi",    package_file_name + ".deb",
-            package_file_name + ".rpm",    package_file_name + ".dmg",
-            package_file_name + ".tar.gz", package_file_name + ".tar.bz2",
-            package_file_name + ".7z"};
+        std::vector<std::string> patterns_to_check = {package_file_name + ".zip",
+                                                      package_file_name + ".exe",
+                                                      package_file_name + ".msi",
+                                                      package_file_name + ".deb",
+                                                      package_file_name + ".rpm",
+                                                      package_file_name + ".dmg",
+                                                      package_file_name + ".tar.gz",
+                                                      package_file_name + ".tar.bz2",
+                                                      package_file_name + ".7z"};
 
         for (const auto &pattern : patterns_to_check) {
           std::filesystem::path file_to_check = package_dir / pattern;
           if (std::filesystem::exists(file_to_check)) {
-            cforge::logger::print_verbose("Removing existing package: " +
-                                          file_to_check.string());
+            cforge::logger::print_verbose("Removing existing package: " + file_to_check.string());
             std::filesystem::remove(file_to_check);
           }
         }
       }
     } catch (const std::exception &ex) {
-      cforge::logger::print_verbose("Error cleaning up existing packages: " +
-                                    std::string(ex.what()));
+      cforge::logger::print_verbose("Error cleaning up existing packages: "
+                                    + std::string(ex.what()));
       // Continue anyway
     }
 
@@ -1411,13 +1331,11 @@ static bool run_cpack(const std::filesystem::path &build_dir,
     // Add additional CPack variables to ensure config appears in all formats
     // NSIS-specific variable
     cpack_args.push_back("-D");
-    cpack_args.push_back("CPACK_NSIS_PACKAGE_NAME=" + pkg_name + " " +
-                         config_name);
+    cpack_args.push_back("CPACK_NSIS_PACKAGE_NAME=" + pkg_name + " " + config_name);
 
     // WIX-specific variable
     cpack_args.push_back("-D");
-    cpack_args.push_back("CPACK_WIX_PRODUCT_NAME=" + pkg_name + " " +
-                         config_name);
+    cpack_args.push_back("CPACK_WIX_PRODUCT_NAME=" + pkg_name + " " + config_name);
 
     // Set CPack project config name
     cpack_args.push_back("-D");
@@ -1430,40 +1348,37 @@ static bool run_cpack(const std::filesystem::path &build_dir,
 
   // Avoid creating an extra subdirectory
   cpack_args.push_back("-D");
-  cpack_args.push_back("CPACK_PACKAGE_INSTALL_DIRECTORY=" +
-                       package_dir.string());
+  cpack_args.push_back("CPACK_PACKAGE_INSTALL_DIRECTORY=" + package_dir.string());
 
   // Clear the CPack temporary directory - this is important to prevent "exists"
   // errors
   std::filesystem::path temp_dir = package_dir / "temp";
   if (std::filesystem::exists(temp_dir)) {
     try {
-      cforge::logger::print_verbose("Cleaning temporary directory: " +
-                                    temp_dir.string());
+      cforge::logger::print_verbose("Cleaning temporary directory: " + temp_dir.string());
       std::filesystem::remove_all(temp_dir);
     } catch (const std::exception &ex) {
-      cforge::logger::print_verbose("Failed to clean temporary directory: " +
-                                    std::string(ex.what()));
+      cforge::logger::print_verbose("Failed to clean temporary directory: "
+                                    + std::string(ex.what()));
     }
   }
   try {
     std::filesystem::create_directories(temp_dir);
   } catch (const std::exception &ex) {
-    cforge::logger::print_verbose("Failed to create temporary directory: " +
-                                  std::string(ex.what()));
+    cforge::logger::print_verbose("Failed to create temporary directory: "
+                                  + std::string(ex.what()));
   }
 
   // Remove the _CPack_Packages directory to avoid conflicts
   std::filesystem::path cpack_packages_dir = package_dir / "_CPack_Packages";
   if (std::filesystem::exists(cpack_packages_dir)) {
     try {
-      cforge::logger::print_verbose("Cleaning CPack packages directory: " +
-                                    cpack_packages_dir.string());
+      cforge::logger::print_verbose("Cleaning CPack packages directory: "
+                                    + cpack_packages_dir.string());
       std::filesystem::remove_all(cpack_packages_dir);
     } catch (const std::exception &ex) {
-      cforge::logger::print_verbose(
-          "Failed to clean CPack packages directory: " +
-          std::string(ex.what()));
+      cforge::logger::print_verbose("Failed to clean CPack packages directory: "
+                                    + std::string(ex.what()));
     }
   }
 
@@ -1471,12 +1386,11 @@ static bool run_cpack(const std::filesystem::path &build_dir,
   std::filesystem::path build_cpack_dir = build_dir / "_CPack_Packages";
   if (std::filesystem::exists(build_cpack_dir)) {
     try {
-      cforge::logger::print_verbose("Cleaning build CPack directory: " +
-                                    build_cpack_dir.string());
+      cforge::logger::print_verbose("Cleaning build CPack directory: " + build_cpack_dir.string());
       std::filesystem::remove_all(build_cpack_dir);
     } catch (const std::exception &ex) {
-      cforge::logger::print_verbose("Failed to clean build CPack directory: " +
-                                    std::string(ex.what()));
+      cforge::logger::print_verbose("Failed to clean build CPack directory: "
+                                    + std::string(ex.what()));
     }
   }
 
@@ -1551,10 +1465,8 @@ static bool run_cpack(const std::filesystem::path &build_dir,
   if (verbose) {
     // Don't print the entire command - it's too long and may cause heap issues
     cforge::logger::running("CPack command to create packages");
-    cforge::logger::print_verbose("CPack working directory: " +
-                                  build_dir.string());
-    cforge::logger::print_verbose("CPack package output directory: " +
-                                  package_dir.string());
+    cforge::logger::print_verbose("CPack working directory: " + build_dir.string());
+    cforge::logger::print_verbose("CPack package output directory: " + package_dir.string());
   }
 
   // Reduce memory pressure by not keeping the full command in memory
@@ -1566,46 +1478,42 @@ static bool run_cpack(const std::filesystem::path &build_dir,
       return;
     }
 
-    cforge::logger::print_verbose("Deep cleaning package directory: " +
-                                  package_dir.string());
+    cforge::logger::print_verbose("Deep cleaning package directory: " + package_dir.string());
 
     // Remove the _CPack_Packages directory
     std::filesystem::path cpack_packages_dir = package_dir / "_CPack_Packages";
     if (std::filesystem::exists(cpack_packages_dir)) {
       try {
-        cforge::logger::print_verbose("Removing intermediate files in: " +
-                                      cpack_packages_dir.string());
+        cforge::logger::print_verbose("Removing intermediate files in: "
+                                      + cpack_packages_dir.string());
         std::filesystem::remove_all(cpack_packages_dir);
       } catch (const std::exception &ex) {
-        cforge::logger::print_verbose("Failed to remove intermediate files: " +
-                                      std::string(ex.what()));
+        cforge::logger::print_verbose("Failed to remove intermediate files: "
+                                      + std::string(ex.what()));
       }
     }
 
     // Also try removing any other intermediate directories that might be
     // present
     try {
-      for (const auto &entry :
-           std::filesystem::directory_iterator(package_dir)) {
+      for (const auto &entry : std::filesystem::directory_iterator(package_dir)) {
         if (entry.is_directory()) {
           std::string dirname = entry.path().filename().string();
           // Remove any directories that look like temporary ones from
           // CMake/CPack
-          if (dirname.find("_CPack_") != std::string::npos ||
-              dirname.find("_cmake") != std::string::npos ||
-              dirname.find("_tmp") != std::string::npos ||
-              dirname.find("temp") != std::string::npos ||
-              dirname.find("<") !=
-                  std::string::npos) { // Remove directories with placeholders
-            cforge::logger::print_verbose("Removing intermediate directory: " +
-                                          entry.path().string());
+          if (dirname.find("_CPack_") != std::string::npos
+              || dirname.find("_cmake") != std::string::npos
+              || dirname.find("_tmp") != std::string::npos
+              || dirname.find("temp") != std::string::npos
+              || dirname.find("<") != std::string::npos) {  // Remove directories with placeholders
+            cforge::logger::print_verbose("Removing intermediate directory: "
+                                          + entry.path().string());
             std::filesystem::remove_all(entry.path());
           }
         }
       }
     } catch (const std::exception &ex) {
-      cforge::logger::print_verbose("Error during directory cleanup: " +
-                                    std::string(ex.what()));
+      cforge::logger::print_verbose("Error during directory cleanup: " + std::string(ex.what()));
     }
   };
 
@@ -1617,11 +1525,10 @@ static bool run_cpack(const std::filesystem::path &build_dir,
   try {
     // Use execute_tool with CPack as command name so that our error formatting
     // is applied
-    result_success = cforge::execute_tool(
-        cpack_command, cpack_args, build_dir.string(), "CPack", verbose, 300);
+    result_success =
+        cforge::execute_tool(cpack_command, cpack_args, build_dir.string(), "CPack", verbose, 300);
   } catch (const std::exception &ex) {
-    cforge::logger::print_error("Exception during CPack execution: " +
-                                std::string(ex.what()));
+    cforge::logger::print_error("Exception during CPack execution: " + std::string(ex.what()));
     result_success = false;
   } catch (...) {
     cforge::logger::print_error("Unknown exception during CPack execution");
@@ -1633,14 +1540,13 @@ static bool run_cpack(const std::filesystem::path &build_dir,
     // Check if the failure was due to missing NSIS
     bool nsis_error = false;
 
-    if (generators.empty() || std::find(generators.begin(), generators.end(),
-                                        "NSIS") != generators.end()) {
+    if (generators.empty()
+        || std::find(generators.begin(), generators.end(), "NSIS") != generators.end()) {
       nsis_error = true;
     }
 
     if (nsis_error) {
-      cforge::logger::print_status(
-          "CPack failed. Checking if NSIS is installed");
+      cforge::logger::print_status("CPack failed. Checking if NSIS is installed");
 
       // Remove NSIS from generators so we can still produce other packages
       std::vector<std::string> non_nsis_generators;
@@ -1655,7 +1561,7 @@ static bool run_cpack(const std::filesystem::path &build_dir,
         cforge::logger::print_status("Retrying package creation with CPack");
 
         // Extract pkg_name and pkg_version to reuse them in the retry
-        std::string pkg_name = project_name;
+        std::string pkg_name    = project_name;
         std::string pkg_version = project_version;
         if (pkg_name.empty()) {
           pkg_name = build_dir.parent_path().filename().string();
@@ -1665,9 +1571,8 @@ static bool run_cpack(const std::filesystem::path &build_dir,
         }
 
         // Re-run cpack with the newly installed NSIS
-        result_success =
-            cforge::execute_tool(cpack_command, cpack_args, build_dir.string(),
-                                 "CPack", verbose, 300);
+        result_success = cforge::execute_tool(
+            cpack_command, cpack_args, build_dir.string(), "CPack", verbose, 300);
       } else if (!non_nsis_generators.empty()) {
         // If NSIS installation failed but we have other generators, try with
         // them
@@ -1680,8 +1585,9 @@ static bool run_cpack(const std::filesystem::path &build_dir,
           if (new_args[i] == "-G" && i + 1 < new_args.size()) {
             std::string gen_str;
             for (cforge_size_t j = 0; j < non_nsis_generators.size(); ++j) {
-              if (j > 0)
+              if (j > 0) {
                 gen_str += ";";
+              }
               gen_str += non_nsis_generators[j];
             }
             new_args[i + 1] = gen_str;
@@ -1705,18 +1611,15 @@ static bool run_cpack(const std::filesystem::path &build_dir,
   try {
     // First, check for packages in the build directory that need to be moved
     if (std::filesystem::exists(build_dir)) {
-      cforge::logger::print_verbose(
-          "Looking for packages in build directory to move "
-          "to packages directory");
+      cforge::logger::print_verbose("Looking for packages in build directory to move "
+                                    "to packages directory");
       std::vector<std::filesystem::path> package_files_to_move;
 
-      for (const auto &entry :
-           std::filesystem::recursive_directory_iterator(build_dir)) {
+      for (const auto &entry : std::filesystem::recursive_directory_iterator(build_dir)) {
         if (entry.is_regular_file()) {
           std::string filename = entry.path().filename().string();
-          if (is_package_file(entry.path()) &&
-              entry.path().string().find("_CPack_Packages") ==
-                  std::string::npos) {
+          if (is_package_file(entry.path())
+              && entry.path().string().find("_CPack_Packages") == std::string::npos) {
             std::filesystem::path target_path = package_dir / filename;
             package_files_to_move.push_back(entry.path());
           }
@@ -1726,8 +1629,7 @@ static bool run_cpack(const std::filesystem::path &build_dir,
       // Move the found packages
       for (const auto &src_path : package_files_to_move) {
         std::filesystem::path dest_path = package_dir / src_path.filename();
-        cforge::logger::print_verbose("Moving " + src_path.string() + " to " +
-                                      dest_path.string());
+        cforge::logger::print_verbose("Moving " + src_path.string() + " to " + dest_path.string());
 
         try {
           if (std::filesystem::exists(dest_path)) {
@@ -1736,8 +1638,7 @@ static bool run_cpack(const std::filesystem::path &build_dir,
           std::filesystem::copy_file(src_path, dest_path);
           std::filesystem::remove(src_path);
         } catch (const std::exception &ex) {
-          cforge::logger::print_verbose("Failed to move package: " +
-                                        std::string(ex.what()));
+          cforge::logger::print_verbose("Failed to move package: " + std::string(ex.what()));
         }
       }
     }
@@ -1763,7 +1664,7 @@ static bool run_cpack(const std::filesystem::path &build_dir,
       // Try to get project name from the last directory component of the parent
       // of build_dir
       std::filesystem::path project_dir = build_dir.parent_path();
-      project_name = project_dir.filename().string();
+      project_name                      = project_dir.filename().string();
     } catch (...) {
       // Ignore errors
     }
@@ -1777,22 +1678,18 @@ static bool run_cpack(const std::filesystem::path &build_dir,
     // Final cleanup to remove intermediate files
     deep_cleanup_package_dir();
   } catch (const std::exception &ex) {
-    cforge::logger::print_warning("Error checking for package files: " +
-                                  std::string(ex.what()));
+    cforge::logger::print_warning("Error checking for package files: " + std::string(ex.what()));
   }
 
   if (!packages_found) {
-    cforge::logger::print_warning(
-        "No package files found. CPack may have failed or "
-        "created packages elsewhere.");
-    cforge::logger::print_status(
-        "Check CPack output for details about where files were created.");
+    cforge::logger::print_warning("No package files found. CPack may have failed or "
+                                  "created packages elsewhere.");
+    cforge::logger::print_status("Check CPack output for details about where files were created.");
 
     // If CPack reported success but we found no packages, we don't consider
     // this a success
     if (result_success) {
-      cforge::logger::print_warning(
-          "CPack reported success but no package files were found.");
+      cforge::logger::print_warning("CPack reported success but no package files were found.");
       return false;
     }
   }
@@ -1810,8 +1707,7 @@ static bool run_cpack(const std::filesystem::path &build_dir,
  */
 static bool check_generator_tools_installed(const std::string &generator) {
   std::string gen_upper = generator;
-  std::transform(gen_upper.begin(), gen_upper.end(), gen_upper.begin(),
-                 ::toupper);
+  std::transform(gen_upper.begin(), gen_upper.end(), gen_upper.begin(), ::toupper);
 
   // Check common generators that require additional tools
   if (gen_upper == "NSIS" || gen_upper == "NSIS64") {
@@ -1820,9 +1716,8 @@ static bool check_generator_tools_installed(const std::string &generator) {
 
 #ifdef _WIN32
     // Check common NSIS installation paths
-    std::vector<std::string> nsis_paths = {
-        "C:\\Program Files\\NSIS\\makensis.exe",
-        "C:\\Program Files (x86)\\NSIS\\makensis.exe"};
+    std::vector<std::string> nsis_paths = {"C:\\Program Files\\NSIS\\makensis.exe",
+                                           "C:\\Program Files (x86)\\NSIS\\makensis.exe"};
 
     for (const auto &path : nsis_paths) {
       if (std::filesystem::exists(path)) {
@@ -1833,8 +1728,8 @@ static bool check_generator_tools_installed(const std::string &generator) {
 
     // Try to run makensis to check if it's in PATH
     if (!nsis_found) {
-      cforge::process_result where_result = cforge::execute_process(
-          "where", {"makensis"}, "", nullptr, nullptr, 2);
+      cforge::process_result where_result =
+          cforge::execute_process("where", {"makensis"}, "", nullptr, nullptr, 2);
       nsis_found = where_result.success && !where_result.stdout_output.empty();
     }
 #else
@@ -1845,13 +1740,10 @@ static bool check_generator_tools_installed(const std::string &generator) {
 #endif
 
     if (!nsis_found) {
-      cforge::logger::print_warning(
-          "NSIS not found. To create installer packages "
-          "(.exe), please install NSIS:");
-      cforge::logger::print_status(
-          "  1. Download from https://nsis.sourceforge.io/Download");
-      cforge::logger::print_status(
-          "  2. Run the installer and follow the installation steps");
+      cforge::logger::print_warning("NSIS not found. To create installer packages "
+                                    "(.exe), please install NSIS:");
+      cforge::logger::print_status("  1. Download from https://nsis.sourceforge.io/Download");
+      cforge::logger::print_status("  2. Run the installer and follow the installation steps");
       cforge::logger::print_status("  3. Make sure NSIS is added to your PATH");
       cforge::logger::print_status("  4. Run the package command again");
       return false;
@@ -1864,8 +1756,8 @@ static bool check_generator_tools_installed(const std::string &generator) {
 
 #ifdef _WIN32
     // Try to locate candle.exe in PATH
-    cforge::process_result where_result = cforge::execute_process(
-        "where", {"candle.exe"}, "", nullptr, nullptr, 2);
+    cforge::process_result where_result =
+        cforge::execute_process("where", {"candle.exe"}, "", nullptr, nullptr, 2);
     wix_found = where_result.success && !where_result.stdout_output.empty();
 
     if (!wix_found) {
@@ -1881,11 +1773,9 @@ static bool check_generator_tools_installed(const std::string &generator) {
           // Wildcard path, try to find matching directories
           std::string base_dir = path_pattern.substr(0, path_pattern.find('*'));
           if (std::filesystem::exists(base_dir)) {
-            for (const auto &entry :
-                 std::filesystem::directory_iterator(base_dir)) {
+            for (const auto &entry : std::filesystem::directory_iterator(base_dir)) {
               if (entry.is_directory()) {
-                std::string potential_path =
-                    entry.path().string() + "\\bin\\candle.exe";
+                std::string potential_path = entry.path().string() + "\\bin\\candle.exe";
                 if (std::filesystem::exists(potential_path)) {
                   wix_found = true;
                   break;
@@ -1902,19 +1792,14 @@ static bool check_generator_tools_installed(const std::string &generator) {
 #endif
 
     if (!wix_found) {
-      cforge::logger::print_warning(
-          "WiX Toolset not found. To create MSI packages, "
-          "please install WiX Toolset:");
-      cforge::logger::print_status(
-          "  1. Download from https://wixtoolset.org/releases/");
+      cforge::logger::print_warning("WiX Toolset not found. To create MSI packages, "
+                                    "please install WiX Toolset:");
+      cforge::logger::print_status("  1. Download from https://wixtoolset.org/releases/");
       cforge::logger::print_status(
           "  2. Install WiX Toolset and Visual Studio extension if needed");
-      cforge::logger::print_status(
-          "  3. Make sure WiX bin directory is in your PATH");
-      cforge::logger::print_status(
-          "  4. Run the package command again with --type WIX");
-      cforge::logger::print_status(
-          "You can also use --type ZIP for a simpler package format");
+      cforge::logger::print_status("  3. Make sure WiX bin directory is in your PATH");
+      cforge::logger::print_status("  4. Run the package command again with --type WIX");
+      cforge::logger::print_status("You can also use --type ZIP for a simpler package format");
       return false;
     }
 
@@ -1925,12 +1810,9 @@ static bool check_generator_tools_installed(const std::string &generator) {
 
 #ifdef _WIN32
     // DEB generator not well-supported on Windows
-    cforge::logger::print_warning(
-        "DEB generator is not well-supported on Windows.");
-    cforge::logger::print_status(
-        "  Consider using --type ZIP instead for Windows.");
-    cforge::logger::print_status(
-        "  If you need .deb packages, use WSL or a Linux VM.");
+    cforge::logger::print_warning("DEB generator is not well-supported on Windows.");
+    cforge::logger::print_status("  Consider using --type ZIP instead for Windows.");
+    cforge::logger::print_status("  If you need .deb packages, use WSL or a Linux VM.");
     return false;
 #else
     // Check for dpkg-deb
@@ -1939,15 +1821,11 @@ static bool check_generator_tools_installed(const std::string &generator) {
     dpkg_found = which_result.success && !which_result.stdout_output.empty();
 
     if (!dpkg_found) {
-      cforge::logger::print_warning(
-          "dpkg tools not found. To create .deb packages, "
-          "please install dpkg tools:");
-      cforge::logger::print_status(
-          "  On Ubuntu/Debian: sudo apt-get install dpkg-dev");
-      cforge::logger::print_status(
-          "  On Fedora/RHEL:  sudo dnf install dpkg-dev");
-      cforge::logger::print_status(
-          "  Run the package command again after installation");
+      cforge::logger::print_warning("dpkg tools not found. To create .deb packages, "
+                                    "please install dpkg tools:");
+      cforge::logger::print_status("  On Ubuntu/Debian: sudo apt-get install dpkg-dev");
+      cforge::logger::print_status("  On Fedora/RHEL:  sudo dnf install dpkg-dev");
+      cforge::logger::print_status("  Run the package command again after installation");
       return false;
     }
 #endif
@@ -1959,12 +1837,9 @@ static bool check_generator_tools_installed(const std::string &generator) {
 
 #ifdef _WIN32
     // RPM generator not well-supported on Windows
-    cforge::logger::print_warning(
-        "RPM generator is not well-supported on Windows.");
-    cforge::logger::print_status(
-        "  Consider using --type ZIP instead for Windows.");
-    cforge::logger::print_status(
-        "  If you need .rpm packages, use WSL or a Linux VM.");
+    cforge::logger::print_warning("RPM generator is not well-supported on Windows.");
+    cforge::logger::print_status("  Consider using --type ZIP instead for Windows.");
+    cforge::logger::print_status("  If you need .rpm packages, use WSL or a Linux VM.");
     return false;
 #else
     // Check for rpmbuild
@@ -1973,15 +1848,11 @@ static bool check_generator_tools_installed(const std::string &generator) {
     rpm_found = which_result.success && !which_result.stdout_output.empty();
 
     if (!rpm_found) {
-      cforge::logger::print_warning(
-          "rpmbuild not found. To create .rpm packages, "
-          "please install rpm tools:");
-      cforge::logger::print_status(
-          "  On Ubuntu/Debian: sudo apt-get install rpm");
-      cforge::logger::print_status(
-          "  On Fedora/RHEL:  sudo dnf install rpm-build");
-      cforge::logger::print_status(
-          "  Run the package command again after installation");
+      cforge::logger::print_warning("rpmbuild not found. To create .rpm packages, "
+                                    "please install rpm tools:");
+      cforge::logger::print_status("  On Ubuntu/Debian: sudo apt-get install rpm");
+      cforge::logger::print_status("  On Fedora/RHEL:  sudo dnf install rpm-build");
+      cforge::logger::print_status("  Run the package command again after installation");
       return false;
     }
 #endif
@@ -2007,21 +1878,18 @@ static cforge_int_t move_files_to_directory(
     std::function<bool(const std::filesystem::path &)> file_filter = nullptr) {
   cforge_int_t files_moved = 0;
 
-  if (!std::filesystem::exists(source_dir) ||
-      !std::filesystem::is_directory(source_dir)) {
-    cforge::logger::print_verbose("Source directory does not exist: " +
-                                  source_dir.string());
+  if (!std::filesystem::exists(source_dir) || !std::filesystem::is_directory(source_dir)) {
+    cforge::logger::print_verbose("Source directory does not exist: " + source_dir.string());
     return 0;
   }
 
   if (!std::filesystem::exists(dest_dir)) {
     try {
       std::filesystem::create_directories(dest_dir);
-      cforge::logger::print_verbose("Created destination directory: " +
-                                    dest_dir.string());
+      cforge::logger::print_verbose("Created destination directory: " + dest_dir.string());
     } catch (const std::exception &ex) {
-      cforge::logger::print_warning("Failed to create destination directory: " +
-                                    std::string(ex.what()));
+      cforge::logger::print_warning("Failed to create destination directory: "
+                                    + std::string(ex.what()));
       return 0;
     }
   }
@@ -2045,14 +1913,13 @@ static cforge_int_t move_files_to_directory(
         std::filesystem::copy_file(entry.path(), dest_path);
         std::filesystem::remove(entry.path());
 
-        cforge::logger::print_verbose(
-            "Moved file to cforge::workspace packages: " + dest_path.string());
+        cforge::logger::print_verbose("Moved file to cforge::workspace packages: "
+                                      + dest_path.string());
         files_moved++;
       }
     }
   } catch (const std::exception &ex) {
-    cforge::logger::print_warning("Error moving files: " +
-                                  std::string(ex.what()));
+    cforge::logger::print_warning("Error moving files: " + std::string(ex.what()));
   }
 
   return files_moved;
@@ -2074,28 +1941,26 @@ static cforge_int_t move_files_to_directory(
  */
 [[maybe_unused]] static bool package_single_project(
     const std::filesystem::path &project_dir,
-    cforge::toml_reader &project_config, const std::string &build_config,
-    bool skip_build, const std::vector<std::string> &generators, bool verbose,
+    cforge::toml_reader &project_config,
+    const std::string &build_config,
+    bool skip_build,
+    const std::vector<std::string> &generators,
+    bool verbose,
     const cforge_context_t *ctx,
     const std::filesystem::path &workspace_package_dir = "") {
   // Get project name for verbose logging
-  std::string project_name =
-      project_config.get_string("project.name", "cpp-project");
-  std::string project_version =
-      project_config.get_string("project.version", "1.0.0");
-  cforge::logger::print_verbose("Packaging project: " + project_name +
-                                " version " + project_version);
+  std::string project_name    = project_config.get_string("project.name", "cpp-project");
+  std::string project_version = project_config.get_string("project.version", "1.0.0");
+  cforge::logger::print_verbose("Packaging project: " + project_name + " version "
+                                + project_version);
 
   // Get base build directory
-  std::string base_build_dir =
-      project_config.get_string("build.build_dir", "build");
+  std::string base_build_dir = project_config.get_string("build.build_dir", "build");
   cforge::logger::print_verbose("Base build directory: " + base_build_dir);
 
   // Get the config-specific build directory
-  std::filesystem::path build_dir =
-      get_build_dir_for_config(base_build_dir, build_config);
-  cforge::logger::print_verbose("Config-specific build directory: " +
-                                build_dir.string());
+  std::filesystem::path build_dir = get_build_dir_for_config(base_build_dir, build_config);
+  cforge::logger::print_verbose("Config-specific build directory: " + build_dir.string());
 
   // Make build_dir absolute if it's relative
   if (build_dir.is_relative()) {
@@ -2104,29 +1969,25 @@ static cforge_int_t move_files_to_directory(
 
   // Check if build directory exists
   bool build_dir_exists = std::filesystem::exists(build_dir);
-  bool cache_exists = std::filesystem::exists(build_dir / "CMakeCache.txt");
+  bool cache_exists     = std::filesystem::exists(build_dir / "CMakeCache.txt");
 
-  cforge::logger::print_verbose("Build directory exists: " +
-                                std::string(build_dir_exists ? "yes" : "no"));
-  cforge::logger::print_verbose("CMakeCache.txt exists: " +
-                                std::string(cache_exists ? "yes" : "no"));
+  cforge::logger::print_verbose("Build directory exists: "
+                                + std::string(build_dir_exists ? "yes" : "no"));
+  cforge::logger::print_verbose("CMakeCache.txt exists: "
+                                + std::string(cache_exists ? "yes" : "no"));
 
   // If build directory doesn't exist or CMakeCache.txt is missing, build the
   // project first
   if (!build_dir_exists || !cache_exists) {
     if (skip_build) {
-      cforge::logger::print_error(
-          "Build directory or CMakeCache.txt not found, but "
-          "--no-build was specified");
-      cforge::logger::print_status("Run 'cforge build --config " +
-                                   build_config + "' first");
-      cforge::logger::print_status("Expected build directory: " +
-                                   build_dir.string());
+      cforge::logger::print_error("Build directory or CMakeCache.txt not found, but "
+                                  "--no-build was specified");
+      cforge::logger::print_status("Run 'cforge build --config " + build_config + "' first");
+      cforge::logger::print_status("Expected build directory: " + build_dir.string());
       return false;
     }
 
-    cforge::logger::print_status(
-        "Build directory not found or incomplete, building project first");
+    cforge::logger::print_status("Build directory not found or incomplete, building project first");
 
     // Create a modified context with the correct configuration
     cforge_context_t build_ctx;
@@ -2136,10 +1997,8 @@ static cforge_int_t move_files_to_directory(
 
     // Copy only the essential fields - working_dir is a char array
     std::string safe_path = project_dir.string();
-    strncpy(build_ctx.working_dir, safe_path.c_str(),
-            sizeof(build_ctx.working_dir) - 1);
-    build_ctx.working_dir[sizeof(build_ctx.working_dir) - 1] =
-        '\0'; // Ensure null termination
+    strncpy(build_ctx.working_dir, safe_path.c_str(), sizeof(build_ctx.working_dir) - 1);
+    build_ctx.working_dir[sizeof(build_ctx.working_dir) - 1] = '\0';  // Ensure null termination
 
     // Copy verbosity
     if (ctx->args.verbosity) {
@@ -2154,9 +2013,9 @@ static cforge_int_t move_files_to_directory(
 
     // Allocate space for args to pass special flags to the build command
     // Use a simpler generator to avoid problems with Ninja Multi-Config
-    build_ctx.args.arg_count = 4; // -G "generator" + --config CONFIG_NAME
-    build_ctx.args.args = (cforge_string_t *)malloc(build_ctx.args.arg_count *
-                                                    sizeof(cforge_string_t));
+    build_ctx.args.arg_count = 4;  // -G "generator" + --config CONFIG_NAME
+    build_ctx.args.args =
+        (cforge_string_t *)malloc(build_ctx.args.arg_count * sizeof(cforge_string_t));
 
     // Set the generator flag
     build_ctx.args.args[0] = strdup("-G");
@@ -2165,8 +2024,7 @@ static cforge_int_t move_files_to_directory(
     // Add explicit --config parameter to ensure build uses correct config
     // This is needed to ensure we don't use Debug when Release is specified
     build_ctx.args.args[2] = strdup("--config");
-    build_ctx.args.args[3] =
-        strdup(build_ctx.args.config ? build_ctx.args.config : "Release");
+    build_ctx.args.args[3] = strdup(build_ctx.args.config ? build_ctx.args.config : "Release");
 
     // Build the project
     bool build_success = build_project(&build_ctx);
@@ -2199,9 +2057,8 @@ static cforge_int_t move_files_to_directory(
 
     // After building, check if build dir now exists
     bool build_dir_exists_now = std::filesystem::exists(build_dir);
-    cforge::logger::print_verbose(
-        "Build directory exists after build: " +
-        std::string(build_dir_exists_now ? "yes" : "no"));
+    cforge::logger::print_verbose("Build directory exists after build: "
+                                  + std::string(build_dir_exists_now ? "yes" : "no"));
 
     // If the directory still doesn't exist, we need to check other common
     // formats
@@ -2216,7 +2073,7 @@ static cforge_int_t move_files_to_directory(
       std::vector<std::string> patterns = {
           "build-" + build_config,
           "build-" + std::string(build_config.begin(), build_config.end()),
-          "build" + build_config, // No separator
+          "build" + build_config,  // No separator
           "build_" + build_config,
           "build/" + build_config,
           "build-" + std::string(build_config.begin(), build_config.end()),
@@ -2224,48 +2081,39 @@ static cforge_int_t move_files_to_directory(
 
       // Try lowercase versions too
       std::string config_lower = build_config;
-      std::transform(config_lower.begin(), config_lower.end(),
-                     config_lower.begin(), ::tolower);
+      std::transform(config_lower.begin(), config_lower.end(), config_lower.begin(), ::tolower);
       patterns.push_back("build-" + config_lower);
       patterns.push_back("build_" + config_lower);
 
       // Find any build directory by inspecting subdirectories of project_dir
       bool found_build_dir = false;
       if (!found_build_dir) {
-        cforge::logger::print_status(
-            "Looking for build directories in project");
+        cforge::logger::print_status("Looking for build directories in project");
         try {
-          for (const auto &entry :
-               std::filesystem::directory_iterator(parent_dir)) {
+          for (const auto &entry : std::filesystem::directory_iterator(parent_dir)) {
             if (entry.is_directory()) {
               std::string dirname = entry.path().filename().string();
-              if (dirname.find("build") != std::string::npos ||
-                  dirname.find("Build") != std::string::npos) {
+              if (dirname.find("build") != std::string::npos
+                  || dirname.find("Build") != std::string::npos) {
                 // Check if this has CMake files
                 if (std::filesystem::exists(entry.path() / "CMakeCache.txt")) {
                   build_dir = entry.path();
-                  cforge::logger::print_verbose(
-                      "Found build directory by inspection: " +
-                      build_dir.string());
+                  cforge::logger::print_verbose("Found build directory by inspection: "
+                                                + build_dir.string());
                   found_build_dir = true;
                   break;
                 }
 
                 // Also check subdirectories for common patterns
-                for (const auto &subdir :
-                     std::filesystem::directory_iterator(entry.path())) {
+                for (const auto &subdir : std::filesystem::directory_iterator(entry.path())) {
                   if (subdir.is_directory()) {
                     std::string subdirname = subdir.path().filename().string();
-                    if (subdirname == build_config ||
-                        subdirname == config_lower || subdirname == "Debug" ||
-                        subdirname == "Release") {
-
-                      if (std::filesystem::exists(subdir.path() /
-                                                  "CMakeCache.txt")) {
+                    if (subdirname == build_config || subdirname == config_lower
+                        || subdirname == "Debug" || subdirname == "Release") {
+                      if (std::filesystem::exists(subdir.path() / "CMakeCache.txt")) {
                         build_dir = subdir.path();
-                        cforge::logger::print_verbose(
-                            "Found build subdirectory by inspection: " +
-                            build_dir.string());
+                        cforge::logger::print_verbose("Found build subdirectory by inspection: "
+                                                      + build_dir.string());
                         found_build_dir = true;
                         break;
                       }
@@ -2273,14 +2121,14 @@ static cforge_int_t move_files_to_directory(
                   }
                 }
 
-                if (found_build_dir)
+                if (found_build_dir) {
                   break;
+                }
               }
             }
           }
         } catch (const std::exception &ex) {
-          cforge::logger::print_verbose("Error inspecting directories: " +
-                                        std::string(ex.what()));
+          cforge::logger::print_verbose("Error inspecting directories: " + std::string(ex.what()));
         }
       }
 
@@ -2290,8 +2138,7 @@ static cforge_int_t move_files_to_directory(
 
         if (std::filesystem::exists(check_dir)) {
           build_dir = check_dir;
-          cforge::logger::print_verbose("Found build directory: " +
-                                        build_dir.string());
+          cforge::logger::print_verbose("Found build directory: " + build_dir.string());
           found_build_dir = true;
           break;
         }
@@ -2301,13 +2148,10 @@ static cforge_int_t move_files_to_directory(
       if (!found_build_dir) {
         cforge::logger::print_status("Searching for CMake build directories");
 
-        for (const auto &entry :
-             std::filesystem::recursive_directory_iterator(parent_dir)) {
-          if (entry.is_regular_file() &&
-              entry.path().filename() == "CMakeCache.txt") {
+        for (const auto &entry : std::filesystem::recursive_directory_iterator(parent_dir)) {
+          if (entry.is_regular_file() && entry.path().filename() == "CMakeCache.txt") {
             build_dir = entry.path().parent_path();
-            cforge::logger::print_verbose("Found CMake build directory: " +
-                                          build_dir.string());
+            cforge::logger::print_verbose("Found CMake build directory: " + build_dir.string());
             found_build_dir = true;
             break;
           }
@@ -2317,21 +2161,19 @@ static cforge_int_t move_files_to_directory(
       // Last resort - try build/bin/Debug directory which might contain
       // executables
       if (!found_build_dir) {
-        std::filesystem::path bin_dir =
-            parent_dir / "build" / "bin" / build_config;
+        std::filesystem::path bin_dir = parent_dir / "build" / "bin" / build_config;
         if (std::filesystem::exists(bin_dir)) {
           // Go up two levels to get the build directory
           build_dir = bin_dir.parent_path().parent_path();
-          cforge::logger::print_verbose(
-              "Found build directory via bin folder: " + build_dir.string());
+          cforge::logger::print_verbose("Found build directory via bin folder: "
+                                        + build_dir.string());
           found_build_dir = true;
         }
       }
 
       // After all that searching, if we still can't find it, we fail
       if (!std::filesystem::exists(build_dir)) {
-        cforge::logger::print_error(
-            "Could not find build directory after building project");
+        cforge::logger::print_error("Could not find build directory after building project");
         return false;
       }
     }
@@ -2347,10 +2189,8 @@ static cforge_int_t move_files_to_directory(
 
     // Copy only the essential fields - working_dir is a char array
     std::string safe_path = project_dir.string();
-    strncpy(build_ctx.working_dir, safe_path.c_str(),
-            sizeof(build_ctx.working_dir) - 1);
-    build_ctx.working_dir[sizeof(build_ctx.working_dir) - 1] =
-        '\0'; // Ensure null termination
+    strncpy(build_ctx.working_dir, safe_path.c_str(), sizeof(build_ctx.working_dir) - 1);
+    build_ctx.working_dir[sizeof(build_ctx.working_dir) - 1] = '\0';  // Ensure null termination
 
     // Copy verbosity
     if (ctx->args.verbosity) {
@@ -2365,9 +2205,9 @@ static cforge_int_t move_files_to_directory(
 
     // Allocate space for args to pass special flags to the build command
     // Use a simpler generator to avoid problems with Ninja Multi-Config
-    build_ctx.args.arg_count = 4; // -G "generator" + --config CONFIG_NAME
-    build_ctx.args.args = (cforge_string_t *)malloc(build_ctx.args.arg_count *
-                                                    sizeof(cforge_string_t));
+    build_ctx.args.arg_count = 4;  // -G "generator" + --config CONFIG_NAME
+    build_ctx.args.args =
+        (cforge_string_t *)malloc(build_ctx.args.arg_count * sizeof(cforge_string_t));
 
     // Set the generator flag
     build_ctx.args.args[0] = strdup("-G");
@@ -2376,8 +2216,7 @@ static cforge_int_t move_files_to_directory(
     // Add explicit --config parameter to ensure build uses correct config
     // This is needed to ensure we don't use Debug when Release is specified
     build_ctx.args.args[2] = strdup("--config");
-    build_ctx.args.args[3] =
-        strdup(build_ctx.args.config ? build_ctx.args.config : "Release");
+    build_ctx.args.args[3] = strdup(build_ctx.args.config ? build_ctx.args.config : "Release");
 
     // Build the project
     bool build_success = build_project(&build_ctx);
@@ -2408,15 +2247,13 @@ static cforge_int_t move_files_to_directory(
       return false;
     }
   } else {
-    cforge::logger::print_action("Skipping",
-                                 "build as requested with --no-build");
+    cforge::logger::print_action("Skipping", "build as requested with --no-build");
   }
 
   // Verify that the build directory now exists
   if (!std::filesystem::exists(build_dir)) {
-    cforge::logger::print_error(
-        "Build directory still doesn't exist after build: " +
-        build_dir.string());
+    cforge::logger::print_error("Build directory still doesn't exist after build: "
+                                + build_dir.string());
     return false;
   }
 
@@ -2437,16 +2274,14 @@ static cforge_int_t move_files_to_directory(
     if (check_generator_tools_installed(generator)) {
       available_generators.push_back(generator);
     } else {
-      cforge::logger::print_warning(
-          "Skipping generator " + generator +
-          " because required tools are not installed");
+      cforge::logger::print_warning("Skipping generator " + generator
+                                    + " because required tools are not installed");
     }
   }
 
   if (available_generators.empty()) {
-    cforge::logger::print_error(
-        "No available package generators. Please install "
-        "required tools or specify different generators.");
+    cforge::logger::print_error("No available package generators. Please install "
+                                "required tools or specify different generators.");
     return false;
   }
 
@@ -2454,8 +2289,9 @@ static cforge_int_t move_files_to_directory(
   if (!available_generators.empty()) {
     std::string gen_str = "Using generators: ";
     for (cforge_size_t i = 0; i < available_generators.size(); ++i) {
-      if (i > 0)
+      if (i > 0) {
         gen_str += ", ";
+      }
       gen_str += available_generators[i];
     }
     cforge::logger::print_verbose(gen_str);
@@ -2468,25 +2304,22 @@ static cforge_int_t move_files_to_directory(
       if (check_generator_tools_installed(gen)) {
         valid_gens.push_back(gen);
       } else {
-        cforge::logger::print_warning("Skipping generator '" + gen +
-                                      "' due to missing tools");
+        cforge::logger::print_warning("Skipping generator '" + gen + "' due to missing tools");
       }
     }
     if (valid_gens.empty()) {
-      cforge::logger::print_error(
-          "No valid package generators available. Aborting packaging.");
+      cforge::logger::print_error("No valid package generators available. Aborting packaging.");
       return 1;
     }
     available_generators = valid_gens;
-    cforge::logger::print_verbose(
-        "Using valid package generators: " +
-        cforge::join_strings(available_generators, ", "));
+    cforge::logger::print_verbose("Using valid package generators: "
+                                  + cforge::join_strings(available_generators, ", "));
   }
 
   // Package the project using the project_name and project_version already
   // defined above
-  bool cpack_success = run_cpack(build_dir, available_generators, build_config,
-                                 verbose, project_name, project_version);
+  bool cpack_success = run_cpack(
+      build_dir, available_generators, build_config, verbose, project_name, project_version);
 
   // If successful and we have a cforge::workspace package directory, move
   // packages there
@@ -2499,19 +2332,17 @@ static cforge_int_t move_files_to_directory(
                                     "cforge::workspace packages directory");
 
       // Move all package files to the cforge::workspace package directory
-      cforge_int_t files_moved =
-          move_files_to_directory(project_package_dir, workspace_package_dir,
-                                  [](const std::filesystem::path &path) {
-                                    return is_package_file(path);
-                                  });
+      cforge_int_t files_moved = move_files_to_directory(project_package_dir,
+                                                         workspace_package_dir,
+                                                         [](const std::filesystem::path &path) {
+                                                           return is_package_file(path);
+                                                         });
 
       if (files_moved > 0) {
-        cforge::logger::print_verbose(
-            "Moved " + std::to_string(files_moved) +
-            " package files to cforge::workspace directory");
+        cforge::logger::print_verbose("Moved " + std::to_string(files_moved)
+                                      + " package files to cforge::workspace directory");
       } else {
-        cforge::logger::print_verbose(
-            "No package files were moved to cforge::workspace directory");
+        cforge::logger::print_verbose("No package files were moved to cforge::workspace directory");
       }
     }
   }
@@ -2527,10 +2358,10 @@ static cforge_int_t move_files_to_directory(
  * @param exclude_intermediate Whether to exclude intermediate files
  * @return std::vector<std::filesystem::path> List of package files
  */
-[[maybe_unused]] static std::vector<std::filesystem::path>
-list_packages(const std::filesystem::path &dir,
-              const std::string &project_name = "",
-              bool exclude_intermediate = true) {
+[[maybe_unused]] static std::vector<std::filesystem::path> list_packages(
+    const std::filesystem::path &dir,
+    const std::string &project_name = "",
+    bool exclude_intermediate       = true) {
   std::vector<std::filesystem::path> packages;
 
   if (!std::filesystem::exists(dir)) {
@@ -2546,10 +2377,10 @@ list_packages(const std::filesystem::path &dir,
       std::string filename = entry.path().filename().string();
 
       // Skip folders like _CPack_Packages and other intermediate paths
-      if (exclude_intermediate &&
-          (entry.path().string().find("_CPack_Packages") != std::string::npos ||
-           entry.path().string().find("temp") != std::string::npos ||
-           entry.path().string().find("_tmp") != std::string::npos)) {
+      if (exclude_intermediate
+          && (entry.path().string().find("_CPack_Packages") != std::string::npos
+              || entry.path().string().find("temp") != std::string::npos
+              || entry.path().string().find("_tmp") != std::string::npos)) {
         continue;
       }
 
@@ -2566,15 +2397,14 @@ list_packages(const std::filesystem::path &dir,
       }
     }
   } catch (const std::exception &ex) {
-    cforge::logger::print_verbose("Error listing packages: " +
-                                  std::string(ex.what()));
+    cforge::logger::print_verbose("Error listing packages: " + std::string(ex.what()));
   }
 
   // Sort packages by modification time (newest first)
-  std::sort(packages.begin(), packages.end(),
+  std::sort(packages.begin(),
+            packages.end(),
             [](const std::filesystem::path &a, const std::filesystem::path &b) {
-              return std::filesystem::last_write_time(a) >
-                     std::filesystem::last_write_time(b);
+              return std::filesystem::last_write_time(a) > std::filesystem::last_write_time(b);
             });
 
   return packages;
@@ -2601,8 +2431,8 @@ cforge_int_t cforge_cmd_package(const cforge_context_t *ctx) {
   // Check if this is a cforge::workspace (supports both unified cforge.toml and
   // legacy cforge.cforge::workspace.toml)
   std::filesystem::path current_dir = std::filesystem::path(ctx->working_dir);
-  auto [is_ws, workspace_dir] = cforge::is_in_workspace(current_dir);
-  bool is_workspace = is_ws && current_dir == workspace_dir;
+  auto [is_ws, workspace_dir]       = cforge::is_in_workspace(current_dir);
+  bool is_workspace                 = is_ws && current_dir == workspace_dir;
 
   // Parse common parameters
 
@@ -2615,38 +2445,33 @@ cforge_int_t cforge_cmd_package(const cforge_context_t *ctx) {
     if (arg == "--config" || arg == "-c") {
       if (i + 1 < ctx->args.arg_count) {
         config_name = ctx->args.args[i + 1];
-        cforge::logger::print_verbose(
-            "Using configuration from command line: " + config_name);
+        cforge::logger::print_verbose("Using configuration from command line: " + config_name);
         break;
       }
     } else if (arg.substr(0, 9) == "--config=") {
       config_name = arg.substr(9);
-      cforge::logger::print_verbose("Using configuration from command line: " +
-                                    config_name);
+      cforge::logger::print_verbose("Using configuration from command line: " + config_name);
       break;
     }
   }
 
   // Check ctx.args.config if config_name is still empty
-  if (config_name.empty() && ctx->args.config != nullptr &&
-      strlen(ctx->args.config) > 0) {
+  if (config_name.empty() && ctx->args.config != nullptr && strlen(ctx->args.config) > 0) {
     config_name = ctx->args.config;
-    cforge::logger::print_verbose("Using configuration from context: " +
-                                  config_name);
+    cforge::logger::print_verbose("Using configuration from context: " + config_name);
   }
 
   // If still empty, default to Release
   if (config_name.empty()) {
-    config_name = "Release"; // Default to Release if not specified
-    cforge::logger::print_verbose(
-        "No configuration specified, using default: " + config_name);
+    config_name = "Release";  // Default to Release if not specified
+    cforge::logger::print_verbose("No configuration specified, using default: " + config_name);
   }
 
   // Normalize standard config names
   std::string config_lower = cforge::string_to_lower(config_name);
-  if (config_lower == "debug" || config_lower == "release" ||
-      config_lower == "relwithdebinfo" || config_lower == "minsizerel") {
-    config_name = config_lower;
+  if (config_lower == "debug" || config_lower == "release" || config_lower == "relwithdebinfo"
+      || config_lower == "minsizerel") {
+    config_name    = config_lower;
     config_name[0] = std::toupper(config_name[0]);
   }
 
@@ -2664,22 +2489,19 @@ cforge_int_t cforge_cmd_package(const cforge_context_t *ctx) {
   }
 
   // Get verbose flag
-  bool verbose = cforge::logger::get_verbosity() ==
-                 cforge::log_verbosity::VERBOSITY_VERBOSE;
+  bool verbose = cforge::logger::get_verbosity() == cforge::log_verbosity::VERBOSITY_VERBOSE;
 
   // Get generators from command line if specified
   std::vector<std::string> generators;
   if (ctx->args.args) {
     for (cforge_int_t i = 0; i < ctx->args.arg_count; ++i) {
-      if ((strcmp(ctx->args.args[i], "--type") == 0 ||
-           strcmp(ctx->args.args[i], "-t") == 0) &&
-          i + 1 < ctx->args.arg_count) {
+      if ((strcmp(ctx->args.args[i], "--type") == 0 || strcmp(ctx->args.args[i], "-t") == 0)
+          && i + 1 < ctx->args.arg_count) {
         std::string gen = ctx->args.args[i + 1];
         // Uppercase the generator name
         std::transform(gen.begin(), gen.end(), gen.begin(), ::toupper);
         generators.push_back(gen);
-        cforge::logger::print_verbose("Using generator from command line: " +
-                                      gen);
+        cforge::logger::print_verbose("Using generator from command line: " + gen);
         break;
       }
     }
@@ -2691,9 +2513,8 @@ cforge_int_t cforge_cmd_package(const cforge_context_t *ctx) {
     specific_project = ctx->args.project;
   } else {
     for (cforge_int_t i = 0; i < ctx->args.arg_count; ++i) {
-      if ((strcmp(ctx->args.args[i], "--project") == 0 ||
-           strcmp(ctx->args.args[i], "-p") == 0) &&
-          i + 1 < ctx->args.arg_count) {
+      if ((strcmp(ctx->args.args[i], "--project") == 0 || strcmp(ctx->args.args[i], "-p") == 0)
+          && i + 1 < ctx->args.arg_count) {
         specific_project = ctx->args.args[i + 1];
         break;
       }
@@ -2703,15 +2524,14 @@ cforge_int_t cforge_cmd_package(const cforge_context_t *ctx) {
   try {
     if (is_workspace) {
       // Consolidated cforge::workspace packaging
-      cforge::logger::print_verbose("Packaging in cforge::workspace context: " +
-                                    current_dir.string());
+      cforge::logger::print_verbose("Packaging in cforge::workspace context: "
+                                    + current_dir.string());
 
       // Load cforge::workspace using the cforge::workspace class (supports both
       // unified and legacy formats)
       cforge::workspace ws;
       if (!ws.load(workspace_dir)) {
-        cforge::logger::print_error(
-            "Failed to load cforge::workspace for packaging");
+        cforge::logger::print_error("Failed to load cforge::workspace for packaging");
         return 1;
       }
 
@@ -2722,22 +2542,21 @@ cforge_int_t cforge_cmd_package(const cforge_context_t *ctx) {
 
       // Build all projects if needed
       if (!skip_build) {
-        cforge::logger::building(
-            "all projects in cforge::workspace before packaging");
+        cforge::logger::building("all projects in cforge::workspace before packaging");
         cforge_context_t build_ctx;
         memset(&build_ctx, 0, sizeof(build_ctx));
-        snprintf(build_ctx.working_dir, sizeof(build_ctx.working_dir), "%s",
-                 ctx->working_dir);
+        snprintf(build_ctx.working_dir, sizeof(build_ctx.working_dir), "%s", ctx->working_dir);
         build_ctx.args.command = strdup("build");
-        build_ctx.args.config = strdup(config_name.c_str());
+        build_ctx.args.config  = strdup(config_name.c_str());
         if (verbose) {
           build_ctx.args.verbosity = strdup("verbose");
         }
         cforge_int_t res = cforge_cmd_build(&build_ctx);
         free(build_ctx.args.command);
         free(build_ctx.args.config);
-        if (build_ctx.args.verbosity)
+        if (build_ctx.args.verbosity) {
           free(build_ctx.args.verbosity);
+        }
         if (res != 0) {
           cforge::logger::print_error("Workspace build failed");
           return 1;
@@ -2747,8 +2566,8 @@ cforge_int_t cforge_cmd_package(const cforge_context_t *ctx) {
       auto projects = ws.get_projects();
 
       // Create consolidated cforge::workspace package
-      bool success = create_workspace_package(
-          ws.get_name(), projects, config_name, verbose, current_dir);
+      bool success =
+          create_workspace_package(ws.get_name(), projects, config_name, verbose, current_dir);
       return success ? 0 : 1;
     } else {
       // Handle single project packaging
@@ -2757,8 +2576,8 @@ cforge_int_t cforge_cmd_package(const cforge_context_t *ctx) {
       // Check if this is a valid cforge project
       std::filesystem::path config_path = current_dir / CFORGE_FILE;
       if (!std::filesystem::exists(config_path)) {
-        cforge::logger::print_error("Not a valid cforge project (missing " +
-                                    std::string(CFORGE_FILE) + ")");
+        cforge::logger::print_error("Not a valid cforge project (missing "
+                                    + std::string(CFORGE_FILE) + ")");
         return 1;
       }
 
@@ -2767,9 +2586,8 @@ cforge_int_t cforge_cmd_package(const cforge_context_t *ctx) {
       try {
         config_table = toml::parse_file(config_path.string());
       } catch (const toml::parse_error &e) {
-        cforge::logger::print_error("Failed to parse " +
-                                    std::string(CFORGE_FILE) + ": " +
-                                    std::string(e.what()));
+        cforge::logger::print_error("Failed to parse " + std::string(CFORGE_FILE) + ": "
+                                    + std::string(e.what()));
         return 1;
       }
 
@@ -2782,8 +2600,7 @@ cforge_int_t cforge_cmd_package(const cforge_context_t *ctx) {
       }
 
       // Get project version
-      std::string project_version =
-          project_config.get_string("project.version", "0.1.0");
+      std::string project_version = project_config.get_string("project.version", "0.1.0");
 
       // Log project info
       cforge::logger::print_action("Project", project_name);
@@ -2803,8 +2620,7 @@ cforge_int_t cforge_cmd_package(const cforge_context_t *ctx) {
         cforge::logger::building("project before packaging");
 
         if (!build_project(ctx)) {
-          cforge::logger::print_error(
-              "Build failed, cannot continue with packaging");
+          cforge::logger::print_error("Build failed, cannot continue with packaging");
           return 1;
         }
 
@@ -2827,8 +2643,8 @@ cforge_int_t cforge_cmd_package(const cforge_context_t *ctx) {
         }
       }
 
-      cforge::logger::print_verbose("Using package generators: " +
-                                    cforge::join_strings(generators, ", "));
+      cforge::logger::print_verbose("Using package generators: "
+                                    + cforge::join_strings(generators, ", "));
 
       // Filter out unsupported package generators for this platform
       {
@@ -2837,34 +2653,31 @@ cforge_int_t cforge_cmd_package(const cforge_context_t *ctx) {
           if (check_generator_tools_installed(gen)) {
             filtered.push_back(gen);
           } else {
-            cforge::logger::print_warning("Skipping generator '" + gen +
-                                          "' as unsupported on this platform");
+            cforge::logger::print_warning("Skipping generator '" + gen
+                                          + "' as unsupported on this platform");
           }
         }
         if (filtered.empty()) {
-          cforge::logger::print_error(
-              "No valid package generators available for this "
-              "platform. Aborting packaging.");
+          cforge::logger::print_error("No valid package generators available for this "
+                                      "platform. Aborting packaging.");
           return 1;
         }
         if (filtered.size() != generators.size()) {
           generators = filtered;
-          cforge::logger::print_verbose(
-              "Proceeding with filtered generators: " +
-              cforge::join_strings(generators, ", "));
+          cforge::logger::print_verbose("Proceeding with filtered generators: "
+                                        + cforge::join_strings(generators, ", "));
         }
       }
 
       // Determine build directory
-      std::string build_dir_name =
-          project_config.get_string("build.build_dir", "build");
+      std::string build_dir_name      = project_config.get_string("build.build_dir", "build");
       std::filesystem::path build_dir = current_dir / build_dir_name;
-      std::filesystem::path config_build_dir =
-          get_build_dir_for_config(build_dir.string(), config_name);
+      std::filesystem::path config_build_dir = get_build_dir_for_config(build_dir.string(),
+                                                                        config_name);
 
       // Run CPack
-      bool result = run_cpack(config_build_dir, generators, config_name,
-                              verbose, project_name, project_version);
+      bool result = run_cpack(
+          config_build_dir, generators, config_name, verbose, project_name, project_version);
 
       if (!result) {
         cforge::logger::print_error("Packaging failed");

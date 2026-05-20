@@ -5,6 +5,7 @@
  */
 
 #include "cforge/log.hpp"
+
 #include "core/build_utils.hpp"
 #include "core/command_registry.hpp"
 #include "core/commands.hpp"
@@ -41,20 +42,18 @@
  * @param project_name Project name
  * @return std::filesystem::path Path to executable, empty if not found
  */
-static std::filesystem::path
-find_project_executable(const std::filesystem::path &project_path,
-                        const std::string &build_dir, const std::string &config,
-                        const std::string &project_name) {
-  cforge::logger::print_verbose("Searching for executable for project: " +
-                        project_name);
+static std::filesystem::path find_project_executable(const std::filesystem::path &project_path,
+                                                     const std::string &build_dir,
+                                                     const std::string &config,
+                                                     const std::string &project_name) {
+  cforge::logger::print_verbose("Searching for executable for project: " + project_name);
   cforge::logger::print_verbose("Project path: " + project_path.string());
   cforge::logger::print_verbose("Build directory: " + build_dir);
   cforge::logger::print_verbose("Configuration: " + config);
 
   // Convert config to lowercase for directory matching
   std::string config_lower = config;
-  std::transform(config_lower.begin(), config_lower.end(), config_lower.begin(),
-                 ::tolower);
+  std::transform(config_lower.begin(), config_lower.end(), config_lower.begin(), ::tolower);
 
   // Determine actual build base directory (absolute or project-relative)
   std::filesystem::path build_base = build_dir;
@@ -63,26 +62,25 @@ find_project_executable(const std::filesystem::path &project_path,
   }
 
   // Define common executable locations to search
-  std::vector<std::filesystem::path> search_paths = {
-      build_base / "bin",
-      build_base / "bin" / config,
-      build_base / "bin" / config_lower,
-      build_base / config,
-      build_base / config_lower,
-      build_base,
-      project_path / "bin",
-      project_path / "bin" / config,
-      project_path / "bin" / config_lower};
+  std::vector<std::filesystem::path> search_paths = {build_base / "bin",
+                                                     build_base / "bin" / config,
+                                                     build_base / "bin" / config_lower,
+                                                     build_base / config,
+                                                     build_base / config_lower,
+                                                     build_base,
+                                                     project_path / "bin",
+                                                     project_path / "bin" / config,
+                                                     project_path / "bin" / config_lower};
 
   // Common executable name patterns to try
   std::vector<std::string> executable_patterns = {
       project_name + "_" + config_lower,
       project_name,
       project_name + "_" + config,
-      project_name + "_d",       // Debug convention
-      project_name + "_debug",   // Debug convention
-      project_name + "_release", // Release convention
-      project_name + "_r"        // Release convention
+      project_name + "_d",        // Debug convention
+      project_name + "_debug",    // Debug convention
+      project_name + "_release",  // Release convention
+      project_name + "_r"         // Release convention
   };
 
 #ifdef _WIN32
@@ -98,37 +96,36 @@ find_project_executable(const std::filesystem::path &project_path,
 #ifdef _WIN32
       return path.extension() == ".exe";
 #else
-      return (std::filesystem::status(path).permissions() &
-              std::filesystem::perms::owner_exec) !=
-             std::filesystem::perms::none;
+      return (std::filesystem::status(path).permissions() & std::filesystem::perms::owner_exec)
+          != std::filesystem::perms::none;
 #endif
     } catch (const std::exception &ex) {
-      cforge::logger::print_verbose("Error checking executable permissions: " +
-                            std::string(ex.what()));
+      cforge::logger::print_verbose("Error checking executable permissions: "
+                                    + std::string(ex.what()));
       return false;
     }
   };
 
   // Function to check if an executable is likely a project executable (not a
   // CMake/test executable)
-  auto is_likely_project_executable =
-      [&project_name](const std::filesystem::path &path) -> bool {
-    std::string filename = path.filename().string();
+  auto is_likely_project_executable = [&project_name](const std::filesystem::path &path) -> bool {
+    std::string filename       = path.filename().string();
     std::string filename_lower = filename;
-    std::transform(filename_lower.begin(), filename_lower.end(),
-                   filename_lower.begin(), ::tolower);
+    std::transform(filename_lower.begin(), filename_lower.end(), filename_lower.begin(), ::tolower);
 
     // Skip CMake/test executables
-    if (filename_lower.find("cmake") != std::string::npos ||
-        filename_lower.find("compile") != std::string::npos ||
-        filename_lower.find("test") != std::string::npos) {
+    if (filename_lower.find("cmake") != std::string::npos
+        || filename_lower.find("compile") != std::string::npos
+        || filename_lower.find("test") != std::string::npos) {
       return false;
     }
 
     // Project name should be part of the executable name
     std::string project_name_lower = project_name;
-    std::transform(project_name_lower.begin(), project_name_lower.end(),
-                   project_name_lower.begin(), ::tolower);
+    std::transform(project_name_lower.begin(),
+                   project_name_lower.end(),
+                   project_name_lower.begin(),
+                   ::tolower);
 
     return filename_lower.find(project_name_lower) != std::string::npos;
   };
@@ -158,8 +155,7 @@ find_project_executable(const std::filesystem::path &project_path,
     }
 
     try {
-      for (const auto &entry :
-           std::filesystem::directory_iterator(search_path)) {
+      for (const auto &entry : std::filesystem::directory_iterator(search_path)) {
         if (!is_valid_executable(entry.path())) {
           continue;
         }
@@ -170,35 +166,32 @@ find_project_executable(const std::filesystem::path &project_path,
         }
       }
     } catch (const std::exception &ex) {
-      cforge::logger::print_verbose(
-          "Error scanning directory: " + search_path.string() + " - " +
-          std::string(ex.what()));
+      cforge::logger::print_verbose("Error scanning directory: " + search_path.string() + " - "
+                                    + std::string(ex.what()));
     }
   }
 
   // Final attempt: recursive search in build directory
   cforge::logger::print_action("Searching", (project_path / build_dir).string());
   try {
-    for (const auto &entry : std::filesystem::recursive_directory_iterator(
-             project_path / build_dir)) {
+    for (const auto &entry :
+         std::filesystem::recursive_directory_iterator(project_path / build_dir)) {
       if (!is_valid_executable(entry.path())) {
         continue;
       }
 
       if (is_likely_project_executable(entry.path())) {
-        cforge::logger::print_verbose("Found executable in recursive search: " +
-                              entry.path().string());
+        cforge::logger::print_verbose("Found executable in recursive search: "
+                                      + entry.path().string());
         return entry.path();
       }
     }
   } catch (const std::exception &ex) {
-    cforge::logger::print_verbose("Error in recursive search: " +
-                          std::string(ex.what()));
+    cforge::logger::print_verbose("Error in recursive search: " + std::string(ex.what()));
   }
 
   // List all valid executables found for debugging
-  cforge::logger::print_error("no matching executable found for project: " +
-                      project_name);
+  cforge::logger::print_error("no matching executable found for project: " + project_name);
   cforge::logger::print_action("Listing", "all executables found");
   cforge_int_t found_count = 0;
 
@@ -208,21 +201,18 @@ find_project_executable(const std::filesystem::path &project_path,
     }
 
     try {
-      for (const auto &entry :
-           std::filesystem::directory_iterator(search_path)) {
+      for (const auto &entry : std::filesystem::directory_iterator(search_path)) {
         if (is_valid_executable(entry.path())) {
           cforge::logger::print_action("", "  - " + entry.path().string());
           found_count++;
         }
       }
-    } catch (...) {
-    }
+    } catch (...) {}
   }
 
   if (found_count == 0) {
     cforge::logger::print_action(
-        "Info",
-        "no executables found, project might not have been built correctly");
+        "Info", "no executables found, project might not have been built correctly");
   }
 
   return std::filesystem::path();
@@ -238,14 +228,15 @@ find_project_executable(const std::filesystem::path &project_path,
  * 4. Always run build (CMake handles incremental builds)
  */
 static bool build_project_for_run(const std::filesystem::path &project_dir,
-                                  const std::string &config, bool verbose) {
+                                  const std::string &config,
+                                  bool verbose) {
   // Determine build directory
-  std::filesystem::path build_dir = cforge::get_build_dir_for_config(
-      (project_dir / "build").string(), config);
+  std::filesystem::path build_dir =
+      cforge::get_build_dir_for_config((project_dir / "build").string(), config);
 
   // Use smart rebuild detection to prepare the project
-  cforge::build_preparation_result prep_result = cforge::prepare_project_for_build(
-      project_dir, build_dir, config, verbose);
+  cforge::build_preparation_result prep_result =
+      cforge::prepare_project_for_build(project_dir, build_dir, config, verbose);
 
   if (!prep_result.success) {
     cforge::logger::print_error(prep_result.error_message);
@@ -279,9 +270,7 @@ static bool spawn_in_terminal(const std::string &cmd) {
     return std::system(winCmd.c_str()) == 0;
   } else if constexpr (cforge::platform::is_macos) {
     // Use AppleScript to open a new Terminal window
-    std::string osa =
-        "osascript -e 'tell application \"Terminal\" to do script \"" + cmd +
-        "\"'";
+    std::string osa = "osascript -e 'tell application \"Terminal\" to do script \"" + cmd + "\"'";
     return std::system(osa.c_str()) == 0;
   } else {
     // Linux: Try multiple terminal emulators in order of preference
@@ -331,12 +320,11 @@ cforge_int_t cforge_cmd_run(const cforge_context_t *ctx) {
 
   try {
     // Determine project directory
-    std::filesystem::path project_dir =
-        std::filesystem::absolute(ctx->working_dir);
+    std::filesystem::path project_dir = std::filesystem::absolute(ctx->working_dir);
 
     // Parse common parameters first
     // Get the build configuration
-    std::string config = "Debug"; // Default is Debug instead of Release
+    std::string config = "Debug";  // Default is Debug instead of Release
     if (ctx->args.config && strlen(ctx->args.config) > 0) {
       config = ctx->args.config;
     }
@@ -372,9 +360,8 @@ cforge_int_t cforge_cmd_run(const cforge_context_t *ctx) {
       specific_project = ctx->args.project;
     } else if (ctx->args.args) {
       for (cforge_int_t i = 0; i < ctx->args.arg_count; ++i) {
-        if ((strcmp(ctx->args.args[i], "--project") == 0 ||
-             strcmp(ctx->args.args[i], "-p") == 0) &&
-            i + 1 < ctx->args.arg_count) {
+        if ((strcmp(ctx->args.args[i], "--project") == 0 || strcmp(ctx->args.args[i], "-p") == 0)
+            && i + 1 < ctx->args.arg_count) {
           specific_project = ctx->args.args[i + 1];
           break;
         }
@@ -405,8 +392,7 @@ cforge_int_t cforge_cmd_run(const cforge_context_t *ctx) {
     // Handle workspace-run only when at the workspace root; subprojects fall
     // through to single-run
     if (is_workspace && project_dir == workspace_root) {
-      cforge::logger::print_action("Running",
-                           "in workspace context: " + project_dir.string());
+      cforge::logger::print_action("Running", "in workspace context: " + project_dir.string());
 
       // Ensure workspace CMakeLists.txt exists (generate if needed)
       std::filesystem::path ws_cmake = project_dir / "CMakeLists.txt";
@@ -426,37 +412,35 @@ cforge_int_t cforge_cmd_run(const cforge_context_t *ctx) {
 
       // Determine workspace-level build directory
       std::filesystem::path ws_build_base = project_dir / DEFAULT_BUILD_DIR;
-      std::filesystem::path ws_build_dir =
-          cforge::get_build_dir_for_config(ws_build_base.string(), config);
-      cforge::logger::print_verbose("Using workspace build directory: " +
-                            ws_build_dir.string());
+      std::filesystem::path ws_build_dir  = cforge::get_build_dir_for_config(ws_build_base.string(),
+                                                                            config);
+      cforge::logger::print_verbose("Using workspace build directory: " + ws_build_dir.string());
 
       // Build workspace if needed
       bool need_build = !skip_build;
       // If user skipped build but config not built, build anyway
-      if (skip_build &&
-          !std::filesystem::exists(ws_build_dir / "CMakeCache.txt")) {
+      if (skip_build && !std::filesystem::exists(ws_build_dir / "CMakeCache.txt")) {
         need_build = true;
         cforge::logger::print_action("Info",
-                             "workspace build not found for config '" + config +
-                                 "', configuring and building workspace");
+                                     "workspace build not found for config '" + config
+                                         + "', configuring and building workspace");
       }
       if (need_build) {
         // Prepare context for build
         cforge_context_t build_ctx;
         memset(&build_ctx, 0, sizeof(build_ctx));
-        snprintf(build_ctx.working_dir, sizeof(build_ctx.working_dir), "%s",
-                 ctx->working_dir);
+        snprintf(build_ctx.working_dir, sizeof(build_ctx.working_dir), "%s", ctx->working_dir);
         build_ctx.args.command = strdup("build");
-        build_ctx.args.config = strdup(config.c_str());
+        build_ctx.args.config  = strdup(config.c_str());
         if (verbose) {
           build_ctx.args.verbosity = strdup("verbose");
         }
         cforge_int_t build_res = cforge_cmd_build(&build_ctx);
         free((void *)build_ctx.args.command);
         free((void *)build_ctx.args.config);
-        if (build_ctx.args.verbosity)
+        if (build_ctx.args.verbosity) {
           free((void *)build_ctx.args.verbosity);
+        }
         if (build_res != 0) {
           cforge::logger::print_error("workspace build failed");
           return build_res;
@@ -509,8 +493,7 @@ cforge_int_t cforge_cmd_run(const cforge_context_t *ctx) {
         cforge::toml_reader pconf(toml::parse_file((proj_path / CFORGE_FILE).string()));
         std::string real_name = pconf.get_string("project.name", proj_name);
         // Find executable
-        auto exe = find_project_executable(proj_path, ws_build_dir.string(),
-                                           config, real_name);
+        auto exe = find_project_executable(proj_path, ws_build_dir.string(), config, real_name);
         if (exe.empty()) {
           cforge::logger::print_error("executable not found: " + proj_name);
           overall_success = false;
@@ -537,8 +520,8 @@ cforge_int_t cforge_cmd_run(const cforge_context_t *ctx) {
       // Check if this is a valid cforge project
       std::filesystem::path config_path = project_dir / CFORGE_FILE;
       if (!std::filesystem::exists(config_path)) {
-        cforge::logger::print_error("not a valid cforge project (missing " +
-                            std::string(CFORGE_FILE) + ")");
+        cforge::logger::print_error("not a valid cforge project (missing "
+                                    + std::string(CFORGE_FILE) + ")");
         return 1;
       }
 
@@ -547,8 +530,8 @@ cforge_int_t cforge_cmd_run(const cforge_context_t *ctx) {
       try {
         config_table = toml::parse_file(config_path.string());
       } catch (const toml::parse_error &e) {
-        cforge::logger::print_error("failed to parse " + std::string(CFORGE_FILE) +
-                            ": " + std::string(e.what()));
+        cforge::logger::print_error("failed to parse " + std::string(CFORGE_FILE) + ": "
+                                    + std::string(e.what()));
         return 1;
       }
 
@@ -565,17 +548,15 @@ cforge_int_t cforge_cmd_run(const cforge_context_t *ctx) {
       cforge::logger::print_action("Configuration", config);
 
       // Check binary type
-      std::string binary_type =
-          project_config.get_string("project.binary_type", "executable");
+      std::string binary_type = project_config.get_string("project.binary_type", "executable");
       if (binary_type != "executable") {
-        cforge::logger::print_error("project is not an executable (binary_type is '" +
-                            binary_type + "')");
+        cforge::logger::print_error("project is not an executable (binary_type is '" + binary_type
+                                    + "')");
         return 1;
       }
 
       // Determine build directory
-      std::string build_dir_name =
-          project_config.get_string("build.build_dir", "build");
+      std::string build_dir_name = project_config.get_string("build.build_dir", "build");
 
       // Build the project if needed
       if (!skip_build) {
@@ -588,12 +569,11 @@ cforge_int_t cforge_cmd_run(const cforge_context_t *ctx) {
       }
 
       // Find the executable
-      std::filesystem::path executable = find_project_executable(
-          project_dir, build_dir_name, config, project_name);
+      std::filesystem::path executable =
+          find_project_executable(project_dir, build_dir_name, config, project_name);
 
       if (executable.empty()) {
-        cforge::logger::print_error("executable not found for project: " +
-                            project_name);
+        cforge::logger::print_error("executable not found for project: " + project_name);
         return 1;
       }
 
@@ -603,15 +583,15 @@ cforge_int_t cforge_cmd_run(const cforge_context_t *ctx) {
       // Forward the program's stdout bytes verbatim — print_plain would append
       // its own '\n' to each chunk, doubling every blank line the program
       // emits. fwrite preserves the exact byte stream.
-      std::function<void(const std::string &)> stdout_callback =
-          [](const std::string &chunk) {
-            if (!chunk.empty()) {
-              std::fwrite(chunk.data(), 1, chunk.size(), stdout);
-              std::fflush(stdout);
-            }
-          };
+      std::function<void(const std::string &)> stdout_callback = [](const std::string &chunk) {
+        if (!chunk.empty()) {
+          std::fwrite(chunk.data(), 1, chunk.size(), stdout);
+          std::fflush(stdout);
+        }
+      };
 
-      // Capture stderr for later formatting - don't print immediately to avoid duplication
+      // Capture stderr for later formatting - don't print immediately to avoid
+      // duplication
       std::string captured_stderr;
       std::function<void(const std::string &)> stderr_callback =
           [&captured_stderr](const std::string &chunk) {
@@ -619,11 +599,13 @@ cforge_int_t cforge_cmd_run(const cforge_context_t *ctx) {
           };
 
       // Execute the program with output handling
-      cforge::process_result result =
-          cforge::execute_process(executable.string(), extra_args, project_dir.string(),
-                          stdout_callback, stderr_callback,
-                          0 // No timeout
-          );
+      cforge::process_result result = cforge::execute_process(executable.string(),
+                                                              extra_args,
+                                                              project_dir.string(),
+                                                              stdout_callback,
+                                                              stderr_callback,
+                                                              0  // No timeout
+      );
 
       // Add a separator line after program output
       cforge::logger::print_blank();
@@ -645,7 +627,8 @@ cforge_int_t cforge_cmd_run(const cforge_context_t *ctx) {
         // On failure, try to format errors nicely first
         std::string formatted = cforge::format_build_errors(error_output);
         if (!formatted.empty()) {
-          // Print formatted errors (don't print raw stderr to avoid duplication)
+          // Print formatted errors (don't print raw stderr to avoid
+          // duplication)
           cforge::logger::print_blank();
           cforge::logger::print_plain(formatted);
         } else if (!error_output.empty()) {
@@ -653,8 +636,8 @@ cforge_int_t cforge_cmd_run(const cforge_context_t *ctx) {
           cforge::logger::print_error(error_output);
         }
 
-        cforge::logger::print_error("program exited with code: " +
-                            std::to_string(result.exit_code));
+        cforge::logger::print_error("program exited with code: "
+                                    + std::to_string(result.exit_code));
         return result.exit_code;
       }
     }

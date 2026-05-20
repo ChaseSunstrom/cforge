@@ -10,6 +10,7 @@
  */
 
 #include "cforge/log.hpp"
+
 #include "core/command_registry.hpp"
 #include "core/commands.hpp"
 #include "core/error_format.hpp"
@@ -36,14 +37,16 @@ cforge_int_t replay_diagnostics(const cforge_context_t *ctx,
     }
   }
 
-  fs::path start = fs::absolute(ctx->working_dir);
+  fs::path start       = fs::absolute(ctx->working_dir);
   fs::path project_dir = start;
   for (auto p = start;; p = p.parent_path()) {
     if (fs::exists(p / "cforge.toml")) {
       project_dir = p;
       break;
     }
-    if (p == p.parent_path()) break;
+    if (p == p.parent_path()) {
+      break;
+    }
   }
 
   std::string raw;
@@ -55,11 +58,13 @@ cforge_int_t replay_diagnostics(const cforge_context_t *ctx,
   }
 
   auto diags = cforge::extract_diagnostics(raw);
-  diags = cforge::deduplicate_diagnostics(std::move(diags));
+  diags      = cforge::deduplicate_diagnostics(std::move(diags));
 
   cforge_int_t shown = 0;
   for (const auto &d : diags) {
-    if (d.level != want) continue;
+    if (d.level != want) {
+      continue;
+    }
     cforge::print_diagnostic(d);
     ++shown;
   }
@@ -67,24 +72,22 @@ cforge_int_t replay_diagnostics(const cforge_context_t *ctx,
   if (shown == 0) {
     cforge::logger::print_status(empty_msg);
   } else {
-    cforge::logger::print_action(
-        want == cforge::diagnostic_level::ERROR ? "Showed" : "Showed",
-        std::to_string(shown) + " " +
-            (want == cforge::diagnostic_level::ERROR ? "error" : "warning") +
-            (shown == 1 ? "" : "s") + " from last build");
+    cforge::logger::print_action(want == cforge::diagnostic_level::ERROR ? "Showed" : "Showed",
+                                 std::to_string(shown) + " "
+                                     + (want == cforge::diagnostic_level::ERROR ? "error"
+                                                                                : "warning")
+                                     + (shown == 1 ? "" : "s") + " from last build");
   }
 
   return 0;
 }
 
-} // namespace
+}  // namespace
 
 cforge_int_t cforge_cmd_errors(const cforge_context_t *ctx) {
-  return replay_diagnostics(ctx, cforge::diagnostic_level::ERROR,
-                            "Last build had no errors.");
+  return replay_diagnostics(ctx, cforge::diagnostic_level::ERROR, "Last build had no errors.");
 }
 
 cforge_int_t cforge_cmd_warnings(const cforge_context_t *ctx) {
-  return replay_diagnostics(ctx, cforge::diagnostic_level::WARNING,
-                            "Last build had no warnings.");
+  return replay_diagnostics(ctx, cforge::diagnostic_level::WARNING, "Last build had no warnings.");
 }

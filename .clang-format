@@ -1,0 +1,193 @@
+# clang-format config for cforge itself.
+# Project-only — does not propagate to user projects that consume cforge.
+# Targets clang-format >= 18 (LLVM 18+). Anything older silently falls back
+# to defaults on unknown keys.
+#
+# Design goals (in order):
+#   1. Maximum readability — alignment ON wherever it doesn't fight reality.
+#   2. Matches the style the codebase already converged on: 2-space, attached
+#      braces, right-aligned pointers, no namespace indent, C++17.
+#   3. Stable diffs — line breaks driven by structure, not by character count
+#      shifting around.
+#
+# Apply with:  cforge fmt
+# Verify with: cforge fmt --check
+
+---
+Language:        Cpp
+BasedOnStyle:    LLVM
+Standard:        c++17
+
+# ── Layout ────────────────────────────────────────────────────────────────
+ColumnLimit:                100
+IndentWidth:                2
+TabWidth:                   2
+UseTab:                     Never
+ContinuationIndentWidth:    4
+ConstructorInitializerIndentWidth: 4
+AccessModifierOffset:       -2
+NamespaceIndentation:       None
+FixNamespaceComments:       true
+ShortNamespaceLines:        0
+IndentCaseLabels:           true
+IndentExternBlock:          NoIndent
+IndentPPDirectives:         None        # leave #include at col 0 even inside
+                                        # #ifdef __cplusplus / extern "C" blocks
+LambdaBodyIndentation:      Signature
+PPIndentWidth:              -1
+
+# ── Braces ────────────────────────────────────────────────────────────────
+# Attached braces (Stroustrup with one-liners disabled). Matches existing code.
+BreakBeforeBraces:          Attach
+Cpp11BracedListStyle:       true
+InsertBraces:               true        # forces {} around single-statement ifs
+RemoveBracesLLVM:           false       # ...but never strips them
+
+# ── Short-form lines ──────────────────────────────────────────────────────
+# Single-line if/for/while hurt grep-ability and step-through debugging.
+# Only collapse the genuinely trivial: empty blocks and inline accessors.
+AllowShortBlocksOnASingleLine:           Empty
+AllowShortCaseLabelsOnASingleLine:       false
+AllowShortEnumsOnASingleLine:            false
+AllowShortFunctionsOnASingleLine:        InlineOnly
+AllowShortIfStatementsOnASingleLine:     Never
+AllowShortLambdasOnASingleLine:          Inline
+AllowShortLoopsOnASingleLine:            false
+CompactNamespaces:                       false
+
+# ── Line breaking ─────────────────────────────────────────────────────────
+AllowAllArgumentsOnNextLine:              true
+AllowAllParametersOfDeclarationOnNextLine: true
+AlwaysBreakAfterReturnType:               None
+AlwaysBreakBeforeMultilineStrings:        false
+AlwaysBreakTemplateDeclarations:          Yes
+BinPackArguments:                         false  # each arg its own line when wrapped
+BinPackParameters:                        false  # each param its own line when wrapped
+BreakAfterAttributes:                     Leave
+BreakBeforeBinaryOperators:               NonAssignment
+BreakBeforeConceptDeclarations:           Always
+BreakBeforeTernaryOperators:              true
+BreakConstructorInitializers:             BeforeColon
+BreakInheritanceList:                     BeforeColon
+BreakStringLiterals:                      true
+ExperimentalAutoDetectBinPacking:         false
+PackConstructorInitializers:              NextLine
+
+# ── Alignment (this is where readability lives) ───────────────────────────
+AlignAfterOpenBracket:                    Align
+AlignArrayOfStructures:                   Left
+AlignConsecutiveAssignments:
+  Enabled:          true
+  AcrossEmptyLines: false
+  AcrossComments:   false
+  AlignCompound:    true
+  PadOperators:     true
+AlignConsecutiveBitFields:
+  Enabled:          true
+  AcrossEmptyLines: false
+  AcrossComments:   false
+AlignConsecutiveDeclarations:
+  Enabled:          false   # OFF: turning this on makes filesystem::path & co.
+                            # push other names off the right margin badly.
+AlignConsecutiveMacros:
+  Enabled:          true
+  AcrossEmptyLines: false
+  AcrossComments:   false
+AlignEscapedNewlines:                     Left
+AlignOperands:                            AlignAfterOperator
+AlignTrailingComments:
+  Kind:             Always
+  OverEmptyLines:   0
+DerivePointerAlignment:                   false
+PointerAlignment:                         Right
+ReferenceAlignment:                       Pointer
+QualifierAlignment:                       Leave
+
+# ── Spacing ───────────────────────────────────────────────────────────────
+SpaceAfterCStyleCast:                     false
+SpaceAfterLogicalNot:                     false
+SpaceAfterTemplateKeyword:                true
+SpaceAroundPointerQualifiers:             Default
+SpaceBeforeAssignmentOperators:           true
+SpaceBeforeCaseColon:                     false
+SpaceBeforeCpp11BracedList:               false
+SpaceBeforeCtorInitializerColon:          true
+SpaceBeforeInheritanceColon:              true
+SpaceBeforeParens:                        ControlStatements
+SpaceBeforeRangeBasedForLoopColon:        true
+SpaceBeforeSquareBrackets:                false
+SpaceInEmptyBlock:                        false
+SpaceInEmptyParentheses:                  false
+SpacesBeforeTrailingComments:             2
+SpacesInAngles:                           Never
+SpacesInCStyleCastParentheses:            false
+SpacesInConditionalStatement:             false
+SpacesInContainerLiterals:                false
+SpacesInLineCommentPrefix:
+  Minimum:          1
+  Maximum:          -1
+SpacesInParentheses:                      false
+SpacesInSquareBrackets:                   false
+BitFieldColonSpacing:                     Both
+
+# ── Blank lines / vertical density ────────────────────────────────────────
+KeepEmptyLinesAtTheStartOfBlocks:         false
+MaxEmptyLinesToKeep:                      1
+SeparateDefinitionBlocks:                 Always
+EmptyLineAfterAccessModifier:             Never
+EmptyLineBeforeAccessModifier:            LogicalBlock
+
+# ── Comments / strings ────────────────────────────────────────────────────
+ReflowComments:                           true
+
+# ── #include handling ─────────────────────────────────────────────────────
+# Group order: matching .hpp (Priority 0), then cforge public, then cforge
+# internal, then 3rd-party (fmt, toml++), then C++ std, then C std. Regroup
+# rewrites the blocks; SortIncludes keeps each block alphabetical.
+SortIncludes:                             CaseSensitive
+IncludeBlocks:                            Regroup
+IncludeCategories:
+  - Regex:    '^"cforge/[^"]+"'      # public API headers
+    Priority: 2
+    SortPriority: 2
+  - Regex:    '^"core/[^"]+"'        # internal headers
+    Priority: 3
+    SortPriority: 3
+  - Regex:    '^<(fmt|toml\+\+|tomlplusplus)/[^>]+>'
+    Priority: 4
+    SortPriority: 4
+  - Regex:    '^<[a-z_]+>'           # C++ std (no extension)
+    Priority: 5
+    SortPriority: 5
+  - Regex:    '^<.*\.h>'             # C std / system
+    Priority: 6
+    SortPriority: 6
+  - Regex:    '.*'
+    Priority: 7
+    SortPriority: 7
+IncludeIsMainRegex:                       '(_test|_bench)?$'
+
+# ── Other ─────────────────────────────────────────────────────────────────
+SortUsingDeclarations:                    true
+StatementMacros:
+  - CF_SELECTANY                          # COMDAT-folding helper from test_runner
+  - CF_MAYBE_UNUSED
+  - TEST                                  # cforge builtin test framework macro
+  - BENCH                                 # cforge builtin bench framework macro
+TypenameMacros:                           []
+WhitespaceSensitiveMacros:
+  - STRINGIZE
+  - PP_STRINGIZE
+  - BOOST_PP_STRINGIZE
+
+# ── Penalties (tune for stable, sensible wraps) ───────────────────────────
+PenaltyBreakAssignment:                   25
+PenaltyBreakBeforeFirstCallParameter:     50
+PenaltyBreakComment:                      300
+PenaltyBreakFirstLessLess:                120
+PenaltyBreakOpenParenthesis:              0
+PenaltyBreakString:                       1000
+PenaltyBreakTemplateDeclaration:          10
+PenaltyExcessCharacter:                   1000000
+PenaltyIndentedWhitespace:                0
+PenaltyReturnTypeOnItsOwnLine:            200

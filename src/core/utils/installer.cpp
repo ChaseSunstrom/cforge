@@ -4,12 +4,14 @@
  */
 
 #include "core/installer.hpp"
+
 #include "cforge/log.hpp"
+
 #include "core/constants.h"
-#include "core/types.h"
 #include "core/file_system.h"
 #include "core/process.h"
 #include "core/process_utils.hpp"
+#include "core/types.h"
 
 #include <algorithm>
 #include <cstdlib>
@@ -36,7 +38,9 @@ inline void print_verbose(const std::string &message) {
   }
 }
 
-std::string installer::get_current_version() const { return CFORGE_VERSION; }
+std::string installer::get_current_version() const {
+  return CFORGE_VERSION;
+}
 
 bool installer::install(const std::string &install_path, bool add_to_path) {
   std::filesystem::path target_path;
@@ -57,8 +61,7 @@ bool installer::install(const std::string &install_path, bool add_to_path) {
         std::filesystem::create_directories(parent_dir);
         print_verbose("Created parent directory: " + parent_dir.string());
       } catch (const std::exception &e) {
-        logger::print_error("Failed to create parent directory: " +
-                            std::string(e.what()));
+        logger::print_error("Failed to create parent directory: " + std::string(e.what()));
         return false;
       }
     }
@@ -66,8 +69,7 @@ bool installer::install(const std::string &install_path, bool add_to_path) {
 
   // Check if path is writable
   if (!is_path_writeable(target_path)) {
-    logger::print_error("Installation path is not writable: " +
-                        target_path.string());
+    logger::print_error("Installation path is not writable: " + target_path.string());
     return false;
   }
 
@@ -76,8 +78,7 @@ bool installer::install(const std::string &install_path, bool add_to_path) {
     try {
       std::filesystem::create_directories(target_path);
     } catch (const std::exception &ex) {
-      logger::print_error("Failed to create installation directory: " +
-                          std::string(ex.what()));
+      logger::print_error("Failed to create installation directory: " + std::string(ex.what()));
       return false;
     }
   }
@@ -86,9 +87,8 @@ bool installer::install(const std::string &install_path, bool add_to_path) {
   std::filesystem::path current_exe = std::filesystem::current_path();
 
   // Copy files to target path
-  std::vector<std::string> exclude_patterns = {"\\.git",           "build",
-                                               "\\.vscode",        "CMakeFiles",
-                                               "CMakeCache\\.txt", "\\.github"};
+  std::vector<std::string> exclude_patterns = {
+      "\\.git", "build", "\\.vscode", "CMakeFiles", "CMakeCache\\.txt", "\\.github"};
 
   if (!copy_files(current_exe, target_path, exclude_patterns)) {
     logger::print_error("Failed to copy files to installation directory");
@@ -106,13 +106,11 @@ bool installer::install(const std::string &install_path, bool add_to_path) {
     if (!update_path_env(bin_path)) {
       logger::print_warning("Failed to update PATH environment variable");
     } else {
-      logger::print_action(
-          "Added", "installation directory to PATH environment variable");
+      logger::print_action("Added", "installation directory to PATH environment variable");
     }
   }
 
-  logger::finished("cforge has been installed successfully to " +
-                   target_path.string());
+  logger::finished("cforge has been installed successfully to " + target_path.string());
   return true;
 }
 
@@ -121,8 +119,7 @@ bool installer::update() {
 
   // Verify installation
   if (!is_installed()) {
-    logger::print_error(
-        "cforge is not installed. Please run 'cforge install' first");
+    logger::print_error("cforge is not installed. Please run 'cforge install' first");
     return false;
   }
 
@@ -132,18 +129,16 @@ bool installer::update() {
   std::filesystem::path git_dir = install_path / ".git";
 
   // If this installation was a Git checkout, pull latest
-  if (std::filesystem::exists(git_dir) &&
-      std::filesystem::is_directory(git_dir)) {
+  if (std::filesystem::exists(git_dir) && std::filesystem::is_directory(git_dir)) {
     logger::print_status("Detected Git repository. Pulling latest changes");
     auto result = execute_process(
         "git",
-        std::vector<std::string>{"-C", install_path.string(), "pull",
-                                 "--rebase"},
-        "", [](const std::string &line) { logger::print_status(line); },
+        std::vector<std::string>{"-C", install_path.string(), "pull", "--rebase"},
+        "",
+        [](const std::string &line) { logger::print_status(line); },
         [](const std::string &line) { logger::print_error(line); });
     if (!result.success) {
-      logger::print_error("Git pull failed (exit code " +
-                          std::to_string(result.exit_code) + ")");
+      logger::print_error("Git pull failed (exit code " + std::to_string(result.exit_code) + ")");
       return false;
     }
     logger::installing("updated cforge");
@@ -152,18 +147,20 @@ bool installer::update() {
 
   // Otherwise, clone a fresh copy and install
   std::filesystem::path parent = install_path.parent_path();
-  std::filesystem::path tmp = parent / "cforge_update_tmp";
+  std::filesystem::path tmp    = parent / "cforge_update_tmp";
   if (std::filesystem::exists(tmp)) {
     std::filesystem::remove_all(tmp);
   }
   logger::fetching("cforge repository");
   auto clone_result = execute_process(
-      "git", std::vector<std::string>{"clone", CFORGE_REPO_URL, tmp.string()},
-      "", [](const std::string &line) { logger::print_status(line); },
+      "git",
+      std::vector<std::string>{"clone", CFORGE_REPO_URL, tmp.string()},
+      "",
+      [](const std::string &line) { logger::print_status(line); },
       [](const std::string &line) { logger::print_error(line); });
   if (!clone_result.success) {
-    logger::print_error("Git clone failed (exit code " +
-                        std::to_string(clone_result.exit_code) + ")");
+    logger::print_error("Git clone failed (exit code " + std::to_string(clone_result.exit_code)
+                        + ")");
     return false;
   }
   logger::installing("new version");
@@ -197,8 +194,7 @@ bool installer::install_project(const std::string &project_path,
   // Check if it's a cforge project by looking for cforge.toml
   std::filesystem::path project_config = project_dir / CFORGE_FILE;
   if (!std::filesystem::exists(project_config)) {
-    logger::print_error("Not a valid cforge project (missing " +
-                        std::string(CFORGE_FILE) + ")");
+    logger::print_error("Not a valid cforge project (missing " + std::string(CFORGE_FILE) + ")");
     return false;
   }
 
@@ -210,18 +206,16 @@ bool installer::install_project(const std::string &project_path,
   }
 
   // Get project name and details
-  std::string project_name = config->get_string("project.name");
+  std::string project_name    = config->get_string("project.name");
   std::string project_version = config->get_string("project.version");
-  std::string project_type = config->get_string("project.type", "executable");
+  std::string project_type    = config->get_string("project.type", "executable");
 
   if (project_name.empty()) {
-    logger::print_error("Project name not specified in " +
-                        std::string(CFORGE_FILE));
+    logger::print_error("Project name not specified in " + std::string(CFORGE_FILE));
     return false;
   }
 
-  logger::print_status("Project: " + project_name + " (version " +
-                       project_version + ")");
+  logger::print_status("Project: " + project_name + " (version " + project_version + ")");
 
   // Determine install path
   std::filesystem::path target_path;
@@ -229,11 +223,11 @@ bool installer::install_project(const std::string &project_path,
     if (project_type == "executable") {
       // For executables, install to a standard bin location
       std::filesystem::path platform_path = get_platform_specific_path();
-      target_path = platform_path / "installed" / project_name;
+      target_path                         = platform_path / "installed" / project_name;
     } else {
       // For libraries, install to a standard lib location
       std::filesystem::path platform_path = get_platform_specific_path();
-      target_path = platform_path / "lib" / project_name;
+      target_path                         = platform_path / "lib" / project_name;
     }
   } else {
     target_path = effective_install_path;
@@ -247,11 +241,9 @@ bool installer::install_project(const std::string &project_path,
     if (!std::filesystem::exists(parent_dir)) {
       try {
         std::filesystem::create_directories(parent_dir);
-        print_verbose("Created install parent directory: " +
-                      parent_dir.string());
+        print_verbose("Created install parent directory: " + parent_dir.string());
       } catch (const std::exception &e) {
-        logger::print_error("Failed to create install parent directory: " +
-                            std::string(e.what()));
+        logger::print_error("Failed to create install parent directory: " + std::string(e.what()));
         return false;
       }
     }
@@ -259,8 +251,7 @@ bool installer::install_project(const std::string &project_path,
 
   // Check if path is writable
   if (!is_path_writeable(target_path)) {
-    logger::print_error("Installation path is not writable: " +
-                        target_path.string());
+    logger::print_error("Installation path is not writable: " + target_path.string());
     return false;
   }
 
@@ -269,8 +260,7 @@ bool installer::install_project(const std::string &project_path,
     try {
       std::filesystem::create_directories(target_path);
     } catch (const std::exception &ex) {
-      logger::print_error("Failed to create installation directory: " +
-                          std::string(ex.what()));
+      logger::print_error("Failed to create installation directory: " + std::string(ex.what()));
       return false;
     }
   }
@@ -285,48 +275,51 @@ bool installer::install_project(const std::string &project_path,
   while (true) {
     if (std::filesystem::exists(cwd / WORKSPACE_FILE)) {
       workspace_root = cwd;
-      in_workspace = true;
+      in_workspace   = true;
       break;
     }
-    if (cwd == cwd.parent_path())
+    if (cwd == cwd.parent_path()) {
       break;
+    }
     cwd = cwd.parent_path();
   }
   bool build_success = true;
   if (skip_build) {
     print_verbose("Skipping build (--no-build specified)");
   } else if (in_workspace) {
-    print_verbose(
-        "Detected workspace at " + workspace_root.string() +
-        "; skipping per-project build and using workspace build artifacts");
+    print_verbose("Detected workspace at " + workspace_root.string()
+                  + "; skipping per-project build and using workspace build artifacts");
   } else {
     print_verbose("Building project before installation");
     // Change to project directory for build
     std::filesystem::current_path(project_dir);
     // Check if there's a CMakeLists.txt file
     bool has_cmake = std::filesystem::exists(project_dir / "CMakeLists.txt");
-    build_success = false;
+    build_success  = false;
     if (has_cmake) {
       // Build the project with CMake
       logger::print_status("Building project in Release mode");
-      std::filesystem::path build_dir = project_dir / "build";
+      std::filesystem::path build_dir     = project_dir / "build";
       std::vector<std::string> cmake_args = {
-          "-S", project_dir.string(),
-          "-B", build_dir.string(),
-          "-DCMAKE_BUILD_TYPE=Release"};
+          "-S", project_dir.string(), "-B", build_dir.string(), "-DCMAKE_BUILD_TYPE=Release"};
 
-      build_success = execute_tool(
-          "cmake", cmake_args, project_dir.string(), "CMake Configure",
-          logger::get_verbosity() == log_verbosity::VERBOSITY_VERBOSE, 120);
+      build_success = execute_tool("cmake",
+                                   cmake_args,
+                                   project_dir.string(),
+                                   "CMake Configure",
+                                   logger::get_verbosity() == log_verbosity::VERBOSITY_VERBOSE,
+                                   120);
 
       if (build_success) {
         // Build the project
         std::vector<std::string> build_args = {
-            "--build", build_dir.string(),
-            "--config", "Release"};
-        build_success = execute_tool(
-            "cmake", build_args, project_dir.string(), "CMake Build",
-            logger::get_verbosity() == log_verbosity::VERBOSITY_VERBOSE, 300);
+            "--build", build_dir.string(), "--config", "Release"};
+        build_success = execute_tool("cmake",
+                                     build_args,
+                                     project_dir.string(),
+                                     "CMake Build",
+                                     logger::get_verbosity() == log_verbosity::VERBOSITY_VERBOSE,
+                                     300);
       }
     } else {
       // No CMake, try looking for a Makefile
@@ -334,9 +327,8 @@ bool installer::install_project(const std::string &project_path,
         print_verbose("Building project with Makefile");
         try {
 #ifdef _WIN32
-          bool make_available = is_command_available("make") ||
-                                is_command_available("mingw32-make") ||
-                                is_command_available("nmake");
+          bool make_available = is_command_available("make") || is_command_available("mingw32-make")
+                             || is_command_available("nmake");
           if (!make_available) {
             logger::print_warning("No make tool found (make, mingw32-make, "
                                   "nmake). Skipping build");
@@ -345,13 +337,13 @@ bool installer::install_project(const std::string &project_path,
             // Try different make tools
             if (is_command_available("make")) {
               cforge_int_t make_result = system("make");
-              build_success = (make_result == 0);
+              build_success            = (make_result == 0);
             } else if (is_command_available("mingw32-make")) {
               cforge_int_t make_result = system("mingw32-make");
-              build_success = (make_result == 0);
+              build_success            = (make_result == 0);
             } else if (is_command_available("nmake")) {
               cforge_int_t make_result = system("nmake");
-              build_success = (make_result == 0);
+              build_success            = (make_result == 0);
             }
           }
 #else
@@ -361,12 +353,11 @@ bool installer::install_project(const std::string &project_path,
             build_success = false;
           } else {
             cforge_int_t make_result = system("make");
-            build_success = (make_result == 0);
+            build_success            = (make_result == 0);
           }
 #endif
         } catch (const std::exception &ex) {
-          logger::print_warning("Error during build: " +
-                                std::string(ex.what()));
+          logger::print_warning("Error during build: " + std::string(ex.what()));
           build_success = false;
         }
       } else {
@@ -376,8 +367,7 @@ bool installer::install_project(const std::string &project_path,
       }
     }
     if (!build_success) {
-      logger::print_warning(
-          "Build failed or skipped; searching for pre-built executables");
+      logger::print_warning("Build failed or skipped; searching for pre-built executables");
     } else {
       print_verbose("Build completed successfully");
     }
@@ -386,9 +376,14 @@ bool installer::install_project(const std::string &project_path,
   }
 
   // Copy files to target path
-  std::vector<std::string> exclude_patterns = {
-      "\\.git",           "build",     "\\.vscode", "CMakeFiles",
-      "CMakeCache\\.txt", "\\.github", "src",       "tests"};
+  std::vector<std::string> exclude_patterns = {"\\.git",
+                                               "build",
+                                               "\\.vscode",
+                                               "CMakeFiles",
+                                               "CMakeCache\\.txt",
+                                               "\\.github",
+                                               "src",
+                                               "tests"};
 
   if (project_type == "executable") {
     // For executables, only copy the binary and necessary resources
@@ -399,11 +394,9 @@ bool installer::install_project(const std::string &project_path,
     if (!std::filesystem::exists(install_bin)) {
       try {
         std::filesystem::create_directories(install_bin);
-        print_verbose("Created install 'bin' directory: " +
-                      install_bin.string());
+        print_verbose("Created install 'bin' directory: " + install_bin.string());
       } catch (const std::exception &e) {
-        logger::print_warning("Failed to create install bin directory: " +
-                              std::string(e.what()));
+        logger::print_warning("Failed to create install bin directory: " + std::string(e.what()));
       }
     }
 
@@ -415,18 +408,18 @@ bool installer::install_project(const std::string &project_path,
     while (true) {
       if (std::filesystem::exists(current / WORKSPACE_FILE)) {
         workspace_root = current;
-        in_workspace = true;
+        in_workspace   = true;
         break;
       }
-      if (current == current.parent_path())
+      if (current == current.parent_path()) {
         break;
+      }
       current = current.parent_path();
     }
     std::filesystem::path build_base;
     if (in_workspace) {
       build_base = workspace_root / DEFAULT_BUILD_DIR;
-      logger::print_verbose("Using workspace build directory for install: " +
-                            build_base.string());
+      logger::print_verbose("Using workspace build directory for install: " + build_base.string());
     } else {
       build_base = project_dir / DEFAULT_BUILD_DIR;
     }
@@ -454,24 +447,22 @@ bool installer::install_project(const std::string &project_path,
 
     // Function to check if an executable is a valid project executable and not
     // a CMAKE temp file
-    auto is_valid_executable =
-        [&project_name](const std::filesystem::path &path) -> bool {
+    auto is_valid_executable = [&project_name](const std::filesystem::path &path) -> bool {
       std::string filename = path.filename().string();
 
       // Exclude known CMake test files
-      if (filename.find("CMakeC") != std::string::npos ||
-          filename.find("CMakeCXX") != std::string::npos ||
-          filename.find("CompilerId") != std::string::npos) {
+      if (filename.find("CMakeC") != std::string::npos
+          || filename.find("CMakeCXX") != std::string::npos
+          || filename.find("CompilerId") != std::string::npos) {
         return false;
       }
 
       // Try to match the project name - case insensitive comparison
       std::string lower_filename = filename;
-      std::string lower_project = project_name;
-      std::transform(lower_filename.begin(), lower_filename.end(),
-                     lower_filename.begin(), ::tolower);
-      std::transform(lower_project.begin(), lower_project.end(),
-                     lower_project.begin(), ::tolower);
+      std::string lower_project  = project_name;
+      std::transform(
+          lower_filename.begin(), lower_filename.end(), lower_filename.begin(), ::tolower);
+      std::transform(lower_project.begin(), lower_project.end(), lower_project.begin(), ::tolower);
 
       // If filename contains the project name, it's likely the right executable
       if (lower_filename.find(lower_project) != std::string::npos) {
@@ -481,27 +472,26 @@ bool installer::install_project(const std::string &project_path,
       // Normalize project name by replacing hyphens with underscores, just like
       // we do during project creation
       std::string normalized_project = lower_project;
-      std::replace(normalized_project.begin(), normalized_project.end(), '-',
-                   '_');
+      std::replace(normalized_project.begin(), normalized_project.end(), '-', '_');
 
       // Check again with normalized project name
-      if (normalized_project != lower_project &&
-          lower_filename.find(normalized_project) != std::string::npos) {
+      if (normalized_project != lower_project
+          && lower_filename.find(normalized_project) != std::string::npos) {
         return true;
       }
 
       // Check for common executable names
-      if (lower_filename.find("app") != std::string::npos ||
-          lower_filename.find("main") != std::string::npos ||
-          lower_filename.find("launcher") != std::string::npos) {
+      if (lower_filename.find("app") != std::string::npos
+          || lower_filename.find("main") != std::string::npos
+          || lower_filename.find("launcher") != std::string::npos) {
         return true;
       }
 
       // If we're still looking, sometimes the executable might be named
       // differently But it's usually not a test file with certain patterns
-      return filename.find("test_") == std::string::npos &&
-             filename.find("cmake") == std::string::npos &&
-             filename.find("config") == std::string::npos;
+      return filename.find("test_") == std::string::npos
+          && filename.find("cmake") == std::string::npos
+          && filename.find("config") == std::string::npos;
     };
 
     if (std::filesystem::exists(bin_dir)) {
@@ -511,24 +501,20 @@ bool installer::install_project(const std::string &project_path,
           // Windows: check for .exe extension
 #ifdef _WIN32
           if (entry.path().extension() == ".exe") {
-            print_verbose("Found potential executable: " +
-                          entry.path().string());
+            print_verbose("Found potential executable: " + entry.path().string());
 
             // Make sure it's not a CMake test file
             if (!is_valid_executable(entry.path())) {
-              print_verbose("Skipping CMake test executable: " +
-                            entry.path().string());
+              print_verbose("Skipping CMake test executable: " + entry.path().string());
               continue;
             }
           }
 #else
           // Unix-like: check for owner execute permission
-          if (((entry.status().permissions() &
-                std::filesystem::perms::owner_exec) !=
-               std::filesystem::perms::none)) {
+          if (((entry.status().permissions() & std::filesystem::perms::owner_exec)
+               != std::filesystem::perms::none)) {
             if (!is_valid_executable(entry.path())) {
-              print_verbose("Skipping test executable: " +
-                            entry.path().string());
+              print_verbose("Skipping test executable: " + entry.path().string());
               continue;
             }
           }
@@ -539,9 +525,9 @@ bool installer::install_project(const std::string &project_path,
             if (std::filesystem::exists(target)) {
               std::filesystem::remove(target);
             }
-            std::filesystem::copy_file(
-                entry.path(), target,
-                std::filesystem::copy_options::overwrite_existing);
+            std::filesystem::copy_file(entry.path(),
+                                       target,
+                                       std::filesystem::copy_options::overwrite_existing);
           }
           found_executable = true;
         }
@@ -551,52 +537,43 @@ bool installer::install_project(const std::string &project_path,
     // If no executable found yet and not in a workspace, look in the build
     // directory
     if (!found_executable && !in_workspace) {
-      print_verbose(
-          "No executable found in bin directory, searching build directory...");
+      print_verbose("No executable found in bin directory, searching build directory...");
       std::filesystem::path build_dir = project_dir / "build";
 
       if (std::filesystem::exists(build_dir)) {
-        print_verbose("Searching recursively in build directory: " +
-                      build_dir.string());
+        print_verbose("Searching recursively in build directory: " + build_dir.string());
         // Recursively search for executables in build directory
-        for (const auto &entry :
-             std::filesystem::recursive_directory_iterator(build_dir)) {
+        for (const auto &entry : std::filesystem::recursive_directory_iterator(build_dir)) {
           if (entry.is_regular_file()) {
 #ifdef _WIN32
             if (entry.path().extension() == ".exe") {
-              print_verbose("Found potential executable: " +
-                            entry.path().string());
+              print_verbose("Found potential executable: " + entry.path().string());
 
               // Skip CMake test files
               if (!is_valid_executable(entry.path())) {
-                print_verbose("Skipping CMake test executable: " +
-                              entry.path().string());
+                print_verbose("Skipping CMake test executable: " + entry.path().string());
                 continue;
               }
 
-              print_verbose("Using project executable: " +
-                            entry.path().string());
+              print_verbose("Using project executable: " + entry.path().string());
 #else
-            if (((entry.status().permissions() &
-                  std::filesystem::perms::owner_exec) !=
-                 std::filesystem::perms::none)) {
+            if (((entry.status().permissions() & std::filesystem::perms::owner_exec)
+                 != std::filesystem::perms::none)) {
               if (!is_valid_executable(entry.path())) {
-                print_verbose("Skipping test executable: " +
-                              entry.path().string());
+                print_verbose("Skipping test executable: " + entry.path().string());
                 continue;
               }
 
-              print_verbose("Using project executable: " +
-                            entry.path().string());
+              print_verbose("Using project executable: " + entry.path().string());
 #endif
               {
                 auto target = install_bin / entry.path().filename();
                 if (std::filesystem::exists(target)) {
                   std::filesystem::remove(target);
                 }
-                std::filesystem::copy_file(
-                    entry.path(), target,
-                    std::filesystem::copy_options::overwrite_existing);
+                std::filesystem::copy_file(entry.path(),
+                                           target,
+                                           std::filesystem::copy_options::overwrite_existing);
               }
             }
           }
@@ -611,13 +588,11 @@ bool installer::install_project(const std::string &project_path,
       print_verbose("Still no executable found, searching throughout project "
                     "directory for any valid .exe files...");
       try {
-        for (const auto &entry :
-             std::filesystem::recursive_directory_iterator(project_dir)) {
+        for (const auto &entry : std::filesystem::recursive_directory_iterator(project_dir)) {
           if (entry.is_regular_file() && entry.path().extension() == ".exe") {
             // Skip CMake test files
             if (!is_valid_executable(entry.path())) {
-              print_verbose("Skipping CMake test executable: " +
-                            entry.path().string());
+              print_verbose("Skipping CMake test executable: " + entry.path().string());
               continue;
             }
 
@@ -627,16 +602,15 @@ bool installer::install_project(const std::string &project_path,
               if (std::filesystem::exists(target)) {
                 std::filesystem::remove(target);
               }
-              std::filesystem::copy_file(
-                  entry.path(), target,
-                  std::filesystem::copy_options::overwrite_existing);
+              std::filesystem::copy_file(entry.path(),
+                                         target,
+                                         std::filesystem::copy_options::overwrite_existing);
             }
             found_executable = true;
           }
         }
       } catch (const std::exception &ex) {
-        logger::print_warning("Error searching for executables: " +
-                              std::string(ex.what()));
+        logger::print_warning("Error searching for executables: " + std::string(ex.what()));
       }
     }
 #endif
@@ -648,8 +622,7 @@ bool installer::install_project(const std::string &project_path,
         copy_files(resources_dir, target_path / "resources");
         print_verbose("Copied resources directory");
       } catch (const std::exception &ex) {
-        logger::print_warning("Failed to copy resources: " +
-                              std::string(ex.what()));
+        logger::print_warning("Failed to copy resources: " + std::string(ex.what()));
       }
     }
 
@@ -664,17 +637,16 @@ bool installer::install_project(const std::string &project_path,
     // Copy headers to include directory
     std::filesystem::path include_dir = project_dir / "include";
     if (std::filesystem::exists(include_dir)) {
-      std::filesystem::path platform_path = get_platform_specific_path();
-      std::filesystem::path target_include =
-          std::filesystem::path(platform_path) / "include" / project_name;
+      std::filesystem::path platform_path  = get_platform_specific_path();
+      std::filesystem::path target_include = std::filesystem::path(platform_path) / "include"
+                                           / project_name;
 
       try {
         std::filesystem::create_directories(target_include);
         copy_files(include_dir, target_include);
         print_verbose("Copied headers to " + target_include.string());
       } catch (const std::exception &ex) {
-        logger::print_warning("Failed to copy headers: " +
-                              std::string(ex.what()));
+        logger::print_warning("Failed to copy headers: " + std::string(ex.what()));
       }
     }
 
@@ -682,8 +654,7 @@ bool installer::install_project(const std::string &project_path,
     std::filesystem::path lib_dir = project_dir / "lib" / "Release";
     if (std::filesystem::exists(lib_dir)) {
       std::filesystem::path platform_path = get_platform_specific_path();
-      std::filesystem::path target_lib =
-          std::filesystem::path(platform_path) / "lib";
+      std::filesystem::path target_lib    = std::filesystem::path(platform_path) / "lib";
 
       try {
         std::filesystem::create_directories(target_lib);
@@ -694,17 +665,15 @@ bool installer::install_project(const std::string &project_path,
               if (std::filesystem::exists(target)) {
                 std::filesystem::remove(target);
               }
-              std::filesystem::copy_file(
-                  entry.path(), target,
-                  std::filesystem::copy_options::overwrite_existing);
+              std::filesystem::copy_file(entry.path(),
+                                         target,
+                                         std::filesystem::copy_options::overwrite_existing);
             }
-            print_verbose("Copied " + entry.path().string() + " to " +
-                          target_lib.string());
+            print_verbose("Copied " + entry.path().string() + " to " + target_lib.string());
           }
         }
       } catch (const std::exception &ex) {
-        logger::print_warning("Failed to copy libraries: " +
-                              std::string(ex.what()));
+        logger::print_warning("Failed to copy libraries: " + std::string(ex.what()));
       }
     }
   }
@@ -714,8 +683,7 @@ bool installer::install_project(const std::string &project_path,
   if (!update_path_env(install_bin)) {
     logger::print_warning("Failed to update PATH environment variable");
   } else {
-    logger::print_status(
-        "Added installation 'bin' to PATH environment variable");
+    logger::print_status("Added installation 'bin' to PATH environment variable");
   }
 
   // Set custom environment variable if requested
@@ -723,8 +691,7 @@ bool installer::install_project(const std::string &project_path,
     update_env_var(project_name_override, target_path);
   }
 
-  logger::finished("Project " + project_name + " installed to " +
-                   target_path.string());
+  logger::finished("Project " + project_name + " installed to " + target_path.string());
   return true;
 }
 
@@ -743,10 +710,8 @@ std::string installer::get_install_location() const {
 #ifdef _WIN32
   // Check LOCALAPPDATA first (preferred location)
   char local_appdata[MAX_PATH];
-  if (SHGetFolderPathA(NULL, CSIDL_LOCAL_APPDATA, NULL, 0, local_appdata) ==
-      S_OK) {
-    std::filesystem::path path =
-        std::filesystem::path(local_appdata) / "cforge";
+  if (SHGetFolderPathA(NULL, CSIDL_LOCAL_APPDATA, NULL, 0, local_appdata) == S_OK) {
+    std::filesystem::path path = std::filesystem::path(local_appdata) / "cforge";
     if (std::filesystem::exists(path / "installed" / "cforge" / "bin" / "cforge.exe")) {
       return path.string();
     }
@@ -754,13 +719,12 @@ std::string installer::get_install_location() const {
 
   // Check registry for legacy installations
   HKEY h_key;
-  if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, "SOFTWARE\\cforge", 0, KEY_READ,
-                    &h_key) == ERROR_SUCCESS) {
+  if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, "SOFTWARE\\cforge", 0, KEY_READ, &h_key) == ERROR_SUCCESS) {
     char buffer[MAX_PATH];
     DWORD buffer_size = sizeof(buffer);
 
-    if (RegQueryValueExA(h_key, "InstallLocation", NULL, NULL, (LPBYTE)buffer,
-                         &buffer_size) == ERROR_SUCCESS) {
+    if (RegQueryValueExA(h_key, "InstallLocation", NULL, NULL, (LPBYTE)buffer, &buffer_size)
+        == ERROR_SUCCESS) {
       RegCloseKey(h_key);
       return std::string(buffer);
     }
@@ -770,10 +734,8 @@ std::string installer::get_install_location() const {
 
   // Check Program Files (legacy location)
   char program_files[MAX_PATH];
-  if (SHGetFolderPathA(NULL, CSIDL_PROGRAM_FILES, NULL, 0, program_files) ==
-      S_OK) {
-    std::filesystem::path path =
-        std::filesystem::path(program_files) / "cforge";
+  if (SHGetFolderPathA(NULL, CSIDL_PROGRAM_FILES, NULL, 0, program_files) == S_OK) {
+    std::filesystem::path path = std::filesystem::path(program_files) / "cforge";
     if (std::filesystem::exists(path)) {
       return path.string();
     }
@@ -803,8 +765,7 @@ std::string installer::get_install_location() const {
   }
 
   // Check standard system locations
-  std::vector<std::string> locations = {"/usr/local/bin/cforge",
-                                        "/usr/bin/cforge", "/opt/cforge"};
+  std::vector<std::string> locations = {"/usr/local/bin/cforge", "/usr/bin/cforge", "/opt/cforge"};
 
   for (const auto &loc : locations) {
     if (std::filesystem::exists(loc)) {
@@ -858,8 +819,7 @@ bool installer::copy_files(const std::filesystem::path &source,
     }
 
     // Function to check if path should be excluded
-    auto should_exclude =
-        [&exclude_patterns](const std::filesystem::path &path) -> bool {
+    auto should_exclude = [&exclude_patterns](const std::filesystem::path &path) -> bool {
       // Get a std::string once, don't create multiple string objects
       std::string path_str = path.filename().string();
 
@@ -872,17 +832,14 @@ bool installer::copy_files(const std::filesystem::path &source,
         try {
           // Avoid regex if possible - use simple string matching for common
           // patterns
-          if (pattern.find("*") == std::string::npos &&
-              pattern.find("?") == std::string::npos &&
-              pattern.find("[") == std::string::npos &&
-              pattern.find(".") == std::string::npos) {
+          if (pattern.find("*") == std::string::npos && pattern.find("?") == std::string::npos
+              && pattern.find("[") == std::string::npos && pattern.find(".") == std::string::npos) {
             // Simple substring match for basic patterns
             if (path_str.find(pattern) != std::string::npos) {
               return true;
             }
-          } else if (pattern.find("\\") == std::string::npos &&
-                     pattern == ".*" && !path_str.empty() &&
-                     path_str[0] == '.') {
+          } else if (pattern.find("\\") == std::string::npos && pattern == ".*" && !path_str.empty()
+                     && path_str[0] == '.') {
             // Special case for ".*" pattern to match hidden files
             return true;
           } else {
@@ -890,7 +847,7 @@ bool installer::copy_files(const std::filesystem::path &source,
             // Create a completely new copy of the strings to avoid iterator
             // issues
             std::string regex_pattern = pattern;
-            std::string check_path = path_str;
+            std::string check_path    = path_str;
 
             // Compile regex
             std::regex regex(regex_pattern);
@@ -927,12 +884,11 @@ bool installer::copy_files(const std::filesystem::path &source,
           if (std::filesystem::exists(target)) {
             std::filesystem::remove(target);
           }
-          std::filesystem::copy_file(
-              entry.path(), target,
-              std::filesystem::copy_options::overwrite_existing);
+          std::filesystem::copy_file(entry.path(),
+                                     target,
+                                     std::filesystem::copy_options::overwrite_existing);
         }
-        print_verbose("Copied " + entry.path().string() + " to " +
-                      target.string());
+        print_verbose("Copied " + entry.path().string() + " to " + target.string());
       }
     }
 
@@ -948,8 +904,7 @@ std::string installer::get_platform_specific_path() const {
   // On Windows, use LOCALAPPDATA - same location as cache/registry
   // This doesn't require admin privileges and keeps all cforge data together
   char local_appdata[MAX_PATH];
-  if (SHGetFolderPathA(NULL, CSIDL_LOCAL_APPDATA, NULL, 0, local_appdata) ==
-      S_OK) {
+  if (SHGetFolderPathA(NULL, CSIDL_LOCAL_APPDATA, NULL, 0, local_appdata) == S_OK) {
     return std::string(local_appdata) + "\\cforge";
   }
   // Fallback to USERPROFILE
@@ -1018,8 +973,7 @@ bool installer::is_path_writeable(const std::filesystem::path &path) const {
   }
 }
 
-bool installer::create_executable_links(
-    const std::filesystem::path &bin_path) const {
+bool installer::create_executable_links(const std::filesystem::path &bin_path) const {
 #ifdef _WIN32
   // On Windows, create shortcuts or add to PATH
 
@@ -1029,8 +983,7 @@ bool installer::create_executable_links(
       std::filesystem::create_directories(bin_path);
       print_verbose("Created directory: " + bin_path.string());
     } catch (const std::exception &ex) {
-      logger::print_warning("Failed to create bin directory: " +
-                            std::string(ex.what()));
+      logger::print_warning("Failed to create bin directory: " + std::string(ex.what()));
     }
   }
 
@@ -1043,16 +996,16 @@ bool installer::create_executable_links(
     std::string filename = path.filename().string();
 
     // Exclude known CMake test files
-    if (filename.find("CMakeC") != std::string::npos ||
-        filename.find("CMakeCXX") != std::string::npos ||
-        filename.find("CompilerId") != std::string::npos) {
+    if (filename.find("CMakeC") != std::string::npos
+        || filename.find("CMakeCXX") != std::string::npos
+        || filename.find("CompilerId") != std::string::npos) {
       return false;
     }
 
     // Usually not a test file with certain patterns
-    return filename.find("test_") == std::string::npos &&
-           filename.find("cmake") == std::string::npos &&
-           filename.find("config") == std::string::npos;
+    return filename.find("test_") == std::string::npos
+        && filename.find("cmake") == std::string::npos
+        && filename.find("config") == std::string::npos;
   };
 
   // Find the executable in the bin directory
@@ -1060,12 +1013,12 @@ bool installer::create_executable_links(
 
   // Multiple search locations in priority order
   std::vector<std::filesystem::path> search_locations = {
-      bin_path,                                // First check the bin path
-      bin_path.parent_path(),                  // Then check parent dir
-      bin_path.parent_path() / "Debug",        // Check Debug folder
-      bin_path.parent_path() / "Release",      // Check Release folder
-      bin_path.parent_path() / "build",        // Check build folder
-      bin_path.parent_path() / "build-release" // Check build-release folder
+      bin_path,                                 // First check the bin path
+      bin_path.parent_path(),                   // Then check parent dir
+      bin_path.parent_path() / "Debug",         // Check Debug folder
+      bin_path.parent_path() / "Release",       // Check Release folder
+      bin_path.parent_path() / "build",         // Check build folder
+      bin_path.parent_path() / "build-release"  // Check build-release folder
   };
 
   for (const auto &location : search_locations) {
@@ -1080,8 +1033,7 @@ bool installer::create_executable_links(
       if (entry.is_regular_file() && entry.path().extension() == ".exe") {
         // Skip CMake temporary files
         if (!is_valid_executable(entry.path())) {
-          print_verbose("Skipping CMake test executable: " +
-                        entry.path().string());
+          print_verbose("Skipping CMake test executable: " + entry.path().string());
           continue;
         }
 
@@ -1095,14 +1047,13 @@ bool installer::create_executable_links(
             std::filesystem::path target_filename = exe_path.filename();
             if (target_filename.string() == "a.exe") {
               // Extract project name from directory name
-              std::string project_name =
-                  bin_path.parent_path().filename().string();
+              std::string project_name = bin_path.parent_path().filename().string();
               // Remove any hyphens and replace with underscores
               std::replace(project_name.begin(), project_name.end(), '-', '_');
 
               target_filename = project_name + ".exe";
-              logger::print_status("Renaming generic 'a.exe' to '" +
-                                   target_filename.string() + "'");
+              logger::print_status("Renaming generic 'a.exe' to '" + target_filename.string()
+                                   + "'");
             }
 
             std::filesystem::path target = bin_path / target_filename;
@@ -1111,16 +1062,14 @@ bool installer::create_executable_links(
               if (std::filesystem::exists(target)) {
                 std::filesystem::remove(target);
               }
-              std::filesystem::copy_file(
-                  exe_path, target,
-                  std::filesystem::copy_options::overwrite_existing);
+              std::filesystem::copy_file(exe_path,
+                                         target,
+                                         std::filesystem::copy_options::overwrite_existing);
             }
             exe_path = target;
-            logger::print_status("Copied executable to bin directory: " +
-                                 exe_path.string());
+            logger::print_status("Copied executable to bin directory: " + exe_path.string());
           } catch (const std::exception &ex) {
-            logger::print_warning("Failed to copy executable: " +
-                                  std::string(ex.what()));
+            logger::print_warning("Failed to copy executable: " + std::string(ex.what()));
             // Continue with original path
           }
         }
@@ -1129,7 +1078,7 @@ bool installer::create_executable_links(
     }
 
     if (!exe_path.empty()) {
-      break; // Found an executable, so stop searching
+      break;  // Found an executable, so stop searching
     }
   }
 
@@ -1141,11 +1090,21 @@ bool installer::create_executable_links(
   // Add to registry - only for cforge itself, not for installed projects
   if (exe_path.filename().string().find("cforge") != std::string::npos) {
     HKEY h_key;
-    if (RegCreateKeyExA(HKEY_LOCAL_MACHINE, "SOFTWARE\\cforge", 0, NULL,
-                        REG_OPTION_NON_VOLATILE, KEY_WRITE, NULL, &h_key,
-                        NULL) == ERROR_SUCCESS) {
+    if (RegCreateKeyExA(HKEY_LOCAL_MACHINE,
+                        "SOFTWARE\\cforge",
+                        0,
+                        NULL,
+                        REG_OPTION_NON_VOLATILE,
+                        KEY_WRITE,
+                        NULL,
+                        &h_key,
+                        NULL)
+        == ERROR_SUCCESS) {
       std::string install_location = bin_path.parent_path().string();
-      RegSetValueExA(h_key, "InstallLocation", 0, REG_SZ,
+      RegSetValueExA(h_key,
+                     "InstallLocation",
+                     0,
+                     REG_SZ,
                      (const BYTE *)install_location.c_str(),
                      (DWORD)install_location.size() + 1);
 
@@ -1161,39 +1120,34 @@ bool installer::create_executable_links(
   if (exe_path.filename().string().find("cforge") != std::string::npos) {
     // Create Start Menu shortcut
     char start_menu[MAX_PATH];
-    if (SHGetFolderPathA(NULL, CSIDL_COMMON_PROGRAMS, NULL, 0, start_menu) ==
-        S_OK) {
-      std::filesystem::path shortcut_dir =
-          std::filesystem::path(start_menu) / "cforge";
+    if (SHGetFolderPathA(NULL, CSIDL_COMMON_PROGRAMS, NULL, 0, start_menu) == S_OK) {
+      std::filesystem::path shortcut_dir = std::filesystem::path(start_menu) / "cforge";
 
       if (!std::filesystem::exists(shortcut_dir)) {
         std::filesystem::create_directories(shortcut_dir);
       }
 
       // Use COM to create the shortcut
-      IShellLinkA *p_shell_link = NULL;
+      IShellLinkA *p_shell_link    = NULL;
       IPersistFile *p_persist_file = NULL;
 
       HRESULT hr = CoInitialize(NULL);
       if (SUCCEEDED(hr)) {
-        hr = CoCreateInstance(CLSID_ShellLink, NULL, CLSCTX_INPROC_SERVER,
-                              IID_IShellLinkA, (void **)&p_shell_link);
+        hr = CoCreateInstance(
+            CLSID_ShellLink, NULL, CLSCTX_INPROC_SERVER, IID_IShellLinkA, (void **)&p_shell_link);
 
         if (SUCCEEDED(hr)) {
           p_shell_link->SetPath(exe_path.string().c_str());
           p_shell_link->SetDescription("cforge C/C++ Build System");
-          p_shell_link->SetWorkingDirectory(
-              bin_path.parent_path().string().c_str());
+          p_shell_link->SetWorkingDirectory(bin_path.parent_path().string().c_str());
 
-          hr = p_shell_link->QueryInterface(IID_IPersistFile,
-                                            (void **)&p_persist_file);
+          hr = p_shell_link->QueryInterface(IID_IPersistFile, (void **)&p_persist_file);
 
           if (SUCCEEDED(hr)) {
             std::filesystem::path shortcut_path = shortcut_dir / "cforge.lnk";
 
             // Convert to wide string
-            std::wstring w_path(shortcut_path.string().begin(),
-                                shortcut_path.string().end());
+            std::wstring w_path(shortcut_path.string().begin(), shortcut_path.string().end());
 
             hr = p_persist_file->Save(w_path.c_str(), TRUE);
 
@@ -1221,9 +1175,9 @@ bool installer::create_executable_links(
 
   // Find the executable
   for (const auto &entry : std::filesystem::directory_iterator(bin_path)) {
-    if (entry.is_regular_file() &&
-        ((entry.status().permissions() & std::filesystem::perms::owner_exec) !=
-         std::filesystem::perms::none)) {
+    if (entry.is_regular_file()
+        && ((entry.status().permissions() & std::filesystem::perms::owner_exec)
+            != std::filesystem::perms::none)) {
       exe_path = entry.path();
       print_verbose("Found executable: " + exe_path.string());
       break;
@@ -1232,14 +1186,12 @@ bool installer::create_executable_links(
 
   if (exe_path.empty()) {
     // Try to find in parent directory
-    for (const auto &entry :
-         std::filesystem::directory_iterator(bin_path.parent_path())) {
-      if (entry.is_regular_file() && ((entry.status().permissions() &
-                                       std::filesystem::perms::owner_exec) !=
-                                      std::filesystem::perms::none)) {
+    for (const auto &entry : std::filesystem::directory_iterator(bin_path.parent_path())) {
+      if (entry.is_regular_file()
+          && ((entry.status().permissions() & std::filesystem::perms::owner_exec)
+              != std::filesystem::perms::none)) {
         exe_path = entry.path();
-        print_verbose("Found executable in parent directory: " +
-                      exe_path.string());
+        print_verbose("Found executable in parent directory: " + exe_path.string());
         break;
       }
     }
@@ -1250,7 +1202,8 @@ bool installer::create_executable_links(
     return false;
   }
 
-  // Create symlink in ~/.local/bin for cforge itself (user-writable, no sudo required)
+  // Create symlink in ~/.local/bin for cforge itself (user-writable, no sudo
+  // required)
   if (exe_path.filename().string() == "cforge") {
     try {
       // Get home directory
@@ -1281,8 +1234,7 @@ bool installer::create_executable_links(
         print_verbose("Created symlink in ~/.local/bin");
       }
     } catch (const std::exception &ex) {
-      logger::print_warning("Failed to create symlink in ~/.local/bin: " +
-                            std::string(ex.what()));
+      logger::print_warning("Failed to create symlink in ~/.local/bin: " + std::string(ex.what()));
     }
   }
 #endif
@@ -1306,29 +1258,26 @@ bool installer::update_path_env(const std::filesystem::path &bin_path) const {
       std::filesystem::create_directories(path_to_add);
       print_verbose("Created bin directory: " + path_to_add.string());
     } catch (const std::exception &ex) {
-      logger::print_warning("Failed to create bin directory: " +
-                            std::string(ex.what()));
+      logger::print_warning("Failed to create bin directory: " + std::string(ex.what()));
     }
   }
 
-  logger::print_status("Adding to PATH environment variable: " +
-                       path_to_add.string());
+  logger::print_status("Adding to PATH environment variable: " + path_to_add.string());
 
   // Get the current PATH
   HKEY hkey;
-  if (RegOpenKeyExA(HKEY_CURRENT_USER, "Environment", 0, KEY_READ | KEY_WRITE,
-                    &hkey) != ERROR_SUCCESS) {
-    logger::print_error(
-        "Failed to open registry key for PATH environment variable");
+  if (RegOpenKeyExA(HKEY_CURRENT_USER, "Environment", 0, KEY_READ | KEY_WRITE, &hkey)
+      != ERROR_SUCCESS) {
+    logger::print_error("Failed to open registry key for PATH environment variable");
     return false;
   }
 
-  char current_path[32767] = {0}; // Max environment variable length
-  DWORD buf_size = sizeof(current_path);
-  DWORD type = 0;
+  char current_path[32767] = {0};  // Max environment variable length
+  DWORD buf_size           = sizeof(current_path);
+  DWORD type               = 0;
 
-  if (RegQueryValueExA(hkey, "PATH", NULL, &type, (BYTE *)current_path,
-                       &buf_size) != ERROR_SUCCESS) {
+  if (RegQueryValueExA(hkey, "PATH", NULL, &type, (BYTE *)current_path, &buf_size)
+      != ERROR_SUCCESS) {
     if (GetLastError() != ERROR_FILE_NOT_FOUND) {
       RegCloseKey(hkey);
       logger::print_error("Failed to query PATH environment variable");
@@ -1340,7 +1289,7 @@ bool installer::update_path_env(const std::filesystem::path &bin_path) const {
   }
 
   // Check if the path is already in PATH
-  std::string path_str = current_path;
+  std::string path_str        = current_path;
   std::string path_to_add_str = path_to_add.string();
 
   // Normalize the path for comparison
@@ -1367,8 +1316,9 @@ bool installer::update_path_env(const std::filesystem::path &bin_path) const {
   }
 
   // Update the PATH
-  if (RegSetValueExA(hkey, "PATH", 0, REG_EXPAND_SZ, (BYTE *)new_path.c_str(),
-                     new_path.length() + 1) != ERROR_SUCCESS) {
+  if (RegSetValueExA(
+          hkey, "PATH", 0, REG_EXPAND_SZ, (BYTE *)new_path.c_str(), new_path.length() + 1)
+      != ERROR_SUCCESS) {
     RegCloseKey(hkey);
     logger::print_error("Failed to update PATH environment variable");
     return false;
@@ -1377,14 +1327,15 @@ bool installer::update_path_env(const std::filesystem::path &bin_path) const {
   RegCloseKey(hkey);
 
   // Also try to update the system PATH if admin privileges are available
-  if (RegOpenKeyExA(
-          HKEY_LOCAL_MACHINE,
-          "SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment", 0,
-          KEY_READ | KEY_WRITE, &hkey) == ERROR_SUCCESS) {
-
+  if (RegOpenKeyExA(HKEY_LOCAL_MACHINE,
+                    "SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment",
+                    0,
+                    KEY_READ | KEY_WRITE,
+                    &hkey)
+      == ERROR_SUCCESS) {
     buf_size = sizeof(current_path);
-    if (RegQueryValueExA(hkey, "PATH", NULL, &type, (BYTE *)current_path,
-                         &buf_size) == ERROR_SUCCESS) {
+    if (RegQueryValueExA(hkey, "PATH", NULL, &type, (BYTE *)current_path, &buf_size)
+        == ERROR_SUCCESS) {
       path_str = current_path;
 
       if (path_str.find(path_to_add_str) == std::string::npos) {
@@ -1395,11 +1346,10 @@ bool installer::update_path_env(const std::filesystem::path &bin_path) const {
           new_path = path_str + path_to_add_str;
         }
 
-        if (RegSetValueExA(hkey, "PATH", 0, REG_EXPAND_SZ,
-                           (BYTE *)new_path.c_str(),
-                           new_path.length() + 1) == ERROR_SUCCESS) {
-          logger::print_status(
-              "Also added to system PATH (may require system restart)");
+        if (RegSetValueExA(
+                hkey, "PATH", 0, REG_EXPAND_SZ, (BYTE *)new_path.c_str(), new_path.length() + 1)
+            == ERROR_SUCCESS) {
+          logger::print_status("Also added to system PATH (may require system restart)");
         }
       }
     }
@@ -1408,8 +1358,8 @@ bool installer::update_path_env(const std::filesystem::path &bin_path) const {
   }
 
   // Broadcast environment change message
-  SendMessageTimeoutA(HWND_BROADCAST, WM_SETTINGCHANGE, 0,
-                      (LPARAM) "Environment", SMTO_ABORTIFHUNG, 5000, NULL);
+  SendMessageTimeoutA(
+      HWND_BROADCAST, WM_SETTINGCHANGE, 0, (LPARAM) "Environment", SMTO_ABORTIFHUNG, 5000, NULL);
 
   logger::print_status("Added to PATH environment variable. Changes may "
                        "require a new terminal or system restart");
@@ -1431,9 +1381,8 @@ bool installer::update_path_env(const std::filesystem::path &bin_path) const {
     return false;
   }
 
-  std::filesystem::path bashrc_path =
-      std::filesystem::path(home_dir) / ".bashrc";
-  std::filesystem::path zshrc_path = std::filesystem::path(home_dir) / ".zshrc";
+  std::filesystem::path bashrc_path = std::filesystem::path(home_dir) / ".bashrc";
+  std::filesystem::path zshrc_path  = std::filesystem::path(home_dir) / ".zshrc";
 
   std::filesystem::path rc_path;
   if (std::filesystem::exists(zshrc_path)) {
@@ -1455,8 +1404,7 @@ bool installer::update_path_env(const std::filesystem::path &bin_path) const {
   {
     std::ifstream file(rc_path);
     while (std::getline(file, line)) {
-      if (line.find(bin_path_str) != std::string::npos &&
-          line.find("PATH") != std::string::npos) {
+      if (line.find(bin_path_str) != std::string::npos && line.find("PATH") != std::string::npos) {
         already_in_path = true;
         break;
       }
@@ -1477,10 +1425,8 @@ bool installer::update_path_env(const std::filesystem::path &bin_path) const {
 #endif
 }
 
-std::unique_ptr<toml_reader>
-installer::read_project_config(const std::string &project_path) const {
-  std::filesystem::path config_path =
-      std::filesystem::path(project_path) / CFORGE_FILE;
+std::unique_ptr<toml_reader> installer::read_project_config(const std::string &project_path) const {
+  std::filesystem::path config_path = std::filesystem::path(project_path) / CFORGE_FILE;
 
   if (!std::filesystem::exists(config_path)) {
     return nullptr;
@@ -1512,4 +1458,4 @@ bool installer::update_env_var(const std::string &var_name,
   return true;
 }
 
-} // namespace cforge
+}  // namespace cforge

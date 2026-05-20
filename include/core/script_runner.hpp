@@ -6,11 +6,13 @@
 #pragma once
 
 #include "cforge/log.hpp"
+
 #include "core/constants.h"
 #include "core/process_utils.hpp"
 #include "core/toml_reader.hpp"
 
 #include <toml++/toml.hpp>
+
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -38,28 +40,28 @@ enum class script_phase {
  */
 inline std::string phase_to_key(script_phase phase) {
   switch (phase) {
-  case script_phase::PRE_BUILD:
-    return "scripts.pre_build";
-  case script_phase::POST_BUILD:
-    return "scripts.post_build";
-  case script_phase::PRE_TEST:
-    return "scripts.pre_test";
-  case script_phase::POST_TEST:
-    return "scripts.post_test";
-  case script_phase::PRE_RUN:
-    return "scripts.pre_run";
-  case script_phase::POST_RUN:
-    return "scripts.post_run";
-  case script_phase::PRE_CLEAN:
-    return "scripts.pre_clean";
-  case script_phase::POST_CLEAN:
-    return "scripts.post_clean";
-  case script_phase::PRE_INSTALL:
-    return "scripts.pre_install";
-  case script_phase::POST_INSTALL:
-    return "scripts.post_install";
-  default:
-    return "";
+    case script_phase::PRE_BUILD:
+      return "scripts.pre_build";
+    case script_phase::POST_BUILD:
+      return "scripts.post_build";
+    case script_phase::PRE_TEST:
+      return "scripts.pre_test";
+    case script_phase::POST_TEST:
+      return "scripts.post_test";
+    case script_phase::PRE_RUN:
+      return "scripts.pre_run";
+    case script_phase::POST_RUN:
+      return "scripts.post_run";
+    case script_phase::PRE_CLEAN:
+      return "scripts.pre_clean";
+    case script_phase::POST_CLEAN:
+      return "scripts.post_clean";
+    case script_phase::PRE_INSTALL:
+      return "scripts.pre_install";
+    case script_phase::POST_INSTALL:
+      return "scripts.post_install";
+    default:
+      return "";
   }
 }
 
@@ -68,28 +70,28 @@ inline std::string phase_to_key(script_phase phase) {
  */
 inline std::string phase_to_name(script_phase phase) {
   switch (phase) {
-  case script_phase::PRE_BUILD:
-    return "pre-build";
-  case script_phase::POST_BUILD:
-    return "post-build";
-  case script_phase::PRE_TEST:
-    return "pre-test";
-  case script_phase::POST_TEST:
-    return "post-test";
-  case script_phase::PRE_RUN:
-    return "pre-run";
-  case script_phase::POST_RUN:
-    return "post-run";
-  case script_phase::PRE_CLEAN:
-    return "pre-clean";
-  case script_phase::POST_CLEAN:
-    return "post-clean";
-  case script_phase::PRE_INSTALL:
-    return "pre-install";
-  case script_phase::POST_INSTALL:
-    return "post-install";
-  default:
-    return "unknown";
+    case script_phase::PRE_BUILD:
+      return "pre-build";
+    case script_phase::POST_BUILD:
+      return "post-build";
+    case script_phase::PRE_TEST:
+      return "pre-test";
+    case script_phase::POST_TEST:
+      return "post-test";
+    case script_phase::PRE_RUN:
+      return "pre-run";
+    case script_phase::POST_RUN:
+      return "post-run";
+    case script_phase::PRE_CLEAN:
+      return "pre-clean";
+    case script_phase::POST_CLEAN:
+      return "post-clean";
+    case script_phase::PRE_INSTALL:
+      return "pre-install";
+    case script_phase::POST_INSTALL:
+      return "post-install";
+    default:
+      return "unknown";
   }
 }
 
@@ -100,8 +102,7 @@ inline std::string phase_to_name(script_phase phase) {
  * @return Interpreter command (python, bash, etc.) or empty for native
  * executables
  */
-inline std::string
-get_script_interpreter(const std::filesystem::path &script_path) {
+inline std::string get_script_interpreter(const std::filesystem::path &script_path) {
   std::string ext = script_path.extension().string();
 
   // Convert to lowercase for comparison
@@ -111,7 +112,7 @@ get_script_interpreter(const std::filesystem::path &script_path) {
     return "python";
   } else if (ext == ".sh") {
 #ifdef _WIN32
-    return "bash"; // Requires Git Bash or WSL
+    return "bash";  // Requires Git Bash or WSL
 #else
     return "bash";
 #endif
@@ -119,13 +120,13 @@ get_script_interpreter(const std::filesystem::path &script_path) {
 #ifdef _WIN32
     return "cmd /c";
 #else
-    return ""; // Can't run batch files on Unix
+    return "";  // Can't run batch files on Unix
 #endif
   } else if (ext == ".ps1") {
 #ifdef _WIN32
     return "powershell -ExecutionPolicy Bypass -File";
 #else
-    return "pwsh"; // PowerShell Core on Unix
+    return "pwsh";  // PowerShell Core on Unix
 #endif
   }
 
@@ -145,7 +146,8 @@ get_script_interpreter(const std::filesystem::path &script_path) {
  */
 inline bool execute_script(const std::filesystem::path &script_path,
                            const std::filesystem::path &working_dir,
-                           script_phase phase, bool verbose = false,
+                           script_phase phase,
+                           bool verbose         = false,
                            cforge_int_t timeout = 300) {
   std::filesystem::path full_path = script_path;
 
@@ -161,8 +163,7 @@ inline bool execute_script(const std::filesystem::path &script_path,
   }
 
   std::string phase_name = phase_to_name(phase);
-  logger::print_status("Running " + phase_name +
-                       " script: " + script_path.string());
+  logger::print_status("Running " + phase_name + " script: " + script_path.string());
 
   std::string interpreter = get_script_interpreter(full_path);
   std::string command;
@@ -174,7 +175,7 @@ inline bool execute_script(const std::filesystem::path &script_path,
   } else if (interpreter.find(' ') != std::string::npos) {
     // Interpreter with arguments (e.g., "cmd /c" or "powershell -File")
     cforge_size_t space_pos = interpreter.find(' ');
-    command = interpreter.substr(0, space_pos);
+    command                 = interpreter.substr(0, space_pos);
     std::string interp_args = interpreter.substr(space_pos + 1);
 
     // Split interpreter arguments
@@ -190,8 +191,8 @@ inline bool execute_script(const std::filesystem::path &script_path,
     args.emplace_back(full_path.string());
   }
 
-  bool success = execute_tool(command, args, working_dir.string(),
-                              phase_name + " script", verbose, timeout);
+  bool success =
+      execute_tool(command, args, working_dir.string(), phase_name + " script", verbose, timeout);
 
   if (!success) {
     logger::print_error(phase_name + " script failed: " + script_path.string());
@@ -212,7 +213,8 @@ inline bool execute_script(const std::filesystem::path &script_path,
  */
 inline bool run_phase_scripts(const std::filesystem::path &config_path,
                               const std::filesystem::path &working_dir,
-                              script_phase phase, bool verbose = false) {
+                              script_phase phase,
+                              bool verbose = false) {
   toml_reader config;
   if (!config.load(config_path.string())) {
     // Config file not found or invalid - not an error, just no scripts
@@ -243,8 +245,8 @@ inline bool run_phase_scripts(const std::filesystem::path &config_path,
  * @brief Get the correct config path for a project or workspace
  * Checks for unified format (cforge.toml with [workspace]) first for workspaces
  */
-inline std::filesystem::path get_script_config_path(
-    const std::filesystem::path &project_dir, bool is_workspace) {
+inline std::filesystem::path get_script_config_path(const std::filesystem::path &project_dir,
+                                                    bool is_workspace) {
   if (!is_workspace) {
     return project_dir / CFORGE_FILE;
   }
@@ -275,10 +277,10 @@ inline std::filesystem::path get_script_config_path(
  * @return true if all scripts succeeded
  */
 inline bool run_pre_build_scripts(const std::filesystem::path &project_dir,
-                                  bool is_workspace, bool verbose = false) {
+                                  bool is_workspace,
+                                  bool verbose = false) {
   std::filesystem::path config_path = get_script_config_path(project_dir, is_workspace);
-  return run_phase_scripts(config_path, project_dir, script_phase::PRE_BUILD,
-                           verbose);
+  return run_phase_scripts(config_path, project_dir, script_phase::PRE_BUILD, verbose);
 }
 
 /**
@@ -290,10 +292,10 @@ inline bool run_pre_build_scripts(const std::filesystem::path &project_dir,
  * @return true if all scripts succeeded
  */
 inline bool run_post_build_scripts(const std::filesystem::path &project_dir,
-                                   bool is_workspace, bool verbose = false) {
+                                   bool is_workspace,
+                                   bool verbose = false) {
   std::filesystem::path config_path = get_script_config_path(project_dir, is_workspace);
-  return run_phase_scripts(config_path, project_dir, script_phase::POST_BUILD,
-                           verbose);
+  return run_phase_scripts(config_path, project_dir, script_phase::POST_BUILD, verbose);
 }
 
 /**
@@ -303,11 +305,9 @@ inline bool run_post_build_scripts(const std::filesystem::path &project_dir,
  * @param verbose Verbose output
  * @return true if all scripts succeeded
  */
-inline bool run_pre_test_scripts(const std::filesystem::path &project_dir,
-                                 bool verbose = false) {
+inline bool run_pre_test_scripts(const std::filesystem::path &project_dir, bool verbose = false) {
   std::filesystem::path config_path = project_dir / CFORGE_FILE;
-  return run_phase_scripts(config_path, project_dir, script_phase::PRE_TEST,
-                           verbose);
+  return run_phase_scripts(config_path, project_dir, script_phase::PRE_TEST, verbose);
 }
 
 /**
@@ -317,11 +317,9 @@ inline bool run_pre_test_scripts(const std::filesystem::path &project_dir,
  * @param verbose Verbose output
  * @return true if all scripts succeeded
  */
-inline bool run_post_test_scripts(const std::filesystem::path &project_dir,
-                                  bool verbose = false) {
+inline bool run_post_test_scripts(const std::filesystem::path &project_dir, bool verbose = false) {
   std::filesystem::path config_path = project_dir / CFORGE_FILE;
-  return run_phase_scripts(config_path, project_dir, script_phase::POST_TEST,
-                           verbose);
+  return run_phase_scripts(config_path, project_dir, script_phase::POST_TEST, verbose);
 }
 
-} // namespace cforge
+}  // namespace cforge

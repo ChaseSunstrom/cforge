@@ -4,7 +4,9 @@
  */
 
 #include "core/remote_cache.hpp"
+
 #include "cforge/log.hpp"
+
 #include "core/types.h"
 
 #include <cstdlib>
@@ -12,8 +14,8 @@
 #include <sstream>
 
 #ifdef _WIN32
-#include <windows.h>
 #include <shlobj.h>
+#include <windows.h>
 #else
 #include <pwd.h>
 #include <unistd.h>
@@ -45,7 +47,7 @@ static std::filesystem::path get_global_config_path() {
   const char *home = std::getenv("HOME");
   if (!home) {
     struct passwd *pw = getpwuid(getuid());
-    home = pw ? pw->pw_dir : ".";
+    home              = pw ? pw->pw_dir : ".";
   }
   // Default to ~/.config/cforge for config (XDG compliant)
   return std::filesystem::path(home) / ".config" / "cforge" / "config.toml";
@@ -54,7 +56,9 @@ static std::filesystem::path get_global_config_path() {
 
 static std::string trim(const std::string &str) {
   auto start = str.find_first_not_of(" \t\r\n");
-  if (start == std::string::npos) return "";
+  if (start == std::string::npos) {
+    return "";
+  }
   auto end = str.find_last_not_of(" \t\r\n");
   return str.substr(start, end - start + 1);
 }
@@ -77,7 +81,9 @@ remote_cache_config remote_cache_config::load_from_global_config() {
 
   while (std::getline(file, line)) {
     line = trim(line);
-    if (line.empty() || line[0] == '#') continue;
+    if (line.empty() || line[0] == '#') {
+      continue;
+    }
 
     // Section header
     if (line[0] == '[' && line.back() == ']') {
@@ -87,9 +93,11 @@ remote_cache_config remote_cache_config::load_from_global_config() {
 
     // Key-value pair
     auto eq_pos = line.find('=');
-    if (eq_pos == std::string::npos) continue;
+    if (eq_pos == std::string::npos) {
+      continue;
+    }
 
-    std::string key = trim(line.substr(0, eq_pos));
+    std::string key   = trim(line.substr(0, eq_pos));
     std::string value = trim(line.substr(eq_pos + 1));
 
     // Remove quotes
@@ -121,8 +129,8 @@ remote_cache_config remote_cache_config::load_from_global_config() {
 // remote_cache implementation
 // ============================================================================
 
-remote_cache::remote_cache(const remote_cache_config &config)
-    : config_(config) {}
+remote_cache::remote_cache(const remote_cache_config &config) : config_(config) {
+}
 
 std::string remote_cache::get_package_url(const cache_key &key) const {
   std::string url = config_.url;
@@ -143,7 +151,7 @@ bool remote_cache::test_connection() const {
 
   http_request_options opts;
   opts.timeout_seconds = 5;
-  opts.api_key = config_.api_key;
+  opts.api_key         = config_.api_key;
 
   // Try to reach the stats endpoint
   std::string stats_url = config_.url;
@@ -163,7 +171,7 @@ bool remote_cache::has(const cache_key &key) const {
 
   http_request_options opts;
   opts.timeout_seconds = config_.timeout_seconds;
-  opts.api_key = config_.api_key;
+  opts.api_key         = config_.api_key;
 
   auto response = http_.head(get_package_url(key), opts);
   return response && response->ok();
@@ -176,12 +184,10 @@ bool remote_cache::create_archive(const std::filesystem::path &source,
 
 #ifdef _WIN32
   // On Windows, try to use tar if available (Windows 10+)
-  cmd << "tar -czf \"" << dest.string() << "\" -C \""
-      << source.parent_path().string() << "\" \""
+  cmd << "tar -czf \"" << dest.string() << "\" -C \"" << source.parent_path().string() << "\" \""
       << source.filename().string() << "\"";
 #else
-  cmd << "tar -czf '" << dest.string() << "' -C '"
-      << source.parent_path().string() << "' '"
+  cmd << "tar -czf '" << dest.string() << "' -C '" << source.parent_path().string() << "' '"
       << source.filename().string() << "'";
 #endif
 
@@ -213,12 +219,12 @@ bool remote_cache::fetch(const cache_key &key,
   }
 
   // Create temp file for download
-  auto temp_file = std::filesystem::temp_directory_path() /
-                   ("cforge_cache_" + key.to_string() + ".tar.gz");
+  auto temp_file = std::filesystem::temp_directory_path()
+                 / ("cforge_cache_" + key.to_string() + ".tar.gz");
 
   http_request_options opts;
   opts.timeout_seconds = config_.timeout_seconds;
-  opts.api_key = config_.api_key;
+  opts.api_key         = config_.api_key;
 
   if (progress) {
     opts.progress_callback = [&progress](cforge_size_t downloaded, cforge_size_t total) {
@@ -254,8 +260,8 @@ bool remote_cache::push(const cache_key &key,
   }
 
   // Create temp file for archive
-  auto temp_file = std::filesystem::temp_directory_path() /
-                   ("cforge_cache_" + key.to_string() + ".tar.gz");
+  auto temp_file = std::filesystem::temp_directory_path()
+                 / ("cforge_cache_" + key.to_string() + ".tar.gz");
 
   // Create archive
   if (!create_archive(source, temp_file)) {
@@ -265,7 +271,7 @@ bool remote_cache::push(const cache_key &key,
 
   http_request_options opts;
   opts.timeout_seconds = config_.timeout_seconds * 2;  // More time for uploads
-  opts.api_key = config_.api_key;
+  opts.api_key         = config_.api_key;
 
   if (progress) {
     opts.progress_callback = [&progress](cforge_size_t uploaded, cforge_size_t total) {
@@ -300,7 +306,7 @@ std::optional<remote_cache_stats> remote_cache::stats() const {
 
   http_request_options opts;
   opts.timeout_seconds = config_.timeout_seconds;
-  opts.api_key = config_.api_key;
+  opts.api_key         = config_.api_key;
 
   auto response = http_.get(stats_url, opts);
   if (!response || !response->ok()) {
@@ -314,11 +320,17 @@ std::optional<remote_cache_stats> remote_cache::stats() const {
 
   auto parse_value = [&body](const std::string &key) -> cforge_size_t {
     auto pos = body.find("\"" + key + "\"");
-    if (pos == std::string::npos) return 0;
+    if (pos == std::string::npos) {
+      return 0;
+    }
     pos = body.find(':', pos);
-    if (pos == std::string::npos) return 0;
+    if (pos == std::string::npos) {
+      return 0;
+    }
     pos++;
-    while (pos < body.size() && (body[pos] == ' ' || body[pos] == '\t')) pos++;
+    while (pos < body.size() && (body[pos] == ' ' || body[pos] == '\t')) {
+      pos++;
+    }
     try {
       return std::stoull(body.substr(pos));
     } catch (...) {
@@ -326,10 +338,10 @@ std::optional<remote_cache_stats> remote_cache::stats() const {
     }
   };
 
-  result.total_packages = parse_value("total_packages");
+  result.total_packages   = parse_value("total_packages");
   result.total_size_bytes = parse_value("total_size");
-  result.downloads = parse_value("downloads");
-  result.uploads = parse_value("uploads");
+  result.downloads        = parse_value("downloads");
+  result.uploads          = parse_value("uploads");
 
   return result;
 }
@@ -338,9 +350,9 @@ std::optional<remote_cache_stats> remote_cache::stats() const {
 // unified_cache implementation
 // ============================================================================
 
-unified_cache::unified_cache(package_cache &local_cache,
-                             const remote_cache_config &remote_config)
-    : local_(local_cache), remote_(remote_config) {}
+unified_cache::unified_cache(package_cache &local_cache, const remote_cache_config &remote_config)
+    : local_(local_cache), remote_(remote_config) {
+}
 
 bool unified_cache::has(const cache_key &key) const {
   // Check local first
@@ -404,4 +416,4 @@ cache_stats unified_cache::stats() const {
   return local_.stats();
 }
 
-} // namespace cforge
+}  // namespace cforge

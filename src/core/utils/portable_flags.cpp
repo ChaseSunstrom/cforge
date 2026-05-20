@@ -4,6 +4,7 @@
  */
 
 #include "core/portable_flags.hpp"
+
 #include "core/toml_reader.hpp"
 
 #include <algorithm>
@@ -12,45 +13,40 @@
 namespace cforge {
 
 bool portable_options::has_any() const {
-  return !optimize.empty() || !warnings.empty() || warnings_as_errors ||
-         debug_info || !sanitizers.empty() || lto || !exceptions || !rtti ||
-         !stdlib.empty() || !hardening.empty() || !visibility.empty();
+  return !optimize.empty() || !warnings.empty() || warnings_as_errors || debug_info
+      || !sanitizers.empty() || lto || !exceptions || !rtti || !stdlib.empty() || !hardening.empty()
+      || !visibility.empty();
 }
 
 bool linker_options::has_any() const {
-  return !flags.empty() || !library_dirs.empty() || strip || dead_code_strip ||
-         !linker.empty() || !rpath.empty() || static_runtime ||
-         allow_undefined || map_file || !scripts.empty() || !def_file.empty() ||
-         !version_script.empty() || !exported_symbols.empty() ||
-         !unexported_symbols.empty() || !order_file.empty() ||
-         !subsystem.empty() || !entry_point.empty() || !install_name.empty() ||
-         whole_archive || pie || !relro.empty();
+  return !flags.empty() || !library_dirs.empty() || strip || dead_code_strip || !linker.empty()
+      || !rpath.empty() || static_runtime || allow_undefined || map_file || !scripts.empty()
+      || !def_file.empty() || !version_script.empty() || !exported_symbols.empty()
+      || !unexported_symbols.empty() || !order_file.empty() || !subsystem.empty()
+      || !entry_point.empty() || !install_name.empty() || whole_archive || pie || !relro.empty();
 }
 
 bool cmake_options::has_any() const {
-  return export_compile_commands || position_independent_code ||
-         interprocedural_optimization || visibility_hidden ||
-         !variables.empty();
+  return export_compile_commands || position_independent_code || interprocedural_optimization
+      || visibility_hidden || !variables.empty();
 }
 
-portable_options parse_portable_options(const toml_reader &config,
-                                        const std::string &section) {
+portable_options parse_portable_options(const toml_reader &config, const std::string &section) {
   portable_options opts;
 
   // Parse string options
-  opts.optimize = config.get_string(section + ".optimize", "");
-  opts.warnings = config.get_string(section + ".warnings", "");
-  opts.stdlib = config.get_string(section + ".stdlib", "");
-  opts.hardening = config.get_string(section + ".hardening", "");
+  opts.optimize   = config.get_string(section + ".optimize", "");
+  opts.warnings   = config.get_string(section + ".warnings", "");
+  opts.stdlib     = config.get_string(section + ".stdlib", "");
+  opts.hardening  = config.get_string(section + ".hardening", "");
   opts.visibility = config.get_string(section + ".visibility", "");
 
   // Parse boolean options
-  opts.warnings_as_errors =
-      config.get_bool(section + ".warnings_as_errors", false);
-  opts.debug_info = config.get_bool(section + ".debug_info", false);
-  opts.lto = config.get_bool(section + ".lto", false);
-  opts.exceptions = config.get_bool(section + ".exceptions", true);
-  opts.rtti = config.get_bool(section + ".rtti", true);
+  opts.warnings_as_errors = config.get_bool(section + ".warnings_as_errors", false);
+  opts.debug_info         = config.get_bool(section + ".debug_info", false);
+  opts.lto                = config.get_bool(section + ".lto", false);
+  opts.exceptions         = config.get_bool(section + ".exceptions", true);
+  opts.rtti               = config.get_bool(section + ".rtti", true);
 
   // Parse sanitizers array
   opts.sanitizers = config.get_string_array(section + ".sanitizers");
@@ -58,36 +54,35 @@ portable_options parse_portable_options(const toml_reader &config,
   return opts;
 }
 
-linker_options parse_linker_options(const toml_reader &config,
-                                    const std::string &section) {
+linker_options parse_linker_options(const toml_reader &config, const std::string &section) {
   linker_options opts;
 
   // Parse array options
-  opts.flags = config.get_string_array(section + ".flags");
+  opts.flags        = config.get_string_array(section + ".flags");
   opts.library_dirs = config.get_string_array(section + ".library_dirs");
-  opts.rpath = config.get_string_array(section + ".rpath");
-  opts.scripts = config.get_string_array(section + ".scripts");
+  opts.rpath        = config.get_string_array(section + ".rpath");
+  opts.scripts      = config.get_string_array(section + ".scripts");
 
   // Parse boolean options
-  opts.strip = config.get_bool(section + ".strip", false);
+  opts.strip           = config.get_bool(section + ".strip", false);
   opts.dead_code_strip = config.get_bool(section + ".dead_code_strip", false);
-  opts.static_runtime = config.get_bool(section + ".static_runtime", false);
+  opts.static_runtime  = config.get_bool(section + ".static_runtime", false);
   opts.allow_undefined = config.get_bool(section + ".allow_undefined", false);
-  opts.map_file = config.get_bool(section + ".map_file", false);
-  opts.whole_archive = config.get_bool(section + ".whole_archive", false);
-  opts.pie = config.get_bool(section + ".pie", false);
+  opts.map_file        = config.get_bool(section + ".map_file", false);
+  opts.whole_archive   = config.get_bool(section + ".whole_archive", false);
+  opts.pie             = config.get_bool(section + ".pie", false);
 
   // Parse string options
-  opts.linker = config.get_string(section + ".linker", "");
-  opts.def_file = config.get_string(section + ".def_file", "");
-  opts.version_script = config.get_string(section + ".version_script", "");
-  opts.exported_symbols = config.get_string(section + ".exported_symbols", "");
+  opts.linker             = config.get_string(section + ".linker", "");
+  opts.def_file           = config.get_string(section + ".def_file", "");
+  opts.version_script     = config.get_string(section + ".version_script", "");
+  opts.exported_symbols   = config.get_string(section + ".exported_symbols", "");
   opts.unexported_symbols = config.get_string(section + ".unexported_symbols", "");
-  opts.order_file = config.get_string(section + ".order_file", "");
-  opts.subsystem = config.get_string(section + ".subsystem", "");
-  opts.entry_point = config.get_string(section + ".entry_point", "");
-  opts.install_name = config.get_string(section + ".install_name", "");
-  opts.relro = config.get_string(section + ".relro", "");
+  opts.order_file         = config.get_string(section + ".order_file", "");
+  opts.subsystem          = config.get_string(section + ".subsystem", "");
+  opts.entry_point        = config.get_string(section + ".entry_point", "");
+  opts.install_name       = config.get_string(section + ".install_name", "");
+  opts.relro              = config.get_string(section + ".relro", "");
 
   return opts;
 }
@@ -110,38 +105,69 @@ void merge_linker_options(linker_options &target, const linker_options &source) 
   merge_string_arrays(target.scripts, source.scripts);
 
   // Merge booleans (source overrides if true)
-  if (source.strip) target.strip = true;
-  if (source.dead_code_strip) target.dead_code_strip = true;
-  if (source.static_runtime) target.static_runtime = true;
-  if (source.allow_undefined) target.allow_undefined = true;
-  if (source.map_file) target.map_file = true;
-  if (source.whole_archive) target.whole_archive = true;
-  if (source.pie) target.pie = true;
+  if (source.strip) {
+    target.strip = true;
+  }
+  if (source.dead_code_strip) {
+    target.dead_code_strip = true;
+  }
+  if (source.static_runtime) {
+    target.static_runtime = true;
+  }
+  if (source.allow_undefined) {
+    target.allow_undefined = true;
+  }
+  if (source.map_file) {
+    target.map_file = true;
+  }
+  if (source.whole_archive) {
+    target.whole_archive = true;
+  }
+  if (source.pie) {
+    target.pie = true;
+  }
 
   // Merge strings (source overrides if non-empty)
-  if (!source.linker.empty()) target.linker = source.linker;
-  if (!source.def_file.empty()) target.def_file = source.def_file;
-  if (!source.version_script.empty()) target.version_script = source.version_script;
-  if (!source.exported_symbols.empty()) target.exported_symbols = source.exported_symbols;
-  if (!source.unexported_symbols.empty()) target.unexported_symbols = source.unexported_symbols;
-  if (!source.order_file.empty()) target.order_file = source.order_file;
-  if (!source.subsystem.empty()) target.subsystem = source.subsystem;
-  if (!source.entry_point.empty()) target.entry_point = source.entry_point;
-  if (!source.install_name.empty()) target.install_name = source.install_name;
-  if (!source.relro.empty()) target.relro = source.relro;
+  if (!source.linker.empty()) {
+    target.linker = source.linker;
+  }
+  if (!source.def_file.empty()) {
+    target.def_file = source.def_file;
+  }
+  if (!source.version_script.empty()) {
+    target.version_script = source.version_script;
+  }
+  if (!source.exported_symbols.empty()) {
+    target.exported_symbols = source.exported_symbols;
+  }
+  if (!source.unexported_symbols.empty()) {
+    target.unexported_symbols = source.unexported_symbols;
+  }
+  if (!source.order_file.empty()) {
+    target.order_file = source.order_file;
+  }
+  if (!source.subsystem.empty()) {
+    target.subsystem = source.subsystem;
+  }
+  if (!source.entry_point.empty()) {
+    target.entry_point = source.entry_point;
+  }
+  if (!source.install_name.empty()) {
+    target.install_name = source.install_name;
+  }
+  if (!source.relro.empty()) {
+    target.relro = source.relro;
+  }
 }
 
 cmake_options parse_cmake_options(const toml_reader &config) {
   cmake_options opts;
 
   // Parse from [build] section
-  opts.export_compile_commands =
-      config.get_bool("build.export_compile_commands", false);
-  opts.position_independent_code =
-      config.get_bool("build.position_independent_code", false);
-  opts.interprocedural_optimization =
-      config.get_bool("build.interprocedural_optimization", false);
-  opts.visibility_hidden = config.get_bool("build.visibility_hidden", false);
+  opts.export_compile_commands      = config.get_bool("build.export_compile_commands", false);
+  opts.position_independent_code    = config.get_bool("build.position_independent_code", false);
+  opts.interprocedural_optimization = config.get_bool("build.interprocedural_optimization", false);
+  opts.visibility_hidden            = config.get_bool("build.visibility_hidden", false);
 
   // Parse custom variables from [build.cmake_variables]
   opts.variables = config.get_string_map("build.cmake_variables");
@@ -181,8 +207,7 @@ std::vector<std::string> translate_to_msvc(const portable_options &opts) {
   }
 
   // Warnings as errors (if not already set by warnings level)
-  if (opts.warnings_as_errors && opts.warnings != "strict" &&
-      opts.warnings != "pedantic") {
+  if (opts.warnings_as_errors && opts.warnings != "strict" && opts.warnings != "pedantic") {
     flags.push_back("/WX");
   }
 
@@ -283,8 +308,7 @@ std::vector<std::string> translate_to_gcc(const portable_options &opts) {
   }
 
   // Warnings as errors
-  if (opts.warnings_as_errors && opts.warnings != "strict" &&
-      opts.warnings != "pedantic") {
+  if (opts.warnings_as_errors && opts.warnings != "strict" && opts.warnings != "pedantic") {
     flags.push_back("-Werror");
   }
 
@@ -415,8 +439,7 @@ std::vector<std::string> translate_to_clang(const portable_options &opts) {
   }
 
   // Warnings as errors
-  if (opts.warnings_as_errors && opts.warnings != "strict" &&
-      opts.warnings != "pedantic") {
+  if (opts.warnings_as_errors && opts.warnings != "strict" && opts.warnings != "pedantic") {
     flags.push_back("-Werror");
   }
 
@@ -784,8 +807,9 @@ std::vector<std::string> translate_linker_to_clang(const linker_options &opts) {
 std::string join_flags(const std::vector<std::string> &flags) {
   std::ostringstream oss;
   for (cforge_size_t i = 0; i < flags.size(); ++i) {
-    if (i > 0)
+    if (i > 0) {
       oss << " ";
+    }
     oss << flags[i];
   }
   return oss.str();
@@ -800,20 +824,18 @@ std::string generate_portable_flags_cmake(const portable_options &opts,
 
   std::ostringstream cmake;
 
-  auto msvc_flags = translate_to_msvc(opts);
-  auto msvc_link = translate_to_msvc_link(opts);
-  auto gcc_flags = translate_to_gcc(opts);
-  auto gcc_link = translate_to_gcc_link(opts);
+  auto msvc_flags  = translate_to_msvc(opts);
+  auto msvc_link   = translate_to_msvc_link(opts);
+  auto gcc_flags   = translate_to_gcc(opts);
+  auto gcc_link    = translate_to_gcc_link(opts);
   auto clang_flags = translate_to_clang(opts);
-  auto clang_link = translate_to_clang_link(opts);
+  auto clang_link  = translate_to_clang_link(opts);
 
   cmake << indent << "# Portable compiler flags\n";
-  cmake << indent
-        << "if(MSVC AND NOT CMAKE_CXX_COMPILER_ID STREQUAL \"Clang\")\n";
+  cmake << indent << "if(MSVC AND NOT CMAKE_CXX_COMPILER_ID STREQUAL \"Clang\")\n";
 
   if (!msvc_flags.empty()) {
-    cmake << indent << "    target_compile_options(" << target_name
-          << " PRIVATE";
+    cmake << indent << "    target_compile_options(" << target_name << " PRIVATE";
     for (const auto &flag : msvc_flags) {
       cmake << " " << flag;
     }
@@ -831,8 +853,7 @@ std::string generate_portable_flags_cmake(const portable_options &opts,
   cmake << indent << "elseif(CMAKE_CXX_COMPILER_ID STREQUAL \"GNU\")\n";
 
   if (!gcc_flags.empty()) {
-    cmake << indent << "    target_compile_options(" << target_name
-          << " PRIVATE";
+    cmake << indent << "    target_compile_options(" << target_name << " PRIVATE";
     for (const auto &flag : gcc_flags) {
       cmake << " " << flag;
     }
@@ -850,8 +871,7 @@ std::string generate_portable_flags_cmake(const portable_options &opts,
   cmake << indent << "elseif(CMAKE_CXX_COMPILER_ID MATCHES \"Clang\")\n";
 
   if (!clang_flags.empty()) {
-    cmake << indent << "    target_compile_options(" << target_name
-          << " PRIVATE";
+    cmake << indent << "    target_compile_options(" << target_name << " PRIVATE";
     for (const auto &flag : clang_flags) {
       cmake << " " << flag;
     }
@@ -907,10 +927,9 @@ std::string generate_cmake_options(const cmake_options &opts) {
   return cmake.str();
 }
 
-std::string
-generate_config_portable_flags_cmake(const std::string &config_name,
-                                     const portable_options &opts,
-                                     const std::string &target_name) {
+std::string generate_config_portable_flags_cmake(const std::string &config_name,
+                                                 const portable_options &opts,
+                                                 const std::string &target_name) {
   if (!opts.has_any()) {
     return "";
   }
@@ -934,13 +953,12 @@ std::string generate_linker_flags_cmake(const linker_options &opts,
 
   std::ostringstream cmake;
 
-  auto msvc_flags = translate_linker_to_msvc(opts);
-  auto gcc_flags = translate_linker_to_gcc(opts);
+  auto msvc_flags  = translate_linker_to_msvc(opts);
+  auto gcc_flags   = translate_linker_to_gcc(opts);
   auto clang_flags = translate_linker_to_clang(opts);
 
   cmake << indent << "# Portable linker flags\n";
-  cmake << indent
-        << "if(MSVC AND NOT CMAKE_CXX_COMPILER_ID STREQUAL \"Clang\")\n";
+  cmake << indent << "if(MSVC AND NOT CMAKE_CXX_COMPILER_ID STREQUAL \"Clang\")\n";
 
   if (!msvc_flags.empty()) {
     cmake << indent << "    target_link_options(" << target_name << " PRIVATE";
@@ -992,4 +1010,4 @@ std::string generate_config_linker_flags_cmake(const std::string &config_name,
   return cmake.str();
 }
 
-} // namespace cforge
+}  // namespace cforge

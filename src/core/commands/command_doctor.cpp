@@ -4,14 +4,17 @@
  */
 
 #include "cforge/log.hpp"
+
 #include "core/command_registry.hpp"
 #include "core/commands.hpp"
-#include "core/types.h"
 #include "core/process_utils.hpp"
+#include "core/tool_installer.hpp"
+#include "core/types.h"
 
-#include <filesystem>
 #include <fmt/color.h>
 #include <fmt/core.h>
+
+#include <filesystem>
 #include <regex>
 
 namespace cforge {
@@ -27,7 +30,7 @@ static std::string extract_version(const std::string &output) {
 }
 
 static std::string get_tool_version(const std::string &command,
-                                     const std::vector<std::string> &args) {
+                                    const std::vector<std::string> &args) {
   cforge::process_result result = cforge::execute_process(command, args, "", nullptr, nullptr, 10);
   if (result.success) {
     std::string output = result.stdout_output + result.stderr_output;
@@ -36,9 +39,10 @@ static std::string get_tool_version(const std::string &command,
   return "";
 }
 
-static void print_check_result(const std::string &name, bool success,
-                                const std::string &version = "",
-                                const std::string &help = "") {
+static void print_check_result(const std::string &name,
+                               bool success,
+                               const std::string &version = "",
+                               const std::string &help    = "") {
   if (success) {
     // Green checkmark with name and version
     std::string value = version.empty() ? "found" : version;
@@ -52,7 +56,7 @@ static void print_check_result(const std::string &name, bool success,
   }
 }
 
-} // namespace cforge
+}  // namespace cforge
 
 cforge_int_t cforge_cmd_doctor(const cforge_context_t *ctx) {
   bool verbose = false;
@@ -72,28 +76,38 @@ cforge_int_t cforge_cmd_doctor(const cforge_context_t *ctx) {
   cforge::logger::print_section("Environment Check");
   cforge::logger::print_blank();
 
-  cforge_int_t passed = 0;
+  cforge_int_t passed   = 0;
   cforge_int_t warnings = 0;
+  // Tools the doctor flagged as missing; surfaced at the end with a single
+  // interactive install offer per tool. Keeps `cforge doctor` actionable
+  // instead of just descriptive.
+  std::vector<std::string> missing_tools;
 
   // Check CMake
-  bool cmake_ok = cforge::is_command_available("cmake", 5);
+  bool cmake_ok         = cforge::is_command_available("cmake", 5);
   std::string cmake_ver = cmake_ok ? cforge::get_tool_version("cmake", {"--version"}) : "";
-  cforge::print_check_result("CMake", cmake_ok, cmake_ver,
-                     "install from https://cmake.org/download/");
-  if (cmake_ok)
+  cforge::print_check_result(
+      "CMake", cmake_ok, cmake_ver, "install from https://cmake.org/download/");
+  if (cmake_ok) {
     passed++;
-  else
+  } else {
     warnings++;
+    missing_tools.push_back("cmake");
+  }
 
   // Check Ninja
-  bool ninja_ok = cforge::is_command_available("ninja", 5);
+  bool ninja_ok         = cforge::is_command_available("ninja", 5);
   std::string ninja_ver = ninja_ok ? cforge::get_tool_version("ninja", {"--version"}) : "";
-  cforge::print_check_result("Ninja", ninja_ok, ninja_ver,
-                     "install with 'choco install ninja' or 'apt install ninja-build'");
-  if (ninja_ok)
+  cforge::print_check_result("Ninja",
+                             ninja_ok,
+                             ninja_ver,
+                             "install with 'choco install ninja' or 'apt install ninja-build'");
+  if (ninja_ok) {
     passed++;
-  else
+  } else {
     warnings++;
+    missing_tools.push_back("ninja");
+  }
 
   // Check for C++ compiler
   bool compiler_ok = false;
@@ -103,110 +117,137 @@ cforge_int_t cforge_cmd_doctor(const cforge_context_t *ctx) {
 #ifdef _WIN32
   // Check for MSVC or MinGW
   if (cforge::is_command_available("cl", 5)) {
-    compiler_ok = true;
+    compiler_ok   = true;
     compiler_name = "MSVC";
   } else if (cforge::is_command_available("g++", 5)) {
-    compiler_ok = true;
+    compiler_ok   = true;
     compiler_name = "g++ (MinGW)";
-    compiler_ver = cforge::get_tool_version("g++", {"--version"});
+    compiler_ver  = cforge::get_tool_version("g++", {"--version"});
   } else if (cforge::is_command_available("clang++", 5)) {
-    compiler_ok = true;
+    compiler_ok   = true;
     compiler_name = "clang++";
-    compiler_ver = cforge::get_tool_version("clang++", {"--version"});
+    compiler_ver  = cforge::get_tool_version("clang++", {"--version"});
   }
 #else
   if (cforge::is_command_available("g++", 5)) {
-    compiler_ok = true;
+    compiler_ok   = true;
     compiler_name = "g++";
-    compiler_ver = cforge::get_tool_version("g++", {"--version"});
+    compiler_ver  = cforge::get_tool_version("g++", {"--version"});
   } else if (cforge::is_command_available("clang++", 5)) {
-    compiler_ok = true;
+    compiler_ok   = true;
     compiler_name = "clang++";
-    compiler_ver = cforge::get_tool_version("clang++", {"--version"});
+    compiler_ver  = cforge::get_tool_version("clang++", {"--version"});
   }
 #endif
 
-  cforge::print_check_result(compiler_ok ? compiler_name : "C++ Compiler", compiler_ok,
-                     compiler_ver, "install a C++ compiler (g++, clang++, or MSVC)");
-  if (compiler_ok)
+  cforge::print_check_result(compiler_ok ? compiler_name : "C++ Compiler",
+                             compiler_ok,
+                             compiler_ver,
+                             "install a C++ compiler (g++, clang++, or MSVC)");
+  if (compiler_ok) {
     passed++;
-  else
+  } else {
     warnings++;
+  }
 
   // Check ccache/sccache
-  bool cache_ok = cforge::is_command_available("ccache", 5) ||
-                  cforge::is_command_available("sccache", 5);
+  bool cache_ok = cforge::is_command_available("ccache", 5)
+               || cforge::is_command_available("sccache", 5);
   std::string cache_name = cforge::is_command_available("ccache", 5) ? "ccache" : "sccache";
-  std::string cache_ver =
-      cache_ok ? cforge::get_tool_version(cache_name, {"--version"}) : "";
-  cforge::print_check_result(cache_ok ? cache_name : "ccache/sccache", cache_ok, cache_ver,
-                     "install with 'choco install ccache' or 'apt install ccache'");
-  if (cache_ok)
+  std::string cache_ver  = cache_ok ? cforge::get_tool_version(cache_name, {"--version"}) : "";
+  cforge::print_check_result(cache_ok ? cache_name : "ccache/sccache",
+                             cache_ok,
+                             cache_ver,
+                             "install with 'choco install ccache' or 'apt install ccache'");
+  if (cache_ok) {
     passed++;
-  else
+  } else {
     warnings++;
+    missing_tools.push_back("ccache");
+  }
 
   // Check vcpkg
   bool vcpkg_ok = false;
   std::string vcpkg_path;
   const char *vcpkg_root = std::getenv("VCPKG_ROOT");
   if (vcpkg_root) {
-    std::filesystem::path vcpkg_exe =
-        std::filesystem::path(vcpkg_root) / "vcpkg";
+    std::filesystem::path vcpkg_exe = std::filesystem::path(vcpkg_root) / "vcpkg";
 #ifdef _WIN32
     vcpkg_exe += ".exe";
 #endif
     if (std::filesystem::exists(vcpkg_exe)) {
-      vcpkg_ok = true;
+      vcpkg_ok   = true;
       vcpkg_path = vcpkg_root;
     }
   }
-  cforge::print_check_result("vcpkg", vcpkg_ok, vcpkg_ok ? vcpkg_path : "",
-                     "set VCPKG_ROOT environment variable");
-  if (vcpkg_ok)
+  cforge::print_check_result(
+      "vcpkg", vcpkg_ok, vcpkg_ok ? vcpkg_path : "", "set VCPKG_ROOT environment variable");
+  if (vcpkg_ok) {
     passed++;
-  else
+  } else {
     warnings++;
+  }
 
   // Check Git
-  bool git_ok = cforge::is_command_available("git", 5);
+  bool git_ok         = cforge::is_command_available("git", 5);
   std::string git_ver = git_ok ? cforge::get_tool_version("git", {"--version"}) : "";
-  cforge::print_check_result("Git", git_ok, git_ver,
-                     "install from https://git-scm.com/downloads");
-  if (git_ok)
+  cforge::print_check_result("Git", git_ok, git_ver, "install from https://git-scm.com/downloads");
+  if (git_ok) {
     passed++;
-  else
+  } else {
     warnings++;
+    missing_tools.push_back("git");
+  }
 
   // Check clang-format
   bool clang_format_ok = cforge::is_command_available("clang-format", 5);
   std::string clang_format_ver =
       clang_format_ok ? cforge::get_tool_version("clang-format", {"--version"}) : "";
-  cforge::print_check_result("clang-format", clang_format_ok, clang_format_ver,
-                     "install LLVM or use 'cforge install clang-format'");
-  if (clang_format_ok)
+  cforge::print_check_result("clang-format",
+                             clang_format_ok,
+                             clang_format_ver,
+                             "install LLVM or use 'cforge install clang-format'");
+  if (clang_format_ok) {
     passed++;
-  else
+  } else {
     warnings++;
+    missing_tools.push_back("clang-format");
+  }
 
   // Check clang-tidy
-  bool clang_tidy_ok = cforge::is_command_available("clang-tidy", 5);
-  std::string clang_tidy_ver =
-      clang_tidy_ok ? cforge::get_tool_version("clang-tidy", {"--version"}) : "";
-  cforge::print_check_result("clang-tidy", clang_tidy_ok, clang_tidy_ver,
-                     "install LLVM or use 'cforge install clang-tidy'");
-  if (clang_tidy_ok)
+  bool clang_tidy_ok         = cforge::is_command_available("clang-tidy", 5);
+  std::string clang_tidy_ver = clang_tidy_ok ? cforge::get_tool_version("clang-tidy", {"--version"})
+                                             : "";
+  cforge::print_check_result("clang-tidy",
+                             clang_tidy_ok,
+                             clang_tidy_ver,
+                             "install LLVM or use 'cforge install clang-tidy'");
+  if (clang_tidy_ok) {
     passed++;
-  else
+  } else {
     warnings++;
+    missing_tools.push_back("clang-tidy");
+  }
 
   // Summary
   cforge::logger::print_blank();
   if (warnings == 0) {
     cforge::logger::print_action("Summary", std::to_string(passed) + " checks passed");
   } else {
-    cforge::logger::print_action("Summary", std::to_string(passed) + " passed, " +
-                                 std::to_string(warnings) + " warnings");
+    cforge::logger::print_action(
+        "Summary", std::to_string(passed) + " passed, " + std::to_string(warnings) + " warnings");
+
+    // For each missing tool, offer to install it via the platform's package
+    // manager. The prompt is skipped automatically in non-interactive sessions
+    // (CI, piped stdin), so this doesn't break scripted invocations.
+    for (const auto &t : missing_tools) {
+      auto r = cforge::offer_install_tool(t);
+      // installed / declined / non_interactive are all fine — keep going.
+      // unknown_tool means we have no recipe (won't happen for the tools
+      // doctor checks, but defensive); failed means the install attempt
+      // itself errored, which already printed its own diagnostic.
+      (void)r;
+    }
   }
 
   // Show additional info in verbose mode

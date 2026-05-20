@@ -4,9 +4,11 @@
  */
 
 #include "cforge/log.hpp"
+
 #include "core/commands.hpp"
 #include "core/registry.hpp"
 #include "core/types.h"
+
 #include <algorithm>
 
 /**
@@ -19,7 +21,7 @@ cforge_int_t cforge_cmd_search(const cforge_context_t *ctx) {
   // Parse arguments
   std::string query;
   cforge_size_t limit = 20;
-  bool update_index = false;
+  bool update_index   = false;
 
   for (cforge_int_t i = 0; i < ctx->args.arg_count; ++i) {
     std::string arg = ctx->args.args[i];
@@ -73,21 +75,19 @@ cforge_int_t cforge_cmd_search(const cforge_context_t *ctx) {
 
   // Find maximum name and version length for alignment
   cforge_size_t max_name_len = 0;
-  cforge_size_t max_ver_len = 0;
+  cforge_size_t max_ver_len  = 0;
   for (const auto &name : results) {
     max_name_len = std::max(max_name_len, name.length());
-    auto pkg = reg.get_package(name);
+    auto pkg     = reg.get_package(name);
     if (pkg && !pkg->versions.empty()) {
       max_ver_len = std::max(max_ver_len, pkg->versions[0].version.length());
     }
   }
   max_name_len = std::min(max_name_len, cforge_size_t(25));
-  max_ver_len = std::min(max_ver_len, cforge_size_t(12));
+  max_ver_len  = std::min(max_ver_len, cforge_size_t(12));
 
   // Print table header
-  std::vector<int> widths = {static_cast<int>(max_name_len),
-                             static_cast<int>(max_ver_len),
-                             45};
+  std::vector<int> widths = {static_cast<int>(max_name_len), static_cast<int>(max_ver_len), 45};
   cforge::logger::print_table_header({"Package", "Version", "Description"}, widths, 2);
 
   // Print each result
@@ -101,7 +101,7 @@ cforge_int_t cforge_cmd_search(const cforge_context_t *ctx) {
     std::string version = pkg->versions.empty() ? "?" : pkg->versions[0].version;
 
     // Format description (truncate if needed)
-    std::string desc = pkg->description;
+    std::string desc           = pkg->description;
     cforge_size_t max_desc_len = 42;
     if (desc.length() > max_desc_len) {
       desc = desc.substr(0, max_desc_len - 3) + "...";

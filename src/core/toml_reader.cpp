@@ -4,7 +4,9 @@
  */
 
 #include "core/toml_reader.hpp"
+
 #include "cforge/log.hpp"
+
 #include "core/types.h"
 
 #include <filesystem>
@@ -18,18 +20,20 @@
 namespace cforge {
 
 // Default constructor
-toml_reader::toml_reader() : toml_data(nullptr) {}
+toml_reader::toml_reader() : toml_data(nullptr) {
+}
 
 // Constructor that takes a toml::table directly
 toml_reader::toml_reader(const toml::table &table)
-    : toml_data(std::make_unique<toml::table>(table)) {}
+    : toml_data(std::make_unique<toml::table>(table)) {
+}
 
 // Destructor - unique_ptr handles cleanup automatically
 toml_reader::~toml_reader() = default;
 
 // Move constructor
-toml_reader::toml_reader(toml_reader &&other) noexcept
-    : toml_data(std::move(other.toml_data)) {}
+toml_reader::toml_reader(toml_reader &&other) noexcept : toml_data(std::move(other.toml_data)) {
+}
 
 // Move assignment operator
 toml_reader &toml_reader::operator=(toml_reader &&other) noexcept {
@@ -41,7 +45,8 @@ toml_reader &toml_reader::operator=(toml_reader &&other) noexcept {
 
 // Copy constructor - performs deep copy
 toml_reader::toml_reader(const toml_reader &other)
-    : toml_data(other.toml_data ? std::make_unique<toml::table>(*other.toml_data) : nullptr) {}
+    : toml_data(other.toml_data ? std::make_unique<toml::table>(*other.toml_data) : nullptr) {
+}
 
 // Copy assignment operator - performs deep copy
 toml_reader &toml_reader::operator=(const toml_reader &other) {
@@ -67,13 +72,12 @@ bool toml_reader::load(const std::string &filepath) {
     return true;
   } catch (const toml::parse_error &err) {
     std::stringstream ss;
-    ss << "Error parsing TOML file " << filepath << ": " << err.description()
-       << " at line " << err.source().begin.line;
+    ss << "Error parsing TOML file " << filepath << ": " << err.description() << " at line "
+       << err.source().begin.line;
     logger::print_error(ss.str());
     return false;
   } catch (const std::exception &ex) {
-    logger::print_error("Error reading TOML file " + filepath + ": " +
-                        ex.what());
+    logger::print_error("Error reading TOML file " + filepath + ": " + ex.what());
     return false;
   }
 }
@@ -86,7 +90,7 @@ std::string toml_reader::get_string(const std::string &key,
 
   try {
     auto &table = *toml_data;
-    auto value = table.at_path(key);
+    auto value  = table.at_path(key);
     if (!value || !value.is_string()) {
       return default_value;
     }
@@ -96,15 +100,14 @@ std::string toml_reader::get_string(const std::string &key,
   }
 }
 
-int64_t toml_reader::get_int(const std::string &key,
-                             int64_t default_value) const {
+int64_t toml_reader::get_int(const std::string &key, int64_t default_value) const {
   if (!toml_data) {
     return default_value;
   }
 
   try {
     auto &table = *toml_data;
-    auto value = table.at_path(key);
+    auto value  = table.at_path(key);
     if (!value || !value.is_integer()) {
       return default_value;
     }
@@ -121,7 +124,7 @@ bool toml_reader::get_bool(const std::string &key, bool default_value) const {
 
   try {
     auto &table = *toml_data;
-    auto value = table.at_path(key);
+    auto value  = table.at_path(key);
     if (!value || !value.is_boolean()) {
       return default_value;
     }
@@ -131,8 +134,7 @@ bool toml_reader::get_bool(const std::string &key, bool default_value) const {
   }
 }
 
-std::vector<std::string>
-toml_reader::get_string_array(const std::string &key) const {
+std::vector<std::string> toml_reader::get_string_array(const std::string &key) const {
   std::vector<std::string> result;
   if (!toml_data) {
     return result;
@@ -140,7 +142,7 @@ toml_reader::get_string_array(const std::string &key) const {
 
   try {
     auto &table = *toml_data;
-    auto value = table.at_path(key);
+    auto value  = table.at_path(key);
     if (!value || !value.is_array()) {
       return result;
     }
@@ -164,22 +166,21 @@ bool toml_reader::has_key(const std::string &key) const {
 
   try {
     auto &table = *toml_data;
-    auto node = table.at_path(key);
-    return static_cast<bool>(node); // Check if node exists
+    auto node   = table.at_path(key);
+    return static_cast<bool>(node);  // Check if node exists
   } catch (...) {
     return false;
   }
 }
 
-std::vector<std::string>
-toml_reader::get_table_keys(const std::string &table_name) const {
+std::vector<std::string> toml_reader::get_table_keys(const std::string &table_name) const {
   std::vector<std::string> result;
   if (!toml_data) {
     return result;
   }
 
   try {
-    auto &root_table = *toml_data;
+    auto &root_table         = *toml_data;
     const toml::table *table = &root_table;
 
     // Navigate to subtable if specified
@@ -202,8 +203,7 @@ toml_reader::get_table_keys(const std::string &table_name) const {
   }
 }
 
-std::vector<std::string>
-toml_reader::get_tables(const std::string &prefix) const {
+std::vector<std::string> toml_reader::get_tables(const std::string &prefix) const {
   std::vector<std::string> result;
   if (!toml_data) {
     return result;
@@ -225,8 +225,7 @@ toml_reader::get_tables(const std::string &prefix) const {
   }
 }
 
-std::map<std::string, std::string>
-toml_reader::get_string_map(const std::string &key) const {
+std::map<std::string, std::string> toml_reader::get_string_map(const std::string &key) const {
   std::map<std::string, std::string> result;
   if (!toml_data) {
     return result;
@@ -234,7 +233,7 @@ toml_reader::get_string_map(const std::string &key) const {
 
   try {
     auto &table = *toml_data;
-    auto value = table.at_path(key);
+    auto value  = table.at_path(key);
     if (!value || !value.is_table()) {
       return result;
     }
@@ -255,8 +254,7 @@ toml_reader::get_string_map(const std::string &key) const {
   }
 }
 
-std::vector<toml_reader>
-toml_reader::get_table_array(const std::string &key) const {
+std::vector<toml_reader> toml_reader::get_table_array(const std::string &key) const {
   std::vector<toml_reader> result;
   if (!toml_data) {
     return result;
@@ -264,7 +262,7 @@ toml_reader::get_table_array(const std::string &key) const {
 
   try {
     auto &table = *toml_data;
-    auto value = table.at_path(key);
+    auto value  = table.at_path(key);
     if (!value || !value.is_array()) {
       return result;
     }
@@ -281,15 +279,14 @@ toml_reader::get_table_array(const std::string &key) const {
   }
 }
 
-std::optional<toml_reader>
-toml_reader::get_table(const std::string &key) const {
+std::optional<toml_reader> toml_reader::get_table(const std::string &key) const {
   if (!toml_data) {
     return std::nullopt;
   }
 
   try {
     auto &table = *toml_data;
-    auto value = table.at_path(key);
+    auto value  = table.at_path(key);
     if (!value || !value.is_table()) {
       return std::nullopt;
     }
@@ -300,9 +297,10 @@ toml_reader::get_table(const std::string &key) const {
   }
 }
 
-std::string toml_reader::get_string_or_deprecated(
-    const std::string &key, const std::string &deprecated_key,
-    const std::string &default_value, bool warn) const {
+std::string toml_reader::get_string_or_deprecated(const std::string &key,
+                                                  const std::string &deprecated_key,
+                                                  const std::string &default_value,
+                                                  bool warn) const {
   // First try the preferred key
   if (has_key(key)) {
     return get_string(key, default_value);
@@ -311,8 +309,8 @@ std::string toml_reader::get_string_or_deprecated(
   // Then try the deprecated key
   if (has_key(deprecated_key)) {
     if (warn) {
-      logger::print_warning("Config key '" + deprecated_key +
-                            "' is deprecated, use '" + key + "' instead");
+      logger::print_warning("Config key '" + deprecated_key + "' is deprecated, use '" + key
+                            + "' instead");
     }
     return get_string(deprecated_key, default_value);
   }
@@ -325,4 +323,4 @@ bool toml_reader::has_key_or_deprecated(const std::string &key,
   return has_key(key) || has_key(deprecated_key);
 }
 
-} // namespace cforge
+}  // namespace cforge

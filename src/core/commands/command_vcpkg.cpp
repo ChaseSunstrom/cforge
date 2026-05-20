@@ -4,12 +4,13 @@
  */
 
 #include "cforge/log.hpp"
+
 #include "core/commands.hpp"
 #include "core/constants.h"
-#include "core/types.h"
 #include "core/file_system.h"
 #include "core/process_utils.hpp"
 #include "core/toml_reader.hpp"
+#include "core/types.h"
 
 #include <filesystem>
 #include <fstream>
@@ -35,8 +36,7 @@ static std::filesystem::path get_vcpkg_path(const cforge::toml_reader *project_c
 
   // First check project config
   if (project_config) {
-    std::string config_path =
-        project_config->get_string("dependencies.vcpkg.path", "");
+    std::string config_path = project_config->get_string("dependencies.vcpkg.path", "");
     if (!config_path.empty()) {
       vcpkg_path = config_path;
       return vcpkg_path;
@@ -87,8 +87,7 @@ static std::filesystem::path get_vcpkg_path(const cforge::toml_reader *project_c
 #ifndef _WIN32
     {
       auto file_perms = std::filesystem::status(vcpkg_exe).permissions();
-      if ((file_perms & std::filesystem::perms::owner_exec) ==
-          std::filesystem::perms::none) {
+      if ((file_perms & std::filesystem::perms::owner_exec) == std::filesystem::perms::none) {
         return false;
       }
     }
@@ -107,8 +106,7 @@ static std::filesystem::path get_vcpkg_path(const cforge::toml_reader *project_c
  * @param verbose Show verbose output
  * @return true if successful, false otherwise
  */
-[[maybe_unused]] static bool clone_vcpkg(const std::filesystem::path &project_dir,
-                        bool verbose) {
+[[maybe_unused]] static bool clone_vcpkg(const std::filesystem::path &project_dir, bool verbose) {
   std::filesystem::path vcpkg_dir = project_dir / "vcpkg";
 
   if (std::filesystem::exists(vcpkg_dir)) {
@@ -120,21 +118,22 @@ static std::filesystem::path get_vcpkg_path(const cforge::toml_reader *project_c
   try {
     std::filesystem::create_directory(vcpkg_dir);
   } catch (const std::exception &e) {
-    cforge::logger::print_error("Failed to create vcpkg directory: " +
-                        std::string(e.what()));
+    cforge::logger::print_error("Failed to create vcpkg directory: " + std::string(e.what()));
     return false;
   }
 
   // Clone the repository
-  std::string git_cmd = "git";
-  std::vector<std::string> git_args = {
-      "clone", "https://github.com/microsoft/vcpkg.git", vcpkg_dir.string()};
+  std::string git_cmd               = "git";
+  std::vector<std::string> git_args = {"clone",
+                                       "https://github.com/microsoft/vcpkg.git",
+                                       vcpkg_dir.string()};
 
   cforge::logger::fetching("vcpkg repository");
 
   auto result = cforge::execute_process(
-      git_cmd, git_args,
-      "", // working directory
+      git_cmd,
+      git_args,
+      "",  // working directory
       [verbose](const std::string &line) {
         if (verbose) {
           cforge::logger::print_verbose(line);
@@ -143,8 +142,8 @@ static std::filesystem::path get_vcpkg_path(const cforge::toml_reader *project_c
       [](const std::string &line) { cforge::logger::print_error(line); });
 
   if (!result.success) {
-    cforge::logger::print_error("Failed to clone vcpkg repository. Exit code: " +
-                        std::to_string(result.exit_code));
+    cforge::logger::print_error("Failed to clone vcpkg repository. Exit code: "
+                                + std::to_string(result.exit_code));
     return false;
   }
 
@@ -155,14 +154,16 @@ static std::filesystem::path get_vcpkg_path(const cforge::toml_reader *project_c
 #ifdef _WIN32
   bootstrap_cmd = (vcpkg_dir / "bootstrap-vcpkg.bat").string();
 #else
-  bootstrap_cmd = (vcpkg_dir / "bootstrap-vcpkg.sh").string();
+  bootstrap_cmd  = (vcpkg_dir / "bootstrap-vcpkg.sh").string();
   bootstrap_args = {"-disableMetrics"};
 #endif
 
   cforge::logger::installing("vcpkg");
 
   auto bootstrap_result = cforge::execute_process(
-      bootstrap_cmd, bootstrap_args, vcpkg_dir.string(),
+      bootstrap_cmd,
+      bootstrap_args,
+      vcpkg_dir.string(),
       [verbose](const std::string &line) {
         if (verbose) {
           cforge::logger::print_verbose(line);
@@ -171,8 +172,8 @@ static std::filesystem::path get_vcpkg_path(const cforge::toml_reader *project_c
       [](const std::string &line) { cforge::logger::print_error(line); });
 
   if (!bootstrap_result.success) {
-    cforge::logger::print_error("Failed to bootstrap vcpkg. Exit code: " +
-                        std::to_string(bootstrap_result.exit_code));
+    cforge::logger::print_error("Failed to bootstrap vcpkg. Exit code: "
+                                + std::to_string(bootstrap_result.exit_code));
     return false;
   }
 
@@ -187,7 +188,7 @@ static std::filesystem::path get_vcpkg_path(const cforge::toml_reader *project_c
  * @return true if successful, false otherwise
  */
 [[maybe_unused]] static bool setup_vcpkg_integration(const std::filesystem::path &project_dir,
-                                    bool verbose) {
+                                                     bool verbose) {
   std::filesystem::path vcpkg_dir = project_dir / "vcpkg";
   std::filesystem::path vcpkg_exe;
 
@@ -203,14 +204,15 @@ static std::filesystem::path get_vcpkg_path(const cforge::toml_reader *project_c
   }
 
   // Set up vcpkg integration
-  std::string command = vcpkg_exe.string();
+  std::string command           = vcpkg_exe.string();
   std::vector<std::string> args = {"integrate", "install"};
 
   cforge::logger::print_action("Integrating", "vcpkg");
 
   auto result = cforge::execute_process(
-      command, args,
-      "", // working directory
+      command,
+      args,
+      "",  // working directory
       [verbose](const std::string &line) {
         if (verbose) {
           cforge::logger::print_verbose(line);
@@ -221,8 +223,8 @@ static std::filesystem::path get_vcpkg_path(const cforge::toml_reader *project_c
       [](const std::string &line) { cforge::logger::print_error(line); });
 
   if (!result.success) {
-    cforge::logger::print_error("Failed to set up vcpkg integration. Exit code: " +
-                        std::to_string(result.exit_code));
+    cforge::logger::print_error("Failed to set up vcpkg integration. Exit code: "
+                                + std::to_string(result.exit_code));
     return false;
   }
 
@@ -260,7 +262,8 @@ static std::filesystem::path get_vcpkg_path(const cforge::toml_reader *project_c
  * @return true if successful, false otherwise
  */
 [[maybe_unused]] static bool forward_to_vcpkg(const std::filesystem::path &project_dir,
-                             const cforge_command_args_t &args, [[maybe_unused]] bool verbose) {
+                                              const cforge_command_args_t &args,
+                                              [[maybe_unused]] bool verbose) {
   std::filesystem::path vcpkg_dir = project_dir / "vcpkg";
   std::filesystem::path vcpkg_exe;
 
@@ -299,14 +302,15 @@ static std::filesystem::path get_vcpkg_path(const cforge::toml_reader *project_c
   cforge::logger::print_action("Running", "vcpkg command: " + command_str);
 
   auto result = cforge::execute_process(
-      command, vcpkg_args,
-      "", // working directory
+      command,
+      vcpkg_args,
+      "",  // working directory
       [](const std::string &line) { cforge::logger::print_status(line); },
       [](const std::string &line) { cforge::logger::print_error(line); });
 
   if (!result.success) {
-    cforge::logger::print_error("vcpkg command failed. Exit code: " +
-                        std::to_string(result.exit_code));
+    cforge::logger::print_error("vcpkg command failed. Exit code: "
+                                + std::to_string(result.exit_code));
     return false;
   }
 
@@ -358,14 +362,15 @@ cforge_int_t cforge_cmd_vcpkg(const cforge_context_t *ctx) {
     } else {
       // Clone vcpkg
       cforge::logger::fetching("vcpkg");
-      std::string git_cmd = "git";
-      std::vector<std::string> git_args = {
-          "clone", "https://github.com/Microsoft/vcpkg.git",
-          vcpkg_path.string()};
+      std::string git_cmd               = "git";
+      std::vector<std::string> git_args = {"clone",
+                                           "https://github.com/Microsoft/vcpkg.git",
+                                           vcpkg_path.string()};
 
       auto result = cforge::execute_process(
-          git_cmd, git_args,
-          "", // working directory
+          git_cmd,
+          git_args,
+          "",  // working directory
           [](const std::string &line) { cforge::logger::print_verbose(line); },
           [](const std::string &line) { cforge::logger::print_error(line); });
 
@@ -383,7 +388,9 @@ cforge_int_t cforge_cmd_vcpkg(const cforge_context_t *ctx) {
 #endif
 
       auto bootstrap_result = cforge::execute_process(
-          bootstrap_cmd, {}, vcpkg_path.string(),
+          bootstrap_cmd,
+          {},
+          vcpkg_path.string(),
           [](const std::string &line) { cforge::logger::print_verbose(line); },
           [](const std::string &line) { cforge::logger::print_error(line); });
 
@@ -398,13 +405,13 @@ cforge_int_t cforge_cmd_vcpkg(const cforge_context_t *ctx) {
 #ifdef _WIN32
     std::string cmd = "setx VCPKG_ROOT \"" + vcpkg_root + "\"";
 #else
-    std::string cmd =
-        "echo 'export VCPKG_ROOT=\"" + vcpkg_root + "\"' >> ~/.bashrc";
+    std::string cmd = "echo 'export VCPKG_ROOT=\"" + vcpkg_root + "\"' >> ~/.bashrc";
 #endif
 
     auto env_result = cforge::execute_process(
-        cmd, {},
-        "", // working directory
+        cmd,
+        {},
+        "",  // working directory
         [](const std::string &line) { cforge::logger::print_verbose(line); },
         [](const std::string &line) { cforge::logger::print_error(line); });
 
@@ -425,11 +432,13 @@ cforge_int_t cforge_cmd_vcpkg(const cforge_context_t *ctx) {
 
     // Update vcpkg
     cforge::logger::updating("vcpkg");
-    std::string git_cmd = "git";
+    std::string git_cmd               = "git";
     std::vector<std::string> git_args = {"pull"};
 
     auto result = cforge::execute_process(
-        git_cmd, git_args, vcpkg_path.string(),
+        git_cmd,
+        git_args,
+        vcpkg_path.string(),
         [](const std::string &line) { cforge::logger::print_verbose(line); },
         [](const std::string &line) { cforge::logger::print_error(line); });
 
@@ -440,12 +449,13 @@ cforge_int_t cforge_cmd_vcpkg(const cforge_context_t *ctx) {
 
     // Update packages
     cforge::logger::updating("packages");
-    std::string vcpkg_cmd = (vcpkg_path / "vcpkg").string();
+    std::string vcpkg_cmd               = (vcpkg_path / "vcpkg").string();
     std::vector<std::string> vcpkg_args = {"upgrade", "--no-dry-run"};
 
     auto update_result = cforge::execute_process(
-        vcpkg_cmd, vcpkg_args,
-        "", // working directory
+        vcpkg_cmd,
+        vcpkg_args,
+        "",  // working directory
         [](const std::string &line) { cforge::logger::print_verbose(line); },
         [](const std::string &line) { cforge::logger::print_error(line); });
 
@@ -465,12 +475,13 @@ cforge_int_t cforge_cmd_vcpkg(const cforge_context_t *ctx) {
     }
 
     // List packages
-    std::string vcpkg_cmd = (vcpkg_path / "vcpkg").string();
+    std::string vcpkg_cmd               = (vcpkg_path / "vcpkg").string();
     std::vector<std::string> vcpkg_args = {"list"};
 
     auto result = cforge::execute_process(
-        vcpkg_cmd, vcpkg_args,
-        "", // working directory
+        vcpkg_cmd,
+        vcpkg_args,
+        "",  // working directory
         [](const std::string &line) { cforge::logger::print_status(line); },
         [](const std::string &line) { cforge::logger::print_error(line); });
 

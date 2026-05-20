@@ -6,6 +6,7 @@
 #pragma once
 
 #include "cforge/log.hpp"
+
 #include <filesystem>
 #include <regex>
 #include <string>
@@ -20,19 +21,24 @@ namespace cforge {
 /**
  * @brief Error level for diagnostic messages
  */
-enum class diagnostic_level { ERROR, WARNING, NOTE, HELP };
+enum class diagnostic_level {
+  ERROR,
+  WARNING,
+  NOTE,
+  HELP
+};
 
 /**
  * @brief Structure representing a suggested code fix
  */
 struct fix_suggestion {
-  std::string description;   // Human-readable description of the fix
-  std::string replacement;   // The suggested replacement text
-  cforge_int_t start_line = 0;        // Line where fix starts (0 = same as error)
+  std::string description;            // Human-readable description of the fix
+  std::string replacement;            // The suggested replacement text
+  cforge_int_t start_line   = 0;      // Line where fix starts (0 = same as error)
   cforge_int_t start_column = 0;      // Column where fix starts
-  cforge_int_t end_line = 0;          // Line where fix ends
-  cforge_int_t end_column = 0;        // Column where fix ends
-  bool is_insertion = false; // True if this is an insertion, not a replacement
+  cforge_int_t end_line     = 0;      // Line where fix ends
+  cforge_int_t end_column   = 0;      // Column where fix ends
+  bool is_insertion         = false;  // True if this is an insertion, not a replacement
 };
 
 /**
@@ -46,27 +52,25 @@ struct diagnostic {
   cforge_int_t line_number;
   cforge_int_t column_number;
   std::string line_content;
-  std::string help_text;          // Legacy help text field
-  std::vector<std::string> notes; // Additional notes/context
-  std::string help;               // New help message field
-  cforge_int_t occurrence_count =
-      1; // For deduplication - how many times this error occurred
-  std::vector<fix_suggestion> fixes; // Suggested fixes for this error
+  std::string help_text;              // Legacy help text field
+  std::vector<std::string> notes;     // Additional notes/context
+  std::string help;                   // New help message field
+  cforge_int_t occurrence_count = 1;  // For deduplication - how many times this error occurred
+  std::vector<fix_suggestion> fixes;  // Suggested fixes for this error
 };
 
 /**
  * @brief Structure for error/warning summary statistics
  */
 struct error_summary {
-  cforge_int_t total_errors = 0;
-  cforge_int_t total_warnings = 0;
-  cforge_int_t total_notes = 0;
+  cforge_int_t total_errors    = 0;
+  cforge_int_t total_warnings  = 0;
+  cforge_int_t total_notes     = 0;
   cforge_int_t compiler_errors = 0;
-  cforge_int_t linker_errors = 0;
-  cforge_int_t cmake_errors = 0;
+  cforge_int_t linker_errors   = 0;
+  cforge_int_t cmake_errors    = 0;
   cforge_int_t template_errors = 0;
-  std::vector<std::pair<std::string, int>>
-      error_categories; // (category, count)
+  std::vector<std::pair<std::string, int>> error_categories;  // (category, count)
 };
 
 /**
@@ -98,8 +102,7 @@ void save_last_build_diagnostics(const std::filesystem::path &project_dir,
  * @param out_text    Filled with the contents on success.
  * @return true on success, false if no log exists yet.
  */
-bool load_last_build_diagnostics(const std::filesystem::path &project_dir,
-                                 std::string &out_text);
+bool load_last_build_diagnostics(const std::filesystem::path &project_dir, std::string &out_text);
 
 /**
  * @brief Print a diagnostic in a Rust-like style
@@ -321,8 +324,7 @@ std::vector<diagnostic> parse_abi_errors(const std::string &error_output);
  * @param diagnostics Vector of diagnostics to deduplicate
  * @return Deduplicated vector with occurrence counts
  */
-std::vector<diagnostic>
-deduplicate_diagnostics(std::vector<diagnostic> diagnostics);
+std::vector<diagnostic> deduplicate_diagnostics(std::vector<diagnostic> diagnostics);
 
 /**
  * @brief Calculate summary statistics from diagnostics
@@ -330,8 +332,7 @@ deduplicate_diagnostics(std::vector<diagnostic> diagnostics);
  * @param diagnostics Vector of diagnostics to summarize
  * @return Summary statistics
  */
-error_summary
-calculate_error_summary(const std::vector<diagnostic> &diagnostics);
+error_summary calculate_error_summary(const std::vector<diagnostic> &diagnostics);
 
 /**
  * @brief Format error summary as a string (Cargo-style)
@@ -395,9 +396,9 @@ std::string suggest_include_for_type(const std::string &type_name);
  * @param max_distance Maximum edit distance to consider (default 2)
  * @return Vector of similar identifiers, sorted by similarity
  */
-std::vector<std::string>
-find_similar_identifiers(const std::string &unknown_identifier,
-                         const std::vector<std::string> &available_identifiers,
-                         int max_distance = 2);
+std::vector<std::string> find_similar_identifiers(
+    const std::string &unknown_identifier,
+    const std::vector<std::string> &available_identifiers,
+    int max_distance = 2);
 
-} // namespace cforge
+}  // namespace cforge

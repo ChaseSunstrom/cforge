@@ -4,7 +4,9 @@
  */
 
 #include "core/workspace.hpp"
+
 #include "cforge/log.hpp"
+
 #include "core/config_resolver.hpp"
 #include "core/constants.h"
 #include "core/dependency_hash.hpp"
@@ -16,8 +18,8 @@
 
 // Forward declare from build_utils.hpp to avoid platform namespace conflict
 namespace cforge {
-  std::string get_cmake_generator();
-}
+std::string get_cmake_generator();
+}  // namespace cforge
 
 #include <algorithm>
 #include <fstream>
@@ -44,10 +46,9 @@ static std::string get_project_generator(const toml_reader &project_config) {
   return get_cmake_generator();
 }
 
-static std::filesystem::path
-get_build_dir_for_config(const std::string &base_dir,
-                         const std::string &config,
-                         const std::string &generator = "") {
+static std::filesystem::path get_build_dir_for_config(const std::string &base_dir,
+                                                      const std::string &config,
+                                                      const std::string &generator = "") {
   // If config is empty, use the base directory
   if (config.empty()) {
     return base_dir;
@@ -55,16 +56,15 @@ get_build_dir_for_config(const std::string &base_dir,
 
   // Transform config name to lowercase for directory naming
   std::string config_lower = config;
-  std::transform(config_lower.begin(), config_lower.end(), config_lower.begin(),
-                 ::tolower);
+  std::transform(config_lower.begin(), config_lower.end(), config_lower.begin(), ::tolower);
 
   // Determine the generator to use
   std::string gen = generator.empty() ? get_cmake_generator() : generator;
 
-  // For multi-config generators, we don't append the config to the build directory
-  if (gen.find("Multi-Config") != std::string::npos ||
-      gen.find("Visual Studio") != std::string::npos ||
-      gen.find("Xcode") != std::string::npos) {
+  // For multi-config generators, we don't append the config to the build
+  // directory
+  if (gen.find("Multi-Config") != std::string::npos
+      || gen.find("Visual Studio") != std::string::npos || gen.find("Xcode") != std::string::npos) {
     // Create the build directory if it doesn't exist
     std::filesystem::path build_path(base_dir);
     if (!std::filesystem::exists(build_path)) {
@@ -86,22 +86,21 @@ get_build_dir_for_config(const std::string &base_dir,
 }
 
 static bool run_cmake_configure(const std::vector<std::string> &cmake_args,
-                                const std::string &build_dir, bool verbose) {
+                                const std::string &build_dir,
+                                bool verbose) {
   // Set a longer timeout for WINDOWS
 #ifdef _WIN32
-  cforge_int_t timeout = 180; // 3 minutes for WINDOWS
+  cforge_int_t timeout = 180;  // 3 minutes for WINDOWS
 #else
-  cforge_int_t timeout = 120; // 2 minutes for other platforms
+  cforge_int_t timeout = 120;  // 2 minutes for other platforms
 #endif
 
   // Run the CMake command with appropriate timeout
-  bool result = execute_tool("cmake", cmake_args, "", "CMake Configure",
-                             verbose, timeout);
+  bool result = execute_tool("cmake", cmake_args, "", "CMake Configure", verbose, timeout);
 
   // Verify that the configuration was successful by checking for CMakeCache.txt
   std::filesystem::path build_path(build_dir);
-  bool cmake_success =
-      result && std::filesystem::exists(build_path / "CMakeCache.txt");
+  bool cmake_success = result && std::filesystem::exists(build_path / "CMakeCache.txt");
 
   if (!cmake_success) {
     if (result) {
@@ -110,16 +109,15 @@ static bool run_cmake_configure(const std::vector<std::string> &cmake_args,
     } else {
       logger::print_error("CMake configuration failed. See errors above.");
     }
-    logger::print_warning(
-        "You might need to clean the build directory and try again.");
+    logger::print_warning("You might need to clean the build directory and try again.");
     return false;
   }
 
   return true;
 }
 
-workspace_config::workspace_config()
-    : name_("cpp-workspace"), description_("A C++ workspace") {}
+workspace_config::workspace_config() : name_("cpp-workspace"), description_("A C++ workspace") {
+}
 
 workspace_config::workspace_config(const std::string &workspace_file)
     : name_("cpp-workspace"), description_("A C++ workspace") {
@@ -127,13 +125,17 @@ workspace_config::workspace_config(const std::string &workspace_file)
 }
 
 // Accessors for workspace_config
-void workspace_config::set_name(const std::string &name) { name_ = name; }
+void workspace_config::set_name(const std::string &name) {
+  name_ = name;
+}
 
 void workspace_config::set_description(const std::string &description) {
   description_ = description;
 }
 
-const std::string &workspace_config::get_name() const { return name_; }
+const std::string &workspace_config::get_name() const {
+  return name_;
+}
 
 const std::string &workspace_config::get_description() const {
   return description_;
@@ -144,7 +146,7 @@ bool workspace::load(const std::filesystem::path &workspace_path) {
 
   // First priority: Check for cforge.toml with [workspace] section
   std::filesystem::path unified_config_path = workspace_path / CFORGE_FILE;
-  std::filesystem::path legacy_config_path = workspace_path / WORKSPACE_FILE;
+  std::filesystem::path legacy_config_path  = workspace_path / WORKSPACE_FILE;
   std::filesystem::path config_path;
 
   if (std::filesystem::exists(unified_config_path)) {
@@ -154,11 +156,11 @@ bool workspace::load(const std::filesystem::path &workspace_path) {
         config_path = unified_config_path;
       }
     } catch (const toml::parse_error &err) {
-      logger::print_verbose("Failed to parse " + unified_config_path.string() +
-                            ": " + std::string(err.description()));
+      logger::print_verbose("Failed to parse " + unified_config_path.string() + ": "
+                            + std::string(err.description()));
     } catch (const std::exception &ex) {
-      logger::print_verbose("Error reading " + unified_config_path.string() +
-                            ": " + std::string(ex.what()));
+      logger::print_verbose("Error reading " + unified_config_path.string() + ": "
+                            + std::string(ex.what()));
     }
   }
 
@@ -166,14 +168,15 @@ bool workspace::load(const std::filesystem::path &workspace_path) {
   if (config_path.empty()) {
     if (std::filesystem::exists(legacy_config_path)) {
       config_path = legacy_config_path;
-      logger::print_warning(
-          "Using deprecated cforge.workspace.toml format. "
-          "Consider migrating to cforge.toml with [workspace] section.");
+      logger::print_warning("Using deprecated cforge.workspace.toml format. "
+                            "Consider migrating to cforge.toml with [workspace] section.");
     } else {
-      logger::print_error(
-          "No workspace configuration found. Expected either:\n"
-          "  - " + unified_config_path.string() + " with [workspace] section\n"
-          "  - " + legacy_config_path.string());
+      logger::print_error("No workspace configuration found. Expected either:\n"
+                          "  - "
+                          + unified_config_path.string()
+                          + " with [workspace] section\n"
+                            "  - "
+                          + legacy_config_path.string());
       return false;
     }
   }
@@ -181,8 +184,7 @@ bool workspace::load(const std::filesystem::path &workspace_path) {
   // Load the configuration
   config_ = std::make_unique<toml_reader>();
   if (!config_->load(config_path.string())) {
-    logger::print_error("Failed to parse workspace configuration file: " +
-                        config_path.string());
+    logger::print_error("Failed to parse workspace configuration file: " + config_path.string());
     return false;
   }
 
@@ -202,11 +204,17 @@ bool workspace::load(const std::filesystem::path &workspace_path) {
   return true;
 }
 
-bool workspace::is_loaded() const { return config_ != nullptr; }
+bool workspace::is_loaded() const {
+  return config_ != nullptr;
+}
 
-std::string workspace::get_name() const { return workspace_name_; }
+std::string workspace::get_name() const {
+  return workspace_name_;
+}
 
-std::filesystem::path workspace::get_path() const { return workspace_path_; }
+std::filesystem::path workspace::get_path() const {
+  return workspace_path_;
+}
 
 std::vector<workspace_project> workspace::get_projects() const {
   return projects_;
@@ -247,7 +255,7 @@ bool workspace::set_startup_project(const std::string &project_name) {
     // Update the startup flag
     if (project.name == project_name) {
       project.is_startup = true;
-      found = true;
+      found              = true;
     } else {
       project.is_startup = false;
     }
@@ -283,41 +291,39 @@ bool workspace::set_startup_project(const std::string &project_name) {
  * @param project_name Project name
  * @return std::filesystem::path Path to executable, empty if not found
  */
-static std::filesystem::path
-find_project_executable(const std::filesystem::path &project_path,
-                        const std::string &build_dir, const std::string &config,
-                        const std::string &project_name) {
-  logger::print_verbose("Searching for executable for project: " +
-                        project_name);
+static std::filesystem::path find_project_executable(const std::filesystem::path &project_path,
+                                                     const std::string &build_dir,
+                                                     const std::string &config,
+                                                     const std::string &project_name) {
+  logger::print_verbose("Searching for executable for project: " + project_name);
   logger::print_verbose("Build directory: " + build_dir);
   logger::print_verbose("Configuration: " + config);
 
   // Convert config to lowercase for directory matching
   std::string config_lower = config;
-  std::transform(config_lower.begin(), config_lower.end(), config_lower.begin(),
-                 ::tolower);
+  std::transform(config_lower.begin(), config_lower.end(), config_lower.begin(), ::tolower);
 
   // Define common executable locations to search
-  std::vector<std::filesystem::path> search_paths = {
-      project_path / build_dir / "bin",
-      project_path / build_dir / "bin" / config,
-      project_path / build_dir / "bin" / config_lower,
-      project_path / build_dir / config,
-      project_path / build_dir / config_lower,
-      project_path / build_dir,
-      project_path / "bin",
-      project_path / "bin" / config,
-      project_path / "bin" / config_lower};
+  std::vector<std::filesystem::path> search_paths = {project_path / build_dir / "bin",
+                                                     project_path / build_dir / "bin" / config,
+                                                     project_path / build_dir / "bin"
+                                                         / config_lower,
+                                                     project_path / build_dir / config,
+                                                     project_path / build_dir / config_lower,
+                                                     project_path / build_dir,
+                                                     project_path / "bin",
+                                                     project_path / "bin" / config,
+                                                     project_path / "bin" / config_lower};
 
   // Common executable name patterns to try
   std::vector<std::string> executable_patterns = {
       project_name + "_" + config_lower,
       project_name,
       project_name + "_" + config,
-      project_name + "_d",       // Debug convention
-      project_name + "_debug",   // Debug convention
-      project_name + "_release", // Release convention
-      project_name + "_r"        // Release convention
+      project_name + "_d",        // Debug convention
+      project_name + "_debug",    // Debug convention
+      project_name + "_release",  // Release convention
+      project_name + "_r"         // Release convention
   };
 
 #ifdef _WIN32
@@ -333,13 +339,11 @@ find_project_executable(const std::filesystem::path &project_path,
 #ifdef _WIN32
       return path.extension() == ".exe";
 #else
-      return (std::filesystem::status(path).permissions() &
-              std::filesystem::perms::owner_exec) !=
-             std::filesystem::perms::none;
+      return (std::filesystem::status(path).permissions() & std::filesystem::perms::owner_exec)
+          != std::filesystem::perms::none;
 #endif
     } catch (const std::exception &ex) {
-      logger::print_verbose("Error checking executable permissions: " +
-                            std::string(ex.what()));
+      logger::print_verbose("Error checking executable permissions: " + std::string(ex.what()));
       return false;
     }
   };
@@ -367,78 +371,76 @@ find_project_executable(const std::filesystem::path &project_path,
     }
 
     try {
-      for (const auto &entry :
-           std::filesystem::directory_iterator(search_path)) {
+      for (const auto &entry : std::filesystem::directory_iterator(search_path)) {
         if (!is_valid_executable(entry.path())) {
           continue;
         }
 
-        std::string filename = entry.path().filename().string();
+        std::string filename       = entry.path().filename().string();
         std::string filename_lower = filename;
-        std::transform(filename_lower.begin(), filename_lower.end(),
-                       filename_lower.begin(), ::tolower);
+        std::transform(
+            filename_lower.begin(), filename_lower.end(), filename_lower.begin(), ::tolower);
 
         // Skip CMake/system executables
-        if (filename_lower.find("cmake") != std::string::npos ||
-            filename_lower.find("ninja") != std::string::npos ||
-            filename_lower.find("make") != std::string::npos ||
-            filename_lower.find("a.out") != std::string::npos ||
-            filename_lower.find("test") != std::string::npos) {
+        if (filename_lower.find("cmake") != std::string::npos
+            || filename_lower.find("ninja") != std::string::npos
+            || filename_lower.find("make") != std::string::npos
+            || filename_lower.find("a.out") != std::string::npos
+            || filename_lower.find("test") != std::string::npos) {
           continue;
         }
 
         // Check if filename contains project name
         std::string project_name_lower = project_name;
-        std::transform(project_name_lower.begin(), project_name_lower.end(),
-                       project_name_lower.begin(), ::tolower);
+        std::transform(project_name_lower.begin(),
+                       project_name_lower.end(),
+                       project_name_lower.begin(),
+                       ::tolower);
 
         if (filename_lower.find(project_name_lower) != std::string::npos) {
-          logger::print_verbose("Found executable with partial match: " +
-                                entry.path().string());
+          logger::print_verbose("Found executable with partial match: " + entry.path().string());
           return entry.path();
         }
       }
     } catch (const std::exception &ex) {
-      logger::print_verbose(
-          "Error scanning directory: " + search_path.string() + " - " +
-          std::string(ex.what()));
+      logger::print_verbose("Error scanning directory: " + search_path.string() + " - "
+                            + std::string(ex.what()));
     }
   }
 
   // Final attempt: recursive search in build directory
   logger::print_action("Searching", (project_path / build_dir).string());
   try {
-    for (auto &entry : std::filesystem::recursive_directory_iterator(
-             project_path / build_dir)) {
+    for (auto &entry : std::filesystem::recursive_directory_iterator(project_path / build_dir)) {
       if (!is_valid_executable(entry.path())) {
         continue;
       }
 
-      std::string filename = entry.path().filename().string();
+      std::string filename       = entry.path().filename().string();
       std::string filename_lower = filename;
-      std::transform(filename_lower.begin(), filename_lower.end(),
-                     filename_lower.begin(), ::tolower);
+      std::transform(
+          filename_lower.begin(), filename_lower.end(), filename_lower.begin(), ::tolower);
 
       // Skip CMake/system executables
-      if (filename_lower.find("cmake") != std::string::npos ||
-          filename_lower.find("test") != std::string::npos) {
+      if (filename_lower.find("cmake") != std::string::npos
+          || filename_lower.find("test") != std::string::npos) {
         continue;
       }
 
       // Check if filename contains project name
       std::string project_name_lower = project_name;
-      std::transform(project_name_lower.begin(), project_name_lower.end(),
-                     project_name_lower.begin(), ::tolower);
+      std::transform(project_name_lower.begin(),
+                     project_name_lower.end(),
+                     project_name_lower.begin(),
+                     ::tolower);
 
       if (filename_lower.find(project_name_lower) != std::string::npos) {
-        logger::print_verbose("Found executable in recursive search: " +
-                              entry.path().string());
+        logger::print_verbose("Found executable in recursive search: " + entry.path().string());
         return entry.path();
       }
     }
   } catch (const std::exception &ex) {
-    logger::print_verbose("Error in recursive search: " +
-                          std::string(ex.what()));
+    logger::print_verbose("Error in recursive search: " + std::string(ex.what()));
   }
 
   logger::print_error("No executable found for project: " + project_name);
@@ -453,25 +455,24 @@ find_project_executable(const std::filesystem::path &project_path,
  * @param config Build configuration
  * @return std::vector<std::string> CMake options
  */
-[[maybe_unused]] static std::vector<std::string>
-generate_cmake_linking_options(const workspace_project &project,
-                               const std::vector<workspace_project> &projects,
-                               const std::string & /*config*/) {
+[[maybe_unused]] static std::vector<std::string> generate_cmake_linking_options(
+    const workspace_project &project,
+    const std::vector<workspace_project> &projects,
+    const std::string & /*config*/) {
   std::vector<std::string> options;
 
   // Build paths for dependencies
   for (const auto &dep_name : project.dependencies) {
     // Find the dependency project
-    auto it = std::find_if(
-        projects.begin(), projects.end(),
-        [&dep_name](const workspace_project &p) { return p.name == dep_name; });
+    auto it = std::find_if(projects.begin(),
+                           projects.end(),
+                           [&dep_name](const workspace_project &p) { return p.name == dep_name; });
 
     if (it != projects.end()) {
       const auto &dep = *it;
 
       // Add include directory
-      options.push_back("-DCMAKE_INCLUDE_PATH=" +
-                        (dep.path / "include").string());
+      options.push_back("-DCMAKE_INCLUDE_PATH=" + (dep.path / "include").string());
 
       // Add library directory
       options.push_back("-DCMAKE_LIBRARY_PATH=" + (dep.path / "lib").string());
@@ -480,20 +481,17 @@ generate_cmake_linking_options(const workspace_project &project,
       options.push_back("-DCFORGE_DEP_" + dep.name + "=ON");
 
       // Add dependency's include path
-      options.push_back("-DCFORGE_" + dep.name +
-                        "_INCLUDE=" + (dep.path / "include").string());
+      options.push_back("-DCFORGE_" + dep.name + "_INCLUDE=" + (dep.path / "include").string());
 
       // Add dependency's library path
-      options.push_back("-DCFORGE_" + dep.name +
-                        "_LIB=" + (dep.path / "lib").string());
+      options.push_back("-DCFORGE_" + dep.name + "_LIB=" + (dep.path / "lib").string());
     }
   }
 
   return options;
 }
 
-std::pair<bool, std::filesystem::path>
-is_in_workspace(const std::filesystem::path &path) {
+std::pair<bool, std::filesystem::path> is_in_workspace(const std::filesystem::path &path) {
   // Helper to check if a cforge.toml has a [workspace] section
   auto has_workspace_section = [](const std::filesystem::path &toml_path) -> bool {
     if (!std::filesystem::exists(toml_path)) {
@@ -556,8 +554,7 @@ void configure_git_dependencies_in_cmake(const toml_reader &project_config,
 
   // Make sure the dependencies directory exists
   cmakelists << "# Ensure dependencies directory exists\n";
-  cmakelists << "set(DEPS_DIR \"${CMAKE_CURRENT_SOURCE_DIR}/" << deps_dir
-             << "\")\n";
+  cmakelists << "set(DEPS_DIR \"${CMAKE_CURRENT_SOURCE_DIR}/" << deps_dir << "\")\n";
   cmakelists << "file(MAKE_DIRECTORY ${DEPS_DIR})\n\n";
 
   // Configure Git to prefer HTTPS but allow other protocols
@@ -567,38 +564,31 @@ void configure_git_dependencies_in_cmake(const toml_reader &project_config,
   // Loop through all git dependencies
   auto git_deps = project_config.get_table_keys("dependencies.git");
   for (const auto &dep : git_deps) {
-    std::string url =
-        project_config.get_string("dependencies.git." + dep + ".url", "");
+    std::string url = project_config.get_string("dependencies.git." + dep + ".url", "");
     if (url.empty()) {
       continue;
     }
 
     // Get reference (tag, branch, or commit)
-    std::string tag =
-        project_config.get_string("dependencies.git." + dep + ".tag", "");
-    std::string branch =
-        project_config.get_string("dependencies.git." + dep + ".branch", "");
-    std::string commit =
-        project_config.get_string("dependencies.git." + dep + ".commit", "");
+    std::string tag    = project_config.get_string("dependencies.git." + dep + ".tag", "");
+    std::string branch = project_config.get_string("dependencies.git." + dep + ".branch", "");
+    std::string commit = project_config.get_string("dependencies.git." + dep + ".commit", "");
 
     // Get custom directory if specified
-    std::string custom_dir =
-        project_config.get_string("dependencies.git." + dep + ".directory", "");
-    std::string dep_dir = custom_dir.empty() ? deps_dir : custom_dir;
+    std::string custom_dir = project_config.get_string("dependencies.git." + dep + ".directory",
+                                                       "");
+    std::string dep_dir    = custom_dir.empty() ? deps_dir : custom_dir;
 
     // Get dependency options
-    bool make_available = project_config.get_bool(
-        "dependencies.git." + dep + ".make_available", true);
-    bool include =
-        project_config.get_bool("dependencies.git." + dep + ".include", true);
-    [[maybe_unused]] bool link =
-        project_config.get_bool("dependencies.git." + dep + ".link", true);
-    std::string target_name = project_config.get_string(
-        "dependencies.git." + dep + ".target_name", "");
+    bool make_available = project_config.get_bool("dependencies.git." + dep + ".make_available",
+                                                  true);
+    bool include        = project_config.get_bool("dependencies.git." + dep + ".include", true);
+    [[maybe_unused]] bool link = project_config.get_bool("dependencies.git." + dep + ".link", true);
+    std::string target_name = project_config.get_string("dependencies.git." + dep + ".target_name",
+                                                        "");
 
     cmakelists << "# " << dep << " dependency\n";
-    cmakelists << "message(STATUS \"Setting up " << dep << " dependency from "
-               << url << "\")\n";
+    cmakelists << "message(STATUS \"Setting up " << dep << " dependency from " << url << "\")\n";
 
     // FetchContent declaration
     cmakelists << "FetchContent_Declare(" << dep << "\n";
@@ -612,12 +602,10 @@ void configure_git_dependencies_in_cmake(const toml_reader &project_config,
     }
 
     // Use custom directory if specified
-    cmakelists << "    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/" << dep_dir
-               << "/" << dep << "\n";
+    cmakelists << "    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/" << dep_dir << "/" << dep << "\n";
 
     // Add shallow clone option if configured
-    bool shallow =
-        project_config.get_bool("dependencies.git." + dep + ".shallow", false);
+    bool shallow = project_config.get_bool("dependencies.git." + dep + ".shallow", false);
     if (shallow) {
       cmakelists << "    GIT_SHALLOW 1\n";
     }
@@ -629,8 +617,7 @@ void configure_git_dependencies_in_cmake(const toml_reader &project_config,
       cmakelists << "# Include directories for " << dep << "\n";
 
       std::vector<std::string> include_dirs;
-      std::string include_dirs_key =
-          "dependencies.git." + dep + ".include_dirs";
+      std::string include_dirs_key = "dependencies.git." + dep + ".include_dirs";
 
       if (project_config.has_key(include_dirs_key)) {
         include_dirs = project_config.get_string_array(include_dirs_key);
@@ -641,8 +628,8 @@ void configure_git_dependencies_in_cmake(const toml_reader &project_config,
       }
 
       for (const auto &inc_dir : include_dirs) {
-        cmakelists << "include_directories(${CMAKE_CURRENT_SOURCE_DIR}/"
-                   << dep_dir << "/" << dep << "/" << inc_dir << ")\n";
+        cmakelists << "include_directories(${CMAKE_CURRENT_SOURCE_DIR}/" << dep_dir << "/" << dep
+                   << "/" << inc_dir << ")\n";
       }
       cmakelists << "\n";
     }
@@ -719,9 +706,8 @@ static std::vector<index_dep_info> get_index_dependencies_with_versions(
     logger::print_verbose("  Checking dependency key: " + dep);
 
     // Skip known special sections
-    if (dep == "directory" || dep == "git" || dep == "vcpkg" ||
-        dep == "subdirectory" || dep == "system" || dep == "project" ||
-        dep == "fetch_content") {
+    if (dep == "directory" || dep == "git" || dep == "vcpkg" || dep == "subdirectory"
+        || dep == "system" || dep == "project" || dep == "fetch_content") {
       logger::print_verbose("    Skipping (special key)");
       continue;
     }
@@ -730,10 +716,9 @@ static std::vector<index_dep_info> get_index_dependencies_with_versions(
     std::string dep_key = "dependencies." + dep;
 
     // Check if it's a table with source-specific keys
-    if (project_config.has_key(dep_key + ".url") ||
-        project_config.has_key(dep_key + ".vcpkg_name") ||
-        project_config.has_key(dep_key + ".path") ||
-        project_config.has_key(dep_key + ".system")) {
+    if (project_config.has_key(dep_key + ".url") || project_config.has_key(dep_key + ".vcpkg_name")
+        || project_config.has_key(dep_key + ".path")
+        || project_config.has_key(dep_key + ".system")) {
       logger::print_verbose("    Skipping (has source-specific keys)");
       continue;
     }
@@ -754,17 +739,17 @@ static std::vector<index_dep_info> get_index_dependencies_with_versions(
 }
 
 /**
- * @brief Get list of index dependencies (names only, for backward compatibility)
- * Only returns deps that exist in the deps directory
+ * @brief Get list of index dependencies (names only, for backward
+ * compatibility) Only returns deps that exist in the deps directory
  */
-static std::vector<std::string> get_index_dependencies(
-    const std::filesystem::path &project_dir,
-    const toml_reader &project_config,
-    const std::string &deps_dir) {
+static std::vector<std::string> get_index_dependencies(const std::filesystem::path &project_dir,
+                                                       const toml_reader &project_config,
+                                                       const std::string &deps_dir) {
   std::vector<std::string> result;
 
   auto deps = get_index_dependencies_with_versions(project_config);
-  logger::print_verbose("Checking " + std::to_string(deps.size()) + " index deps for existence in " + deps_dir);
+  logger::print_verbose("Checking " + std::to_string(deps.size()) + " index deps for existence in "
+                        + deps_dir);
 
   for (const auto &dep : deps) {
     // Check if the package directory exists in vendor
@@ -783,8 +768,8 @@ static std::vector<std::string> get_index_dependencies(
 }
 
 /**
- * @brief Configure index dependencies - Phase 1: add_subdirectory and include_directories
- * This is called BEFORE the target is created
+ * @brief Configure index dependencies - Phase 1: add_subdirectory and
+ * include_directories This is called BEFORE the target is created
  *
  * @param project_dir Project directory
  * @param project_config Project configuration from cforge.toml
@@ -800,7 +785,8 @@ void configure_index_dependencies_phase1(const std::filesystem::path &project_di
     return;
   }
 
-  // Initialize registry to get package info (use project_dir so index is at project_dir/cforge-index)
+  // Initialize registry to get package info (use project_dir so index is at
+  // project_dir/cforge-index)
   registry reg;  // Use default cache directory
 
   // Ensure registry is up to date
@@ -837,7 +823,8 @@ void configure_index_dependencies_phase1(const std::filesystem::path &project_di
     }
 
     // Add include directory (global, not target-specific)
-    cmakelists << "include_directories(\"${CMAKE_CURRENT_SOURCE_DIR}/" << deps_dir << "/" << dep << "/" << include_dir << "\")\n";
+    cmakelists << "include_directories(\"${CMAKE_CURRENT_SOURCE_DIR}/" << deps_dir << "/" << dep
+               << "/" << include_dir << "\")\n";
 
     // Check if package has CMakeLists.txt - if so, add_subdirectory
     // First check cmake_subdir if specified, then fall back to root
@@ -854,9 +841,8 @@ void configure_index_dependencies_phase1(const std::filesystem::path &project_di
     }
 
     if (std::filesystem::exists(cmake_path)) {
-      std::string subdir_path = cmake_subdir.empty() ?
-          (deps_dir + "/" + dep) :
-          (deps_dir + "/" + dep + "/" + cmake_subdir);
+      std::string subdir_path = cmake_subdir.empty() ? (deps_dir + "/" + dep)
+                                                     : (deps_dir + "/" + dep + "/" + cmake_subdir);
       cmakelists << "add_subdirectory(\"${CMAKE_CURRENT_SOURCE_DIR}/" << subdir_path << "\"";
       cmakelists << " \"${CMAKE_BINARY_DIR}/_deps/" << dep << "\")\n";
     }
@@ -883,7 +869,8 @@ void configure_index_dependencies_phase2(const std::filesystem::path &project_di
     return;
   }
 
-  // Initialize registry to get package info (use project_dir so index is at project_dir/cforge-index)
+  // Initialize registry to get package info (use project_dir so index is at
+  // project_dir/cforge-index)
   registry reg;  // Use default cache directory
 
   // Collect targets to link
@@ -919,8 +906,9 @@ void configure_index_dependencies_phase2(const std::filesystem::path &project_di
       cmake_path = pkg_path / "CMakeLists.txt";
     }
 
-    // Link if package has CMakeLists.txt (even for header-only, target_link_libraries
-    // propagates include directories for INTERFACE targets)
+    // Link if package has CMakeLists.txt (even for header-only,
+    // target_link_libraries propagates include directories for INTERFACE
+    // targets)
     if (std::filesystem::exists(cmake_path) && !cmake_target.empty()) {
       targets_to_link.push_back(cmake_target);
     }
@@ -944,10 +932,9 @@ void configure_index_dependencies_phase2(const std::filesystem::path &project_di
  * @param project_config Project configuration from cforge.toml
  * @param cmakelists Output stream
  */
-void configure_index_dependencies_fetchcontent_phase1(
-    const std::filesystem::path &project_dir,
-    const toml_reader &project_config,
-    std::ofstream &cmakelists) {
+void configure_index_dependencies_fetchcontent_phase1(const std::filesystem::path &project_dir,
+                                                      const toml_reader &project_config,
+                                                      std::ofstream &cmakelists) {
   (void)project_dir;  // Unused - registry uses default cache directory
 
   auto index_deps = get_index_dependencies_with_versions(project_config);
@@ -977,12 +964,14 @@ void configure_index_dependencies_fetchcontent_phase1(
     // Get package info from registry
     auto pkg_info = reg.get_package(dep.name);
     if (!pkg_info) {
-      logger::print_warning("Package '" + dep.name + "' not found in registry, skipping FetchContent");
+      logger::print_warning("Package '" + dep.name
+                            + "' not found in registry, skipping FetchContent");
       continue;
     }
 
     if (pkg_info->repository.empty()) {
-      logger::print_warning("Package '" + dep.name + "' has no repository URL, skipping FetchContent");
+      logger::print_warning("Package '" + dep.name
+                            + "' has no repository URL, skipping FetchContent");
       continue;
     }
 
@@ -994,7 +983,8 @@ void configure_index_dependencies_fetchcontent_phase1(
         resolved_version = pkg_info->versions.front().version;
         logger::print_verbose("Resolved " + dep.name + "@* to " + resolved_version);
       } else {
-        logger::print_warning("Package '" + dep.name + "' has no versions in registry, cannot resolve '*'");
+        logger::print_warning("Package '" + dep.name
+                              + "' has no versions in registry, cannot resolve '*'");
         continue;
       }
     }
@@ -1010,7 +1000,7 @@ void configure_index_dependencies_fetchcontent_phase1(
 
     // If using tag_pattern, construct the tag
     if (git_tag == resolved_version && !pkg_info->tags.pattern.empty()) {
-      git_tag = pkg_info->tags.pattern;
+      git_tag           = pkg_info->tags.pattern;
       cforge_size_t pos = git_tag.find("{version}");
       if (pos != std::string::npos) {
         git_tag.replace(pos, 9, resolved_version);
@@ -1032,7 +1022,8 @@ void configure_index_dependencies_fetchcontent_phase1(
     cmakelists << "    GIT_SHALLOW TRUE\n";
     cmakelists << ")\n\n";
 
-    // Categorize: packages with setup need FetchContent_Populate, others use MakeAvailable
+    // Categorize: packages with setup need FetchContent_Populate, others use
+    // MakeAvailable
     if (pkg_info->setup.has_setup()) {
       deps_with_setup.push_back({dep, pkg_info});
     } else {
@@ -1045,7 +1036,9 @@ void configure_index_dependencies_fetchcontent_phase1(
     cmakelists << "# Fetch packages without setup commands\n";
     cmakelists << "FetchContent_MakeAvailable(";
     for (cforge_size_t i = 0; i < deps_without_setup.size(); ++i) {
-      if (i > 0) cmakelists << " ";
+      if (i > 0) {
+        cmakelists << " ";
+      }
       cmakelists << deps_without_setup[i];
     }
     cmakelists << ")\n\n";
@@ -1053,7 +1046,9 @@ void configure_index_dependencies_fetchcontent_phase1(
 
   // Handle packages WITH setup commands: Populate -> Setup -> add_subdirectory
   for (const auto &[dep, pkg_info_opt] : deps_with_setup) {
-    if (!pkg_info_opt) continue;
+    if (!pkg_info_opt) {
+      continue;
+    }
     const auto &pkg_info = *pkg_info_opt;
 
     cmakelists << "# Handle " << dep.name << " with setup commands\n";
@@ -1063,7 +1058,8 @@ void configure_index_dependencies_fetchcontent_phase1(
 
     std::string source_dir_var = dep.name + "_SOURCE_DIR";
 
-    // Check if ALL outputs already exist - only skip setup if all outputs are present
+    // Check if ALL outputs already exist - only skip setup if all outputs are
+    // present
     if (!pkg_info.setup.outputs.empty()) {
       cmakelists << "  set(_" << dep.name << "_setup_needed FALSE)\n";
       for (const auto &output : pkg_info.setup.outputs) {
@@ -1076,8 +1072,8 @@ void configure_index_dependencies_fetchcontent_phase1(
 
     // Determine platform-specific commands
     cmakelists << "  if(WIN32)\n";
-    auto win_cmds = pkg_info.setup.windows.commands.empty() ?
-                    pkg_info.setup.commands : pkg_info.setup.windows.commands;
+    auto win_cmds = pkg_info.setup.windows.commands.empty() ? pkg_info.setup.commands
+                                                            : pkg_info.setup.windows.commands;
     for (const auto &cmd : win_cmds) {
       std::string cmake_cmd = cmd;
       cforge_size_t pos;
@@ -1087,7 +1083,9 @@ void configure_index_dependencies_fetchcontent_phase1(
       cforge_size_t start = 0;
       while ((start = cmake_cmd.find("{option:", start)) != std::string::npos) {
         cforge_size_t end = cmake_cmd.find("}", start);
-        if (end == std::string::npos) break;
+        if (end == std::string::npos) {
+          break;
+        }
         std::string option_name = cmake_cmd.substr(start + 8, end - start - 8);
         std::string default_val;
         auto it = pkg_info.setup.defaults.find(option_name);
@@ -1106,13 +1104,15 @@ void configure_index_dependencies_fetchcontent_phase1(
       cmakelists << "      ERROR_VARIABLE _setup_error\n";
       cmakelists << "    )\n";
       cmakelists << "    if(NOT _setup_result EQUAL 0)\n";
-      cmakelists << "      message(FATAL_ERROR \"Setup failed for " << dep.name << ": ${_setup_result}\\nOutput: ${_setup_output}\\nError: ${_setup_error}\")\n";
+      cmakelists << "      message(FATAL_ERROR \"Setup failed for " << dep.name
+                 << ": ${_setup_result}\\nOutput: ${_setup_output}\\nError: "
+                    "${_setup_error}\")\n";
       cmakelists << "    endif()\n";
     }
 
     cmakelists << "  elseif(APPLE)\n";
-    auto mac_cmds = pkg_info.setup.macos.commands.empty() ?
-                    pkg_info.setup.commands : pkg_info.setup.macos.commands;
+    auto mac_cmds = pkg_info.setup.macos.commands.empty() ? pkg_info.setup.commands
+                                                          : pkg_info.setup.macos.commands;
     for (const auto &cmd : mac_cmds) {
       std::string cmake_cmd = cmd;
       cforge_size_t pos;
@@ -1122,7 +1122,9 @@ void configure_index_dependencies_fetchcontent_phase1(
       cforge_size_t start = 0;
       while ((start = cmake_cmd.find("{option:", start)) != std::string::npos) {
         cforge_size_t end = cmake_cmd.find("}", start);
-        if (end == std::string::npos) break;
+        if (end == std::string::npos) {
+          break;
+        }
         std::string option_name = cmake_cmd.substr(start + 8, end - start - 8);
         std::string default_val;
         auto it = pkg_info.setup.defaults.find(option_name);
@@ -1141,13 +1143,15 @@ void configure_index_dependencies_fetchcontent_phase1(
       cmakelists << "      ERROR_VARIABLE _setup_error\n";
       cmakelists << "    )\n";
       cmakelists << "    if(NOT _setup_result EQUAL 0)\n";
-      cmakelists << "      message(FATAL_ERROR \"Setup failed for " << dep.name << ": ${_setup_result}\\nOutput: ${_setup_output}\\nError: ${_setup_error}\")\n";
+      cmakelists << "      message(FATAL_ERROR \"Setup failed for " << dep.name
+                 << ": ${_setup_result}\\nOutput: ${_setup_output}\\nError: "
+                    "${_setup_error}\")\n";
       cmakelists << "    endif()\n";
     }
 
     cmakelists << "  else()\n";  // LINUX
-    auto linux_cmds = pkg_info.setup.linux_os.commands.empty() ?
-                      pkg_info.setup.commands : pkg_info.setup.linux_os.commands;
+    auto linux_cmds = pkg_info.setup.linux_os.commands.empty() ? pkg_info.setup.commands
+                                                               : pkg_info.setup.linux_os.commands;
     for (const auto &cmd : linux_cmds) {
       std::string cmake_cmd = cmd;
       cforge_size_t pos;
@@ -1157,7 +1161,9 @@ void configure_index_dependencies_fetchcontent_phase1(
       cforge_size_t start = 0;
       while ((start = cmake_cmd.find("{option:", start)) != std::string::npos) {
         cforge_size_t end = cmake_cmd.find("}", start);
-        if (end == std::string::npos) break;
+        if (end == std::string::npos) {
+          break;
+        }
         std::string option_name = cmake_cmd.substr(start + 8, end - start - 8);
         std::string default_val;
         auto it = pkg_info.setup.defaults.find(option_name);
@@ -1176,7 +1182,9 @@ void configure_index_dependencies_fetchcontent_phase1(
       cmakelists << "      ERROR_VARIABLE _setup_error\n";
       cmakelists << "    )\n";
       cmakelists << "    if(NOT _setup_result EQUAL 0)\n";
-      cmakelists << "      message(FATAL_ERROR \"Setup failed for " << dep.name << ": ${_setup_result}\\nOutput: ${_setup_output}\\nError: ${_setup_error}\")\n";
+      cmakelists << "      message(FATAL_ERROR \"Setup failed for " << dep.name
+                 << ": ${_setup_result}\\nOutput: ${_setup_output}\\nError: "
+                    "${_setup_error}\")\n";
       cmakelists << "    endif()\n";
     }
     cmakelists << "  endif()\n";
@@ -1188,9 +1196,11 @@ void configure_index_dependencies_fetchcontent_phase1(
     // Now add_subdirectory after setup is complete
     std::string cmake_subdir = pkg_info.integration.cmake_subdir;
     if (!cmake_subdir.empty()) {
-      cmakelists << "  add_subdirectory(\"${" << source_dir_var << "}/" << cmake_subdir << "\" \"${" << dep.name << "_BINARY_DIR}\")\n";
+      cmakelists << "  add_subdirectory(\"${" << source_dir_var << "}/" << cmake_subdir << "\" \"${"
+                 << dep.name << "_BINARY_DIR}\")\n";
     } else {
-      cmakelists << "  add_subdirectory(\"${" << source_dir_var << "}\" \"${" << dep.name << "_BINARY_DIR}\")\n";
+      cmakelists << "  add_subdirectory(\"${" << source_dir_var << "}\" \"${" << dep.name
+                 << "_BINARY_DIR}\")\n";
     }
 
     cmakelists << "endif()\n\n";
@@ -1205,10 +1215,9 @@ void configure_index_dependencies_fetchcontent_phase1(
  * @param project_config Project configuration from cforge.toml
  * @param cmakelists Output stream
  */
-void configure_index_dependencies_fetchcontent_phase2(
-    const std::filesystem::path &project_dir,
-    const toml_reader &project_config,
-    std::ofstream &cmakelists) {
+void configure_index_dependencies_fetchcontent_phase2(const std::filesystem::path &project_dir,
+                                                      const toml_reader &project_config,
+                                                      std::ofstream &cmakelists) {
   (void)project_dir;  // Unused - registry uses default cache directory
 
   auto index_deps = get_index_dependencies_with_versions(project_config);
@@ -1237,7 +1246,8 @@ void configure_index_dependencies_fetchcontent_phase2(
     }
 
     // Always link to the CMake target - even for header-only libraries,
-    // target_link_libraries propagates include directories for INTERFACE targets
+    // target_link_libraries propagates include directories for INTERFACE
+    // targets
     targets_to_link.push_back(cmake_target);
   }
 
@@ -1277,18 +1287,18 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
 
   // Path to CMakeLists.txt in project directory
   std::filesystem::path cmakelists_path = project_dir / "CMakeLists.txt";
-  bool file_exists = std::filesystem::exists(cmakelists_path);
+  bool file_exists                      = std::filesystem::exists(cmakelists_path);
 
-  // Quick timestamp check: if CMakeLists.txt exists and is newer than cforge.toml,
-  // and we have a stored hash, skip the expensive hash computation
+  // Quick timestamp check: if CMakeLists.txt exists and is newer than
+  // cforge.toml, and we have a stored hash, skip the expensive hash computation
   std::string stored_toml_hash = dep_hashes.get_hash("cforge.toml");
   if (file_exists && !stored_toml_hash.empty()) {
     try {
-      auto toml_mtime = std::filesystem::last_write_time(toml_path);
+      auto toml_mtime  = std::filesystem::last_write_time(toml_path);
       auto cmake_mtime = std::filesystem::last_write_time(cmakelists_path);
       if (cmake_mtime >= toml_mtime) {
-        logger::print_verbose(
-            "CMakeLists.txt is up to date (timestamp check), skipping generation");
+        logger::print_verbose("CMakeLists.txt is up to date (timestamp check), "
+                              "skipping generation");
         return true;
       }
     } catch (const std::filesystem::filesystem_error &) {
@@ -1317,14 +1327,13 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
 
   // Debug logging for hash comparison
   logger::print_verbose("Current cforge.toml hash: " + toml_hash);
-  logger::print_verbose("Stored cforge.toml hash: " + (stored_toml_hash.empty() ? "(none)" : stored_toml_hash));
+  logger::print_verbose("Stored cforge.toml hash: "
+                        + (stored_toml_hash.empty() ? "(none)" : stored_toml_hash));
   logger::print_verbose("CMakeLists.txt exists: " + std::string(file_exists ? "yes" : "no"));
 
   // If CMakeLists.txt exists and TOML hash is unchanged, skip generation
-  if (file_exists && !stored_toml_hash.empty() &&
-      toml_hash == stored_toml_hash) {
-    logger::print_verbose(
-        "CMakeLists.txt already exists and up to date, skipping generation");
+  if (file_exists && !stored_toml_hash.empty() && toml_hash == stored_toml_hash) {
+    logger::print_verbose("CMakeLists.txt already exists and up to date, skipping generation");
     return true;
   }
 
@@ -1332,9 +1341,7 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
 
   // If CMakeLists.txt exists, log that we're regenerating due to changed config
   if (file_exists) {
-    logger::print_action(
-        "Regenerating",
-        "CMakeLists.txt from cforge.toml (configuration changed)");
+    logger::print_action("Regenerating", "CMakeLists.txt from cforge.toml (configuration changed)");
   }
 
   logger::print_action("Generating", "CMakeLists.txt from cforge.toml");
@@ -1360,9 +1367,8 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
   }
 
   // Get the right build directory for the configuration
-  std::string build_config =
-      project_config.get_string("build.build_type", "Debug");
-  std::string generator = get_project_generator(project_config);
+  std::string build_config             = project_config.get_string("build.build_type", "Debug");
+  std::string generator                = get_project_generator(project_config);
   std::filesystem::path build_base_dir = project_dir / "build";
   std::filesystem::path build_dir =
       get_build_dir_for_config(build_base_dir.string(), build_config, generator);
@@ -1373,33 +1379,29 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
     try {
       std::filesystem::create_directories(build_dir);
     } catch (const std::filesystem::filesystem_error &e) {
-      logger::print_error("Failed to create build directory: " +
-                          std::string(e.what()));
+      logger::print_error("Failed to create build directory: " + std::string(e.what()));
       return false;
     }
   }
 
   // Get project metadata
-  std::string project_name =
-      project_config.get_string("project.name", "cpp-project");
-  std::string project_version =
-      project_config.get_string("project.version", "0.1.0");
-  std::string project_description = project_config.get_string(
-      "project.description", "A C++ project created with cforge");
-  
+  std::string project_name        = project_config.get_string("project.name", "cpp-project");
+  std::string project_version     = project_config.get_string("project.version", "0.1.0");
+  std::string project_description = project_config.get_string("project.description",
+                                                              "A C++ project created with cforge");
+
   // Get Standards
-  std::string cpp_standard =
-      project_config.get_string("project.cpp_standard");
-  std::string c_standard = project_config.get_string("project.c_standard");
+  std::string cpp_standard = project_config.get_string("project.cpp_standard");
+  std::string c_standard   = project_config.get_string("project.c_standard");
 
   if (cpp_standard.empty() && c_standard.empty()) {
-    logger::print_error("No C++ or C standard specified in cforge.toml. You need to specify at least one of them.");
+    logger::print_error("No C++ or C standard specified in cforge.toml. You "
+                        "need to specify at least one of them.");
     return false;
   }
 
   // Write initial CMake configuration
-  cmakelists << "# CMakeLists.txt for " << project_name << " v"
-             << project_version << "\n";
+  cmakelists << "# CMakeLists.txt for " << project_name << " v" << project_version << "\n";
   cmakelists << "# Generated by cforge - C++ project management tool\n\n";
 
   // Get CMake minimum version from config or use default
@@ -1417,18 +1419,27 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
     }
   } else {
     // Auto-detect from standards
-    if (!c_standard.empty()) languages_str += "C ";
-    if (!cpp_standard.empty()) languages_str += "CXX ";
+    if (!c_standard.empty()) {
+      languages_str += "C ";
+    }
+    if (!cpp_standard.empty()) {
+      languages_str += "CXX ";
+    }
   }
-  if (languages_str.empty()) languages_str = "CXX ";
-  cmakelists << "project(" << project_name << " VERSION " << project_version
-             << " LANGUAGES " << languages_str << ")\n\n";
+  if (languages_str.empty()) {
+    languages_str = "CXX ";
+  }
+  cmakelists << "project(" << project_name << " VERSION " << project_version << " LANGUAGES "
+             << languages_str << ")\n\n";
 
-  // Include implicit system directories in compile_commands.json for IDE support
-  cmakelists << "# Include compiler's implicit include directories in compile_commands.json\n";
+  // Include implicit system directories in compile_commands.json for IDE
+  // support
+  cmakelists << "# Include compiler's implicit include directories in "
+                "compile_commands.json\n";
   cmakelists << "# This helps clangd and other tools find standard library headers\n";
   cmakelists << "if(CMAKE_EXPORT_COMPILE_COMMANDS)\n";
-  cmakelists << "  set(CMAKE_CXX_STANDARD_INCLUDE_DIRECTORIES ${CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES})\n";
+  cmakelists << "  set(CMAKE_CXX_STANDARD_INCLUDE_DIRECTORIES "
+                "${CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES})\n";
   cmakelists << "endif()\n\n";
 
   // CMake module paths
@@ -1437,7 +1448,8 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
     if (!module_paths.empty()) {
       cmakelists << "# Custom CMake module paths\n";
       for (const auto &path : module_paths) {
-        cmakelists << "list(APPEND CMAKE_MODULE_PATH \"${CMAKE_CURRENT_SOURCE_DIR}/" << path << "\")\n";
+        cmakelists << "list(APPEND CMAKE_MODULE_PATH \"${CMAKE_CURRENT_SOURCE_DIR}/" << path
+                   << "\")\n";
       }
       cmakelists << "\n";
     }
@@ -1460,13 +1472,13 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
   cmakelists << "set(SOURCE_DIR \"${CMAKE_CURRENT_SOURCE_DIR}\")\n\n";
 
   // Get author information
-  std::vector<std::string> authors =
-      project_config.get_string_array("project.authors");
+  std::vector<std::string> authors = project_config.get_string_array("project.authors");
   std::string author_string;
   if (!authors.empty()) {
     for (cforge_size_t i = 0; i < authors.size(); ++i) {
-      if (i > 0)
+      if (i > 0) {
         author_string += ", ";
+      }
       author_string += authors[i];
     }
   } else {
@@ -1478,7 +1490,6 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
   cmakelists << "set(PROJECT_DESCRIPTION \"" << project_description << "\")\n";
   cmakelists << "set(PROJECT_AUTHOR \"" << author_string << "\")\n\n";
   cmakelists << "string(TOUPPER ${PROJECT_NAME} PROJECT_NAME_UPPER)\n";
-
 
   // Set C++ standard
   if (!cpp_standard.empty()) {
@@ -1524,7 +1535,8 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
   cmakelists << "else()\n";
   cmakelists << "    set(CFORGE_COMPILER \"unknown\")\n";
   cmakelists << "endif()\n";
-  cmakelists << "message(STATUS \"platform: ${CFORGE_PLATFORM}, compiler: ${CFORGE_COMPILER}\")\n\n";
+  cmakelists << "message(STATUS \"platform: ${CFORGE_PLATFORM}, compiler: "
+                "${CFORGE_COMPILER}\")\n\n";
 
   // CMake options from [build] section
   cmake_options cmake_opts = parse_cmake_options(project_config);
@@ -1533,12 +1545,10 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
   }
 
   // Get binary type (executable, shared_lib, static_lib, or header_only)
-  std::string binary_type =
-      project_config.get_string("project.binary_type", "executable");
+  std::string binary_type = project_config.get_string("project.binary_type", "executable");
 
   // Get build settings
-  std::string build_type =
-      project_config.get_string("build.build_type", "Debug");
+  std::string build_type = project_config.get_string("build.build_type", "Debug");
 
   // Set up build configurations
   cmakelists << "# Build configurations\n";
@@ -1572,8 +1582,7 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
   cmakelists << "endif()\n\n";
 
   // Get dependencies directory (default: deps)
-  std::string deps_dir =
-      project_config.get_string("dependencies.directory", "deps");
+  std::string deps_dir = project_config.get_string("dependencies.directory", "deps");
 
   // Handle Git dependencies
   configure_git_dependencies_in_cmake(project_config, deps_dir, cmakelists);
@@ -1594,12 +1603,13 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
   }
 
   // Check if ASM language is enabled
-  auto languages = project_config.get_string_array("project.languages");
+  auto languages   = project_config.get_string_array("project.languages");
   bool asm_enabled = false;
   for (const auto &lang : languages) {
     std::string lang_upper = lang;
-    std::transform(lang_upper.begin(), lang_upper.end(), lang_upper.begin(),
-                   [](unsigned char c) { return std::toupper(c); });
+    std::transform(lang_upper.begin(), lang_upper.end(), lang_upper.begin(), [](unsigned char c) {
+      return std::toupper(c);
+    });
     if (lang_upper == "ASM" || lang_upper == "ASM-ATT" || lang_upper == "ASM_NASM") {
       asm_enabled = true;
       break;
@@ -1621,15 +1631,13 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
 
   // Check for additional sources
   if (project_config.has_key("project.additional_sources")) {
-    auto additional_sources =
-        project_config.get_string_array("project.additional_sources");
+    auto additional_sources = project_config.get_string_array("project.additional_sources");
     if (!additional_sources.empty()) {
       cmakelists << "# Add additional source files\n";
       for (const auto &source : additional_sources) {
-        cmakelists << "file(GLOB_RECURSE ADDITIONAL_SOURCES_" << source
-                   << " \"${SOURCE_DIR}/" << source << "\")\n";
-        cmakelists << "list(APPEND SOURCES ${ADDITIONAL_SOURCES_" << source
-                   << "})\n";
+        cmakelists << "file(GLOB_RECURSE ADDITIONAL_SOURCES_" << source << " \"${SOURCE_DIR}/"
+                   << source << "\")\n";
+        cmakelists << "list(APPEND SOURCES ${ADDITIONAL_SOURCES_" << source << "})\n";
       }
       cmakelists << "\n";
     }
@@ -1650,8 +1658,10 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
     cmakelists << "add_executable(${PROJECT_NAME} ${SOURCES})\n\n";
   } else if (binary_type == "shared_lib") {
     cmakelists << "add_library(${PROJECT_NAME} SHARED ${SOURCES})\n";
-    // Enable automatic symbol export for WINDOWS DLLs (creates .lib import library)
-    cmakelists << "set_target_properties(${PROJECT_NAME} PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)\n\n";
+    // Enable automatic symbol export for WINDOWS DLLs (creates .lib import
+    // library)
+    cmakelists << "set_target_properties(${PROJECT_NAME} PROPERTIES "
+                  "WINDOWS_EXPORT_ALL_SYMBOLS ON)\n\n";
   } else if (binary_type == "static_lib") {
     cmakelists << "add_library(${PROJECT_NAME} STATIC ${SOURCES})\n\n";
   } else if (binary_type == "header_only") {
@@ -1687,7 +1697,8 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
   cmakelists << "    PROJECT_VERSION_PATCH=${PROJECT_VERSION_PATCH}\n";
   cmakelists << ")\n\n";
 
-  // Add include directories - use configured include directories or default to include/
+  // Add include directories - use configured include directories or default to
+  // include/
   auto include_dirs = project_config.get_string_array("build.include_dirs");
   if (include_dirs.empty()) {
     include_dirs.push_back("include");
@@ -1711,27 +1722,29 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
   // Handle workspace project dependencies includes
   {
     // Collect all keys under [dependencies]
-    std::vector<std::string> deps =
-        project_config.get_table_keys("dependencies");
+    std::vector<std::string> deps = project_config.get_table_keys("dependencies");
     // Filter out directory setting, git/vcpkg groups, and Git deps (those with
     // a .url)
-    deps.erase(std::remove_if(
-                   deps.begin(), deps.end(),
-                   [&](const std::string &k) {
-                     if (k == "directory")
-                       return true;
-                     if (k == "git" || k == "vcpkg")
-                       return true;
-                     if (project_config.has_key("dependencies." + k + ".url"))
-                       return true;
-                     // Only keep if directory exists and has cforge.toml
-                     std::filesystem::path dep_path =
-                         project_dir.parent_path() / k;
-                     if (!std::filesystem::exists(dep_path) ||
-                         !std::filesystem::exists(dep_path / "cforge.toml"))
-                       return true;
-                     return false;
-                   }),
+    deps.erase(std::remove_if(deps.begin(),
+                              deps.end(),
+                              [&](const std::string &k) {
+                                if (k == "directory") {
+                                  return true;
+                                }
+                                if (k == "git" || k == "vcpkg") {
+                                  return true;
+                                }
+                                if (project_config.has_key("dependencies." + k + ".url")) {
+                                  return true;
+                                }
+                                // Only keep if directory exists and has cforge.toml
+                                std::filesystem::path dep_path = project_dir.parent_path() / k;
+                                if (!std::filesystem::exists(dep_path)
+                                    || !std::filesystem::exists(dep_path / "cforge.toml")) {
+                                  return true;
+                                }
+                                return false;
+                              }),
                deps.end());
     if (!deps.empty()) {
       cmakelists << "# Workspace project include dependencies\n";
@@ -1757,8 +1770,7 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
 
   // Add additional include directories
   if (project_config.has_key("project.additional_includes")) {
-    auto additional_includes =
-        project_config.get_string_array("project.additional_includes");
+    auto additional_includes = project_config.get_string_array("project.additional_includes");
     if (!additional_includes.empty()) {
       cmakelists << "# Add additional include directories\n";
       for (const auto &include : additional_includes) {
@@ -1783,11 +1795,9 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
       cmakelists << "# Global compiler definitions\n";
       for (const auto &d : build_defs) {
         if (binary_type == "header_only") {
-          cmakelists << "target_compile_definitions(${PROJECT_NAME} INTERFACE "
-                     << d << ")\n";
+          cmakelists << "target_compile_definitions(${PROJECT_NAME} INTERFACE " << d << ")\n";
         } else {
-          cmakelists << "target_compile_definitions(${PROJECT_NAME} PUBLIC "
-                     << d << ")\n";
+          cmakelists << "target_compile_definitions(${PROJECT_NAME} PUBLIC " << d << ")\n";
         }
       }
       cmakelists << "\n";
@@ -1796,7 +1806,7 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
 
   // platform-specific configuration
   std::vector<std::string> platforms = {"windows", "linux", "macos"};
-  bool has_platform_config = false;
+  bool has_platform_config           = false;
   for (const auto &plat : platforms) {
     if (project_config.has_key("platform." + plat)) {
       has_platform_config = true;
@@ -1808,10 +1818,9 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
     cmakelists << "# platform-specific configuration\n";
     for (const auto &plat : platforms) {
       std::string prefix = "platform." + plat;
-      if (!project_config.has_key(prefix + ".defines") &&
-          !project_config.has_key(prefix + ".flags") &&
-          !project_config.has_key(prefix + ".links") &&
-          !project_config.has_key(prefix + ".frameworks")) {
+      if (!project_config.has_key(prefix + ".defines") && !project_config.has_key(prefix + ".flags")
+          && !project_config.has_key(prefix + ".links")
+          && !project_config.has_key(prefix + ".frameworks")) {
         continue;
       }
 
@@ -1858,7 +1867,9 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
       if (plat == "macos") {
         auto frameworks = project_config.get_string_array(prefix + ".frameworks");
         for (const auto &fw : frameworks) {
-          cmakelists << "    target_link_libraries(${PROJECT_NAME} PUBLIC \"-framework " << fw << "\")\n";
+          cmakelists << "    target_link_libraries(${PROJECT_NAME} PUBLIC "
+                        "\"-framework "
+                     << fw << "\")\n";
         }
       }
 
@@ -1869,7 +1880,7 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
 
   // compiler-specific configuration
   std::vector<std::string> compilers = {"msvc", "gcc", "clang", "apple_clang", "mingw"};
-  bool has_compiler_config = false;
+  bool has_compiler_config           = false;
   for (const auto &comp : compilers) {
     if (project_config.has_key("compiler." + comp)) {
       has_compiler_config = true;
@@ -1881,9 +1892,8 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
     cmakelists << "# compiler-specific configuration\n";
     for (const auto &comp : compilers) {
       std::string prefix = "compiler." + comp;
-      if (!project_config.has_key(prefix + ".defines") &&
-          !project_config.has_key(prefix + ".flags") &&
-          !project_config.has_key(prefix + ".links")) {
+      if (!project_config.has_key(prefix + ".defines") && !project_config.has_key(prefix + ".flags")
+          && !project_config.has_key(prefix + ".links")) {
         continue;
       }
 
@@ -1916,14 +1926,14 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
   for (const auto &plat : platforms) {
     for (const auto &comp : compilers) {
       std::string prefix = "platform." + plat + ".compiler." + comp;
-      if (!project_config.has_key(prefix + ".defines") &&
-          !project_config.has_key(prefix + ".flags") &&
-          !project_config.has_key(prefix + ".links")) {
+      if (!project_config.has_key(prefix + ".defines") && !project_config.has_key(prefix + ".flags")
+          && !project_config.has_key(prefix + ".links")) {
         continue;
       }
 
       cmakelists << "# platform+compiler: " << plat << " + " << comp << "\n";
-      cmakelists << "if(CFORGE_PLATFORM STREQUAL \"" << plat << "\" AND CFORGE_COMPILER STREQUAL \"" << comp << "\")\n";
+      cmakelists << "if(CFORGE_PLATFORM STREQUAL \"" << plat << "\" AND CFORGE_COMPILER STREQUAL \""
+                 << comp << "\")\n";
 
       auto nested_defines = project_config.get_string_array(prefix + ".defines");
       for (const auto &def : nested_defines) {
@@ -1947,10 +1957,10 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
   // Portable flags from build.config sections
   {
     std::vector<std::string> configs = {"debug", "release", "relwithdebinfo", "minsizerel"};
-    bool has_any_config_portable = false;
+    bool has_any_config_portable     = false;
 
     for (const auto &cfg : configs) {
-      std::string section = "build.config." + cfg;
+      std::string section   = "build.config." + cfg;
       portable_options opts = parse_portable_options(project_config, section);
       if (opts.has_any()) {
         has_any_config_portable = true;
@@ -1961,7 +1971,7 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
     if (has_any_config_portable && binary_type != "header_only") {
       cmakelists << "# Portable compiler flags per configuration\n";
       for (const auto &cfg : configs) {
-        std::string section = "build.config." + cfg;
+        std::string section   = "build.config." + cfg;
         portable_options opts = parse_portable_options(project_config, section);
         if (opts.has_any()) {
           // Capitalize first letter for CMake build type
@@ -1977,7 +1987,7 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
   {
     bool has_any_platform_portable = false;
     for (const auto &plat : platforms) {
-      std::string section = "platform." + plat;
+      std::string section   = "platform." + plat;
       portable_options opts = parse_portable_options(project_config, section);
       if (opts.has_any()) {
         has_any_platform_portable = true;
@@ -1988,7 +1998,7 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
     if (has_any_platform_portable && binary_type != "header_only") {
       cmakelists << "# Portable compiler flags per platform\n";
       for (const auto &plat : platforms) {
-        std::string section = "platform." + plat;
+        std::string section   = "platform." + plat;
         portable_options opts = parse_portable_options(project_config, section);
         if (opts.has_any()) {
           cmakelists << "if(CFORGE_PLATFORM STREQUAL \"" << plat << "\")\n";
@@ -2003,7 +2013,7 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
   {
     bool has_any_compiler_portable = false;
     for (const auto &comp : compilers) {
-      std::string section = "compiler." + comp;
+      std::string section   = "compiler." + comp;
       portable_options opts = parse_portable_options(project_config, section);
       if (opts.has_any()) {
         has_any_compiler_portable = true;
@@ -2014,7 +2024,7 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
     if (has_any_compiler_portable && binary_type != "header_only") {
       cmakelists << "# Portable compiler flags per compiler\n";
       for (const auto &comp : compilers) {
-        std::string section = "compiler." + comp;
+        std::string section   = "compiler." + comp;
         portable_options opts = parse_portable_options(project_config, section);
         if (opts.has_any()) {
           cmakelists << "if(CFORGE_COMPILER STREQUAL \"" << comp << "\")\n";
@@ -2098,7 +2108,8 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
           if (project_config.has_key(section)) {
             linker_options nested_linker = parse_linker_options(project_config, section);
             if (nested_linker.has_any()) {
-              cmakelists << "if(CFORGE_PLATFORM STREQUAL \"" << plat << "\" AND CFORGE_COMPILER STREQUAL \"" << comp << "\")\n";
+              cmakelists << "if(CFORGE_PLATFORM STREQUAL \"" << plat
+                         << "\" AND CFORGE_COMPILER STREQUAL \"" << comp << "\")\n";
               cmakelists << generate_linker_flags_cmake(nested_linker, "${PROJECT_NAME}", "    ");
               cmakelists << "endif()\n\n";
             }
@@ -2115,8 +2126,11 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
           if (cfg_linker.has_any()) {
             // Capitalize first letter for CMake build type
             std::string cmake_cfg = cfg;
-            cmake_cfg[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(cmake_cfg[0])));
-            cmakelists << generate_config_linker_flags_cmake(cmake_cfg, cfg_linker, "${PROJECT_NAME}");
+            cmake_cfg[0] =
+                static_cast<char>(std::toupper(static_cast<unsigned char>(cmake_cfg[0])));
+            cmakelists << generate_config_linker_flags_cmake(cmake_cfg,
+                                                             cfg_linker,
+                                                             "${PROJECT_NAME}");
           }
         }
       }
@@ -2124,7 +2138,8 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
   }
 
   // Embedded/bare-metal support via cross profiles
-  // Generate nostdlib/nostartfiles/nodefaultlibs flags controlled by CMake variables
+  // Generate nostdlib/nostartfiles/nodefaultlibs flags controlled by CMake
+  // variables
   {
     bool any_profile_has_embedded = false;
     // Check all cross profiles for embedded options
@@ -2132,9 +2147,9 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
       auto profile_names = project_config.get_table_keys("cross.profile");
       for (const auto &pname : profile_names) {
         std::string pkey = "cross.profile." + pname;
-        if (project_config.get_bool(pkey + ".nostdlib", false) ||
-            project_config.get_bool(pkey + ".nostartfiles", false) ||
-            project_config.get_bool(pkey + ".nodefaultlibs", false)) {
+        if (project_config.get_bool(pkey + ".nostdlib", false)
+            || project_config.get_bool(pkey + ".nostartfiles", false)
+            || project_config.get_bool(pkey + ".nodefaultlibs", false)) {
           any_profile_has_embedded = true;
           break;
         }
@@ -2142,14 +2157,14 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
     }
     // Also check default [cross] section
     if (!any_profile_has_embedded) {
-      any_profile_has_embedded =
-          project_config.get_bool("cross.nostdlib", false) ||
-          project_config.get_bool("cross.nostartfiles", false) ||
-          project_config.get_bool("cross.nodefaultlibs", false);
+      any_profile_has_embedded = project_config.get_bool("cross.nostdlib", false)
+                              || project_config.get_bool("cross.nostartfiles", false)
+                              || project_config.get_bool("cross.nodefaultlibs", false);
     }
 
     if (any_profile_has_embedded && binary_type != "header_only") {
-      cmakelists << "# Embedded/bare-metal linker options (activated via cross profile)\n";
+      cmakelists << "# Embedded/bare-metal linker options (activated via cross "
+                    "profile)\n";
       cmakelists << "if(CFORGE_NOSTDLIB)\n";
       cmakelists << "    target_link_options(${PROJECT_NAME} PRIVATE -nostdlib)\n";
       cmakelists << "endif()\n";
@@ -2157,7 +2172,8 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
       cmakelists << "    target_link_options(${PROJECT_NAME} PRIVATE -nostartfiles)\n";
       cmakelists << "endif()\n";
       cmakelists << "if(CFORGE_NODEFAULTLIBS)\n";
-      cmakelists << "    target_link_options(${PROJECT_NAME} PRIVATE -nodefaultlibs)\n";
+      cmakelists << "    target_link_options(${PROJECT_NAME} PRIVATE "
+                    "-nodefaultlibs)\n";
       cmakelists << "endif()\n\n";
     }
   }
@@ -2166,7 +2182,7 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
   {
     auto generate_profile_targets = [&](const std::string &profile_name,
                                         const std::string &profile_key) {
-      auto post_build_cmds = project_config.get_string_array(profile_key + ".post_build");
+      auto post_build_cmds  = project_config.get_string_array(profile_key + ".post_build");
       std::string flash_cmd = project_config.get_string(profile_key + ".flash", "");
 
       if (!post_build_cmds.empty()) {
@@ -2174,19 +2190,20 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
         cmakelists << "add_custom_target(post_build_" << profile_name << "\n";
         for (const auto &cmd : post_build_cmds) {
           // Split command into tool and arguments for CMake COMMAND syntax
-          // Commands can use CMake generator expressions like $<TARGET_FILE:...>
+          // Commands can use CMake generator expressions like
+          // $<TARGET_FILE:...>
           cmakelists << "    COMMAND " << cmd << "\n";
         }
         cmakelists << "    DEPENDS ${PROJECT_NAME}\n";
-        cmakelists << "    COMMENT \"Running post-build commands for profile '" << profile_name << "'\"\n";
+        cmakelists << "    COMMENT \"Running post-build commands for profile '" << profile_name
+                   << "'\"\n";
         cmakelists << "    VERBATIM\n";
         cmakelists << ")\n\n";
       }
 
       if (!flash_cmd.empty()) {
-        std::string depends_target = post_build_cmds.empty()
-            ? "${PROJECT_NAME}"
-            : "post_build_" + profile_name;
+        std::string depends_target = post_build_cmds.empty() ? "${PROJECT_NAME}"
+                                                             : "post_build_" + profile_name;
         cmakelists << "# Flash target for cross profile '" << profile_name << "'\n";
         cmakelists << "add_custom_target(flash_" << profile_name << "\n";
         cmakelists << "    COMMAND " << flash_cmd << "\n";
@@ -2209,17 +2226,14 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
 
   // Add config-specific build.config.<config>.defines
   {
-    std::string defs_key =
-        "build.config." + string_to_lower(build_type) + ".defines";
+    std::string defs_key = "build.config." + string_to_lower(build_type) + ".defines";
     if (project_config.has_key(defs_key)) {
       auto cfg_defs = project_config.get_string_array(defs_key);
       if (!cfg_defs.empty()) {
         cmakelists << "# Definitions for config '" << build_type << "'\n";
-        cmakelists << "if(CMAKE_BUILD_TYPE STREQUAL \"" << build_type
-                   << "\")\n";
+        cmakelists << "if(CMAKE_BUILD_TYPE STREQUAL \"" << build_type << "\")\n";
         for (const auto &d : cfg_defs) {
-          cmakelists << "  target_compile_definitions(${PROJECT_NAME} PUBLIC "
-                     << d << ")\n";
+          cmakelists << "  target_compile_definitions(${PROJECT_NAME} PUBLIC " << d << ")\n";
         }
         cmakelists << "endif()\n\n";
       }
@@ -2227,8 +2241,8 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
   }
 
   // NOTE: Platform-specific defines are already handled via CMake-side
-  // CFORGE_PLATFORM detection (see platform-specific configuration section above).
-  // Using CMake-side detection is correct for cross-compilation.
+  // CFORGE_PLATFORM detection (see platform-specific configuration section
+  // above). Using CMake-side detection is correct for cross-compilation.
 
   // System dependencies (find_package, pkg_config, manual)
   if (project_config.has_key("dependencies.system")) {
@@ -2245,14 +2259,14 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
           continue;
         }
 
-        std::string method = project_config.get_string(prefix + ".method", "find_package");
-        bool required = project_config.get_bool(prefix + ".required", true);
+        std::string method       = project_config.get_string(prefix + ".method", "find_package");
+        bool required            = project_config.get_bool(prefix + ".required", true);
         std::string required_str = required ? "REQUIRED" : "";
 
         if (method == "find_package") {
           // Use CMake find_package
           std::string package_name = project_config.get_string(prefix + ".package", dep);
-          auto components = project_config.get_string_array(prefix + ".components");
+          auto components          = project_config.get_string_array(prefix + ".components");
 
           cmakelists << "find_package(" << package_name;
           if (!components.empty()) {
@@ -2291,23 +2305,27 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
           }
           cmakelists << " " << package_name << ")\n";
           cmakelists << "if(" << dep << "_PKG_FOUND)\n";
-          cmakelists << "    target_include_directories(${PROJECT_NAME} PUBLIC ${" << dep << "_PKG_INCLUDE_DIRS})\n";
-          cmakelists << "    target_link_libraries(${PROJECT_NAME} PUBLIC ${" << dep << "_PKG_LIBRARIES})\n";
-          cmakelists << "    target_compile_options(${PROJECT_NAME} PUBLIC ${" << dep << "_PKG_CFLAGS_OTHER})\n";
+          cmakelists << "    target_include_directories(${PROJECT_NAME} PUBLIC ${" << dep
+                     << "_PKG_INCLUDE_DIRS})\n";
+          cmakelists << "    target_link_libraries(${PROJECT_NAME} PUBLIC ${" << dep
+                     << "_PKG_LIBRARIES})\n";
+          cmakelists << "    target_compile_options(${PROJECT_NAME} PUBLIC ${" << dep
+                     << "_PKG_CFLAGS_OTHER})\n";
           cmakelists << "endif()\n";
 
         } else if (method == "manual") {
           // Manual specification
           auto include_dirs = project_config.get_string_array(prefix + ".include_dirs");
           auto library_dirs = project_config.get_string_array(prefix + ".library_dirs");
-          auto libraries = project_config.get_string_array(prefix + ".libraries");
-          auto defines = project_config.get_string_array(prefix + ".defines");
+          auto libraries    = project_config.get_string_array(prefix + ".libraries");
+          auto defines      = project_config.get_string_array(prefix + ".defines");
 
           cmakelists << "# Manual dependency: " << dep << "\n";
 
           if (!include_dirs.empty()) {
             for (const auto &dir : include_dirs) {
-              cmakelists << "target_include_directories(${PROJECT_NAME} PUBLIC \"" << dir << "\")\n";
+              cmakelists << "target_include_directories(${PROJECT_NAME} PUBLIC \"" << dir
+                         << "\")\n";
             }
           }
 
@@ -2356,7 +2374,7 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
         }
 
         std::string target = project_config.get_string(prefix + ".target", dep);
-        auto options = project_config.get_string_map(prefix + ".options");
+        auto options       = project_config.get_string_map(prefix + ".options");
 
         // Set CMake options before add_subdirectory
         for (const auto &[opt_key, opt_val] : options) {
@@ -2377,10 +2395,11 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
     if (project_config.has_key("dependencies.vcpkg")) {
       auto vcpkg_deps = project_config.get_table_keys("dependencies.vcpkg");
       for (const auto &dep : vcpkg_deps) {
-        std::string target = project_config.get_string(
-            "dependencies.vcpkg." + dep + ".target_name", dep);
-        if (target.find("::") == std::string::npos)
+        std::string target = project_config.get_string("dependencies.vcpkg." + dep + ".target_name",
+                                                       dep);
+        if (target.find("::") == std::string::npos) {
           target = target + "::" + target;
+        }
         cmakelists << "    " << target << "\n";
       }
     }
@@ -2388,10 +2407,11 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
     if (project_config.has_key("dependencies.git")) {
       auto git_deps = project_config.get_table_keys("dependencies.git");
       for (const auto &dep : git_deps) {
-        if (!project_config.get_bool("dependencies.git." + dep + ".link", true))
+        if (!project_config.get_bool("dependencies.git." + dep + ".link", true)) {
           continue;
-        std::string target = project_config.get_string(
-            "dependencies.git." + dep + ".target_name", dep);
+        }
+        std::string target = project_config.get_string("dependencies.git." + dep + ".target_name",
+                                                       dep);
         cmakelists << "    " << target << "\n";
       }
     }
@@ -2409,10 +2429,11 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
     if (project_config.has_key("dependencies.vcpkg")) {
       auto vcpkg_deps = project_config.get_table_keys("dependencies.vcpkg");
       for (const auto &dep : vcpkg_deps) {
-        std::string target = project_config.get_string(
-            "dependencies.vcpkg." + dep + ".target_name", dep);
-        if (target.find("::") == std::string::npos)
+        std::string target = project_config.get_string("dependencies.vcpkg." + dep + ".target_name",
+                                                       dep);
+        if (target.find("::") == std::string::npos) {
           target = target + "::" + target;
+        }
         cmakelists << "    " << target << "\n";
       }
     }
@@ -2420,10 +2441,11 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
     if (project_config.has_key("dependencies.git")) {
       auto git_deps = project_config.get_table_keys("dependencies.git");
       for (const auto &dep : git_deps) {
-        if (!project_config.get_bool("dependencies.git." + dep + ".link", true))
+        if (!project_config.get_bool("dependencies.git." + dep + ".link", true)) {
           continue;
-        std::string target = project_config.get_string(
-            "dependencies.git." + dep + ".target_name", dep);
+        }
+        std::string target = project_config.get_string("dependencies.git." + dep + ".target_name",
+                                                       dep);
         cmakelists << "    " << target << "\n";
       }
     }
@@ -2439,37 +2461,39 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
 
   // Handle workspace project dependencies linking
   {
-    std::vector<std::string> deps =
-        project_config.get_table_keys("dependencies");
+    std::vector<std::string> deps = project_config.get_table_keys("dependencies");
     // Filter out non-project entries
-    deps.erase(std::remove_if(
-                   deps.begin(), deps.end(),
-                   [&](const std::string &k) {
-                     if (k == "directory")
-                       return true;
-                     if (k == "git" || k == "vcpkg")
-                       return true;
-                     if (project_config.has_key("dependencies." + k + ".url"))
-                       return true;
-                     // Only keep if directory exists and has cforge.toml
-                     std::filesystem::path dep_path =
-                         project_dir.parent_path() / k;
-                     if (!std::filesystem::exists(dep_path) ||
-                         !std::filesystem::exists(dep_path / "cforge.toml"))
-                       return true;
-                     return false;
-                   }),
+    deps.erase(std::remove_if(deps.begin(),
+                              deps.end(),
+                              [&](const std::string &k) {
+                                if (k == "directory") {
+                                  return true;
+                                }
+                                if (k == "git" || k == "vcpkg") {
+                                  return true;
+                                }
+                                if (project_config.has_key("dependencies." + k + ".url")) {
+                                  return true;
+                                }
+                                // Only keep if directory exists and has cforge.toml
+                                std::filesystem::path dep_path = project_dir.parent_path() / k;
+                                if (!std::filesystem::exists(dep_path)
+                                    || !std::filesystem::exists(dep_path / "cforge.toml")) {
+                                  return true;
+                                }
+                                return false;
+                              }),
                deps.end());
     if (!deps.empty()) {
       cmakelists << "# Workspace project linking dependencies\n";
       cmakelists << "target_link_libraries(${PROJECT_NAME} PUBLIC\n";
       for (const auto &dep : deps) {
-        bool link_dep = project_config.get_bool(
-            std::string("dependencies.") + dep + ".link", true);
-        if (!link_dep)
+        bool link_dep = project_config.get_bool(std::string("dependencies.") + dep + ".link", true);
+        if (!link_dep) {
           continue;
-        std::string target_name = project_config.get_string(
-            "dependencies." + dep + ".target_name", dep);
+        }
+        std::string target_name = project_config.get_string("dependencies." + dep + ".target_name",
+                                                            dep);
         cmakelists << "    " << target_name << "\n";
       }
       cmakelists << ")\n\n";
@@ -2478,8 +2502,7 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
 
   // platform-specific links
   {
-    std::string plat_links_key =
-        std::string("platform.") + cforge_platform + ".links";
+    std::string plat_links_key = std::string("platform.") + cforge_platform + ".links";
     if (project_config.has_key(plat_links_key)) {
       auto plat_links = project_config.get_string_array(plat_links_key);
       if (!plat_links.empty()) {
@@ -2493,9 +2516,10 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
     }
   }
 
-  // Add default compiler warning options (only if user hasn't specified warnings via portable flags)
+  // Add default compiler warning options (only if user hasn't specified
+  // warnings via portable flags)
   if (binary_type != "header_only") {
-    bool user_specified_warnings = false;
+    bool user_specified_warnings           = false;
     std::vector<std::string> check_configs = {"debug", "release", "relwithdebinfo", "minsizerel"};
     for (const auto &cfg : check_configs) {
       if (project_config.has_key("build.config." + cfg + ".warnings")) {
@@ -2517,8 +2541,7 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
   // Add tests if available
   cmakelists << "# Tests\n";
   std::filesystem::path tests_dir = project_dir / "tests";
-  if (std::filesystem::exists(tests_dir) &&
-      std::filesystem::is_directory(tests_dir)) {
+  if (std::filesystem::exists(tests_dir) && std::filesystem::is_directory(tests_dir)) {
     cmakelists << "if(BUILD_TESTING)\n";
     cmakelists << "    enable_testing()\n";
     cmakelists << "    add_subdirectory(\"${SOURCE_DIR}/tests\" "
@@ -2557,13 +2580,11 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
 
     // Install any additional files specified in the TOML
     if (project_config.has_key("package.include_files")) {
-      auto include_files =
-          project_config.get_string_array("package.include_files");
+      auto include_files = project_config.get_string_array("package.include_files");
       if (!include_files.empty()) {
         cmakelists << "# Install additional files\n";
         for (const auto &file : include_files) {
-          cmakelists << "install(FILES \"${CMAKE_CURRENT_SOURCE_DIR}/" << file
-                     << "\"\n";
+          cmakelists << "install(FILES \"${CMAKE_CURRENT_SOURCE_DIR}/" << file << "\"\n";
           cmakelists << "        DESTINATION "
                         "${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME}\n";
           cmakelists << "        COMPONENT Runtime\n";
@@ -2590,8 +2611,7 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
     cmakelists << ")\n\n";
 
     // Install headers
-    cmakelists
-        << "install(DIRECTORY \"${CMAKE_CURRENT_SOURCE_DIR}/include/\"\n";
+    cmakelists << "install(DIRECTORY \"${CMAKE_CURRENT_SOURCE_DIR}/include/\"\n";
     cmakelists << "    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}\n";
     cmakelists << "    COMPONENT Development\n";
     cmakelists << "    FILES_MATCHING PATTERN \"*.h\" PATTERN \"*.hpp\"\n";
@@ -2602,15 +2622,11 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
   cmakelists << "# CPack configuration\n";
   cmakelists << "set(CPACK_PACKAGE_NAME \"${PROJECT_NAME}\")\n";
   cmakelists << "set(CPACK_PACKAGE_VENDOR \""
-             << project_config.get_string("package.vendor", "Unknown")
-             << "\")\n";
+             << project_config.get_string("package.vendor", "Unknown") << "\")\n";
   cmakelists << "set(CPACK_PACKAGE_DESCRIPTION_SUMMARY \""
-             << project_config.get_string("project.description",
-                                          "A C++ project")
-             << "\")\n";
+             << project_config.get_string("project.description", "A C++ project") << "\")\n";
   cmakelists << "set(CPACK_PACKAGE_VERSION \""
-             << project_config.get_string("project.version", "1.0.0")
-             << "\")\n";
+             << project_config.get_string("project.version", "1.0.0") << "\")\n";
   cmakelists << "set(CPACK_PACKAGE_INSTALL_DIRECTORY \"${PROJECT_NAME}\")\n";
 
   // Only set license file if it exists
@@ -2649,8 +2665,7 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
   if (binary_type == "shared_lib" || binary_type == "static_lib") {
     cmakelists << "list(APPEND CPACK_COMPONENTS_ALL Development)\n";
   }
-  if (binary_type == "executable" &&
-      project_config.get_bool("package.include_debug", false)) {
+  if (binary_type == "executable" && project_config.get_bool("package.include_debug", false)) {
     cmakelists << "list(APPEND CPACK_COMPONENTS_ALL Debug)\n";
   }
   cmakelists << "\n";
@@ -2687,10 +2702,8 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
 
   // Packaging directory settings
   cmakelists << "# Packaging directory settings\n";
-  cmakelists
-      << "set(CPACK_OUTPUT_FILE_PREFIX \"${CMAKE_BINARY_DIR}/packages\")\n";
-  cmakelists
-      << "set(CPACK_PACKAGING_INSTALL_PREFIX \"${CMAKE_INSTALL_PREFIX}\")\n\n";
+  cmakelists << "set(CPACK_OUTPUT_FILE_PREFIX \"${CMAKE_BINARY_DIR}/packages\")\n";
+  cmakelists << "set(CPACK_PACKAGING_INSTALL_PREFIX \"${CMAKE_INSTALL_PREFIX}\")\n\n";
 
   // Include CPack
   cmakelists << "# Override install prefix for packaging\n";
@@ -2715,8 +2728,7 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
 
   // Precompiled headers
   if (project_config.has_key("build.precompiled_headers")) {
-    auto pch_list =
-        project_config.get_string_array("build.precompiled_headers");
+    auto pch_list = project_config.get_string_array("build.precompiled_headers");
     if (!pch_list.empty()) {
       cmakelists << "# Precompiled headers\n";
       cmakelists << "target_precompile_headers(${PROJECT_NAME} PRIVATE";
@@ -2731,36 +2743,40 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
   {
     auto deps = project_config.get_table_keys("dependencies");
     // Filter out non-project entries
-    deps.erase(std::remove_if(
-                   deps.begin(), deps.end(),
-                   [&](const std::string &k) {
-                     if (k == "directory")
-                       return true;
-                     if (k == "git" || k == "vcpkg")
-                       return true;
-                     if (project_config.has_key("dependencies." + k + ".url"))
-                       return true;
-                     // Only keep if directory exists and has cforge.toml
-                     std::filesystem::path dep_path =
-                         project_dir.parent_path() / k;
-                     if (!std::filesystem::exists(dep_path) ||
-                         !std::filesystem::exists(dep_path / "cforge.toml"))
-                       return true;
-                     return false;
-                   }),
+    deps.erase(std::remove_if(deps.begin(),
+                              deps.end(),
+                              [&](const std::string &k) {
+                                if (k == "directory") {
+                                  return true;
+                                }
+                                if (k == "git" || k == "vcpkg") {
+                                  return true;
+                                }
+                                if (project_config.has_key("dependencies." + k + ".url")) {
+                                  return true;
+                                }
+                                // Only keep if directory exists and has cforge.toml
+                                std::filesystem::path dep_path = project_dir.parent_path() / k;
+                                if (!std::filesystem::exists(dep_path)
+                                    || !std::filesystem::exists(dep_path / "cforge.toml")) {
+                                  return true;
+                                }
+                                return false;
+                              }),
                deps.end());
     // Ensure build order even if not linking
     for (const auto &dep : deps) {
       cmakelists << "add_dependencies(${PROJECT_NAME} " << dep << ")\n";
     }
-    if (!deps.empty())
+    if (!deps.empty()) {
       cmakelists << "\n";
+    }
   }
 
   // Close the file and save the hash
   cmakelists.close();
-  logger::print_verbose("Generated CMakeLists.txt in project directory: " +
-                        cmakelists_path.string());
+  logger::print_verbose("Generated CMakeLists.txt in project directory: "
+                        + cmakelists_path.string());
   logger::finished("CMakeLists.txt");
 
   // Store the new toml hash
@@ -2770,8 +2786,7 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
   return true;
 }
 
-bool workspace::build_all(const std::string &config, cforge_int_t num_jobs,
-                          bool verbose) const {
+bool workspace::build_all(const std::string &config, cforge_int_t num_jobs, bool verbose) const {
   if (projects_.empty()) {
     logger::print_warning("No projects in workspace");
     return false;
@@ -2782,26 +2797,25 @@ bool workspace::build_all(const std::string &config, cforge_int_t num_jobs,
   std::set<std::string> visited;
 
   // Topological sort for dependency-aware build order
-  std::function<void(const std::string &)> visit =
-      [&](const std::string &project_name) {
-        if (visited.find(project_name) != visited.end()) {
-          return;
+  std::function<void(const std::string &)> visit = [&](const std::string &project_name) {
+    if (visited.find(project_name) != visited.end()) {
+      return;
+    }
+
+    visited.insert(project_name);
+
+    // Find project dependencies
+    for (const auto &project : projects_) {
+      if (project.name == project_name) {
+        for (const auto &dep : project.dependencies) {
+          visit(dep);
         }
+        break;
+      }
+    }
 
-        visited.insert(project_name);
-
-        // Find project dependencies
-        for (const auto &project : projects_) {
-          if (project.name == project_name) {
-            for (const auto &dep : project.dependencies) {
-              visit(dep);
-            }
-            break;
-          }
-        }
-
-        build_order.push_back(project_name);
-      };
+    build_order.push_back(project_name);
+  };
 
   // Visit all projects
   for (const auto &project : projects_) {
@@ -2809,14 +2823,13 @@ bool workspace::build_all(const std::string &config, cforge_int_t num_jobs,
   }
 
   logger::print_action("Building",
-                       std::to_string(build_order.size()) +
-                           " projects in workspace: " + workspace_name_);
+                       std::to_string(build_order.size())
+                           + " projects in workspace: " + workspace_name_);
 
   if (verbose) {
     logger::print_action("Build order", "");
     for (cforge_size_t i = 0; i < build_order.size(); ++i) {
-      logger::print_action("", "  " + std::to_string(i + 1) + ". " +
-                                   build_order[i]);
+      logger::print_action("", "  " + std::to_string(i + 1) + ". " + build_order[i]);
     }
   }
 
@@ -2825,7 +2838,8 @@ bool workspace::build_all(const std::string &config, cforge_int_t num_jobs,
   // Build each project in order
   for (const auto &project_name : build_order) {
     // Find project in workspace
-    auto it = std::find_if(projects_.begin(), projects_.end(),
+    auto it = std::find_if(projects_.begin(),
+                           projects_.end(),
                            [&project_name](const workspace_project &p) {
                              return p.name == project_name;
                            });
@@ -2845,15 +2859,14 @@ bool workspace::build_all(const std::string &config, cforge_int_t num_jobs,
       try {
         std::filesystem::create_directories(build_dir);
       } catch (const std::exception &ex) {
-        logger::print_error("Failed to create build directory: " +
-                            std::string(ex.what()));
+        logger::print_error("Failed to create build directory: " + std::string(ex.what()));
         all_success = false;
         continue;
       }
     }
 
     // Check if the project has a CMakeLists.txt file or needs to be generated
-    std::filesystem::path cmake_path = project.path / "CMakeLists.txt";
+    std::filesystem::path cmake_path  = project.path / "CMakeLists.txt";
     std::filesystem::path config_path = project.path / CFORGE_FILE;
 
     // Load project config to get generator and other settings
@@ -2866,17 +2879,13 @@ bool workspace::build_all(const std::string &config, cforge_int_t num_jobs,
     if (!std::filesystem::exists(cmake_path)) {
       if (has_project_config) {
         // Try to generate CMakeLists.txt from cforge.toml
-        if (!generate_cmakelists_from_toml(project.path, project_config,
-                                           verbose)) {
-          logger::print_error(
-              "Failed to generate CMakeLists.txt for project: " +
-              project.name);
+        if (!generate_cmakelists_from_toml(project.path, project_config, verbose)) {
+          logger::print_error("Failed to generate CMakeLists.txt for project: " + project.name);
           all_success = false;
           continue;
         }
       } else {
-        logger::print_error("No cforge.toml found for project: " +
-                            project.name);
+        logger::print_error("No cforge.toml found for project: " + project.name);
         all_success = false;
         continue;
       }
@@ -2884,14 +2893,13 @@ bool workspace::build_all(const std::string &config, cforge_int_t num_jobs,
 
     // Determine generator - respect project's cmake.generator setting
     std::string generator = get_project_generator(project_config);
-    bool is_multi_config = generator.find("Multi-Config") != std::string::npos ||
-                           generator.find("Visual Studio") != std::string::npos ||
-                           generator.find("Xcode") != std::string::npos;
+    bool is_multi_config  = generator.find("Multi-Config") != std::string::npos
+                        || generator.find("Visual Studio") != std::string::npos
+                        || generator.find("Xcode") != std::string::npos;
 
     // Generate CMake options with dependency linking
-    std::vector<std::string> cmake_args = {"-S", project.path.string(), "-B",
-                                           build_dir.string(),
-                                           "-G", generator};
+    std::vector<std::string> cmake_args = {
+        "-S", project.path.string(), "-B", build_dir.string(), "-G", generator};
 
     // Add build type for non-multi-config generators
     if (!is_multi_config) {
@@ -2906,19 +2914,16 @@ bool workspace::build_all(const std::string &config, cforge_int_t num_jobs,
     // Add dependency linking options
     std::vector<std::string> link_options =
         generate_cmake_linking_options(project, projects_, config);
-    cmake_args.insert(cmake_args.end(), link_options.begin(),
-                      link_options.end());
+    cmake_args.insert(cmake_args.end(), link_options.begin(), link_options.end());
 
     // Set jobs if specified
     if (num_jobs > 0) {
-      cmake_args.push_back("-DCMAKE_BUILD_PARALLEL_LEVEL=" +
-                           std::to_string(num_jobs));
+      cmake_args.push_back("-DCMAKE_BUILD_PARALLEL_LEVEL=" + std::to_string(num_jobs));
     }
 
     // Run CMake configure
     logger::configuring(project.name);
-    bool configure_success =
-        execute_tool("cmake", cmake_args, "", "CMake Configure", verbose);
+    bool configure_success = execute_tool("cmake", cmake_args, "", "CMake Configure", verbose);
 
     if (!configure_success) {
       logger::print_error("Failed to configure project: " + project.name);
@@ -2942,8 +2947,7 @@ bool workspace::build_all(const std::string &config, cforge_int_t num_jobs,
     }
 
     logger::print_action("Building", project.name);
-    bool build_success =
-        execute_tool("cmake", build_args, "", "CMake Build", verbose);
+    bool build_success = execute_tool("cmake", build_args, "", "CMake Build", verbose);
 
     if (!build_success) {
       logger::print_error("Failed to build project: " + project.name);
@@ -2964,13 +2968,14 @@ bool workspace::build_all(const std::string &config, cforge_int_t num_jobs,
 }
 
 bool workspace::build_project(const std::string &project_name,
-                              const std::string &config, cforge_int_t num_jobs,
-                              bool verbose, const std::string &target) const {
+                              const std::string &config,
+                              cforge_int_t num_jobs,
+                              bool verbose,
+                              const std::string &target) const {
   // Find the project
   const workspace_project *project = get_project_by_name(project_name);
   if (!project) {
-    logger::print_error("Project '" + project_name +
-                        "' not found in workspace");
+    logger::print_error("Project '" + project_name + "' not found in workspace");
     return false;
   }
 
@@ -2986,14 +2991,12 @@ bool workspace::build_project(const std::string &project_name,
     toml_reader project_config;
     std::filesystem::path config_path = project->path / CFORGE_FILE;
     if (!std::filesystem::exists(config_path)) {
-      logger::print_error("Project '" + project->name + "' is missing " +
-                          std::string(CFORGE_FILE));
+      logger::print_error("Project '" + project->name + "' is missing " + std::string(CFORGE_FILE));
       return false;
     }
 
     if (!project_config.load(config_path.string())) {
-      logger::print_error("Failed to load project configuration for '" +
-                          project->name + "'");
+      logger::print_error("Failed to load project configuration for '" + project->name + "'");
       return false;
     }
 
@@ -3012,8 +3015,7 @@ bool workspace::build_project(const std::string &project_name,
     std::string generator = get_project_generator(project_config);
 
     // Get the config-specific build directory
-    std::filesystem::path build_dir =
-        get_build_dir_for_config(base_build_dir, config, generator);
+    std::filesystem::path build_dir = get_build_dir_for_config(base_build_dir, config, generator);
 
     // If build dir doesn't exist, create it
     if (!std::filesystem::exists(build_dir)) {
@@ -3033,10 +3035,8 @@ bool workspace::build_project(const std::string &project_name,
     }
 
     // Generate new CMakeLists.txt
-    if (!generate_cmakelists_from_toml(project->path, project_config,
-                                       verbose)) {
-      logger::print_error("Failed to generate CMakeLists.txt for project '" +
-                          project->name + "'");
+    if (!generate_cmakelists_from_toml(project->path, project_config, verbose)) {
+      logger::print_error("Failed to generate CMakeLists.txt for project '" + project->name + "'");
       return false;
     }
 
@@ -3052,9 +3052,9 @@ bool workspace::build_project(const std::string &project_name,
     cmake_args.push_back(generator);
 
     // Add build type for non-multi-config generators
-    bool is_multi_config = generator.find("Multi-Config") != std::string::npos ||
-                           generator.find("Visual Studio") != std::string::npos ||
-                           generator.find("Xcode") != std::string::npos;
+    bool is_multi_config = generator.find("Multi-Config") != std::string::npos
+                        || generator.find("Visual Studio") != std::string::npos
+                        || generator.find("Xcode") != std::string::npos;
     if (!is_multi_config) {
       cmake_args.push_back("-DCMAKE_BUILD_TYPE=" + config);
     }
@@ -3065,11 +3065,9 @@ bool workspace::build_project(const std::string &project_name,
     }
 
     // Add extra arguments from cforge.toml if available
-    std::string args_key =
-        "build.config." + string_to_lower(config) + ".cmake_args";
+    std::string args_key = "build.config." + string_to_lower(config) + ".cmake_args";
     if (project_config.has_key(args_key)) {
-      std::vector<std::string> extra_args =
-          project_config.get_string_array(args_key);
+      std::vector<std::string> extra_args = project_config.get_string_array(args_key);
       for (const auto &arg : extra_args) {
         cmake_args.push_back(arg);
       }
@@ -3077,8 +3075,7 @@ bool workspace::build_project(const std::string &project_name,
 
     // Run cmake configure
     if (!run_cmake_configure(cmake_args, build_dir.string(), verbose)) {
-      logger::print_error("CMake configure failed for project '" +
-                          project->name + "'");
+      logger::print_error("CMake configure failed for project '" + project->name + "'");
       return false;
     }
 
@@ -3111,8 +3108,7 @@ bool workspace::build_project(const std::string &project_name,
     }
 
     // Run build
-    if (!execute_tool("cmake", build_args, "", "Build " + project->name,
-                      verbose)) {
+    if (!execute_tool("cmake", build_args, "", "Build " + project->name, verbose)) {
       logger::print_error("Build failed for project '" + project->name + "'");
       return false;
     }
@@ -3123,8 +3119,7 @@ bool workspace::build_project(const std::string &project_name,
     std::filesystem::current_path(current_dir);
     return true;
   } catch (const std::exception &ex) {
-    logger::print_error("Error building project '" + project_name +
-                        "': " + std::string(ex.what()));
+    logger::print_error("Error building project '" + project_name + "': " + std::string(ex.what()));
     // Restore current directory
     std::filesystem::current_path(current_dir);
     return false;
@@ -3161,12 +3156,13 @@ bool workspace::run_startup_project(const std::vector<std::string> &args,
 
 bool workspace::run_project(const std::string &project_name,
                             const std::vector<std::string> &args,
-                            const std::string &config, bool verbose) const {
+                            const std::string &config,
+                            bool verbose) const {
   // Find the project by name
-  auto it = std::find_if(projects_.begin(), projects_.end(),
-                         [&project_name](const workspace_project &p) {
-                           return p.name == project_name;
-                         });
+  auto it =
+      std::find_if(projects_.begin(), projects_.end(), [&project_name](const workspace_project &p) {
+        return p.name == project_name;
+      });
 
   if (it == projects_.end()) {
     logger::print_error("Project not found in workspace: " + project_name);
@@ -3197,18 +3193,22 @@ bool workspace::run_project(const std::string &project_name,
   logger::print_action("Program Output", "\n────────────");
 
   // Create custom callbacks to display raw program output
-  std::function<void(const std::string &)> stdout_callback =
-      [](const std::string &chunk) { logger::print_plain(chunk); };
+  std::function<void(const std::string &)> stdout_callback = [](const std::string &chunk) {
+    logger::print_plain(chunk);
+  };
 
-  std::function<void(const std::string &)> stderr_callback =
-      [](const std::string &chunk) { logger::print_plain(chunk); };
+  std::function<void(const std::string &)> stderr_callback = [](const std::string &chunk) {
+    logger::print_plain(chunk);
+  };
 
   // Execute the program with custom output handling
-  process_result result =
-      execute_process(executable.string(), args, project.path.string(),
-                      stdout_callback, stderr_callback,
-                      0 // No timeout
-      );
+  process_result result = execute_process(executable.string(),
+                                          args,
+                                          project.path.string(),
+                                          stdout_callback,
+                                          stderr_callback,
+                                          0  // No timeout
+  );
 
   // Add a blank line after program output
   logger::print_blank();
@@ -3249,8 +3249,7 @@ bool workspace::create_workspace(const std::filesystem::path &workspace_path,
     try {
       std::filesystem::create_directories(workspace_path);
     } catch (const std::exception &ex) {
-      logger::print_error("Failed to create workspace directory: " +
-                          std::string(ex.what()));
+      logger::print_error("Failed to create workspace directory: " + std::string(ex.what()));
       return false;
     }
   }
@@ -3265,8 +3264,7 @@ bool workspace::create_workspace(const std::filesystem::path &workspace_path,
     try {
       auto existing = toml::parse_file(config_path.string());
       if (existing.contains("workspace")) {
-        logger::print_warning("Workspace configuration already exists in: " +
-                              config_path.string());
+        logger::print_warning("Workspace configuration already exists in: " + config_path.string());
         return true;
       }
     } catch (const toml::parse_error &) {
@@ -3277,18 +3275,15 @@ bool workspace::create_workspace(const std::filesystem::path &workspace_path,
   }
 
   if (std::filesystem::exists(legacy_path)) {
-    logger::print_warning("Legacy workspace configuration already exists: " +
-                          legacy_path.string());
-    logger::print_warning(
-        "Consider migrating to cforge.toml with [workspace] section");
+    logger::print_warning("Legacy workspace configuration already exists: " + legacy_path.string());
+    logger::print_warning("Consider migrating to cforge.toml with [workspace] section");
     return true;
   }
 
   // Create the configuration file
   std::ofstream config_file(config_path);
   if (!config_file) {
-    logger::print_error("Failed to create workspace configuration file: " +
-                        config_path.string());
+    logger::print_error("Failed to create workspace configuration file: " + config_path.string());
     return false;
   }
 
@@ -3321,8 +3316,7 @@ bool workspace::create_workspace(const std::filesystem::path &workspace_path,
   try {
     std::filesystem::create_directories(workspace_path / "projects");
   } catch (const std::exception &ex) {
-    logger::print_warning("Failed to create projects directory: " +
-                          std::string(ex.what()));
+    logger::print_warning("Failed to create projects directory: " + std::string(ex.what()));
   }
 
   logger::finished("workspace " + workspace_name);
@@ -3332,10 +3326,11 @@ bool workspace::create_workspace(const std::filesystem::path &workspace_path,
 void workspace::load_projects() {
   projects_.clear();
 
-  // Determine the correct config path (unified cforge.toml or legacy workspace file)
+  // Determine the correct config path (unified cforge.toml or legacy workspace
+  // file)
   std::filesystem::path config_path;
   std::filesystem::path unified_path = workspace_path_ / CFORGE_FILE;
-  std::filesystem::path legacy_path = workspace_path_ / WORKSPACE_FILE;
+  std::filesystem::path legacy_path  = workspace_path_ / WORKSPACE_FILE;
 
   // Check for unified format first
   if (std::filesystem::exists(unified_path)) {
@@ -3380,22 +3375,19 @@ void workspace::load_projects() {
 
     // Check if project directory exists
     if (!std::filesystem::exists(project.path)) {
-      logger::print_warning("Project directory does not exist: " +
-                            project.path.string());
+      logger::print_warning("Project directory does not exist: " + project.path.string());
       continue;
     }
 
     // Check if it's a valid cforge project
     if (!std::filesystem::exists(project.path / CFORGE_FILE)) {
-      logger::print_warning("Not a valid cforge project (missing " +
-                            std::string(CFORGE_FILE) +
-                            "): " + project.path.string());
+      logger::print_warning("Not a valid cforge project (missing " + std::string(CFORGE_FILE)
+                            + "): " + project.path.string());
       continue;
     }
 
     // Update startup flag based on table-of-tables or legacy main_project
-    project.is_startup =
-        project.is_startup_project || (project.name == startup_project_);
+    project.is_startup = project.is_startup_project || (project.name == startup_project_);
 
     // Try to read the project name from cforge.toml to validate
     toml_reader project_config;
@@ -3407,26 +3399,22 @@ void workspace::load_projects() {
 
       // Validate the project name matches the config
       if (!config_project_name.empty() && config_project_name != project.name) {
-        logger::print_warning("Project name mismatch: '" + project.name +
-                              "' in workspace vs '" + config_project_name +
-                              "' in project config");
+        logger::print_warning("Project name mismatch: '" + project.name + "' in workspace vs '"
+                              + config_project_name + "' in project config");
       }
 
       // Try to find dependencies for this project
       if (project_config.has_key("dependencies")) {
-        std::vector<std::string> deps =
-            project_config.get_table_keys("dependencies");
+        std::vector<std::string> deps = project_config.get_table_keys("dependencies");
         for (const auto &dep : deps) {
           // Check if this dependency is another project in the workspace
           for (const auto &other_project : projects_) {
             if (other_project.name == dep) {
               // Add as dependency if it's not already there
-              if (std::find(project.dependencies.begin(),
-                            project.dependencies.end(),
-                            dep) == project.dependencies.end()) {
+              if (std::find(project.dependencies.begin(), project.dependencies.end(), dep)
+                  == project.dependencies.end()) {
                 project.dependencies.push_back(dep);
-                logger::print_verbose("Added dependency: " + project.name +
-                                      " -> " + dep);
+                logger::print_verbose("Added dependency: " + project.name + " -> " + dep);
               }
               break;
             }
@@ -3450,14 +3438,14 @@ bool generate_workspace_cmakelists(const std::filesystem::path &workspace_dir,
 
   // Check unified format first
   std::filesystem::path unified_path = workspace_dir / CFORGE_FILE;
-  std::filesystem::path legacy_path = workspace_dir / WORKSPACE_FILE;
+  std::filesystem::path legacy_path  = workspace_dir / WORKSPACE_FILE;
 
   if (std::filesystem::exists(unified_path)) {
     try {
       auto test_config = toml::parse_file(unified_path.string());
       if (test_config.contains("workspace")) {
         toml_path = unified_path;
-        hash_key = CFORGE_FILE;
+        hash_key  = CFORGE_FILE;
       }
     } catch (const toml::parse_error &) {
       // Fall through to legacy
@@ -3469,12 +3457,11 @@ bool generate_workspace_cmakelists(const std::filesystem::path &workspace_dir,
   // Fall back to legacy format
   if (toml_path.empty() && std::filesystem::exists(legacy_path)) {
     toml_path = legacy_path;
-    hash_key = WORKSPACE_FILE;
+    hash_key  = WORKSPACE_FILE;
   }
 
   if (toml_path.empty()) {
-    logger::print_error("No workspace configuration found at: " +
-                        workspace_dir.string());
+    logger::print_error("No workspace configuration found at: " + workspace_dir.string());
     return false;
   }
 
@@ -3483,29 +3470,26 @@ bool generate_workspace_cmakelists(const std::filesystem::path &workspace_dir,
   {
     std::ifstream toml_in(toml_path);
     if (!toml_in) {
-      logger::print_error("Failed to open workspace configuration: " +
-                          toml_path.string());
+      logger::print_error("Failed to open workspace configuration: " + toml_path.string());
       return false;
     }
     std::ostringstream oss;
     oss << toml_in.rdbuf();
     toml_content = oss.str();
     if (toml_content.empty()) {
-      logger::print_error("Workspace configuration file is empty: " +
-                          toml_path.string());
+      logger::print_error("Workspace configuration file is empty: " + toml_path.string());
       return false;
     }
   }
 
-  std::string toml_hash = dep_hashes.calculate_file_content_hash(toml_content);
+  std::string toml_hash        = dep_hashes.calculate_file_content_hash(toml_content);
   std::string stored_toml_hash = dep_hashes.get_hash(hash_key);
 
   // Only skip regeneration if CMakeLists.txt already exists and the TOML hash
   // is unchanged
   std::filesystem::path cmakelists_path = workspace_dir / "CMakeLists.txt";
-  bool file_exists = std::filesystem::exists(cmakelists_path);
-  if (file_exists && !stored_toml_hash.empty() &&
-      toml_hash == stored_toml_hash) {
+  bool file_exists                      = std::filesystem::exists(cmakelists_path);
+  if (file_exists && !stored_toml_hash.empty() && toml_hash == stored_toml_hash) {
     if (verbose) {
       logger::print_verbose("Workspace CMakeLists.txt is up to date and "
                             "already exists, skipping generation");
@@ -3524,27 +3508,28 @@ bool generate_workspace_cmakelists(const std::filesystem::path &workspace_dir,
 
   // Generate workspace CMakeLists.txt content
   // Get workspace name
-  std::string workspace_name = workspace_config.get_string(
-      "workspace.name", workspace_dir.filename().string());
+  std::string workspace_name = workspace_config.get_string("workspace.name",
+                                                           workspace_dir.filename().string());
   cmakelists << "# Workspace CMakeLists.txt for " << workspace_name << "\n";
   cmakelists << "# Generated by cforge - C++ project management tool\n\n";
   // Minimum CMake version
-  cmakelists << "cmake_minimum_required(VERSION " << CMAKE_MIN_VERSION
-             << ")\n\n";
+  cmakelists << "cmake_minimum_required(VERSION " << CMAKE_MIN_VERSION << ")\n\n";
   // Workspace configuration
   cmakelists << "# Workspace configuration\n";
   cmakelists << "project(" << workspace_name << " LANGUAGES CXX)\n\n";
 
-  // Include implicit system directories in compile_commands.json for IDE support
-  cmakelists << "# Include compiler's implicit include directories in compile_commands.json\n";
+  // Include implicit system directories in compile_commands.json for IDE
+  // support
+  cmakelists << "# Include compiler's implicit include directories in "
+                "compile_commands.json\n";
   cmakelists << "# This helps clangd and other tools find standard library headers\n";
   cmakelists << "if(CMAKE_EXPORT_COMPILE_COMMANDS)\n";
-  cmakelists << "  set(CMAKE_CXX_STANDARD_INCLUDE_DIRECTORIES ${CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES})\n";
+  cmakelists << "  set(CMAKE_CXX_STANDARD_INCLUDE_DIRECTORIES "
+                "${CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES})\n";
   cmakelists << "endif()\n\n";
 
   // Set C++ standard for the entire workspace
-  std::string cpp_std =
-      workspace_config.get_string("workspace.cpp_standard", "17");
+  std::string cpp_std = workspace_config.get_string("workspace.cpp_standard", "17");
   cmakelists << "# Set C++ standard for the entire workspace\n";
   cmakelists << "set(CMAKE_CXX_STANDARD " << cpp_std << ")\n";
   cmakelists << "set(CMAKE_CXX_STANDARD_REQUIRED ON)\n";
@@ -3608,12 +3593,11 @@ bool workspace_config::load(const std::string &workspace_file) {
   }
 
   // Load basic workspace info
-  name_ = reader.get_string("workspace.name", "cpp-workspace");
+  name_        = reader.get_string("workspace.name", "cpp-workspace");
   description_ = reader.get_string("workspace.description", "A C++ workspace");
 
   // Get workspace directory for resolving paths
-  std::filesystem::path workspace_dir =
-      std::filesystem::path(workspace_file).parent_path();
+  std::filesystem::path workspace_dir = std::filesystem::path(workspace_file).parent_path();
 
   // Load projects using multiple formats with priority
   projects_.clear();
@@ -3622,18 +3606,21 @@ bool workspace_config::load(const std::string &workspace_file) {
   try {
     auto raw = toml::parse_file(workspace_file);
 
-    // Priority 1: Load from workspace.members (directories with own cforge.toml)
+    // Priority 1: Load from workspace.members (directories with own
+    // cforge.toml)
     auto members_node = raw["workspace"]["members"];
     if (members_node && members_node.is_array()) {
       for (auto &elem : *members_node.as_array()) {
-        if (!elem.is_string())
+        if (!elem.is_string()) {
           continue;
+        }
         std::string member_path = elem.value_or(std::string());
-        if (member_path.empty())
+        if (member_path.empty()) {
           continue;
+        }
 
         // Resolve the path and check for cforge.toml
-        std::filesystem::path full_path = workspace_dir / member_path;
+        std::filesystem::path full_path    = workspace_dir / member_path;
         std::filesystem::path project_toml = full_path / CFORGE_FILE;
 
         if (std::filesystem::exists(project_toml)) {
@@ -3649,8 +3636,7 @@ bool workspace_config::load(const std::string &workspace_file) {
           project.is_startup_project = false;
           projects_.push_back(project);
         } else {
-          logger::print_warning("Member '" + member_path +
-                                "' does not have a cforge.toml file");
+          logger::print_warning("Member '" + member_path + "' does not have a cforge.toml file");
         }
       }
     }
@@ -3659,8 +3645,9 @@ bool workspace_config::load(const std::string &workspace_file) {
     auto projects_node = raw["workspace"]["projects"];
     if (projects_node && projects_node.is_array_of_tables()) {
       for (auto &elem : *projects_node.as_array()) {
-        if (!elem.is_table())
+        if (!elem.is_table()) {
           continue;
+        }
         toml::table &tbl = *elem.as_table();
         workspace_project project;
         project.name = tbl["name"].value_or("");
@@ -3682,27 +3669,23 @@ bool workspace_config::load(const std::string &workspace_file) {
           had_table_startup = true;
         }
 
-        // Check for conflict: project has both inline settings AND its own cforge.toml
+        // Check for conflict: project has both inline settings AND its own
+        // cforge.toml
         std::filesystem::path local_toml = project.path / CFORGE_FILE;
-        bool has_local_toml = std::filesystem::exists(local_toml);
-        bool has_inline_settings = tbl.contains("cpp_standard") ||
-                                   tbl.contains("binary_type") ||
-                                   tbl.contains("version") ||
-                                   tbl.contains("sources") ||
-                                   tbl.contains("build");
+        bool has_local_toml              = std::filesystem::exists(local_toml);
+        bool has_inline_settings = tbl.contains("cpp_standard") || tbl.contains("binary_type")
+                                || tbl.contains("version") || tbl.contains("sources")
+                                || tbl.contains("build");
 
         if (has_local_toml && has_inline_settings) {
           // Warn about conflict - project's cforge.toml takes priority
-          logger::print_warning(
-              "Project '" + project.name + "' has conflicting settings:");
-          logger::print_warning(
-              "  --> " + workspace_file + " (workspace) vs " +
-              local_toml.string());
-          logger::print_warning(
-              "  = Using project's own cforge.toml values (project takes priority)");
-          logger::print_warning(
-              "  = help: Remove inline settings from workspace or delete " +
-              local_toml.string());
+          logger::print_warning("Project '" + project.name + "' has conflicting settings:");
+          logger::print_warning("  --> " + workspace_file + " (workspace) vs "
+                                + local_toml.string());
+          logger::print_warning("  = Using project's own cforge.toml values "
+                                "(project takes priority)");
+          logger::print_warning("  = help: Remove inline settings from workspace or delete "
+                                + local_toml.string());
         }
 
         projects_.push_back(project);
@@ -3713,8 +3696,9 @@ bool workspace_config::load(const std::string &workspace_file) {
     auto project_node = raw["workspace"]["project"];
     if (project_node && project_node.is_array_of_tables()) {
       for (auto &elem : *project_node.as_array()) {
-        if (!elem.is_table())
+        if (!elem.is_table()) {
           continue;
+        }
         toml::table &tbl = *elem.as_table();
         workspace_project project;
         project.name = tbl["name"].value_or("");
@@ -3740,18 +3724,17 @@ bool workspace_config::load(const std::string &workspace_file) {
 
     // Priority 4: Legacy string array format "name:path:is_startup_project"
     if (projects_.empty()) {
-      std::vector<std::string> project_paths =
-          reader.get_string_array("workspace.projects");
+      std::vector<std::string> project_paths = reader.get_string_array("workspace.projects");
       if (!project_paths.empty()) {
         for (const auto &project_path : project_paths) {
           // Check if it's a simple string (just a path/name) vs colon-separated
-          if (project_path.find(':') == std::string::npos ||
-              (project_path.length() > 1 && project_path[1] == ':' &&
-               (project_path[2] == '\\' || project_path[2] == '/'))) {
+          if (project_path.find(':') == std::string::npos
+              || (project_path.length() > 1 && project_path[1] == ':'
+                  && (project_path[2] == '\\' || project_path[2] == '/'))) {
             // Simple path or WINDOWS absolute path - treat as member
             workspace_project project;
-            project.path = workspace_dir / project_path;
-            project.name = std::filesystem::path(project_path).filename().string();
+            project.path               = workspace_dir / project_path;
+            project.name               = std::filesystem::path(project_path).filename().string();
             project.is_startup_project = false;
             projects_.push_back(project);
             continue;
@@ -3766,9 +3749,8 @@ bool workspace_config::load(const std::string &workspace_file) {
               parts.push_back(project_path.substr(start));
               break;
             }
-            if (end == 1 && project_path.length() > 2 &&
-                (project_path[end + 1] == '\\' ||
-                 project_path[end + 1] == '/')) {
+            if (end == 1 && project_path.length() > 2
+                && (project_path[end + 1] == '\\' || project_path[end + 1] == '/')) {
               // Skip colon in WINDOWS drive letter
               start = end + 1;
               continue;
@@ -3776,14 +3758,17 @@ bool workspace_config::load(const std::string &workspace_file) {
             parts.push_back(project_path.substr(start, end - start));
             start = end + 1;
           }
-          if (parts.size() >= 1)
+          if (parts.size() >= 1) {
             project.name = parts[0];
-          if (parts.size() >= 2)
+          }
+          if (parts.size() >= 2) {
             project.path = workspace_dir / parts[1];
-          else if (!project.name.empty())
+          } else if (!project.name.empty()) {
             project.path = workspace_dir / project.name;
-          if (parts.size() >= 3)
+          }
+          if (parts.size() >= 3) {
             project.is_startup_project = (parts[2] == "true");
+          }
           if (project.is_startup_project) {
             had_table_startup = true;
           }
@@ -3792,8 +3777,7 @@ bool workspace_config::load(const std::string &workspace_file) {
       }
     }
   } catch (const std::exception &e) {
-    logger::print_error("Error parsing workspace projects: " +
-                        std::string(e.what()));
+    logger::print_error("Error parsing workspace projects: " + std::string(e.what()));
   }
 
   // Check for default startup project only if none marked in projects
@@ -3813,8 +3797,7 @@ bool workspace_config::save(const std::string &workspace_file) const {
   }
 
   // Get the workspace directory
-  std::filesystem::path workspace_dir =
-      std::filesystem::path(workspace_file).parent_path();
+  std::filesystem::path workspace_dir = std::filesystem::path(workspace_file).parent_path();
 
   // Write workspace info
   file << "[workspace]\n";
@@ -3852,8 +3835,7 @@ bool workspace_config::save(const std::string &workspace_file) const {
       path_to_save = project.path;
     }
     file << "path = \"" << path_to_save.string() << "\"\n";
-    file << "startup = " << (project.is_startup_project ? "true" : "false")
-         << "\n\n";
+    file << "startup = " << (project.is_startup_project ? "true" : "false") << "\n\n";
   }
 
   // Write additional information as comments
@@ -3889,8 +3871,7 @@ bool workspace_config::add_project_dependency(const std::string &project_name,
     if (project.name == project_name) {
       // Check if dependency exists
       if (!has_project(dependency)) {
-        logger::print_error("Dependency project '" + dependency +
-                            "' does not exist in workspace");
+        logger::print_error("Dependency project '" + dependency + "' does not exist in workspace");
         return false;
       }
 
@@ -3904,8 +3885,8 @@ bool workspace_config::add_project_dependency(const std::string &project_name,
         to_visit.pop();
 
         if (current == project_name) {
-          logger::print_error("Circular dependency detected: " + project_name +
-                              " -> " + dependency);
+          logger::print_error("Circular dependency detected: " + project_name + " -> "
+                              + dependency);
           return false;
         }
 
@@ -3923,18 +3904,16 @@ bool workspace_config::add_project_dependency(const std::string &project_name,
       }
 
       // Check if the dependency already exists
-      if (std::find(project.dependencies.begin(), project.dependencies.end(),
-                    dependency) != project.dependencies.end()) {
+      if (std::find(project.dependencies.begin(), project.dependencies.end(), dependency)
+          != project.dependencies.end()) {
         logger::print_action("Skipping",
-                             "dependency already exists: " + project_name +
-                                 " -> " + dependency);
+                             "dependency already exists: " + project_name + " -> " + dependency);
         return true;
       }
 
       // Add dependency
       project.dependencies.push_back(dependency);
-      logger::print_action("Adding",
-                           "dependency: " + project_name + " -> " + dependency);
+      logger::print_action("Adding", "dependency: " + project_name + " -> " + dependency);
       return true;
     }
   }
@@ -3950,15 +3929,14 @@ bool workspace_config::set_startup_project(const std::string &project_name) {
   for (auto &project : projects_) {
     if (project.name == project_name) {
       project.is_startup_project = true;
-      found = true;
+      found                      = true;
     } else {
       project.is_startup_project = false;
     }
   }
 
   if (!found) {
-    logger::print_error("Project '" + project_name +
-                        "' not found in workspace");
+    logger::print_error("Project '" + project_name + "' not found in workspace");
     return false;
   }
 
@@ -3970,26 +3948,25 @@ std::vector<std::string> workspace_config::get_build_order() const {
   std::set<std::string> visited;
 
   // Define a recursive lambda function for topological sort
-  std::function<void(const std::string &)> visit =
-      [&](const std::string &project_name) {
-        if (visited.find(project_name) != visited.end()) {
-          return;
+  std::function<void(const std::string &)> visit = [&](const std::string &project_name) {
+    if (visited.find(project_name) != visited.end()) {
+      return;
+    }
+
+    visited.insert(project_name);
+
+    // Find project dependencies
+    for (const auto &project : projects_) {
+      if (project.name == project_name) {
+        for (const auto &dep : project.dependencies) {
+          visit(dep);
         }
+        break;
+      }
+    }
 
-        visited.insert(project_name);
-
-        // Find project dependencies
-        for (const auto &project : projects_) {
-          if (project.name == project_name) {
-            for (const auto &dep : project.dependencies) {
-              visit(dep);
-            }
-            break;
-          }
-        }
-
-        build_order.push_back(project_name);
-      };
+    build_order.push_back(project_name);
+  };
 
   // Visit all projects
   for (const auto &project : projects_) {
@@ -4010,21 +3987,21 @@ std::vector<workspace_project> &workspace_config::get_projects() {
 std::vector<std::string> workspace::get_build_order() const {
   std::vector<std::string> build_order;
   std::set<std::string> visited;
-  std::function<void(const std::string &)> visit =
-      [&](const std::string &project_name) {
-        if (visited.count(project_name))
-          return;
-        visited.insert(project_name);
-        for (const auto &project : projects_) {
-          if (project.name == project_name) {
-            for (const auto &dep : project.dependencies) {
-              visit(dep);
-            }
-            break;
-          }
+  std::function<void(const std::string &)> visit = [&](const std::string &project_name) {
+    if (visited.count(project_name)) {
+      return;
+    }
+    visited.insert(project_name);
+    for (const auto &project : projects_) {
+      if (project.name == project_name) {
+        for (const auto &dep : project.dependencies) {
+          visit(dep);
         }
-        build_order.push_back(project_name);
-      };
+        break;
+      }
+    }
+    build_order.push_back(project_name);
+  };
   for (const auto &project : projects_) {
     visit(project.name);
   }
@@ -4034,7 +4011,7 @@ std::vector<std::string> workspace::get_build_order() const {
 std::filesystem::path get_workspace_config_path(const std::filesystem::path &workspace_path) {
   // First priority: Check for cforge.toml with [workspace] section
   std::filesystem::path unified_config_path = workspace_path / CFORGE_FILE;
-  std::filesystem::path legacy_config_path = workspace_path / WORKSPACE_FILE;
+  std::filesystem::path legacy_config_path  = workspace_path / WORKSPACE_FILE;
 
   if (std::filesystem::exists(unified_config_path)) {
     try {
@@ -4058,4 +4035,4 @@ std::filesystem::path get_workspace_config_path(const std::filesystem::path &wor
   return {};
 }
 
-} // namespace cforge
+}  // namespace cforge

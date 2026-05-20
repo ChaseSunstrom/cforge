@@ -4,7 +4,9 @@
  */
 
 #include "core/dependency_hash.hpp"
+
 #include "core/types.h"
+
 #include <algorithm>
 #include <cstring>
 #include <filesystem>
@@ -22,14 +24,13 @@ namespace cforge {
 // are left untouched.
 namespace {
 
-constexpr const char *kBuildcacheSection = "buildcache";
+constexpr const char *kBuildcacheSection   = "buildcache";
 constexpr const char *kBuildcacheDepPrefix = "buildcache.dependency.";
 
 // True if a section name belongs to this class (and therefore should be
 // rewritten on save; sections we don't own are preserved verbatim).
 bool is_buildcache_section(const std::string &name) {
-  return name == kBuildcacheSection ||
-         name.rfind(kBuildcacheDepPrefix, 0) == 0;
+  return name == kBuildcacheSection || name.rfind(kBuildcacheDepPrefix, 0) == 0;
 }
 
 // Read the entire file, returning a vector of (section_header_line, body_lines)
@@ -38,9 +39,9 @@ bool is_buildcache_section(const std::string &name) {
 // Leading lines before any section (comments/blank/metadata header) are
 // returned in the first entry with an empty section_header.
 struct raw_section {
-  std::string header;        // e.g. "[metadata]" — empty for preamble
-  std::string section_name;  // e.g. "metadata"  — empty for preamble
-  std::vector<std::string> lines; // including blank lines / comments
+  std::string header;              // e.g. "[metadata]" — empty for preamble
+  std::string section_name;        // e.g. "metadata"  — empty for preamble
+  std::vector<std::string> lines;  // including blank lines / comments
 };
 
 std::vector<raw_section> read_sections(const std::filesystem::path &p) {
@@ -60,13 +61,15 @@ std::vector<raw_section> read_sections(const std::filesystem::path &p) {
     std::string t = trimmed;
     // trim leading whitespace for the section check only
     cforge_size_t s = t.find_first_not_of(" \t");
-    if (s != std::string::npos) t = t.substr(s);
+    if (s != std::string::npos) {
+      t = t.substr(s);
+    }
     if (!t.empty() && t.front() == '[' && t.back() == ']') {
       if (!current.header.empty() || !current.lines.empty()) {
         out.push_back(std::move(current));
         current = raw_section{};
       }
-      current.header = trimmed;
+      current.header       = trimmed;
       current.section_name = t.substr(1, t.size() - 2);
       continue;
     }
@@ -78,7 +81,7 @@ std::vector<raw_section> read_sections(const std::filesystem::path &p) {
   return out;
 }
 
-} // namespace
+}  // namespace
 
 bool dependency_hash::load(const std::filesystem::path &project_dir) {
   std::filesystem::path lock_file = project_dir / HASH_FILE;
@@ -88,9 +91,8 @@ bool dependency_hash::load(const std::filesystem::path &project_dir) {
   // legacy file is removed by save().
   std::filesystem::path legacy = project_dir / "cforge.hash";
   std::filesystem::path source = std::filesystem::exists(lock_file)
-                                     ? lock_file
-                                     : (std::filesystem::exists(legacy) ? legacy
-                                                                        : lock_file);
+                                   ? lock_file
+                                   : (std::filesystem::exists(legacy) ? legacy : lock_file);
   if (!std::filesystem::exists(source)) {
     return false;
   }
@@ -105,8 +107,8 @@ bool dependency_hash::load(const std::filesystem::path &project_dir) {
       if (sec.section_name == "config") {
         sec.section_name = kBuildcacheSection;
       } else if (sec.section_name.rfind("dependency.", 0) == 0) {
-        sec.section_name = kBuildcacheDepPrefix +
-                           sec.section_name.substr(std::strlen("dependency."));
+        sec.section_name = kBuildcacheDepPrefix
+                         + sec.section_name.substr(std::strlen("dependency."));
       }
     }
   }
@@ -114,7 +116,9 @@ bool dependency_hash::load(const std::filesystem::path &project_dir) {
   versions.clear();
 
   for (const auto &sec : sections) {
-    if (!is_buildcache_section(sec.section_name)) continue;
+    if (!is_buildcache_section(sec.section_name)) {
+      continue;
+    }
 
     std::string dep_name;
     if (sec.section_name.rfind(kBuildcacheDepPrefix, 0) == 0) {
@@ -123,10 +127,14 @@ bool dependency_hash::load(const std::filesystem::path &project_dir) {
 
     for (const auto &raw_line : sec.lines) {
       std::string line = trim(raw_line);
-      if (line.empty() || line[0] == '#') continue;
+      if (line.empty() || line[0] == '#') {
+        continue;
+      }
       cforge_size_t eq_pos = line.find('=');
-      if (eq_pos == std::string::npos) continue;
-      std::string key = trim(line.substr(0, eq_pos));
+      if (eq_pos == std::string::npos) {
+        continue;
+      }
+      std::string key   = trim(line.substr(0, eq_pos));
       std::string value = trim(line.substr(eq_pos + 1));
       if (value.size() >= 2 && value.front() == '"' && value.back() == '"') {
         value = value.substr(1, value.size() - 2);
@@ -176,7 +184,9 @@ bool dependency_hash::save(const std::filesystem::path &project_dir) const {
   }
 
   std::ofstream file(lock_file, std::ios::trunc);
-  if (!file.is_open()) return false;
+  if (!file.is_open()) {
+    return false;
+  }
 
   bool wrote_anything_yet = false;
   // If the original file had no preamble at all, emit our own header so the
@@ -197,19 +207,19 @@ bool dependency_hash::save(const std::filesystem::path &project_dir) const {
     wrote_anything_yet = true;
   }
 
-  if (wrote_anything_yet && (!preserved.empty() &&
-                             (preserved.back().lines.empty() ||
-                              !preserved.back().lines.back().empty()))) {
+  if (wrote_anything_yet
+      && (!preserved.empty()
+          && (preserved.back().lines.empty() || !preserved.back().lines.back().empty()))) {
     file << "\n";
   }
 
   // Top-level buildcache: cforge.toml / workspace hashes.
   bool emitted_buildcache_header = false;
-  auto emit_header = [&]() {
+  auto emit_header               = [&]() {
     if (!emitted_buildcache_header) {
       file << "[" << kBuildcacheSection << "]\n";
       file << "# Auto-generated. Tracks change detection for incremental "
-              "builds.\n";
+                            "builds.\n";
       file << "generated = \"" << get_timestamp() << "\"\n";
       emitted_buildcache_header = true;
     }
@@ -223,11 +233,15 @@ bool dependency_hash::save(const std::filesystem::path &project_dir) const {
       file << "workspace_hash = \"" << hash << "\"\n";
     }
   }
-  if (emitted_buildcache_header) file << "\n";
+  if (emitted_buildcache_header) {
+    file << "\n";
+  }
 
   // Per-dependency [buildcache.dependency.X].
   for (const auto &[name, hash] : hashes) {
-    if (name == "cforge.toml" || name == "cforge.workspace.toml") continue;
+    if (name == "cforge.toml" || name == "cforge.workspace.toml") {
+      continue;
+    }
     file << "[" << kBuildcacheDepPrefix << name << "]\n";
     file << "hash = \"" << hash << "\"\n";
     auto v = versions.find(name);
@@ -245,8 +259,7 @@ std::string dependency_hash::get_hash(const std::string &name) const {
   return it != hashes.end() ? it->second : "";
 }
 
-void dependency_hash::set_hash(const std::string &name,
-                               const std::string &hash) {
+void dependency_hash::set_hash(const std::string &name, const std::string &hash) {
   hashes[name] = hash;
 }
 
@@ -255,8 +268,7 @@ std::string dependency_hash::get_version(const std::string &name) const {
   return it != versions.end() ? it->second : "";
 }
 
-void dependency_hash::set_version(const std::string &name,
-                                  const std::string &version) {
+void dependency_hash::set_version(const std::string &name, const std::string &version) {
   versions[name] = version;
 }
 
@@ -265,7 +277,7 @@ uint64_t dependency_hash::fnv1a_hash(const std::string &str) {
 }
 
 uint64_t dependency_hash::fnv1a_hash(const void *data, cforge_size_t size) {
-  uint64_t hash = FNV_OFFSET_BASIS;
+  uint64_t hash        = FNV_OFFSET_BASIS;
   const uint8_t *bytes = static_cast<const uint8_t *>(data);
 
   for (cforge_size_t i = 0; i < size; ++i) {
@@ -282,17 +294,14 @@ std::string dependency_hash::hash_to_string(uint64_t hash) {
   return ss.str();
 }
 
-std::string dependency_hash::calculate_directory_hash(
-    const std::filesystem::path &dir_path) {
-  if (!std::filesystem::exists(dir_path) ||
-      !std::filesystem::is_directory(dir_path)) {
+std::string dependency_hash::calculate_directory_hash(const std::filesystem::path &dir_path) {
+  if (!std::filesystem::exists(dir_path) || !std::filesystem::is_directory(dir_path)) {
     return "";
   }
 
   // Sort entries for consistent hashing
   std::vector<std::filesystem::path> entries;
-  for (const auto &entry :
-       std::filesystem::recursive_directory_iterator(dir_path)) {
+  for (const auto &entry : std::filesystem::recursive_directory_iterator(dir_path)) {
     entries.emplace_back(entry.path());
   }
   std::sort(entries.begin(), entries.end());
@@ -302,9 +311,8 @@ std::string dependency_hash::calculate_directory_hash(
   for (const auto &entry : entries) {
     if (std::filesystem::is_regular_file(entry)) {
       // Add file path relative to dir_path
-      std::string rel_path =
-          std::filesystem::relative(entry, dir_path).string();
-      combined_hash ^= fnv1a_hash(rel_path);
+      std::string rel_path  = std::filesystem::relative(entry, dir_path).string();
+      combined_hash        ^= fnv1a_hash(rel_path);
 
       // Add file contents
       std::ifstream file(entry, std::ios::binary);
@@ -323,4 +331,4 @@ std::string dependency_hash::calculate_directory_hash(
   return hash_to_string(combined_hash);
 }
 
-} // namespace cforge
+}  // namespace cforge

@@ -3,11 +3,11 @@
  * @brief Implementation of file system manipulation utilities
  */
 
+#include "core/file_system.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-#include "core/file_system.h"
 
 #ifdef _WIN32
 #include <direct.h>
@@ -26,14 +26,13 @@
 extern "C" {
 #endif
 
-cforge_fs_error_t cforge_path_init(cforge_path_t *path,
-                                   cforge_cstring_t path_str) {
+cforge_fs_error_t cforge_path_init(cforge_path_t *path, cforge_cstring_t path_str) {
   if (!path || !path_str) {
     return CFORGE_FS_INVALID_PATH;
   }
 
   cforge_size_t len = strlen(path_str);
-  path->data = (cforge_string_t)malloc(len + 1);
+  path->data        = (cforge_string_t)malloc(len + 1);
   if (!path->data) {
     return CFORGE_FS_UNKNOWN_ERROR;
   }
@@ -54,7 +53,7 @@ cforge_fs_error_t cforge_path_init(cforge_path_t *path,
 void cforge_path_free(cforge_path_t *path) {
   if (path && path->data) {
     free(path->data);
-    path->data = NULL;
+    path->data   = NULL;
     path->length = 0;
   }
 }
@@ -70,23 +69,20 @@ cforge_fs_error_t cforge_path_join(const cforge_path_t *base,
   cforge_size_t comp_len = strlen(component);
 
   // Calculate the required size with potential separator
-  cforge_size_t needs_separator =
-      (base_len > 0 && base->data[base_len - 1] != PATH_SEPARATOR &&
-       comp_len > 0 && component[0] != PATH_SEPARATOR)
-          ? 1
-          : 0;
+  cforge_size_t needs_separator = (base_len > 0 && base->data[base_len - 1] != PATH_SEPARATOR
+                                   && comp_len > 0 && component[0] != PATH_SEPARATOR)
+                                    ? 1
+                                    : 0;
 
   // Trim separator from component if base ends with one
-  cforge_size_t comp_offset =
-      (base_len > 0 && base->data[base_len - 1] == PATH_SEPARATOR &&
-       comp_len > 0 && component[0] == PATH_SEPARATOR)
-          ? 1
-          : 0;
+  cforge_size_t comp_offset = (base_len > 0 && base->data[base_len - 1] == PATH_SEPARATOR
+                               && comp_len > 0 && component[0] == PATH_SEPARATOR)
+                                ? 1
+                                : 0;
 
   // Allocate memory for result
-  cforge_size_t result_len =
-      base_len + comp_len + needs_separator - comp_offset;
-  result->data = (cforge_string_t)malloc(result_len + 1);
+  cforge_size_t result_len = base_len + comp_len + needs_separator - comp_offset;
+  result->data             = (cforge_string_t)malloc(result_len + 1);
   if (!result->data) {
     return CFORGE_FS_UNKNOWN_ERROR;
   }
@@ -100,8 +96,9 @@ cforge_fs_error_t cforge_path_join(const cforge_path_t *base,
   }
 
   // Copy component
-  memcpy(result->data + base_len + needs_separator, component + comp_offset,
-         comp_len - comp_offset + 1); // +1 to include null terminator
+  memcpy(result->data + base_len + needs_separator,
+         component + comp_offset,
+         comp_len - comp_offset + 1);  // +1 to include null terminator
 
   result->length = result_len;
 
@@ -153,8 +150,7 @@ bool cforge_path_is_file(const cforge_path_t *path) {
   return !cforge_path_is_directory(path);
 }
 
-cforge_fs_error_t cforge_create_directory(const cforge_path_t *path,
-                                          bool recursive) {
+cforge_fs_error_t cforge_create_directory(const cforge_path_t *path, bool recursive) {
   if (!path || !path->data) {
     return CFORGE_FS_INVALID_PATH;
   }
@@ -187,7 +183,7 @@ cforge_fs_error_t cforge_create_directory(const cforge_path_t *path,
   // Create directories one by one
   for (cforge_string_t p = path_copy + 1; *p; p++) {
     if (*p == PATH_SEPARATOR) {
-      *p = '\0'; // Temporarily terminate the string
+      *p = '\0';  // Temporarily terminate the string
 
       cforge_path_t tmp_path;
       if (cforge_path_init(&tmp_path, path_copy) != CFORGE_FS_SUCCESS) {
@@ -195,8 +191,7 @@ cforge_fs_error_t cforge_create_directory(const cforge_path_t *path,
         return CFORGE_FS_UNKNOWN_ERROR;
       }
 
-      if (!cforge_path_exists(&tmp_path) ||
-          !cforge_path_is_directory(&tmp_path)) {
+      if (!cforge_path_exists(&tmp_path) || !cforge_path_is_directory(&tmp_path)) {
 #ifdef _WIN32
         if (_mkdir(path_copy) != 0 && errno != EEXIST) {
           cforge_path_free(&tmp_path);
@@ -213,7 +208,7 @@ cforge_fs_error_t cforge_create_directory(const cforge_path_t *path,
       }
 
       cforge_path_free(&tmp_path);
-      *p = PATH_SEPARATOR; // Restore the path separator
+      *p = PATH_SEPARATOR;  // Restore the path separator
     }
   }
 
@@ -271,8 +266,7 @@ static cforge_fs_error_t remove_dir_recursive(cforge_cstring_t dir_path) {
 
   do {
     // Skip "." and ".."
-    if (strcmp(find_data.cFileName, ".") == 0 ||
-        strcmp(find_data.cFileName, "..") == 0) {
+    if (strcmp(find_data.cFileName, ".") == 0 || strcmp(find_data.cFileName, "..") == 0) {
       continue;
     }
 
@@ -354,8 +348,7 @@ static cforge_fs_error_t remove_dir_recursive(cforge_cstring_t dir_path) {
 #endif
 }
 
-cforge_fs_error_t cforge_remove_directory(const cforge_path_t *path,
-                                          bool recursive) {
+cforge_fs_error_t cforge_remove_directory(const cforge_path_t *path, bool recursive) {
   if (!path || !path->data) {
     return CFORGE_FS_INVALID_PATH;
   }
@@ -424,7 +417,7 @@ cforge_fs_error_t cforge_read_file(const cforge_path_t *path,
 
   // Null-terminate the buffer
   (*buffer)[file_size] = '\0';
-  *size = file_size;
+  *size                = file_size;
 
   fclose(file);
   return CFORGE_FS_SUCCESS;
@@ -455,19 +448,19 @@ cforge_fs_error_t cforge_write_file(const cforge_path_t *path,
 
 cforge_cstring_t cforge_fs_error_str(cforge_fs_error_t error) {
   switch (error) {
-  case CFORGE_FS_SUCCESS:
-    return "Success";
-  case CFORGE_FS_NOT_FOUND:
-    return "Path not found";
-  case CFORGE_FS_ACCESS_DENIED:
-    return "Access denied";
-  case CFORGE_FS_IO_ERROR:
-    return "I/O error";
-  case CFORGE_FS_INVALID_PATH:
-    return "Invalid path";
-  case CFORGE_FS_UNKNOWN_ERROR:
-  default:
-    return "Unknown error";
+    case CFORGE_FS_SUCCESS:
+      return "Success";
+    case CFORGE_FS_NOT_FOUND:
+      return "Path not found";
+    case CFORGE_FS_ACCESS_DENIED:
+      return "Access denied";
+    case CFORGE_FS_IO_ERROR:
+      return "I/O error";
+    case CFORGE_FS_INVALID_PATH:
+      return "Invalid path";
+    case CFORGE_FS_UNKNOWN_ERROR:
+    default:
+      return "Unknown error";
   }
 }
 

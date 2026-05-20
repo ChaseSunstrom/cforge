@@ -4,7 +4,9 @@
  */
 
 #include "core/cache.hpp"
+
 #include "cforge/log.hpp"
+
 #include "core/types.h"
 
 #include <algorithm>
@@ -16,8 +18,8 @@
 #include <sstream>
 
 #ifdef _WIN32
-#include <windows.h>
 #include <shlobj.h>
+#include <windows.h>
 #else
 #include <pwd.h>
 #include <unistd.h>
@@ -26,7 +28,7 @@
 namespace cforge {
 
 // FNV-1a hash constants (same as dependency_hash)
-static constexpr uint64_t FNV_PRIME = 1099511628211ULL;
+static constexpr uint64_t FNV_PRIME        = 1099511628211ULL;
 static constexpr uint64_t FNV_OFFSET_BASIS = 14695981039346656037ULL;
 
 static uint64_t fnv1a_hash(const std::string &str) {
@@ -40,7 +42,9 @@ static uint64_t fnv1a_hash(const std::string &str) {
 
 static uint64_t fnv1a_hash_file(const std::filesystem::path &path) {
   std::ifstream file(path, std::ios::binary);
-  if (!file) return 0;
+  if (!file) {
+    return 0;
+  }
 
   uint64_t hash = FNV_OFFSET_BASIS;
   char buffer[4096];
@@ -64,7 +68,7 @@ static std::string hash_to_hex(uint64_t hash, int digits = 8) {
 }
 
 static std::string get_timestamp() {
-  auto now = std::chrono::system_clock::now();
+  auto now  = std::chrono::system_clock::now();
   auto time = std::chrono::system_clock::to_time_t(now);
   std::stringstream ss;
   ss << std::put_time(std::gmtime(&time), "%Y-%m-%dT%H:%M:%SZ");
@@ -73,15 +77,18 @@ static std::string get_timestamp() {
 
 static std::string trim(const std::string &str) {
   auto start = str.find_first_not_of(" \t\r\n");
-  if (start == std::string::npos) return "";
+  if (start == std::string::npos) {
+    return "";
+  }
   auto end = str.find_last_not_of(" \t\r\n");
   return str.substr(start, end - start + 1);
 }
 
 static std::string to_lower(const std::string &str) {
   std::string result = str;
-  std::transform(result.begin(), result.end(), result.begin(),
-                 [](unsigned char c) { return std::tolower(c); });
+  std::transform(result.begin(), result.end(), result.begin(), [](unsigned char c) {
+    return std::tolower(c);
+  });
   return result;
 }
 
@@ -91,11 +98,9 @@ static std::string to_lower(const std::string &str) {
 
 std::string cache_key::to_string() const {
   std::stringstream ss;
-  ss << package << "-" << version << "-"
-     << platform << "-" << compiler << compiler_ver << "-"
+  ss << package << "-" << version << "-" << platform << "-" << compiler << compiler_ver << "-"
      << to_lower(config) << "-" << arch << "-"
-     << "cpp" << cpp_standard << "-"
-     << options_hash;
+     << "cpp" << cpp_standard << "-" << options_hash;
   return ss.str();
 }
 
@@ -111,13 +116,13 @@ std::optional<cache_key> cache_key::from_string(const std::string &key_str) {
   }
 
   cache_key key;
-  key.package = match[1];
-  key.version = match[2];
-  key.platform = match[3];
-  key.compiler = match[4];
+  key.package      = match[1];
+  key.version      = match[2];
+  key.platform     = match[3];
+  key.compiler     = match[4];
   key.compiler_ver = match[5];
-  key.config = match[6];
-  key.arch = match[7];
+  key.config       = match[6];
+  key.arch         = match[7];
   key.cpp_standard = std::stoi(match[8]);
   key.options_hash = match[9];
 
@@ -138,14 +143,15 @@ bool cache_key::operator<(const cache_key &other) const {
 
 build_environment build_environment::detect() {
   build_environment env;
-  env.target_platform = get_current_platform();
-  env.target_compiler = detect_compiler();
+  env.target_platform  = get_current_platform();
+  env.target_compiler  = detect_compiler();
   env.compiler_version = get_compiler_version();
-  env.arch = get_arch();
-  env.cpp_standard = __cplusplus >= 202002L ? 20 :
-                     __cplusplus >= 201703L ? 17 :
-                     __cplusplus >= 201402L ? 14 :
-                     __cplusplus >= 201103L ? 11 : 11;
+  env.arch             = get_arch();
+  env.cpp_standard     = __cplusplus >= 202002L ? 20
+                       : __cplusplus >= 201703L ? 17
+                       : __cplusplus >= 201402L ? 14
+                       : __cplusplus >= 201103L ? 11
+                                                : 11;
   return env;
 }
 
@@ -194,7 +200,9 @@ std::optional<cache_manifest> cache_manifest::load(const std::filesystem::path &
 
   while (std::getline(file, line)) {
     line = trim(line);
-    if (line.empty() || line[0] == '#') continue;
+    if (line.empty() || line[0] == '#') {
+      continue;
+    }
 
     // Section header
     if (line[0] == '[' && line.back() == ']') {
@@ -204,9 +212,11 @@ std::optional<cache_manifest> cache_manifest::load(const std::filesystem::path &
 
     // Key-value pair
     auto eq_pos = line.find('=');
-    if (eq_pos == std::string::npos) continue;
+    if (eq_pos == std::string::npos) {
+      continue;
+    }
 
-    std::string key = trim(line.substr(0, eq_pos));
+    std::string key   = trim(line.substr(0, eq_pos));
     std::string value = trim(line.substr(eq_pos + 1));
 
     // Remove quotes
@@ -215,17 +225,29 @@ std::optional<cache_manifest> cache_manifest::load(const std::filesystem::path &
     }
 
     if (current_section == "metadata") {
-      if (key == "package") manifest.package = value;
-      else if (key == "version") manifest.version = value;
-      else if (key == "cache_key") manifest.cache_key = value;
-      else if (key == "created") manifest.created = value;
+      if (key == "package") {
+        manifest.package = value;
+      } else if (key == "version") {
+        manifest.version = value;
+      } else if (key == "cache_key") {
+        manifest.cache_key = value;
+      } else if (key == "created") {
+        manifest.created = value;
+      }
     } else if (current_section == "build") {
-      if (key == "platform") manifest.platform = value;
-      else if (key == "compiler") manifest.compiler = value;
-      else if (key == "compiler_version") manifest.compiler_version = value;
-      else if (key == "config") manifest.config = value;
-      else if (key == "arch") manifest.arch = value;
-      else if (key == "cpp_standard") manifest.cpp_standard = std::stoi(value);
+      if (key == "platform") {
+        manifest.platform = value;
+      } else if (key == "compiler") {
+        manifest.compiler = value;
+      } else if (key == "compiler_version") {
+        manifest.compiler_version = value;
+      } else if (key == "config") {
+        manifest.config = value;
+      } else if (key == "arch") {
+        manifest.arch = value;
+      } else if (key == "cpp_standard") {
+        manifest.cpp_standard = std::stoi(value);
+      }
     } else if (current_section == "files") {
       // Format: "path" = { size = 123, checksum = "abc" }
       // Simplified: just parse as path = size,checksum
@@ -235,24 +257,30 @@ std::optional<cache_manifest> cache_manifest::load(const std::filesystem::path &
         entry.path = key;
 
         // Parse size and checksum from the inline table
-        auto size_pos = value.find("size");
+        auto size_pos     = value.find("size");
         auto checksum_pos = value.find("checksum");
 
         if (size_pos != std::string::npos) {
-          auto eq = value.find('=', size_pos);
+          auto eq    = value.find('=', size_pos);
           auto comma = value.find(',', eq);
-          if (comma == std::string::npos) comma = value.find('}', eq);
+          if (comma == std::string::npos) {
+            comma = value.find('}', eq);
+          }
           std::string size_str = trim(value.substr(eq + 1, comma - eq - 1));
-          entry.size = std::stoull(size_str);
+          entry.size           = std::stoull(size_str);
         }
 
         if (checksum_pos != std::string::npos) {
-          auto eq = value.find('=', checksum_pos);
-          auto end = value.find('}', eq);
+          auto eq                  = value.find('=', checksum_pos);
+          auto end                 = value.find('}', eq);
           std::string checksum_str = trim(value.substr(eq + 1, end - eq - 1));
           // Remove quotes
-          if (checksum_str.front() == '"') checksum_str = checksum_str.substr(1);
-          if (checksum_str.back() == '"') checksum_str.pop_back();
+          if (checksum_str.front() == '"') {
+            checksum_str = checksum_str.substr(1);
+          }
+          if (checksum_str.back() == '"') {
+            checksum_str.pop_back();
+          }
           entry.checksum = checksum_str;
         }
 
@@ -288,8 +316,8 @@ bool cache_manifest::save(const std::filesystem::path &manifest_path) const {
 
   file << "[files]\n";
   for (const auto &f : files) {
-    file << "\"" << f.path << "\" = { size = " << f.size
-         << ", checksum = \"" << f.checksum << "\" }\n";
+    file << "\"" << f.path << "\" = { size = " << f.size << ", checksum = \"" << f.checksum
+         << "\" }\n";
   }
 
   return true;
@@ -336,7 +364,7 @@ std::filesystem::path package_cache::get_default_cache_dir() {
   const char *home = std::getenv("HOME");
   if (!home) {
     struct passwd *pw = getpwuid(getuid());
-    home = pw ? pw->pw_dir : ".";
+    home              = pw ? pw->pw_dir : ".";
   }
   return std::filesystem::path(home) / ".local" / "share" / "cforge" / "cache";
 #endif
@@ -356,7 +384,7 @@ std::filesystem::path package_cache::get_entry_path(const cache_key &key) const 
 }
 
 bool package_cache::has(const cache_key &key) const {
-  auto entry_path = get_entry_path(key);
+  auto entry_path    = get_entry_path(key);
   auto manifest_path = entry_path / "manifest.toml";
 
   if (!std::filesystem::exists(manifest_path)) {
@@ -384,14 +412,15 @@ bool package_cache::copy_directory(const std::filesystem::path &src,
   try {
     std::filesystem::create_directories(dst);
     for (const auto &entry : std::filesystem::recursive_directory_iterator(src)) {
-      auto rel_path = std::filesystem::relative(entry.path(), src);
+      auto rel_path  = std::filesystem::relative(entry.path(), src);
       auto dest_path = dst / rel_path;
 
       if (entry.is_directory()) {
         std::filesystem::create_directories(dest_path);
       } else if (entry.is_regular_file()) {
         std::filesystem::create_directories(dest_path.parent_path());
-        std::filesystem::copy_file(entry.path(), dest_path,
+        std::filesystem::copy_file(entry.path(),
+                                   dest_path,
                                    std::filesystem::copy_options::overwrite_existing);
       }
     }
@@ -404,22 +433,22 @@ bool package_cache::copy_directory(const std::filesystem::path &src,
 cache_manifest package_cache::generate_manifest(const cache_key &key,
                                                 const std::filesystem::path &dir) {
   cache_manifest manifest;
-  manifest.package = key.package;
-  manifest.version = key.version;
-  manifest.cache_key = key.to_string();
-  manifest.created = get_timestamp();
-  manifest.platform = key.platform;
-  manifest.compiler = key.compiler;
+  manifest.package          = key.package;
+  manifest.version          = key.version;
+  manifest.cache_key        = key.to_string();
+  manifest.created          = get_timestamp();
+  manifest.platform         = key.platform;
+  manifest.compiler         = key.compiler;
   manifest.compiler_version = key.compiler_ver;
-  manifest.config = key.config;
-  manifest.arch = key.arch;
-  manifest.cpp_standard = key.cpp_standard;
+  manifest.config           = key.config;
+  manifest.arch             = key.arch;
+  manifest.cpp_standard     = key.cpp_standard;
 
   for (const auto &entry : std::filesystem::recursive_directory_iterator(dir)) {
     if (entry.is_regular_file()) {
       cache_manifest::file_entry file;
-      file.path = std::filesystem::relative(entry.path(), dir).string();
-      file.size = entry.file_size();
+      file.path     = std::filesystem::relative(entry.path(), dir).string();
+      file.size     = entry.file_size();
       file.checksum = hash_to_hex(fnv1a_hash_file(entry.path()), 16);
       manifest.files.push_back(file);
     }
@@ -496,7 +525,7 @@ cforge_size_t package_cache::remove_package(const std::string &package_name) {
 
 cforge_size_t package_cache::prune(cforge_size_t max_size_mb) {
   cforge_size_t max_size_bytes = max_size_mb * 1024 * 1024;
-  cforge_size_t current_size = calculate_total_size();
+  cforge_size_t current_size   = calculate_total_size();
 
   if (current_size <= max_size_bytes) {
     return 0;
@@ -506,9 +535,13 @@ cforge_size_t package_cache::prune(cforge_size_t max_size_mb) {
   std::vector<std::pair<std::filesystem::file_time_type, std::filesystem::path>> entries;
 
   for (const auto &pkg_entry : std::filesystem::directory_iterator(packages_dir_)) {
-    if (!pkg_entry.is_directory()) continue;
+    if (!pkg_entry.is_directory()) {
+      continue;
+    }
     for (const auto &ver_entry : std::filesystem::directory_iterator(pkg_entry.path())) {
-      if (!ver_entry.is_directory()) continue;
+      if (!ver_entry.is_directory()) {
+        continue;
+      }
       auto manifest_path = ver_entry.path() / "manifest.toml";
       if (std::filesystem::exists(manifest_path)) {
         entries.emplace_back(std::filesystem::last_write_time(manifest_path), ver_entry.path());
@@ -521,7 +554,9 @@ cforge_size_t package_cache::prune(cforge_size_t max_size_mb) {
 
   cforge_size_t removed = 0;
   for (const auto &[time, path] : entries) {
-    if (current_size <= max_size_bytes) break;
+    if (current_size <= max_size_bytes) {
+      break;
+    }
 
     cforge_size_t entry_size = 0;
     for (const auto &f : std::filesystem::recursive_directory_iterator(path)) {
@@ -567,13 +602,19 @@ std::vector<cache_entry> package_cache::list() const {
   }
 
   for (const auto &pkg_entry : std::filesystem::directory_iterator(packages_dir_)) {
-    if (!pkg_entry.is_directory()) continue;
+    if (!pkg_entry.is_directory()) {
+      continue;
+    }
     for (const auto &ver_entry : std::filesystem::directory_iterator(pkg_entry.path())) {
-      if (!ver_entry.is_directory()) continue;
+      if (!ver_entry.is_directory()) {
+        continue;
+      }
 
       auto manifest_path = ver_entry.path() / "manifest.toml";
-      auto manifest = cache_manifest::load(manifest_path);
-      if (!manifest) continue;
+      auto manifest      = cache_manifest::load(manifest_path);
+      if (!manifest) {
+        continue;
+      }
 
       cache_entry entry;
       auto parsed_key = cache_key::from_string(manifest->cache_key);
@@ -583,7 +624,7 @@ std::vector<cache_entry> package_cache::list() const {
       entry.path = ver_entry.path();
 
       // Get timestamps - use manifest time as created time approximation
-      entry.last_accessed = std::chrono::system_clock::now(); // Approximate
+      entry.last_accessed = std::chrono::system_clock::now();  // Approximate
 
       // Calculate size
       entry.size_bytes = 0;
@@ -633,29 +674,42 @@ void package_cache::load_stats() const {
   stats_ = cache_stats{};
 
   std::ifstream file(stats_file_);
-  if (!file.is_open()) return;
+  if (!file.is_open()) {
+    return;
+  }
 
   std::string line;
   while (std::getline(file, line)) {
     line = trim(line);
-    if (line.empty() || line[0] == '#' || line[0] == '[') continue;
+    if (line.empty() || line[0] == '#' || line[0] == '[') {
+      continue;
+    }
 
     auto eq_pos = line.find('=');
-    if (eq_pos == std::string::npos) continue;
+    if (eq_pos == std::string::npos) {
+      continue;
+    }
 
-    std::string key = trim(line.substr(0, eq_pos));
+    std::string key   = trim(line.substr(0, eq_pos));
     std::string value = trim(line.substr(eq_pos + 1));
 
-    if (key == "cache_hits") stats_.cache_hits = std::stoull(value);
-    else if (key == "cache_misses") stats_.cache_misses = std::stoull(value);
-    else if (key == "remote_hits") stats_.remote_hits = std::stoull(value);
-    else if (key == "remote_misses") stats_.remote_misses = std::stoull(value);
+    if (key == "cache_hits") {
+      stats_.cache_hits = std::stoull(value);
+    } else if (key == "cache_misses") {
+      stats_.cache_misses = std::stoull(value);
+    } else if (key == "remote_hits") {
+      stats_.remote_hits = std::stoull(value);
+    } else if (key == "remote_misses") {
+      stats_.remote_misses = std::stoull(value);
+    }
   }
 }
 
 void package_cache::save_stats() const {
   std::ofstream file(stats_file_);
-  if (!file.is_open()) return;
+  if (!file.is_open()) {
+    return;
+  }
 
   file << "# Cache statistics\n\n";
   file << "[stats]\n";
@@ -667,7 +721,7 @@ void package_cache::save_stats() const {
 
 cache_stats package_cache::stats() const {
   load_stats();
-  stats_.total_entries = list().size();
+  stats_.total_entries    = list().size();
   stats_.total_size_bytes = calculate_total_size();
   return stats_;
 }
@@ -706,13 +760,13 @@ cache_key generate_cache_key(const std::string &package_name,
                              const std::string &config,
                              const std::map<std::string, std::string> &cmake_options) {
   cache_key key;
-  key.package = package_name;
-  key.version = version;
-  key.platform = platform_to_string(env.target_platform);
-  key.compiler = compiler_to_string(env.target_compiler);
+  key.package      = package_name;
+  key.version      = version;
+  key.platform     = platform_to_string(env.target_platform);
+  key.compiler     = compiler_to_string(env.target_compiler);
   key.compiler_ver = env.compiler_version;
-  key.config = config;
-  key.arch = env.arch;
+  key.config       = config;
+  key.arch         = env.arch;
   key.cpp_standard = env.cpp_standard;
   key.options_hash = hash_cmake_options(cmake_options);
   return key;
@@ -730,4 +784,4 @@ std::string hash_cmake_options(const std::map<std::string, std::string> &options
   return hash_to_hex(fnv1a_hash(ss.str()), 8);
 }
 
-} // namespace cforge
+}  // namespace cforge

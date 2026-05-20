@@ -5,8 +5,9 @@
 
 #pragma once
 
-#include "core/command.h" // Include for cforge_context_t
+#include "core/command.h"  // Include for cforge_context_t
 #include "core/types.h"
+
 #include <cstdint>
 #include <string>
 

@@ -61,8 +61,7 @@ int prompt_select(const std::string &label,
  * @param default_value Value returned when input is empty (default "").
  * @return User-entered string, or default_value.
  */
-std::string prompt_text(const std::string &label,
-                        const std::string &default_value = "");
+std::string prompt_text(const std::string &label, const std::string &default_value = "");
 
 /**
  * @brief Y/n confirmation prompt. Returns true for yes.
@@ -79,4 +78,4 @@ std::string prompt_text(const std::string &label,
  */
 bool prompt_confirm(const std::string &label, bool default_yes = true);
 
-} // namespace cforge
+}  // namespace cforge

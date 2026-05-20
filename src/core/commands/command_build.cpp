@@ -4,6 +4,7 @@
  */
 
 #include "cforge/log.hpp"
+
 #include "core/build_utils.hpp"
 #include "core/command_registry.hpp"
 #include "core/commands.hpp"
@@ -21,6 +22,8 @@
 #include "core/types.h"
 #include "core/workspace.hpp"
 
+#include <fmt/color.h>
+#include <fmt/core.h>
 #include <toml++/toml.hpp>
 
 #include <algorithm>
@@ -29,8 +32,6 @@
 #include <cstdlib>
 #include <ctime>
 #include <filesystem>
-#include <fmt/color.h>
-#include <fmt/core.h>
 #include <fstream>
 #include <functional>
 #include <map>
@@ -49,19 +50,18 @@
 #ifdef _WIN32
 static bool is_visual_studio_available() {
   // Check common Visual Studio installation paths
-  std::vector<std::string> vs_paths = {
-      "C:\\Program Files\\Microsoft Visual "
-      "Studio\\2022\\Community\\Common7\\IDE\\devenv.exe",
-      "C:\\Program Files\\Microsoft Visual "
-      "Studio\\2022\\Professional\\Common7\\IDE\\devenv.exe",
-      "C:\\Program Files\\Microsoft Visual "
-      "Studio\\2022\\Enterprise\\Common7\\IDE\\devenv.exe",
-      "C:\\Program Files (x86)\\Microsoft Visual "
-      "Studio\\2019\\Community\\Common7\\IDE\\devenv.exe",
-      "C:\\Program Files (x86)\\Microsoft Visual "
-      "Studio\\2019\\Professional\\Common7\\IDE\\devenv.exe",
-      "C:\\Program Files (x86)\\Microsoft Visual "
-      "Studio\\2019\\Enterprise\\Common7\\IDE\\devenv.exe"};
+  std::vector<std::string> vs_paths = {"C:\\Program Files\\Microsoft Visual "
+                                       "Studio\\2022\\Community\\Common7\\IDE\\devenv.exe",
+                                       "C:\\Program Files\\Microsoft Visual "
+                                       "Studio\\2022\\Professional\\Common7\\IDE\\devenv.exe",
+                                       "C:\\Program Files\\Microsoft Visual "
+                                       "Studio\\2022\\Enterprise\\Common7\\IDE\\devenv.exe",
+                                       "C:\\Program Files (x86)\\Microsoft Visual "
+                                       "Studio\\2019\\Community\\Common7\\IDE\\devenv.exe",
+                                       "C:\\Program Files (x86)\\Microsoft Visual "
+                                       "Studio\\2019\\Professional\\Common7\\IDE\\devenv.exe",
+                                       "C:\\Program Files (x86)\\Microsoft Visual "
+                                       "Studio\\2019\\Enterprise\\Common7\\IDE\\devenv.exe"};
 
   for (const auto &path : vs_paths) {
     if (std::filesystem::exists(path)) {
@@ -94,7 +94,7 @@ static bool is_cmake_available() {
     // Suggest alternative build methods
     if (is_visual_studio_available()) {
       cforge::logger::print_verbose("Visual Studio is available. You can open the "
-                            "project in Visual Studio and build it there");
+                                    "project in Visual Studio and build it there");
       cforge::logger::print_verbose("1. Open Visual Studio");
       cforge::logger::print_verbose("2. Select 'Open a local folder'");
       cforge::logger::print_verbose("3. Navigate to your project folder and select it");
@@ -115,7 +115,8 @@ static bool is_cmake_available() {
  * @return bool Success flag
  */
 bool clone_git_dependencies(const std::filesystem::path &project_dir,
-                            const cforge::toml_reader&project_config, bool verbose,
+                            const cforge::toml_reader &project_config,
+                            bool verbose,
                             bool skip_deps) {
   // Check if we should skip dependency updates
   if (skip_deps) {
@@ -130,21 +131,19 @@ bool clone_git_dependencies(const std::filesystem::path &project_dir,
   }
 
   // Get dependencies directory from configuration
-  std::string deps_dir =
-      project_config.get_string("dependencies.directory", "deps");
+  std::string deps_dir            = project_config.get_string("dependencies.directory", "deps");
   std::filesystem::path deps_path = project_dir / deps_dir;
 
   // Create dependencies directory if it doesn't exist
   if (!std::filesystem::exists(deps_path)) {
-    cforge::logger::print_verbose("Creating dependencies directory: " +
-                          deps_path.string());
+    cforge::logger::print_verbose("Creating dependencies directory: " + deps_path.string());
     std::filesystem::create_directories(deps_path);
   }
 
   // Check if git is available
   if (!cforge::is_command_available("git", 20)) {
     cforge::logger::print_error("Git is not available. Please install Git and ensure "
-                        "it's in your PATH.");
+                                "it's in your PATH.");
     return false;
   }
 
@@ -169,115 +168,103 @@ bool clone_git_dependencies(const std::filesystem::path &project_dir,
 
   // Get all Git dependencies
   auto git_deps = project_config.get_table_keys("dependencies.git");
-  cforge::logger::print_action("Fetching",
-                       std::to_string(git_deps.size()) + " Git dependencies");
+  cforge::logger::print_action("Fetching", std::to_string(git_deps.size()) + " Git dependencies");
 
   bool all_success = true;
 
   for (const auto &dep : git_deps) {
     // Get dependency configuration
-    std::string url =
-        project_config.get_string("dependencies.git." + dep + ".url", "");
+    std::string url = project_config.get_string("dependencies.git." + dep + ".url", "");
     if (url.empty()) {
-      cforge::logger::print_warning("Git dependency '" + dep +
-                            "' is missing a URL, skipping");
+      cforge::logger::print_warning("Git dependency '" + dep + "' is missing a URL, skipping");
       continue;
     }
 
     // Get reference (tag, branch, or commit)
-    std::string tag =
-        project_config.get_string("dependencies.git." + dep + ".tag", "");
-    std::string branch =
-        project_config.get_string("dependencies.git." + dep + ".branch", "");
-    std::string commit =
-        project_config.get_string("dependencies.git." + dep + ".commit", "");
-    std::string ref = tag;
-    if (ref.empty())
+    std::string tag    = project_config.get_string("dependencies.git." + dep + ".tag", "");
+    std::string branch = project_config.get_string("dependencies.git." + dep + ".branch", "");
+    std::string commit = project_config.get_string("dependencies.git." + dep + ".commit", "");
+    std::string ref    = tag;
+    if (ref.empty()) {
       ref = branch;
-    if (ref.empty())
+    }
+    if (ref.empty()) {
       ref = commit;
+    }
 
     // Get custom directory if specified
-    std::string custom_dir =
-        project_config.get_string("dependencies.git." + dep + ".directory", "");
-    std::filesystem::path dep_path =
-        custom_dir.empty() ? deps_path / dep : project_dir / custom_dir / dep;
+    std::string custom_dir = project_config.get_string("dependencies.git." + dep + ".directory",
+                                                       "");
+    std::filesystem::path dep_path = custom_dir.empty() ? deps_path / dep
+                                                        : project_dir / custom_dir / dep;
 
     // Check if version has changed
     std::string stored_version = dep_hashes.get_version(dep);
-    bool version_changed = !ref.empty() && ref != stored_version;
+    bool version_changed       = !ref.empty() && ref != stored_version;
 
     if (std::filesystem::exists(dep_path)) {
       // If version changed, remove the directory and reclone
       if (version_changed) {
-        cforge::logger::print_action("Updating", "version changed for '" + dep +
-                                             "', removing existing directory");
+        cforge::logger::print_action(
+            "Updating", "version changed for '" + dep + "', removing existing directory");
         try {
           std::filesystem::remove_all(dep_path);
         } catch (const std::exception &e) {
-          cforge::logger::print_error("Failed to remove directory for '" + dep +
-                              "': " + e.what());
+          cforge::logger::print_error("Failed to remove directory for '" + dep + "': " + e.what());
           all_success = false;
           continue;
         }
       } else {
         // Check if update is needed based on directory hash
-        std::string current_hash =
-            cforge::dependency_hash::calculate_directory_hash(dep_path);
-        std::string stored_hash = dep_hashes.get_hash(dep);
+        std::string current_hash = cforge::dependency_hash::calculate_directory_hash(dep_path);
+        std::string stored_hash  = dep_hashes.get_hash(dep);
 
-        bool needs_update =
-            current_hash != stored_hash || stored_toml_hash != toml_hash;
+        bool needs_update = current_hash != stored_hash || stored_toml_hash != toml_hash;
 
         if (!needs_update) {
           // Inform that dependency is up to date and no update is needed
-          cforge::logger::print_verbose("Dependency '" + dep +
-                                "' is up to date, skipping update");
+          cforge::logger::print_verbose("Dependency '" + dep + "' is up to date, skipping update");
           continue;
         }
 
         cforge::logger::print_verbose(
-            "Dependency '" + dep +
-            "' directory exists but needs update at: " + dep_path.string());
+            "Dependency '" + dep + "' directory exists but needs update at: " + dep_path.string());
 
         // Update the repository
-        cforge::logger::print_action("Updating",
-                             "dependency '" + dep + "' from remote");
+        cforge::logger::print_action("Updating", "dependency '" + dep + "' from remote");
 
         // Run git fetch to update
         std::vector<std::string> fetch_args = {"fetch", "--quiet", "--depth=1"};
         if (verbose) {
-          fetch_args.pop_back(); // Remove --quiet for verbose output
+          fetch_args.pop_back();  // Remove --quiet for verbose output
         }
 
         // Set a shorter timeout for fetch operations
-        bool fetch_result = cforge::execute_tool("git", fetch_args, dep_path.string(),
-                                         "Git Fetch for " + dep, verbose, 30);
+        bool fetch_result = cforge::execute_tool(
+            "git", fetch_args, dep_path.string(), "Git Fetch for " + dep, verbose, 30);
 
         if (!fetch_result) {
-          cforge::logger::print_warning("Failed to fetch updates for '" + dep +
-                                "', continuing with existing version");
+          cforge::logger::print_warning("Failed to fetch updates for '" + dep
+                                        + "', continuing with existing version");
           all_success = false;
           continue;
         }
 
         // Checkout specific ref if provided
         if (!ref.empty()) {
-          cforge::logger::print_action("Checking out",
-                               ref + " for dependency '" + dep + "'");
+          cforge::logger::print_action("Checking out", ref + " for dependency '" + dep + "'");
 
           std::vector<std::string> checkout_args = {"checkout", ref, "--quiet"};
           if (verbose) {
-            checkout_args.pop_back(); // Remove --quiet for verbose output
+            checkout_args.pop_back();  // Remove --quiet for verbose output
           }
 
-          bool checkout_result =
-              cforge::execute_tool("git", checkout_args, dep_path.string(),
-                           "Git Checkout for " + dep, verbose, 30);
+          bool checkout_result = cforge::execute_tool(
+              "git", checkout_args, dep_path.string(), "Git Checkout for " + dep, verbose, 30);
 
           if (!checkout_result) {
-            cforge::logger::print_warning("Failed to checkout " + ref + " for '" + dep +
-                                  "', continuing with current version");
+            cforge::logger::print_warning("Failed to checkout " + ref + " for '" + dep
+                                          + "', continuing with current version");
             all_success = false;
             continue;
           }
@@ -299,8 +286,7 @@ bool clone_git_dependencies(const std::filesystem::path &project_dir,
     // Clone the repository
     cforge::logger::fetching(dep + " from " + url);
 
-    std::vector<std::string> clone_args = {"clone", "--depth=1", url,
-                                           dep_path.string()};
+    std::vector<std::string> clone_args = {"clone", "--depth=1", url, dep_path.string()};
 
     // Add specific ref if provided
     if (!ref.empty()) {
@@ -312,12 +298,11 @@ bool clone_git_dependencies(const std::filesystem::path &project_dir,
       clone_args.push_back("--quiet");
     }
 
-    bool clone_result = cforge::execute_tool("git", clone_args, "",
-                                     "Git Clone for " + dep, verbose, 600);
+    bool clone_result =
+        cforge::execute_tool("git", clone_args, "", "Git Clone for " + dep, verbose, 600);
 
     if (!clone_result) {
-      cforge::logger::print_error("Failed to clone dependency '" + dep + "' from " +
-                          url);
+      cforge::logger::print_error("Failed to clone dependency '" + dep + "' from " + url);
       all_success = false;
       continue;
     }
@@ -325,29 +310,27 @@ bool clone_git_dependencies(const std::filesystem::path &project_dir,
     // Checkout specific commit if provided (since --branch doesn't work with
     // commit hashes)
     if (!commit.empty()) {
-      cforge::logger::print_action("Checking out", "commit " + commit +
-                                               " for dependency '" + dep + "'");
+      cforge::logger::print_action("Checking out",
+                                   "commit " + commit + " for dependency '" + dep + "'");
 
       std::vector<std::string> checkout_args = {"checkout", commit, "--quiet"};
       if (verbose) {
-        checkout_args.pop_back(); // Remove --quiet for verbose output
+        checkout_args.pop_back();  // Remove --quiet for verbose output
       }
 
-      bool checkout_result =
-          cforge::execute_tool("git", checkout_args, dep_path.string(),
-                       "Git Checkout for " + dep, verbose, 30);
+      bool checkout_result = cforge::execute_tool(
+          "git", checkout_args, dep_path.string(), "Git Checkout for " + dep, verbose, 30);
 
       if (!checkout_result) {
-        cforge::logger::print_error("Failed to checkout commit " + commit +
-                            " for dependency '" + dep + "'");
+        cforge::logger::print_error("Failed to checkout commit " + commit + " for dependency '"
+                                    + dep + "'");
         all_success = false;
         continue;
       }
     }
 
     // Store hash and version for newly cloned dependency
-    std::string current_hash =
-        cforge::dependency_hash::calculate_directory_hash(dep_path);
+    std::string current_hash = cforge::dependency_hash::calculate_directory_hash(dep_path);
     dep_hashes.set_hash(dep, current_hash);
     if (!ref.empty()) {
       dep_hashes.set_version(dep, ref);
@@ -356,7 +339,8 @@ bool clone_git_dependencies(const std::filesystem::path &project_dir,
     cforge::logger::print_action("Downloaded", dep);
   }
 
-  // Save updated dependency hashes (but NOT cforge.toml hash - that's handled by generate_cmakelists_from_toml)
+  // Save updated dependency hashes (but NOT cforge.toml hash - that's handled
+  // by generate_cmakelists_from_toml)
   dep_hashes.save(project_dir);
 
   if (all_success) {
@@ -381,12 +365,10 @@ bool clone_git_dependencies(const std::filesystem::path &project_dir,
  * @param options Setup options map
  * @return Expanded command string
  */
-static std::string expand_setup_command(
-    const std::string &command,
-    const std::filesystem::path &package_dir,
-    const std::string &version,
-    const std::map<std::string, std::string> &options) {
-
+static std::string expand_setup_command(const std::string &command,
+                                        const std::filesystem::path &package_dir,
+                                        const std::string &version,
+                                        const std::map<std::string, std::string> &options) {
   std::string result = command;
 
   // Replace {package_dir}
@@ -404,7 +386,9 @@ static std::string expand_setup_command(
   cforge_size_t start = 0;
   while ((start = result.find("{option:", start)) != std::string::npos) {
     cforge_size_t end = result.find("}", start);
-    if (end == std::string::npos) break;
+    if (end == std::string::npos) {
+      break;
+    }
 
     std::string option_name = result.substr(start + 8, end - start - 8);
     std::string value;
@@ -414,7 +398,8 @@ static std::string expand_setup_command(
       value = it->second;
     } else {
       // Option not found, leave empty
-      cforge::logger::print_warning("Setup option '" + option_name + "' not found, using empty value");
+      cforge::logger::print_warning("Setup option '" + option_name
+                                    + "' not found, using empty value");
     }
 
     result.replace(start, end - start + 1, value);
@@ -434,19 +419,17 @@ static std::string expand_setup_command(
  * @param verbose Verbose output
  * @return true if setup succeeded or was skipped
  */
-static bool run_package_setup(
-    const cforge::package_info&pkg,
-    const std::filesystem::path &package_dir,
-    const std::string &version,
-    const std::map<std::string, std::string> &setup_options,
-    bool verbose) {
-
+static bool run_package_setup(const cforge::package_info &pkg,
+                              const std::filesystem::path &package_dir,
+                              const std::string &version,
+                              const std::map<std::string, std::string> &setup_options,
+                              bool verbose) {
   if (!pkg.setup.has_setup()) {
     return true;  // No setup needed
   }
 
   // Determine platform-specific commands
-  std::vector<std::string> commands = pkg.setup.commands;
+  std::vector<std::string> commands       = pkg.setup.commands;
   std::vector<std::string> required_tools = pkg.setup.required_tools;
 
 #ifdef _WIN32
@@ -495,7 +478,8 @@ static bool run_package_setup(
   // Check required tools
   for (const auto &tool : required_tools) {
     if (!cforge::is_command_available(tool, 5)) {
-      cforge::logger::print_error("Required tool '" + tool + "' not found for package '" + pkg.name + "' setup");
+      cforge::logger::print_error("Required tool '" + tool + "' not found for package '" + pkg.name
+                                  + "' setup");
       cforge::logger::print_error("Please install '" + tool + "' and ensure it's in your PATH");
       return false;
     }
@@ -527,8 +511,8 @@ static bool run_package_setup(
       args.push_back(arg);
     }
 
-    bool result = cforge::execute_tool(program, args, workdir.string(),
-                               "Setup for " + pkg.name, verbose, 300);
+    bool result = cforge::execute_tool(
+        program, args, workdir.string(), "Setup for " + pkg.name, verbose, 300);
 
     if (!result) {
       cforge::logger::print_error("Setup command failed for package '" + pkg.name + "': " + cmd);
@@ -554,8 +538,9 @@ static bool run_package_setup(
  * @return bool Success flag
  */
 bool resolve_index_dependencies(const std::filesystem::path &project_dir,
-                                 const cforge::toml_reader&project_config,
-                                 bool verbose, bool skip_deps) {
+                                const cforge::toml_reader &project_config,
+                                bool verbose,
+                                bool skip_deps) {
   if (skip_deps) {
     cforge::logger::print_verbose("Skipping index dependency resolution (--skip-deps flag)");
     return true;
@@ -568,8 +553,7 @@ bool resolve_index_dependencies(const std::filesystem::path &project_dir,
   }
 
   // Get dependencies directory from configuration
-  std::string deps_dir =
-      project_config.get_string("dependencies.directory", "deps");
+  std::string deps_dir            = project_config.get_string("dependencies.directory", "deps");
   std::filesystem::path deps_path = project_dir / deps_dir;
 
   // Create dependencies directory if it doesn't exist
@@ -585,10 +569,11 @@ bool resolve_index_dependencies(const std::filesystem::path &project_dir,
   };
 
   // Get all dependency keys - look for entries that are index dependencies
-  // An index dependency is specified as: name = "version" or name = { version = "..." }
-  // without git/vcpkg/system/project flags
+  // An index dependency is specified as: name = "version" or name = { version =
+  // "..." } without git/vcpkg/system/project flags
   auto dep_keys = project_config.get_table_keys("dependencies");
-  cforge::logger::print_verbose("resolve_index_dependencies: Found " + std::to_string(dep_keys.size()) + " keys in [dependencies]");
+  cforge::logger::print_verbose("resolve_index_dependencies: Found "
+                                + std::to_string(dep_keys.size()) + " keys in [dependencies]");
 
   std::vector<index_dep_entry> index_deps;
 
@@ -596,9 +581,8 @@ bool resolve_index_dependencies(const std::filesystem::path &project_dir,
     cforge::logger::print_verbose("  Checking key: " + dep);
 
     // Skip known non-package keys
-    if (dep == "directory" || dep == "git" || dep == "vcpkg" ||
-        dep == "system" || dep == "project" || dep == "subdirectory" ||
-        dep == "fetch_content") {
+    if (dep == "directory" || dep == "git" || dep == "vcpkg" || dep == "system" || dep == "project"
+        || dep == "subdirectory" || dep == "fetch_content") {
       cforge::logger::print_verbose("    Skipping (special key)");
       continue;
     }
@@ -616,24 +600,26 @@ bool resolve_index_dependencies(const std::filesystem::path &project_dir,
 
     // Check if it's a table with version key
     std::string version_key = dep_key + ".version";
-    version = project_config.get_string(version_key, "");
+    version                 = project_config.get_string(version_key, "");
 
     // Skip if it has explicit source indicators
-    bool has_git = !project_config.get_string(dep_key + ".git", "").empty();
-    bool has_vcpkg = project_config.get_bool(dep_key + ".vcpkg", false);
-    bool has_system = project_config.get_bool(dep_key + ".system", false);
+    bool has_git     = !project_config.get_string(dep_key + ".git", "").empty();
+    bool has_vcpkg   = project_config.get_bool(dep_key + ".vcpkg", false);
+    bool has_system  = project_config.get_bool(dep_key + ".system", false);
     bool has_project = project_config.get_bool(dep_key + ".project", false);
 
     if (!has_git && !has_vcpkg && !has_system && !has_project && !version.empty()) {
       // This is an index dependency
       cforge::logger::print_verbose("    Found index dep (table): " + dep + " = " + version);
 
-      // Get user-specified options (e.g., glad = { version = "*", options = { api = "gl:core=3.3" } })
+      // Get user-specified options (e.g., glad = { version = "*", options = {
+      // api = "gl:core=3.3" } })
       std::map<std::string, std::string> user_options;
       std::string options_key = dep_key + ".options";
       if (project_config.has_key(options_key)) {
         user_options = project_config.get_string_map(options_key);
-        cforge::logger::print_verbose("    User options: " + std::to_string(user_options.size()) + " found");
+        cforge::logger::print_verbose("    User options: " + std::to_string(user_options.size())
+                                      + " found");
       }
 
       index_deps.push_back({dep, version, user_options});
@@ -647,9 +633,11 @@ bool resolve_index_dependencies(const std::filesystem::path &project_dir,
     return true;
   }
 
-  cforge::logger::print_verbose("Total index deps to resolve: " + std::to_string(index_deps.size()));
+  cforge::logger::print_verbose("Total index deps to resolve: "
+                                + std::to_string(index_deps.size()));
 
-  cforge::logger::print_action("Resolving", std::to_string(index_deps.size()) + " package(s) from registry");
+  cforge::logger::print_action("Resolving",
+                               std::to_string(index_deps.size()) + " package(s) from registry");
 
   // Initialize registry
   cforge::registry reg;
@@ -672,13 +660,13 @@ bool resolve_index_dependencies(const std::filesystem::path &project_dir,
   cforge::dependency_hash dep_hashes;
   dep_hashes.load(project_dir);
 
-  bool all_success = true;
+  bool all_success  = true;
   bool deps_changed = false;  // Track if any deps were cloned/updated
 
   for (const auto &dep_entry : index_deps) {
-    const std::string &name = dep_entry.name;
+    const std::string &name         = dep_entry.name;
     const std::string &version_spec = dep_entry.version;
-    const auto &user_options = dep_entry.options;
+    const auto &user_options        = dep_entry.options;
 
     // Get package info from registry
     auto pkg_opt = reg.get_package(name);
@@ -693,7 +681,8 @@ bool resolve_index_dependencies(const std::filesystem::path &project_dir,
     // Resolve version
     std::string resolved_version = reg.resolve_version(name, version_spec);
     if (resolved_version.empty()) {
-      cforge::logger::print_error("Could not resolve version '" + version_spec + "' for package '" + name + "'");
+      cforge::logger::print_error("Could not resolve version '" + version_spec + "' for package '"
+                                  + name + "'");
       all_success = false;
       continue;
     }
@@ -708,7 +697,8 @@ bool resolve_index_dependencies(const std::filesystem::path &project_dir,
     }
 
     if (git_tag.empty()) {
-      cforge::logger::print_error("Could not find git tag for version " + resolved_version + " of " + name);
+      cforge::logger::print_error("Could not find git tag for version " + resolved_version + " of "
+                                  + name);
       all_success = false;
       continue;
     }
@@ -718,28 +708,34 @@ bool resolve_index_dependencies(const std::filesystem::path &project_dir,
     // Check if already exists and up to date
     std::string stored_version = dep_hashes.get_version(name);
     // Only consider version changed if we have a stored version and it differs
-    // If no stored version but directory exists, assume it's correct (avoid unnecessary updates)
+    // If no stored version but directory exists, assume it's correct (avoid
+    // unnecessary updates)
     bool version_changed = !stored_version.empty() && resolved_version != stored_version;
 
     if (std::filesystem::exists(dep_path)) {
       if (version_changed) {
-        cforge::logger::print_action("Updating", name + " from " + stored_version + " to " + resolved_version);
+        cforge::logger::print_action("Updating",
+                                     name + " from " + stored_version + " to " + resolved_version);
         try {
           std::filesystem::remove_all(dep_path);
           deps_changed = true;  // Version update requires regeneration
         } catch (const std::exception &e) {
-          cforge::logger::print_error("Failed to remove old version of '" + name + "': " + e.what());
+          cforge::logger::print_error("Failed to remove old version of '" + name
+                                      + "': " + e.what());
           all_success = false;
           continue;
         }
       } else {
-        // Directory exists and either version matches or no stored version - skip
+        // Directory exists and either version matches or no stored version -
+        // skip
         if (stored_version.empty()) {
-          // Store the version for future reference so we don't recheck next time
+          // Store the version for future reference so we don't recheck next
+          // time
           dep_hashes.set_version(name, resolved_version);
           deps_changed = true;  // Need to save the lock file
         }
-        cforge::logger::print_verbose("Package '" + name + "' already at version " + resolved_version);
+        cforge::logger::print_verbose("Package '" + name + "' already at version "
+                                      + resolved_version);
         continue;
       }
     }
@@ -747,14 +743,14 @@ bool resolve_index_dependencies(const std::filesystem::path &project_dir,
     // Clone the package
     cforge::logger::fetching(name + "@" + resolved_version);
 
-    std::vector<std::string> clone_args = {"clone", "--depth=1", pkg.repository,
-                                           dep_path.string(), "--branch", git_tag};
+    std::vector<std::string> clone_args = {
+        "clone", "--depth=1", pkg.repository, dep_path.string(), "--branch", git_tag};
     if (!verbose) {
       clone_args.push_back("--quiet");
     }
 
-    bool clone_result = cforge::execute_tool("git", clone_args, "",
-                                     "Git Clone for " + name, verbose, 600);
+    bool clone_result =
+        cforge::execute_tool("git", clone_args, "", "Git Clone for " + name, verbose, 600);
 
     if (!clone_result) {
       cforge::logger::print_error("Failed to clone package '" + name + "' from " + pkg.repository);
@@ -787,10 +783,12 @@ bool resolve_index_dependencies(const std::filesystem::path &project_dir,
     deps_changed = true;  // Mark that deps changed
   }
 
-  // If any deps were cloned/updated, clear the cforge.toml hash to force CMakeLists.txt regeneration
+  // If any deps were cloned/updated, clear the cforge.toml hash to force
+  // CMakeLists.txt regeneration
   if (deps_changed) {
     cforge::logger::print_verbose("Dependencies changed - will force CMakeLists.txt regeneration");
-    dep_hashes.set_hash("cforge.toml", "");  // Clear the hash to force regeneration
+    dep_hashes.set_hash("cforge.toml",
+                        "");  // Clear the hash to force regeneration
   }
 
   // Save updated dependency hashes
@@ -813,12 +811,13 @@ bool resolve_index_dependencies(const std::filesystem::path &project_dir,
  */
 static bool run_cmake_configure(const std::vector<std::string> &cmake_args,
                                 const std::string &build_dir,
-                                const std::string &project_dir, bool verbose) {
+                                const std::string &project_dir,
+                                bool verbose) {
   // Set a longer timeout for Windows
 #ifdef _WIN32
-  cforge_int_t timeout = 180; // 3 minutes for Windows
+  cforge_int_t timeout = 180;  // 3 minutes for Windows
 #else
-  cforge_int_t timeout = 120; // 2 minutes for other platforms
+  cforge_int_t timeout = 120;  // 2 minutes for other platforms
 #endif
 
   cforge::logger::configuring("CMake");
@@ -861,8 +860,8 @@ static bool run_cmake_configure(const std::vector<std::string> &cmake_args,
   }
 
   // Execute CMake and capture output
-  cforge::process_result pr = cforge::execute_process("cmake", cmake_args, project_dir, nullptr,
-                                      nullptr, timeout);
+  cforge::process_result pr =
+      cforge::execute_process("cmake", cmake_args, project_dir, nullptr, nullptr, timeout);
   bool result = pr.success;
 
   if (result) {
@@ -871,8 +870,7 @@ static bool run_cmake_configure(const std::vector<std::string> &cmake_args,
 
   // Verify that the configuration was successful by checking for CMakeCache.txt
   std::filesystem::path build_path(build_dir);
-  bool cmake_success =
-      result && std::filesystem::exists(build_path / "CMakeCache.txt");
+  bool cmake_success = result && std::filesystem::exists(build_path / "CMakeCache.txt");
 
   if (!cmake_success) {
     // Try formatting errors first from stderr, then stdout
@@ -881,7 +879,8 @@ static bool run_cmake_configure(const std::vector<std::string> &cmake_args,
       formatted_errors = cforge::format_build_errors(pr.stdout_output);
     }
     if (!formatted_errors.empty()) {
-      // Print formatted errors directly (they already contain "error" prefix from Rust-style formatting)
+      // Print formatted errors directly (they already contain "error" prefix
+      // from Rust-style formatting)
       cforge::logger::print_plain(formatted_errors);
     } else {
       // Fallback: print raw outputs only if they contain non-empty lines
@@ -899,7 +898,7 @@ static bool run_cmake_configure(const std::vector<std::string> &cmake_args,
           }
         }
         if (!non_empty_lines.empty()) {
-          for (const auto& l : non_empty_lines) {
+          for (const auto &l : non_empty_lines) {
             cforge::logger::print_error(l);
           }
           printed_any = true;
@@ -918,7 +917,7 @@ static bool run_cmake_configure(const std::vector<std::string> &cmake_args,
           }
         }
         if (!non_empty_lines.empty()) {
-          for (const auto& l : non_empty_lines) {
+          for (const auto &l : non_empty_lines) {
             cforge::logger::print_error(l);
           }
         }
@@ -939,14 +938,14 @@ static bool run_cmake_configure(const std::vector<std::string> &cmake_args,
  * @return bool True if build should continue, false if it should fail
  */
 static bool check_circular_dependencies(const std::filesystem::path &project_dir,
-                                         const cforge::toml_reader&project_config,
-                                         bool verbose) {
+                                        const cforge::toml_reader &project_config,
+                                        bool verbose) {
   // Check if circular dependency check is enabled (default: true)
-  bool warn_circular = project_config.get_bool("build.warn_circular", true);
+  bool warn_circular    = project_config.get_bool("build.warn_circular", true);
   bool fail_on_circular = project_config.get_bool("build.fail_on_circular", false);
 
   if (!warn_circular && !fail_on_circular) {
-    return true; // Checks disabled
+    return true;  // Checks disabled
   }
 
   if (verbose) {
@@ -954,7 +953,7 @@ static bool check_circular_dependencies(const std::filesystem::path &project_dir
   }
 
   cforge::include_analyzer analyzer(project_dir);
-  cforge::include_analysis_result result = analyzer.analyze(false); // Don't include deps
+  cforge::include_analysis_result result = analyzer.analyze(false);  // Don't include deps
 
   if (!result.has_cycles) {
     if (verbose) {
@@ -984,12 +983,13 @@ static bool check_circular_dependencies(const std::filesystem::path &project_dir
   }
 
   // Summary
-  std::string chains_msg = std::to_string(result.chains.size()) + " circular dependency chain" +
-                           (result.chains.size() == 1 ? "" : "s") + " detected";
+  std::string chains_msg = std::to_string(result.chains.size()) + " circular dependency chain"
+                         + (result.chains.size() == 1 ? "" : "s") + " detected";
   cforge::logger::print_warning(chains_msg);
 
   if (fail_on_circular) {
-    cforge::logger::print_error("Build failed due to circular dependencies (build.fail_on_circular = true)");
+    cforge::logger::print_error("Build failed due to circular dependencies "
+                                "(build.fail_on_circular = true)");
     return false;
   }
 
@@ -1009,11 +1009,13 @@ static bool check_circular_dependencies(const std::filesystem::path &project_dir
  * @return bool Success flag
  */
 static bool build_project(const std::filesystem::path &project_dir,
-                          const std::string &build_config, cforge_int_t num_jobs,
-                          bool verbose, const std::string &target = "",
+                          const std::string &build_config,
+                          cforge_int_t num_jobs,
+                          bool verbose,
+                          const std::string &target             = "",
                           std::set<std::string> *built_projects = nullptr,
-                          bool skip_deps = false,
-                          const std::string &cross_profile = "") {
+                          bool skip_deps                        = false,
+                          const std::string &cross_profile      = "") {
   // Start project build timer
   auto project_build_start = std::chrono::steady_clock::now();
 
@@ -1024,11 +1026,10 @@ static bool build_project(const std::filesystem::path &project_dir,
   bool has_project_config = false;
   if (std::filesystem::exists(config_path)) {
     try {
-      config_table = toml::parse_file(config_path.string());
+      config_table       = toml::parse_file(config_path.string());
       has_project_config = true;
     } catch (const toml::parse_error &e) {
-      cforge::logger::print_error("Failed to parse cforge.toml: " +
-                          std::string(e.what()));
+      cforge::logger::print_error("Failed to parse cforge.toml: " + std::string(e.what()));
       // Continue with default values
     }
   }
@@ -1037,14 +1038,12 @@ static bool build_project(const std::filesystem::path &project_dir,
   cforge::toml_reader project_config(config_table);
 
   // Get project name from cforge.toml, fallback to directory name
-  std::string project_name = project_config.get_string(
-      "project.name", project_dir.filename().string());
+  std::string project_name = project_config.get_string("project.name",
+                                                       project_dir.filename().string());
 
   // If we're tracking built projects, check if this one is already done
-  if (built_projects &&
-      built_projects->find(project_name) != built_projects->end()) {
-    cforge::logger::print_verbose("Project '" + project_name +
-                          "' already built, skipping");
+  if (built_projects && built_projects->find(project_name) != built_projects->end()) {
+    cforge::logger::print_verbose("Project '" + project_name + "' already built, skipping");
     return true;
   }
 
@@ -1057,22 +1056,20 @@ static bool build_project(const std::filesystem::path &project_dir,
 
   // Check if we're in a workspace and workspaceCMakeLists exists
   auto [is_workspace, workspace_dir] = cforge::is_in_workspace(project_dir);
-  bool use_workspace_build = false;
-  if (is_workspace&& project_dir == workspace_dir &&
-      std::filesystem::exists(workspace_dir / "CMakeLists.txt")) {
+  bool use_workspace_build           = false;
+  if (is_workspace && project_dir == workspace_dir
+      && std::filesystem::exists(workspace_dir / "CMakeLists.txt")) {
     cforge::logger::print_verbose("Using workspace-level CMakeLists.txt for build");
     use_workspace_build = true;
   }
   // Determine build and source directories
-  std::filesystem::path build_base_dir = use_workspace_build
-                                             ? workspace_dir / DEFAULT_BUILD_DIR
-                                             : project_dir / DEFAULT_BUILD_DIR;
-  std::filesystem::path source_dir =
-      use_workspace_build ? workspace_dir : project_dir;
+  std::filesystem::path build_base_dir = use_workspace_build ? workspace_dir / DEFAULT_BUILD_DIR
+                                                             : project_dir / DEFAULT_BUILD_DIR;
+  std::filesystem::path source_dir     = use_workspace_build ? workspace_dir : project_dir;
 
   // Get the config-specific build directory
-  std::filesystem::path build_dir =
-      cforge::get_build_dir_for_config(build_base_dir.string(), build_config);
+  std::filesystem::path build_dir = cforge::get_build_dir_for_config(build_base_dir.string(),
+                                                                     build_config);
   cforge::logger::print_verbose("Using build directory: " + build_dir.string());
 
   // Make sure the build directory exists
@@ -1081,8 +1078,7 @@ static bool build_project(const std::filesystem::path &project_dir,
     try {
       std::filesystem::create_directories(build_dir);
     } catch (const std::filesystem::filesystem_error &e) {
-      cforge::logger::print_error("Failed to create build directory: " +
-                          std::string(e.what()));
+      cforge::logger::print_error("Failed to create build directory: " + std::string(e.what()));
       return false;
     }
   }
@@ -1100,11 +1096,12 @@ static bool build_project(const std::filesystem::path &project_dir,
           cforge::logger::print_warning("Some index dependencies could not be resolved");
         }
       } catch (const std::exception &ex) {
-        cforge::logger::print_warning("Exception while resolving index dependencies: " +
-                              std::string(ex.what()));
+        cforge::logger::print_warning("Exception while resolving index dependencies: "
+                                      + std::string(ex.what()));
       }
     } else {
-      cforge::logger::print_verbose("Using FetchContent mode - CMake will download index dependencies");
+      cforge::logger::print_verbose(
+          "Using FetchContent mode - CMake will download index dependencies");
     }
 
     // Clone Git dependencies before generating CMakeLists.txt
@@ -1114,26 +1111,23 @@ static bool build_project(const std::filesystem::path &project_dir,
         // Make sure we're in the project directory for relative paths to work
         std::filesystem::current_path(project_dir);
 
-        if (!clone_git_dependencies(project_dir, project_config, verbose,
-                                    skip_deps)) {
+        if (!clone_git_dependencies(project_dir, project_config, verbose, skip_deps)) {
           cforge::logger::print_error("Failed to clone Git dependencies");
           return false;
         }
 
-        cforge::logger::print_action("Finished",
-                             "Git dependencies successfully set up");
+        cforge::logger::print_action("Finished", "Git dependencies successfully set up");
       } catch (const std::exception &ex) {
-        cforge::logger::print_error("Exception while setting up Git dependencies: " +
-                            std::string(ex.what()));
+        cforge::logger::print_error("Exception while setting up Git dependencies: "
+                                    + std::string(ex.what()));
         return false;
       }
     }
 
     // Generate/update lock file after dependencies are resolved
     {
-      bool use_fetch_content = project_config.get_bool("dependencies.fetch_content", true);
-      std::string deps_dir_str =
-          project_config.get_string("dependencies.directory", "deps");
+      bool use_fetch_content          = project_config.get_bool("dependencies.fetch_content", true);
+      std::string deps_dir_str        = project_config.get_string("dependencies.directory", "deps");
       std::filesystem::path deps_path = project_dir / deps_dir_str;
 
       if (use_fetch_content) {
@@ -1146,14 +1140,11 @@ static bool build_project(const std::filesystem::path &project_dir,
     }
 
     // Generate CMakeLists.txt in the build directory
-    std::filesystem::path timestamp_file =
-        build_dir / ".cforge_cmakefile_timestamp";
+    std::filesystem::path timestamp_file = build_dir / ".cforge_cmakefile_timestamp";
 
     // Generate new CMakeLists.txt in the build directory
-    if (!::cforge::generate_cmakelists_from_toml(project_dir, project_config,
-                                         verbose)) {
-      cforge::logger::print_error(
-          "Failed to generate CMakeLists.txt in project directory");
+    if (!::cforge::generate_cmakelists_from_toml(project_dir, project_config, verbose)) {
+      cforge::logger::print_error("Failed to generate CMakeLists.txt in project directory");
       return false;
     }
 
@@ -1166,12 +1157,12 @@ static bool build_project(const std::filesystem::path &project_dir,
   }
 
   // Prepare CMake arguments
-  std::vector<std::string> cmake_args = {"-S", source_dir.string(), "-B",
-                                         build_dir.string(),
-                                         "-DCMAKE_BUILD_TYPE=" + build_config};
+  std::vector<std::string> cmake_args = {
+      "-S", source_dir.string(), "-B", build_dir.string(), "-DCMAKE_BUILD_TYPE=" + build_config};
 
   // ccache/sccache integration
-  // Configuration: build.compiler_cache = "auto" (default), "ccache", "sccache", or "none"
+  // Configuration: build.compiler_cache = "auto" (default), "ccache",
+  // "sccache", or "none"
   if (has_project_config) {
     std::string cache_mode = project_config.get_string("build.compiler_cache", "auto");
     std::string cache_program;
@@ -1220,8 +1211,7 @@ static bool build_project(const std::filesystem::path &project_dir,
   }
   // Inject config-specific defines: build.config.<config>.defines
   {
-    std::string defs_key =
-        "build.config." + cforge::string_to_lower(build_config) + ".defines";
+    std::string defs_key = "build.config." + cforge::string_to_lower(build_config) + ".defines";
     if (has_project_config && project_config.has_key(defs_key)) {
       auto cfg_defs = project_config.get_string_array(defs_key);
       for (const auto &d : cfg_defs) {
@@ -1237,8 +1227,8 @@ static bool build_project(const std::filesystem::path &project_dir,
 
   // Add any custom CMake arguments
   if (has_project_config) {
-    std::string config_key =
-        "build.config." + cforge::string_to_lower(build_config) + ".cmake_args";
+    std::string config_key = "build.config." + cforge::string_to_lower(build_config)
+                           + ".cmake_args";
     if (project_config.has_key(config_key)) {
       auto custom_args = project_config.get_string_array(config_key);
       for (const auto &arg : custom_args) {
@@ -1263,19 +1253,19 @@ static bool build_project(const std::filesystem::path &project_dir,
     // Check if a profile is specified via command line
     if (!cross_profile.empty()) {
       std::string profile_key = "cross.profile." + cross_profile;
-      if (project_config.has_key(profile_key + ".system") ||
-          project_config.has_key(profile_key + ".toolchain")) {
+      if (project_config.has_key(profile_key + ".system")
+          || project_config.has_key(profile_key + ".toolchain")) {
         cross_enabled = true;
         cforge::logger::print_action("Cross-compiling", "using profile '" + cross_profile + "'");
 
         // Read profile settings
-        cross_system = project_config.get_string(profile_key + ".system", "");
+        cross_system    = project_config.get_string(profile_key + ".system", "");
         cross_processor = project_config.get_string(profile_key + ".processor", "");
         cross_toolchain = project_config.get_string(profile_key + ".toolchain", "");
-        cross_sysroot = project_config.get_string(profile_key + ".sysroot", "");
+        cross_sysroot   = project_config.get_string(profile_key + ".sysroot", "");
 
         // Compilers can be specified as inline table or separate keys
-        cross_c_compiler = project_config.get_string(profile_key + ".compilers.c", "");
+        cross_c_compiler   = project_config.get_string(profile_key + ".compilers.c", "");
         cross_cxx_compiler = project_config.get_string(profile_key + ".compilers.cxx", "");
         if (cross_c_compiler.empty()) {
           cross_c_compiler = project_config.get_string(profile_key + ".c", "");
@@ -1297,7 +1287,8 @@ static bool build_project(const std::filesystem::path &project_dir,
         if (project_config.get_bool(profile_key + ".nodefaultlibs", false)) {
           cross_variables["CFORGE_NODEFAULTLIBS"] = "ON";
         }
-        // Pass active profile name so CMake knows which post_build/flash targets to use
+        // Pass active profile name so CMake knows which post_build/flash
+        // targets to use
         cross_variables["CFORGE_CROSS_PROFILE"] = cross_profile;
       } else {
         cforge::logger::print_error("Cross-compilation profile '" + cross_profile + "' not found");
@@ -1310,16 +1301,16 @@ static bool build_project(const std::filesystem::path &project_dir,
       cforge::logger::print_action("Cross-compiling", "using default cross configuration");
 
       // Read [cross.target] settings
-      cross_system = project_config.get_string("cross.target.system", "");
+      cross_system    = project_config.get_string("cross.target.system", "");
       cross_processor = project_config.get_string("cross.target.processor", "");
       cross_toolchain = project_config.get_string("cross.target.toolchain", "");
 
       // Read [cross.compilers] settings
-      cross_c_compiler = project_config.get_string("cross.compilers.c", "");
+      cross_c_compiler   = project_config.get_string("cross.compilers.c", "");
       cross_cxx_compiler = project_config.get_string("cross.compilers.cxx", "");
 
       // Read [cross.paths] settings
-      cross_sysroot = project_config.get_string("cross.paths.sysroot", "");
+      cross_sysroot   = project_config.get_string("cross.paths.sysroot", "");
       cross_find_root = project_config.get_string("cross.paths.find_root", "");
 
       // Read [cross.variables] as inline table
@@ -1342,12 +1333,12 @@ static bool build_project(const std::filesystem::path &project_dir,
       if (!cross_toolchain.empty()) {
         // Expand environment variables in toolchain path
         std::string expanded_toolchain = cross_toolchain;
-        cforge_size_t pos = 0;
+        cforge_size_t pos              = 0;
         while ((pos = expanded_toolchain.find("${", pos)) != std::string::npos) {
           cforge_size_t end = expanded_toolchain.find("}", pos);
           if (end != std::string::npos) {
-            std::string var_name = expanded_toolchain.substr(pos + 2, end - pos - 2);
-            const char* var_value = std::getenv(var_name.c_str());
+            std::string var_name  = expanded_toolchain.substr(pos + 2, end - pos - 2);
+            const char *var_value = std::getenv(var_name.c_str());
             if (var_value) {
               expanded_toolchain.replace(pos, end - pos + 1, var_value);
             } else {
@@ -1385,7 +1376,7 @@ static bool build_project(const std::filesystem::path &project_dir,
         cforge::logger::print_verbose("Find root path: " + cross_find_root);
       }
       // Apply custom variables
-      for (const auto& [var_name, var_value] : cross_variables) {
+      for (const auto &[var_name, var_value] : cross_variables) {
         cmake_args.push_back("-D" + var_name + "=" + var_value);
         cforge::logger::print_verbose("Variable: " + var_name + "=" + var_value);
       }
@@ -1431,8 +1422,7 @@ static bool build_project(const std::filesystem::path &project_dir,
       cforge::logger::print_verbose("Using CMake generator from config: " + generator);
     } else {
       generator = cforge::get_cmake_generator();
-      cforge::logger::print_verbose("No CMake generator in config, using default: " +
-                            generator);
+      cforge::logger::print_verbose("No CMake generator in config, using default: " + generator);
     }
   } else {
     generator = cforge::get_cmake_generator();
@@ -1451,20 +1441,17 @@ static bool build_project(const std::filesystem::path &project_dir,
       vcpkg_root = (source_dir / "vcpkg").string();
     }
     // Compute toolchain file path
-    std::string toolchain_path =
-        vcpkg_root + "/scripts/buildsystems/vcpkg.cmake";
+    std::string toolchain_path = vcpkg_root + "/scripts/buildsystems/vcpkg.cmake";
     std::replace(toolchain_path.begin(), toolchain_path.end(), '\\', '/');
     if (std::filesystem::exists(toolchain_path)) {
       cmake_args.push_back("-DCMAKE_TOOLCHAIN_FILE=" + toolchain_path);
       cforge::logger::print_verbose("Using vcpkg toolchain: " + toolchain_path);
     } else {
-      cforge::logger::print_warning("vcpkg toolchain file not found: " +
-                            toolchain_path);
+      cforge::logger::print_warning("vcpkg toolchain file not found: " + toolchain_path);
     }
     // Add triplet if specified
     if (project_config.has_key("dependencies.vcpkg.triplet")) {
-      std::string triplet =
-          project_config.get_string("dependencies.vcpkg.triplet", "");
+      std::string triplet = project_config.get_string("dependencies.vcpkg.triplet", "");
       if (!triplet.empty()) {
         cmake_args.push_back("-DVCPKG_TARGET_TRIPLET=" + triplet);
         cforge::logger::print_verbose("Using vcpkg triplet: " + triplet);
@@ -1473,8 +1460,8 @@ static bool build_project(const std::filesystem::path &project_dir,
   }
 
   // If using Ninja and a toolset is specified, force C/C++ compilers
-  if (generator.find("Ninja") != std::string::npos && has_project_config &&
-      project_config.has_key("cmake.toolset")) {
+  if (generator.find("Ninja") != std::string::npos && has_project_config
+      && project_config.has_key("cmake.toolset")) {
     std::string toolset = project_config.get_string("cmake.toolset", "");
     if (!toolset.empty()) {
       cmake_args.push_back("-DCMAKE_C_COMPILER=" + toolset);
@@ -1485,8 +1472,8 @@ static bool build_project(const std::filesystem::path &project_dir,
 
   // Validate generator: if invalid, fallback and warn
   if (!cforge::is_generator_valid(generator)) {
-    cforge::logger::print_warning("CMake does not support generator: " + generator +
-                          ", falling back to default generator");
+    cforge::logger::print_warning("CMake does not support generator: " + generator
+                                  + ", falling back to default generator");
     generator = cforge::get_cmake_generator();
     cforge::logger::print_verbose("Using fallback CMake generator: " + generator);
   }
@@ -1530,8 +1517,7 @@ static bool build_project(const std::filesystem::path &project_dir,
 
     // Then change to the build directory
     std::filesystem::current_path(build_dir);
-    cforge::logger::print_verbose("Changed working directory to: " +
-                          build_dir.string());
+    cforge::logger::print_verbose("Changed working directory to: " + build_dir.string());
   } catch (const std::filesystem::filesystem_error &e) {
     cforge::logger::print_error("Failed to change directory: " + std::string(e.what()));
     return false;
@@ -1539,12 +1525,11 @@ static bool build_project(const std::filesystem::path &project_dir,
 
   // Run CMake configuration
   cforge::logger::configuring("project with CMake");
-  bool configure_result = run_cmake_configure(cmake_args, build_dir.string(),
-                                              project_dir.string(), verbose);
+  bool configure_result =
+      run_cmake_configure(cmake_args, build_dir.string(), project_dir.string(), verbose);
 
   if (!configure_result) {
-    cforge::logger::print_error("CMake configuration failed for project: " +
-                        project_name);
+    cforge::logger::print_error("CMake configuration failed for project: " + project_name);
     std::filesystem::current_path(original_dir);
     return false;
   }
@@ -1565,8 +1550,8 @@ static bool build_project(const std::filesystem::path &project_dir,
   if (num_jobs > 0) {
     build_args.push_back("--parallel");
     build_args.push_back(std::to_string(num_jobs));
-    cforge::logger::print_verbose("Using parallel build with " +
-                          std::to_string(num_jobs) + " jobs");
+    cforge::logger::print_verbose("Using parallel build with " + std::to_string(num_jobs)
+                                  + " jobs");
   } else {
     // Default to number of logical cores
     build_args.push_back("--parallel");
@@ -1594,44 +1579,39 @@ static bool build_project(const std::filesystem::path &project_dir,
     // Normalize separator for MSBuild
     std::string outdir_str = outdir.string();
     build_args.push_back(std::string("/p:OutDir=") + outdir_str + "\\");
-    cforge::logger::print_verbose(std::string("Overriding MSBuild OutDir to: ") +
-                          outdir_str);
+    cforge::logger::print_verbose(std::string("Overriding MSBuild OutDir to: ") + outdir_str);
   }
 
   // Run the build with longer timeout for CI environments
   // Release builds especially on Windows CI can take several minutes
-  cforge_int_t build_timeout = 600; // 10 minutes
+  cforge_int_t build_timeout = 600;  // 10 minutes
   bool build_result =
       cforge::execute_tool("cmake", build_args, "", "CMake Build", verbose, build_timeout);
 
   // Clean up empty config directories under the build root
   for (const auto &cfg : {"Debug", "Release", "RelWithDebInfo"}) {
     std::filesystem::path cfg_dir = build_dir / cfg;
-    if (std::filesystem::exists(cfg_dir) &&
-        std::filesystem::is_directory(cfg_dir) &&
-        std::filesystem::is_empty(cfg_dir)) {
+    if (std::filesystem::exists(cfg_dir) && std::filesystem::is_directory(cfg_dir)
+        && std::filesystem::is_empty(cfg_dir)) {
       std::filesystem::remove(cfg_dir);
-      cforge::logger::print_verbose("Removed empty config directory: " +
-                            cfg_dir.string());
+      cforge::logger::print_verbose("Removed empty config directory: " + cfg_dir.string());
     }
   }
 
   // Restore original directory
   try {
     std::filesystem::current_path(original_dir);
-    cforge::logger::print_verbose("Restored working directory to: " +
-                          original_dir.string());
+    cforge::logger::print_verbose("Restored working directory to: " + original_dir.string());
   } catch (const std::filesystem::filesystem_error &e) {
-    cforge::logger::print_warning("Failed to restore directory: " +
-                          std::string(e.what()));
+    cforge::logger::print_warning("Failed to restore directory: " + std::string(e.what()));
     // Continue anyway
   }
 
   if (build_result) {
     // Calculate build duration
     auto project_build_end = std::chrono::steady_clock::now();
-    auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                           project_build_end - project_build_start)
+    auto duration_ms       = std::chrono::duration_cast<std::chrono::milliseconds>(project_build_end
+                                                                             - project_build_start)
                            .count();
     std::string duration_str = fmt::format("{:.2f}s", duration_ms / 1000.0);
     cforge::logger::finished(build_config, duration_str);
@@ -1643,15 +1623,13 @@ static bool build_project(const std::filesystem::path &project_dir,
 
     return true;
   } else {
-    cforge::logger::print_error("Failed to build project: " + project_name + " [" +
-                        build_config + "]");
+    cforge::logger::print_error("Failed to build project: " + project_name + " [" + build_config
+                                + "]");
 
     // Check for common build errors and provide more helpful messages
-    std::filesystem::path cmake_error_log =
-        build_dir / "CMakeFiles" / "CMakeError.log";
+    std::filesystem::path cmake_error_log = build_dir / "CMakeFiles" / "CMakeError.log";
     if (std::filesystem::exists(cmake_error_log)) {
-      cforge::logger::print_verbose(
-          "Checking CMake error log for additional information...");
+      cforge::logger::print_verbose("Checking CMake error log for additional information...");
       try {
         std::ifstream error_log(cmake_error_log);
         if (error_log.is_open()) {
@@ -1661,22 +1639,20 @@ static bool build_project(const std::filesystem::path &project_dir,
           // Only show a short preview of the error log
           if (!error_content.empty()) {
             if (error_content.length() > 500) {
-              error_content =
-                  error_content.substr(0, 500) + "...\n(error log truncated)";
+              error_content = error_content.substr(0, 500) + "...\n(error log truncated)";
             }
             cforge::logger::print_error("CMake Error Log:\n" + error_content);
-            cforge::logger::print_verbose("Full error log available at: " +
-                                  cmake_error_log.string());
+            cforge::logger::print_verbose("Full error log available at: "
+                                          + cmake_error_log.string());
           }
         }
       } catch (const std::exception &ex) {
-        cforge::logger::print_warning("Could not read CMake error log: " +
-                              std::string(ex.what()));
+        cforge::logger::print_warning("Could not read CMake error log: " + std::string(ex.what()));
       }
     }
 
     cforge::logger::print_verbose("For more detailed build information, try running "
-                          "with -v/--verbose flag");
+                                  "with -v/--verbose flag");
     return false;
   }
 }
@@ -1693,13 +1669,15 @@ static bool build_project(const std::filesystem::path &project_dir,
  * @param skip_deps Skip dependencies flag
  * @return bool Success flag
  */
-[[maybe_unused]] static bool build_workspace_project(const std::filesystem::path & /*workspace_dir*/,
-                                    const cforge::workspace_project&project,
-                                    const std::string &build_config,
-                                    cforge_int_t num_jobs, bool verbose,
-                                    const std::string &target,
-                                    bool skip_deps = false,
-                                    const std::string &cross_profile = "") {
+[[maybe_unused]] static bool build_workspace_project(
+    const std::filesystem::path & /*workspace_dir*/,
+    const cforge::workspace_project &project,
+    const std::string &build_config,
+    cforge_int_t num_jobs,
+    bool verbose,
+    const std::string &target,
+    bool skip_deps                   = false,
+    const std::string &cross_profile = "") {
   // Change to project directory
   std::filesystem::current_path(project.path);
 
@@ -1710,8 +1688,8 @@ static bool build_project(const std::filesystem::path &project_dir,
   try {
     config_table = toml::parse_file(config_path.string());
   } catch (const toml::parse_error &e) {
-    cforge::logger::print_error("Failed to load project configuration for '" +
-                        project.name + "': " + std::string(e.what()));
+    cforge::logger::print_error("Failed to load project configuration for '" + project.name
+                                + "': " + std::string(e.what()));
     return false;
   }
 
@@ -1719,16 +1697,14 @@ static bool build_project(const std::filesystem::path &project_dir,
   cforge::toml_reader config_data(config_table);
 
   // Determine build directory
-  std::string base_build_dir =
-      config_data.get_string("build.build_dir", "build");
+  std::string base_build_dir = config_data.get_string("build.build_dir", "build");
 
   // Get the config-specific build directory
-  std::filesystem::path build_dir =
-      cforge::get_build_dir_for_config(base_build_dir, build_config);
+  std::filesystem::path build_dir = cforge::get_build_dir_for_config(base_build_dir, build_config);
 
   // Build the project
-  bool success = build_project(project.path, build_config, num_jobs, verbose,
-                               target, nullptr, skip_deps, cross_profile);
+  bool success = build_project(
+      project.path, build_config, num_jobs, verbose, target, nullptr, skip_deps, cross_profile);
 
   if (!success) {
     cforge::logger::print_error("Failed to build project '" + project.name + "'");
@@ -1756,9 +1732,8 @@ cforge_int_t cforge_cmd_build(const cforge_context_t *ctx) {
 
   // Verify CMake is available
   if (!is_cmake_available()) {
-    cforge::logger::print_error(
-        "CMake is required but not found. Please install CMake from "
-        "https://cmake.org/download/ and ensure it is in your PATH.");
+    cforge::logger::print_error("CMake is required but not found. Please install CMake from "
+                                "https://cmake.org/download/ and ensure it is in your PATH.");
     return 1;
   }
 
@@ -1766,7 +1741,7 @@ cforge_int_t cforge_cmd_build(const cforge_context_t *ctx) {
   auto build_start_time = std::chrono::steady_clock::now();
 
   // Check if we're in a workspace
-  std::filesystem::path current_dir = std::filesystem::path(ctx->working_dir);
+  std::filesystem::path current_dir  = std::filesystem::path(ctx->working_dir);
   auto [is_workspace, workspace_dir] = cforge::is_in_workspace(current_dir);
 
   // Parse command line arguments
@@ -1777,8 +1752,8 @@ cforge_int_t cforge_cmd_build(const cforge_context_t *ctx) {
   std::string project_name;
   std::string cross_profile;  // Cross-compilation profile name
   [[maybe_unused]] bool generate_workspace_cmake = false;
-  [[maybe_unused]] bool force_regenerate = false;
-  bool skip_deps = false;
+  [[maybe_unused]] bool force_regenerate         = false;
+  bool skip_deps                                 = false;
 
   // Extract command line arguments
   for (cforge_int_t i = 0; i < ctx->args.arg_count; i++) {
@@ -1792,14 +1767,13 @@ cforge_int_t cforge_cmd_build(const cforge_context_t *ctx) {
     } else if (arg == "-c" || arg == "--config") {
       if (i + 1 < ctx->args.arg_count) {
         config_name = ctx->args.args[i + 1];
-        cforge::logger::print_verbose("Using build configuration from command line: " +
-                              config_name);
-        i++; // Skip the next argument
+        cforge::logger::print_verbose("Using build configuration from command line: "
+                                      + config_name);
+        i++;  // Skip the next argument
       }
     } else if (arg.substr(0, 9) == "--config=") {
       config_name = arg.substr(9);
-      cforge::logger::print_verbose("Using build configuration from command line: " +
-                            config_name);
+      cforge::logger::print_verbose("Using build configuration from command line: " + config_name);
     } else if (arg == "-j" || arg == "--jobs") {
       if (i + 1 < ctx->args.arg_count) {
         try {
@@ -1807,19 +1781,19 @@ cforge_int_t cforge_cmd_build(const cforge_context_t *ctx) {
         } catch (...) {
           cforge::logger::print_warning("Invalid jobs value, using default");
         }
-        i++; // Skip the next argument
+        i++;  // Skip the next argument
       }
     } else if (arg == "-v" || arg == "--verbose") {
       verbose = true;
     } else if (arg == "-t" || arg == "--target") {
       if (i + 1 < ctx->args.arg_count) {
         target = ctx->args.args[i + 1];
-        i++; // Skip the next argument
+        i++;  // Skip the next argument
       }
     } else if (arg == "-p" || arg == "--project") {
       if (i + 1 < ctx->args.arg_count) {
         project_name = ctx->args.args[i + 1];
-        i++; // Skip the next argument
+        i++;  // Skip the next argument
       }
     } else if (arg == "--gen-workspace-cmake") {
       generate_workspace_cmake = true;
@@ -1829,7 +1803,7 @@ cforge_int_t cforge_cmd_build(const cforge_context_t *ctx) {
       if (i + 1 < ctx->args.arg_count) {
         cross_profile = ctx->args.args[i + 1];
         cforge::logger::print_verbose("Using cross-compilation profile: " + cross_profile);
-        i++; // Skip the next argument
+        i++;  // Skip the next argument
       }
     } else if (arg.substr(0, 10) == "--profile=") {
       cross_profile = arg.substr(10);
@@ -1857,26 +1831,23 @@ cforge_int_t cforge_cmd_build(const cforge_context_t *ctx) {
   }
 
   // Check ctx.args.config if config_name is still empty
-  if (config_name.empty() && ctx->args.config != nullptr &&
-      strlen(ctx->args.config) > 0) {
+  if (config_name.empty() && ctx->args.config != nullptr && strlen(ctx->args.config) > 0) {
     config_name = ctx->args.config;
-    cforge::logger::print_verbose("Using build configuration from context: " +
-                          config_name);
+    cforge::logger::print_verbose("Using build configuration from context: " + config_name);
   }
 
   // If still no specific configuration is provided, use the default
   if (config_name.empty()) {
     config_name = "Debug";
-    cforge::logger::print_verbose("No configuration specified, using default: " +
-                          config_name);
+    cforge::logger::print_verbose("No configuration specified, using default: " + config_name);
   } else {
     // Convert to lowercase for case-insensitive comparison
     std::string config_lower = cforge::string_to_lower(config_name);
 
     // Capitalize first letter for standard configs
-    if (config_lower == "debug" || config_lower == "release" ||
-        config_lower == "relwithdebinfo" || config_lower == "minsizerel") {
-      config_name = config_lower;
+    if (config_lower == "debug" || config_lower == "release" || config_lower == "relwithdebinfo"
+        || config_lower == "minsizerel") {
+      config_name    = config_lower;
       config_name[0] = std::toupper(config_name[0]);
     }
   }
@@ -1884,16 +1855,15 @@ cforge_int_t cforge_cmd_build(const cforge_context_t *ctx) {
   cforge::logger::print_verbose("Using build configuration: " + config_name);
 
   // Pre-build script support using shared script_runner
-  if (!cforge::run_pre_build_scripts(is_workspace? workspace_dir : current_dir,
-                             is_workspace, verbose)) {
+  if (!cforge::run_pre_build_scripts(
+          is_workspace ? workspace_dir : current_dir, is_workspace, verbose)) {
     return 1;
   }
 
   cforge_int_t result = 0;
 
   if (is_workspace) {
-    cforge::logger::print_verbose("Building in workspace context: " +
-                          workspace_dir.string());
+    cforge::logger::print_verbose("Building in workspace context: " + workspace_dir.string());
     // Save current directory and switch to workspace root
     auto original_cwd = std::filesystem::current_path();
     std::filesystem::current_path(workspace_dir);
@@ -1907,7 +1877,8 @@ cforge_int_t cforge_cmd_build(const cforge_context_t *ctx) {
     }
 
     // STEP 1: Resolve all dependencies FIRST (before CMakeLists generation)
-    // This ensures dependencies are available when CMakeLists.txt references them
+    // This ensures dependencies are available when CMakeLists.txt references
+    // them
     if (!skip_deps) {
       cforge::logger::print_action("Resolving", "workspace dependencies");
       for (const auto &proj : ws.get_projects()) {
@@ -1915,38 +1886,39 @@ cforge_int_t cforge_cmd_build(const cforge_context_t *ctx) {
         if (std::filesystem::exists(proj_toml)) {
           cforge::toml_reader pcfg(toml::parse_file(proj_toml.string()));
 
-          // Resolve index/registrydependencies first (skip if using FetchContent)
+          // Resolve index/registrydependencies first (skip if using
+          // FetchContent)
           bool proj_use_fetch_content = pcfg.get_bool("dependencies.fetch_content", true);
           if (!proj_use_fetch_content) {
             try {
               std::filesystem::current_path(proj.path);
               if (!resolve_index_dependencies(proj.path, pcfg, verbose, skip_deps)) {
-                cforge::logger::print_warning("Some index dependencies could not be resolved for project: " + proj.name);
+                cforge::logger::print_warning("Some index dependencies could "
+                                              "not be resolved for project: "
+                                              + proj.name);
               }
             } catch (const std::exception &ex) {
-              cforge::logger::print_warning("Exception while resolving index dependencies for project " +
-                                    proj.name + ": " + std::string(ex.what()));
+              cforge::logger::print_warning(
+                  "Exception while resolving index dependencies for project " + proj.name + ": "
+                  + std::string(ex.what()));
             }
           }
 
           // Then handle Git dependencies
           if (pcfg.has_key("dependencies.git")) {
             cforge::logger::print_action("Setting up",
-                                 "Git dependencies for project: " + proj.name);
+                                         "Git dependencies for project: " + proj.name);
             try {
               std::filesystem::current_path(proj.path);
-              if (!clone_git_dependencies(proj.path, pcfg, verbose,
-                                          skip_deps)) {
-                cforge::logger::print_error(
-                    "Failed to clone Git dependencies for project: " +
-                    proj.name);
+              if (!clone_git_dependencies(proj.path, pcfg, verbose, skip_deps)) {
+                cforge::logger::print_error("Failed to clone Git dependencies for project: "
+                                            + proj.name);
                 std::filesystem::current_path(original_cwd);
                 return 1;
               }
             } catch (const std::exception &ex) {
-              cforge::logger::print_error(
-                  "Exception while setting up Git dependencies for project " +
-                  proj.name + ": " + std::string(ex.what()));
+              cforge::logger::print_error("Exception while setting up Git dependencies for project "
+                                          + proj.name + ": " + std::string(ex.what()));
               std::filesystem::current_path(original_cwd);
               return 1;
             }
@@ -1956,7 +1928,8 @@ cforge_int_t cforge_cmd_build(const cforge_context_t *ctx) {
       std::filesystem::current_path(workspace_dir);
     }
 
-    // STEP 2: Generate workspace and project CMakeLists.txt AFTER dependencies are resolved
+    // STEP 2: Generate workspace and project CMakeLists.txt AFTER dependencies
+    // are resolved
     auto ws_config_path = cforge::get_workspace_config_path(workspace_dir);
     if (ws_config_path.empty()) {
       cforge::logger::print_error("No workspace configuration found");
@@ -1974,8 +1947,8 @@ cforge_int_t cforge_cmd_build(const cforge_context_t *ctx) {
       if (std::filesystem::exists(proj_toml)) {
         cforge::toml_reader pcfg(toml::parse_file(proj_toml.string()));
         if (!cforge::generate_cmakelists_from_toml(proj.path, pcfg, verbose)) {
-          cforge::logger::print_error(
-              "Failed to generate CMakeLists.txt for project: " + proj.name);
+          cforge::logger::print_error("Failed to generate CMakeLists.txt for project: "
+                                      + proj.name);
           std::filesystem::current_path(original_cwd);
           return 1;
         }
@@ -1988,8 +1961,7 @@ cforge_int_t cforge_cmd_build(const cforge_context_t *ctx) {
     if (!std::filesystem::exists(build_dir)) {
       try {
         std::filesystem::create_directories(build_dir);
-      } catch (...) {
-      }
+      } catch (...) {}
     }
 
     // Get generator from workspace config, fall back to auto-detection
@@ -2003,14 +1975,13 @@ cforge_int_t cforge_cmd_build(const cforge_context_t *ctx) {
     cforge::logger::print_verbose("Using CMake generator: " + generator);
 
     // Check if multi-config generator
-    bool is_multi_config = generator.find("Multi-Config") != std::string::npos ||
-                           generator.find("Visual Studio") != std::string::npos ||
-                           generator.find("Xcode") != std::string::npos;
+    bool is_multi_config = generator.find("Multi-Config") != std::string::npos
+                        || generator.find("Visual Studio") != std::string::npos
+                        || generator.find("Xcode") != std::string::npos;
 
     // Configure workspace CMake
-    std::vector<std::string> cmake_args = {"-S", workspace_dir.string(), "-B",
-                                           build_dir.string(),
-                                           "-G", generator};
+    std::vector<std::string> cmake_args = {
+        "-S", workspace_dir.string(), "-B", build_dir.string(), "-G", generator};
 
     // Add build type for non-multi-config generators
     if (!is_multi_config) {
@@ -2022,10 +1993,10 @@ cforge_int_t cforge_cmd_build(const cforge_context_t *ctx) {
       cmake_args.push_back("-DCMAKE_EXPORT_COMPILE_COMMANDS=ON");
     }
 
-    if (verbose)
+    if (verbose) {
       cmake_args.push_back("--debug-output");
-    if (!run_cmake_configure(cmake_args, build_dir.string(),
-                             workspace_dir.string(), verbose)) {
+    }
+    if (!run_cmake_configure(cmake_args, build_dir.string(), workspace_dir.string(), verbose)) {
       cforge::logger::print_error("Workspace CMake configuration failed");
       // Restore original directory before exit
       std::filesystem::current_path(original_cwd);
@@ -2044,8 +2015,9 @@ cforge_int_t cforge_cmd_build(const cforge_context_t *ctx) {
       build_args.push_back("--parallel");
       build_args.push_back(std::to_string(num_jobs));
     }
-    if (verbose)
+    if (verbose) {
       build_args.push_back("--verbose");
+    }
     if (!project_name.empty()) {
       // Build only the specified cforge::workspacetarget
       build_args.push_back("--target");
@@ -2056,8 +2028,9 @@ cforge_int_t cforge_cmd_build(const cforge_context_t *ctx) {
     }
 
     // Use longer timeout for workspace builds in CI environments
-    cforge_int_t build_timeout = 600; // 10 minutes
-    bool result = cforge::execute_tool("cmake", build_args, "", "CMake Build", verbose, build_timeout);
+    cforge_int_t build_timeout = 600;  // 10 minutes
+    bool result =
+        cforge::execute_tool("cmake", build_args, "", "CMake Build", verbose, build_timeout);
     // Restore original directory
     std::filesystem::current_path(original_cwd);
     if (!result) {
@@ -2066,9 +2039,9 @@ cforge_int_t cforge_cmd_build(const cforge_context_t *ctx) {
     }
     // Calculate workspace build duration
     auto build_end_time = std::chrono::steady_clock::now();
-    auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                           build_end_time - build_start_time)
-                           .count();
+    auto duration_ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(build_end_time - build_start_time)
+            .count();
     std::string duration_str = fmt::format("{:.2f}s", duration_ms / 1000.0);
     cforge::logger::finished(config_name, duration_str);
     // Clean up empty config directories under workspace build root
@@ -2076,12 +2049,11 @@ cforge_int_t cforge_cmd_build(const cforge_context_t *ctx) {
       std::filesystem::path build_root = workspace_dir / DEFAULT_BUILD_DIR;
       for (const auto &cfg : {"Debug", "Release", "RelWithDebInfo"}) {
         std::filesystem::path cfg_dir = build_root / cfg;
-        if (std::filesystem::exists(cfg_dir) &&
-            std::filesystem::is_directory(cfg_dir) &&
-            std::filesystem::is_empty(cfg_dir)) {
+        if (std::filesystem::exists(cfg_dir) && std::filesystem::is_directory(cfg_dir)
+            && std::filesystem::is_empty(cfg_dir)) {
           std::filesystem::remove(cfg_dir);
-          cforge::logger::print_verbose("Removed empty cforge::workspaceconfig directory: " +
-                                cfg_dir.string());
+          cforge::logger::print_verbose("Removed empty cforge::workspaceconfig directory: "
+                                        + cfg_dir.string());
         }
       }
     }
@@ -2100,24 +2072,34 @@ cforge_int_t cforge_cmd_build(const cforge_context_t *ctx) {
     //   "  Generating CMakeLists.txt from cforge.toml"
     //   "    Finished CMakeLists.txt target(s)"
     // block before the real one.
-    if (!build_project(current_dir, config_name, num_jobs, verbose, target,
-                       nullptr, skip_deps, cross_profile)) {
+    if (!build_project(current_dir,
+                       config_name,
+                       num_jobs,
+                       verbose,
+                       target,
+                       nullptr,
+                       skip_deps,
+                       cross_profile)) {
       return 1;
     }
 
-    // Auto-run post-build target for active cross profile (if it has post_build commands)
+    // Auto-run post-build target for active cross profile (if it has post_build
+    // commands)
     if (!cross_profile.empty()) {
       std::filesystem::path toml_check = current_dir / CFORGE_FILE;
       if (std::filesystem::exists(toml_check)) {
         cforge::toml_reader pb_cfg(toml::parse_file(toml_check.string()));
         std::string profile_key = "cross.profile." + cross_profile;
-        auto post_build_cmds = pb_cfg.get_string_array(profile_key + ".post_build");
+        auto post_build_cmds    = pb_cfg.get_string_array(profile_key + ".post_build");
         if (!post_build_cmds.empty()) {
-          cforge::logger::print_action("Running", "post-build commands for profile '" + cross_profile + "'");
-          std::string build_dir_str = (current_dir / DEFAULT_BUILD_DIR).string();
+          cforge::logger::print_action("Running",
+                                       "post-build commands for profile '" + cross_profile + "'");
+          std::string build_dir_str     = (current_dir / DEFAULT_BUILD_DIR).string();
           std::string post_build_target = "post_build_" + cross_profile;
-          if (!cforge::run_cmake_build(build_dir_str, config_name, post_build_target, num_jobs, verbose)) {
-            cforge::logger::print_warning("Post-build commands failed for profile '" + cross_profile + "'");
+          if (!cforge::run_cmake_build(
+                  build_dir_str, config_name, post_build_target, num_jobs, verbose)) {
+            cforge::logger::print_warning("Post-build commands failed for profile '" + cross_profile
+                                          + "'");
           }
         }
       }
@@ -2141,7 +2123,8 @@ cforge_int_t cforge_cmd_build(const cforge_context_t *ctx) {
  */
 [[maybe_unused]] static void configure_project_dependencies_in_cmake(
     const std::filesystem::path &workspace_dir,
-    const std::filesystem::path & /*project_dir*/, const cforge::toml_reader&project_config,
+    const std::filesystem::path & /*project_dir*/,
+    const cforge::toml_reader &project_config,
     std::ofstream &cmakelists) {
   // Check if we have project dependencies
   if (!project_config.has_key("dependencies.project")) {
@@ -2155,20 +2138,17 @@ cforge_int_t cforge_cmd_build(const cforge_context_t *ctx) {
   for (const auto &dep : project_deps) {
     // Check if the project exists in the workspace
     std::filesystem::path dep_path = workspace_dir / dep;
-    if (!std::filesystem::exists(dep_path) ||
-        !std::filesystem::exists(dep_path / "cforge.toml")) {
-      cmakelists << "# WARNING: Dependency project '" << dep
-                 << "' not found in workspace\n";
+    if (!std::filesystem::exists(dep_path) || !std::filesystem::exists(dep_path / "cforge.toml")) {
+      cmakelists << "# WARNING: Dependency project '" << dep << "' not found in workspace\n";
       continue;
     }
 
     // Get dependency options
-    bool include = project_config.get_bool(
-        "dependencies.project." + dep + ".include", true);
-    [[maybe_unused]] bool link =
-        project_config.get_bool("dependencies.project." + dep + ".link", true);
-    std::string target_name = project_config.get_string(
-        "dependencies.project." + dep + ".target_name", "");
+    bool include = project_config.get_bool("dependencies.project." + dep + ".include", true);
+    [[maybe_unused]] bool link = project_config.get_bool("dependencies.project." + dep + ".link",
+                                                         true);
+    std::string target_name =
+        project_config.get_string("dependencies.project." + dep + ".target_name", "");
 
     cmakelists << "# Project dependency: " << dep << "\n";
 
@@ -2179,12 +2159,10 @@ cforge_int_t cforge_cmd_build(const cforge_context_t *ctx) {
 
     // Process include directories if needed
     if (include) {
-      cmakelists << "# Include directories for project dependency '" << dep
-                 << "'\n";
+      cmakelists << "# Include directories for project dependency '" << dep << "'\n";
 
       std::vector<std::string> include_dirs;
-      std::string include_dirs_key =
-          "dependencies.project." + dep + ".include_dirs";
+      std::string include_dirs_key = "dependencies.project." + dep + ".include_dirs";
 
       if (project_config.has_key(include_dirs_key)) {
         include_dirs = project_config.get_string_array(include_dirs_key);
@@ -2195,8 +2173,8 @@ cforge_int_t cforge_cmd_build(const cforge_context_t *ctx) {
       }
 
       for (const auto &inc_dir : include_dirs) {
-        cmakelists << "include_directories(\"${CMAKE_CURRENT_SOURCE_DIR}/../"
-                   << dep << "/" << inc_dir << "\")\n";
+        cmakelists << "include_directories(\"${CMAKE_CURRENT_SOURCE_DIR}/../" << dep << "/"
+                   << inc_dir << "\")\n";
       }
       cmakelists << "\n";
     }

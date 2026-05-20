@@ -3,6 +3,7 @@
  * @brief Implementation of the 'update' command
  */
 #include "cforge/log.hpp"
+
 #include "core/commands.hpp"
 #include "core/constants.h"
 #include "core/file_system.h"
@@ -11,6 +12,7 @@
 #include "core/registry.hpp"
 #include "core/toml_reader.hpp"
 #include "core/types.h"
+
 #include <filesystem>
 #include <map>
 #include <string>
@@ -28,8 +30,8 @@ cforge_int_t cforge_cmd_update(const cforge_context_t *ctx) {
 
   // Parse flags
   std::string install_path;
-  bool add_to_path = false;
-  bool update_self = false;
+  bool add_to_path     = false;
+  bool update_self     = false;
   bool update_packages = false;
 
   for (cforge_int_t i = 0; i < ctx->args.arg_count; ++i) {
@@ -78,15 +80,15 @@ cforge_int_t cforge_cmd_update(const cforge_context_t *ctx) {
       }
     }
     // Log the actual install location (not just the base path)
-    std::filesystem::path install_bin_dir =
-        std::filesystem::path(install_path) / "installed" / "cforge" / "bin";
+    std::filesystem::path install_bin_dir = std::filesystem::path(install_path) / "installed"
+                                          / "cforge" / "bin";
     cforge::logger::print_action("Install path", install_bin_dir.string());
 
     // Prepare temporary clone directory
-    std::filesystem::path temp_dir =
-        std::filesystem::temp_directory_path() / "cforge_update_temp";
-    if (std::filesystem::exists(temp_dir))
+    std::filesystem::path temp_dir = std::filesystem::temp_directory_path() / "cforge_update_temp";
+    if (std::filesystem::exists(temp_dir)) {
       std::filesystem::remove_all(temp_dir);
+    }
     std::filesystem::create_directories(temp_dir);
 
     // Clone repository
@@ -94,8 +96,10 @@ cforge_int_t cforge_cmd_update(const cforge_context_t *ctx) {
     cforge::logger::print_action("Cloning", "cforge from GitHub: " + repo_url);
     bool verbose = cforge::logger::get_verbosity() == cforge::log_verbosity::VERBOSITY_VERBOSE;
     if (!cforge::execute_tool("git",
-                      {"clone", "--branch", "master", repo_url, temp_dir.string()},
-                      "", "Git Clone", verbose)) {
+                              {"clone", "--branch", "master", repo_url, temp_dir.string()},
+                              "",
+                              "Git Clone",
+                              verbose)) {
       cforge::logger::print_error("Failed to clone cforge repository");
       return 1;
     }
@@ -105,38 +109,48 @@ cforge_int_t cforge_cmd_update(const cforge_context_t *ctx) {
     std::filesystem::path vendor_dir = temp_dir / "vendor";
     std::filesystem::create_directories(vendor_dir);
 
-    if (!cforge::execute_tool("git",
-                      {"clone", "https://github.com/fmtlib/fmt.git",
-                       (vendor_dir / "fmt").string()},
-                      "", "Clone fmt", verbose)) {
+    if (!cforge::execute_tool(
+            "git",
+            {"clone", "https://github.com/fmtlib/fmt.git", (vendor_dir / "fmt").string()},
+            "",
+            "Clone fmt",
+            verbose)) {
       cforge::logger::print_error("Failed to clone fmt dependency");
       return 1;
     }
     // Checkout fmt version
-    cforge::execute_tool("git", {"checkout", "11.1.4"}, (vendor_dir / "fmt").string(),
-                 "Checkout fmt", verbose);
+    cforge::execute_tool(
+        "git", {"checkout", "11.1.4"}, (vendor_dir / "fmt").string(), "Checkout fmt", verbose);
 
     if (!cforge::execute_tool("git",
-                      {"clone", "https://github.com/marzer/tomlplusplus.git",
-                       (vendor_dir / "tomlplusplus").string()},
-                      "", "Clone tomlplusplus", verbose)) {
+                              {"clone",
+                               "https://github.com/marzer/tomlplusplus.git",
+                               (vendor_dir / "tomlplusplus").string()},
+                              "",
+                              "Clone tomlplusplus",
+                              verbose)) {
       cforge::logger::print_error("Failed to clone tomlplusplus dependency");
       return 1;
     }
     // Checkout tomlplusplus version
-    cforge::execute_tool("git", {"checkout", "v3.4.0"},
-                 (vendor_dir / "tomlplusplus").string(), "Checkout tomlplusplus",
-                 verbose);
+    cforge::execute_tool("git",
+                         {"checkout", "v3.4.0"},
+                         (vendor_dir / "tomlplusplus").string(),
+                         "Checkout tomlplusplus",
+                         verbose);
 
     // Configure with CMake
     cforge::logger::print_action("Configuring", "build with CMake");
     std::filesystem::path build_dir = temp_dir / "build";
     std::filesystem::create_directories(build_dir);
 
-    std::vector<std::string> cmake_args = {
-        "-S", temp_dir.string(), "-B", build_dir.string(),
-        "-DCMAKE_BUILD_TYPE=Release", "-DFMT_HEADER_ONLY=ON",
-        "-DBUILD_SHARED_LIBS=OFF"};
+    std::vector<std::string> cmake_args = {"-S",
+                                           temp_dir.string(),
+                                           "-B",
+                                           build_dir.string(),
+                                           "-DCMAKE_BUILD_TYPE=Release",
+                                           "-DFMT_HEADER_ONLY=ON",
+                                           "-DBUILD_SHARED_LIBS=OFF"};
 
 #ifdef _WIN32
     // Use Ninja if available on Windows
@@ -154,8 +168,7 @@ cforge_int_t cforge_cmd_update(const cforge_context_t *ctx) {
 
     // Build
     cforge::logger::print_action("Building", "cforge");
-    std::vector<std::string> build_args = {"--build", build_dir.string(),
-                                           "--config", "Release"};
+    std::vector<std::string> build_args = {"--build", build_dir.string(), "--config", "Release"};
 
     if (!cforge::execute_tool("cmake", build_args, "", "CMake Build", verbose, 600)) {
       cforge::logger::print_error("Build failed");
@@ -165,15 +178,15 @@ cforge_int_t cforge_cmd_update(const cforge_context_t *ctx) {
 
     // Find the built binary
     std::filesystem::path built_exe;
-    std::vector<std::filesystem::path> possible_paths = {
-        build_dir / "bin" / "Release" / "cforge.exe",
-        build_dir / "bin" / "Release" / "cforge",
-        build_dir / "bin" / "cforge.exe",
-        build_dir / "bin" / "cforge",
-        build_dir / "Release" / "cforge.exe",
-        build_dir / "Release" / "cforge",
-        build_dir / "cforge.exe",
-        build_dir / "cforge"};
+    std::vector<std::filesystem::path> possible_paths = {build_dir / "bin" / "Release"
+                                                             / "cforge.exe",
+                                                         build_dir / "bin" / "Release" / "cforge",
+                                                         build_dir / "bin" / "cforge.exe",
+                                                         build_dir / "bin" / "cforge",
+                                                         build_dir / "Release" / "cforge.exe",
+                                                         build_dir / "Release" / "cforge",
+                                                         build_dir / "cforge.exe",
+                                                         build_dir / "cforge"};
 
     for (const auto &path : possible_paths) {
       if (std::filesystem::exists(path)) {
@@ -203,8 +216,8 @@ cforge_int_t cforge_cmd_update(const cforge_context_t *ctx) {
     // Install the binary
     bool install_success = false;
     try {
-      std::filesystem::path backup = target_exe;
-      backup += ".old";
+      std::filesystem::path backup  = target_exe;
+      backup                       += ".old";
 
       // Remove old backup if it exists (ignore errors)
       if (std::filesystem::exists(backup)) {
@@ -225,9 +238,9 @@ cforge_int_t cforge_cmd_update(const cforge_context_t *ctx) {
       }
 
       // Copy new binary
-      std::filesystem::copy_file(
-          built_exe, target_exe,
-          std::filesystem::copy_options::overwrite_existing);
+      std::filesystem::copy_file(built_exe,
+                                 target_exe,
+                                 std::filesystem::copy_options::overwrite_existing);
       cforge::logger::print_action("Installed", target_exe.string());
       install_success = true;
 
@@ -252,15 +265,14 @@ cforge_int_t cforge_cmd_update(const cforge_context_t *ctx) {
     // Clean up temporary directory (handle read-only git files on Windows)
     try {
 #ifdef _WIN32
-      // On Windows, git objects are often read-only, need to remove that attribute
-      for (auto &entry :
-           std::filesystem::recursive_directory_iterator(temp_dir)) {
+      // On Windows, git objects are often read-only, need to remove that
+      // attribute
+      for (auto &entry : std::filesystem::recursive_directory_iterator(temp_dir)) {
         try {
           std::filesystem::permissions(entry.path(),
                                        std::filesystem::perms::owner_write,
                                        std::filesystem::perm_options::add);
-        } catch (...) {
-        }
+        } catch (...) {}
       }
 #endif
       std::filesystem::remove_all(temp_dir);

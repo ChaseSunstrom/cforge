@@ -4,6 +4,7 @@
  */
 
 #include "cforge/log.hpp"
+
 #include "core/commands.hpp"
 #include "core/constants.h"
 

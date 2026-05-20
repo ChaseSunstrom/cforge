@@ -9,6 +9,7 @@
 #pragma once
 
 #include "cforge/log.hpp"
+
 #include "core/constants.h"
 #include "core/git_utils.hpp"
 #include "core/registry.hpp"
@@ -34,11 +35,11 @@ constexpr const char *LOCK_FILE = "cforge.lock";
  */
 struct locked_dependency {
   std::string name;
-  std::string source_type; // "git", "vcpkg", "system"
-  std::string url;         // For git deps
-  std::string version;     // Requested version/tag/branch
-  std::string resolved;    // Actual resolved version (commit hash for git)
-  std::string checksum;    // Optional integrity checksum
+  std::string source_type;  // "git", "vcpkg", "system"
+  std::string url;          // For git deps
+  std::string version;      // Requested version/tag/branch
+  std::string resolved;     // Actual resolved version (commit hash for git)
+  std::string checksum;     // Optional integrity checksum
 };
 
 /**
@@ -87,8 +88,8 @@ public:
         // Parse new dependency name
         std::string section = line.substr(1, line.length() - 2);
         if (section.find("dependency.") == 0) {
-          current = locked_dependency();
-          current.name = section.substr(11); // Remove "dependency."
+          current       = locked_dependency();
+          current.name  = section.substr(11);  // Remove "dependency."
           in_dependency = true;
         } else {
           in_dependency = false;
@@ -100,12 +101,11 @@ public:
       if (in_dependency) {
         cforge_size_t eq_pos = line.find('=');
         if (eq_pos != std::string::npos) {
-          std::string key = trim(line.substr(0, eq_pos));
+          std::string key   = trim(line.substr(0, eq_pos));
           std::string value = trim(line.substr(eq_pos + 1));
 
           // Remove quotes if present
-          if (value.length() >= 2 && value.front() == '"' &&
-              value.back() == '"') {
+          if (value.length() >= 2 && value.front() == '"' && value.back() == '"') {
             value = value.substr(1, value.length() - 2);
           }
 
@@ -201,8 +201,7 @@ public:
    * @param name Dependency name
    * @return Locked dependency info, or nullopt if not found
    */
-  std::optional<locked_dependency>
-  get_dependency(const std::string &name) const {
+  std::optional<locked_dependency> get_dependency(const std::string &name) const {
     auto it = dependencies_.find(name);
     if (it != dependencies_.end()) {
       return it->second;
@@ -218,21 +217,22 @@ public:
    * @param version Requested version (tag/branch)
    * @param repo_dir Local repository directory
    */
-  void lock_git_dependency(const std::string &name, const std::string &url,
+  void lock_git_dependency(const std::string &name,
+                           const std::string &url,
                            const std::string &version,
                            const std::filesystem::path &repo_dir) {
     locked_dependency dep;
-    dep.name = name;
+    dep.name        = name;
     dep.source_type = "git";
-    dep.url = url;
-    dep.version = version;
+    dep.url         = url;
+    dep.version     = version;
 
     // Get the actual commit hash
     std::string commit = git_get_head_commit(repo_dir, false);
     if (!commit.empty()) {
       dep.resolved = commit;
     } else {
-      dep.resolved = version; // Fallback to requested version
+      dep.resolved = version;  // Fallback to requested version
     }
 
     dependencies_[name] = dep;
@@ -244,13 +244,12 @@ public:
    * @param name Package name
    * @param version Package version
    */
-  void lock_vcpkg_dependency(const std::string &name,
-                             const std::string &version) {
+  void lock_vcpkg_dependency(const std::string &name, const std::string &version) {
     locked_dependency dep;
-    dep.name = name;
-    dep.source_type = "vcpkg";
-    dep.version = version;
-    dep.resolved = version;
+    dep.name            = name;
+    dep.source_type     = "vcpkg";
+    dep.version         = version;
+    dep.resolved        = version;
     dependencies_[name] = dep;
   }
 
@@ -265,16 +264,16 @@ public:
                              const std::string &version,
                              const std::filesystem::path &repo_dir) {
     locked_dependency dep;
-    dep.name = name;
+    dep.name        = name;
     dep.source_type = "index";
-    dep.version = version;
+    dep.version     = version;
 
     // Get the actual commit hash
     std::string commit = git_get_head_commit(repo_dir, false);
     if (!commit.empty()) {
       dep.resolved = commit;
     } else {
-      dep.resolved = version; // Fallback to requested version
+      dep.resolved = version;  // Fallback to requested version
     }
 
     dependencies_[name] = dep;
@@ -295,9 +294,7 @@ public:
   /**
    * @brief Get all locked dependencies
    */
-  const std::map<std::string, locked_dependency> &get_all() const {
-    return dependencies_;
-  }
+  const std::map<std::string, locked_dependency> &get_all() const { return dependencies_; }
 
   /**
    * @brief Check if lock file exists
@@ -315,14 +312,15 @@ private:
 
   static std::string trim(const std::string &str) {
     cforge_size_t start = str.find_first_not_of(" \t\r\n");
-    if (start == std::string::npos)
+    if (start == std::string::npos) {
       return "";
+    }
     cforge_size_t end = str.find_last_not_of(" \t\r\n");
     return str.substr(start, end - start + 1);
   }
 
   static std::string get_timestamp() {
-    auto now = std::chrono::system_clock::now();
+    auto now  = std::chrono::system_clock::now();
     auto time = std::chrono::system_clock::to_time_t(now);
     std::stringstream ss;
     ss << std::put_time(std::gmtime(&time), "%Y-%m-%dT%H:%M:%SZ");
@@ -359,20 +357,18 @@ inline bool update_lockfile(const std::filesystem::path &project_dir,
     auto git_deps = config.get_table_keys("dependencies.git");
 
     for (const auto &dep : git_deps) {
-      std::string url =
-          config.get_string("dependencies.git." + dep + ".url", "");
-      std::string tag =
-          config.get_string("dependencies.git." + dep + ".tag", "");
-      std::string branch =
-          config.get_string("dependencies.git." + dep + ".branch", "");
-      std::string commit =
-          config.get_string("dependencies.git." + dep + ".commit", "");
+      std::string url    = config.get_string("dependencies.git." + dep + ".url", "");
+      std::string tag    = config.get_string("dependencies.git." + dep + ".tag", "");
+      std::string branch = config.get_string("dependencies.git." + dep + ".branch", "");
+      std::string commit = config.get_string("dependencies.git." + dep + ".commit", "");
 
       std::string version = commit;
-      if (version.empty())
+      if (version.empty()) {
         version = tag;
-      if (version.empty())
+      }
+      if (version.empty()) {
         version = branch;
+      }
 
       std::filesystem::path repo_dir = deps_dir / dep;
 
@@ -386,8 +382,7 @@ inline bool update_lockfile(const std::filesystem::path &project_dir,
           }
         }
       } else if (verbose) {
-        logger::print_warning("Dependency " + dep +
-                              " not found, skipping lock");
+        logger::print_warning("Dependency " + dep + " not found, skipping lock");
       }
     }
   }
@@ -398,7 +393,7 @@ inline bool update_lockfile(const std::filesystem::path &project_dir,
 
     for (const auto &dep : vcpkg_deps) {
       // vcpkg deps might have version suffix like "fmt:x64-windows"
-      std::string name = dep;
+      std::string name    = dep;
       cforge_size_t colon = dep.find(':');
       if (colon != std::string::npos) {
         name = dep.substr(0, colon);
@@ -412,16 +407,16 @@ inline bool update_lockfile(const std::filesystem::path &project_dir,
   }
 
   // Lock index dependencies (simple name = "version" format)
-  // Skip if using FetchContent mode (CMake handles downloading, packages not in deps_dir)
+  // Skip if using FetchContent mode (CMake handles downloading, packages not in
+  // deps_dir)
   bool use_fetch_content = config.get_bool("dependencies.fetch_content", true);
   if (!use_fetch_content && config.has_key("dependencies")) {
     auto all_deps = config.get_table_keys("dependencies");
 
     for (const auto &dep : all_deps) {
       // Skip known special sections
-      if (dep == "directory" || dep == "git" || dep == "vcpkg" ||
-          dep == "subdirectory" || dep == "system" || dep == "project" ||
-          dep == "fetch_content") {
+      if (dep == "directory" || dep == "git" || dep == "vcpkg" || dep == "subdirectory"
+          || dep == "system" || dep == "project" || dep == "fetch_content") {
         continue;
       }
 
@@ -429,10 +424,8 @@ inline bool update_lockfile(const std::filesystem::path &project_dir,
       std::string dep_key = "dependencies." + dep;
 
       // Skip if it's a table with source-specific keys
-      if (config.has_key(dep_key + ".url") ||
-          config.has_key(dep_key + ".vcpkg_name") ||
-          config.has_key(dep_key + ".path") ||
-          config.has_key(dep_key + ".system")) {
+      if (config.has_key(dep_key + ".url") || config.has_key(dep_key + ".vcpkg_name")
+          || config.has_key(dep_key + ".path") || config.has_key(dep_key + ".system")) {
         continue;
       }
 
@@ -454,8 +447,7 @@ inline bool update_lockfile(const std::filesystem::path &project_dir,
           }
         }
       } else if (verbose) {
-        logger::print_warning("Index dependency " + dep +
-                              " not found, skipping lock");
+        logger::print_warning("Index dependency " + dep + " not found, skipping lock");
       }
     }
   }
@@ -486,7 +478,7 @@ inline bool verify_lockfile(const std::filesystem::path &project_dir,
     if (verbose) {
       logger::print_warning("No lock file found");
     }
-    return true; // No lock file is not an error
+    return true;  // No lock file is not an error
   }
 
   bool all_match = true;
@@ -503,8 +495,8 @@ inline bool verify_lockfile(const std::filesystem::path &project_dir,
 
       std::string current_commit = git_get_head_commit(repo_dir, false);
       if (current_commit != dep.resolved) {
-        logger::print_warning(name + " mismatch: expected " + dep.resolved +
-                              ", got " + current_commit);
+        logger::print_warning(name + " mismatch: expected " + dep.resolved + ", got "
+                              + current_commit);
         all_match = false;
       } else if (verbose) {
         logger::print_verbose(name + " OK (" + dep.resolved.substr(0, 7) + ")");
@@ -516,7 +508,8 @@ inline bool verify_lockfile(const std::filesystem::path &project_dir,
 }
 
 /**
- * @brief Generate lock file from cforge.toml configuration (for FetchContent mode)
+ * @brief Generate lock file from cforge.toml configuration (for FetchContent
+ * mode)
  *
  * @param project_dir Project directory
  * @param config Project configuration
@@ -555,7 +548,7 @@ inline bool generate_lockfile_from_config(const std::filesystem::path &project_d
     std::string version = config.get_string("dependencies." + key, "*");
 
     // Try to get package info from registry
-    auto pkg_info = reg.get_package(key);
+    auto pkg_info                = reg.get_package(key);
     std::string resolved_version = version;
     std::string repository;
     std::string git_tag;
@@ -576,7 +569,7 @@ inline bool generate_lockfile_from_config(const std::filesystem::path &project_d
       }
       // If no explicit tag, use tag pattern
       if (git_tag.empty() && !pkg_info->tags.pattern.empty()) {
-        git_tag = pkg_info->tags.pattern;
+        git_tag           = pkg_info->tags.pattern;
         cforge_size_t pos = git_tag.find("{version}");
         if (pos != std::string::npos) {
           git_tag.replace(pos, 9, resolved_version);
@@ -603,17 +596,25 @@ inline bool generate_lockfile_from_config(const std::filesystem::path &project_d
 
   // Also handle git dependencies
   for (const auto &key : config.get_table_keys("dependencies.git")) {
-    std::string url = config.get_string("dependencies.git." + key + ".url", "");
-    std::string tag = config.get_string("dependencies.git." + key + ".tag", "");
+    std::string url    = config.get_string("dependencies.git." + key + ".url", "");
+    std::string tag    = config.get_string("dependencies.git." + key + ".tag", "");
     std::string branch = config.get_string("dependencies.git." + key + ".branch", "");
     std::string commit = config.get_string("dependencies.git." + key + ".commit", "");
 
     lock_file << "[dependency." << key << "]\n";
     lock_file << "source_type = \"git\"\n";
-    if (!url.empty()) lock_file << "url = \"" << url << "\"\n";
-    if (!tag.empty()) lock_file << "version = \"" << tag << "\"\n";
-    if (!branch.empty()) lock_file << "branch = \"" << branch << "\"\n";
-    if (!commit.empty()) lock_file << "resolved = \"" << commit << "\"\n";
+    if (!url.empty()) {
+      lock_file << "url = \"" << url << "\"\n";
+    }
+    if (!tag.empty()) {
+      lock_file << "version = \"" << tag << "\"\n";
+    }
+    if (!branch.empty()) {
+      lock_file << "branch = \"" << branch << "\"\n";
+    }
+    if (!commit.empty()) {
+      lock_file << "resolved = \"" << commit << "\"\n";
+    }
     lock_file << "\n";
     has_deps = true;
   }
@@ -629,4 +630,4 @@ inline bool generate_lockfile_from_config(const std::filesystem::path &project_d
   return true;
 }
 
-} // namespace cforge
+}  // namespace cforge

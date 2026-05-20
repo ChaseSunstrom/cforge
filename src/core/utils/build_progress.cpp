@@ -4,10 +4,14 @@
  */
 
 #include "core/build_progress.hpp"
-#include "core/types.h"
+
 #include "cforge/log.hpp"
-#include <algorithm>
+
+#include "core/types.h"
+
 #include <fmt/core.h>
+
+#include <algorithm>
 #include <iostream>
 #include <regex>
 
@@ -17,7 +21,7 @@ void build_progress::reset() {
   std::lock_guard<std::mutex> lock(mutex_);
   current_file_.clear();
   current_step_ = 0;
-  total_steps_ = 0;
+  total_steps_  = 0;
   has_progress_ = false;
   timings_.clear();
 }
@@ -45,28 +49,27 @@ bool build_progress::parse_ninja_progress(const std::string &line) {
   if (std::regex_search(line, match, ninja_regex)) {
     std::lock_guard<std::mutex> lock(mutex_);
 
-    cforge_int_t new_step = std::stoi(match[1].str());
+    cforge_int_t new_step  = std::stoi(match[1].str());
     cforge_int_t new_total = std::stoi(match[2].str());
 
     // If we moved to a new step, finish the previous file
     if (has_progress_ && new_step > current_step_ && !current_file_.empty()) {
       file_timing timing;
-      timing.filename = current_file_;
+      timing.filename   = current_file_;
       timing.start_time = current_file_start_;
-      timing.end_time = std::chrono::steady_clock::now();
+      timing.end_time   = std::chrono::steady_clock::now();
       timing.duration_seconds =
-          std::chrono::duration<double>(timing.end_time - timing.start_time)
-              .count();
+          std::chrono::duration<double>(timing.end_time - timing.start_time).count();
       timings_.emplace_back(timing);
     }
 
     current_step_ = new_step;
-    total_steps_ = new_total;
+    total_steps_  = new_total;
     has_progress_ = true;
 
     // Extract the action and file
-    std::string action = match[3].str();
-    current_file_ = extract_filename(action);
+    std::string action  = match[3].str();
+    current_file_       = extract_filename(action);
     current_file_start_ = std::chrono::steady_clock::now();
 
     return true;
@@ -86,27 +89,26 @@ bool build_progress::parse_make_progress(const std::string &line) {
     cforge_int_t percentage = std::stoi(match[1].str());
 
     // Estimate step from percentage
-    cforge_int_t new_step = percentage;
+    cforge_int_t new_step  = percentage;
     cforge_int_t new_total = 100;
 
     // Finish previous file if step changed
     if (has_progress_ && new_step > current_step_ && !current_file_.empty()) {
       file_timing timing;
-      timing.filename = current_file_;
+      timing.filename   = current_file_;
       timing.start_time = current_file_start_;
-      timing.end_time = std::chrono::steady_clock::now();
+      timing.end_time   = std::chrono::steady_clock::now();
       timing.duration_seconds =
-          std::chrono::duration<double>(timing.end_time - timing.start_time)
-              .count();
+          std::chrono::duration<double>(timing.end_time - timing.start_time).count();
       timings_.emplace_back(timing);
     }
 
     current_step_ = new_step;
-    total_steps_ = new_total;
+    total_steps_  = new_total;
     has_progress_ = true;
 
-    std::string action = match[2].str();
-    current_file_ = extract_filename(action);
+    std::string action  = match[2].str();
+    current_file_       = extract_filename(action);
     current_file_start_ = std::chrono::steady_clock::now();
 
     return true;
@@ -119,31 +121,28 @@ bool build_progress::parse_msbuild_progress(const std::string &line) {
   //   ClCompile: main.cpp
   //   cl /c ... main.cpp
   //   Compiling main.cpp
-  //   <indent>main.cpp           <- the common case in `cmake --build` MSBuild logs
-  //   <indent>foo.vcxproj -> D:\path\foo.exe    <- link output
+  //   <indent>main.cpp           <- the common case in `cmake --build` MSBuild
+  //   logs <indent>foo.vcxproj -> D:\path\foo.exe    <- link output
   static std::regex msbuild_regex(
-      R"((?:ClCompile|Compiling|cl\s.*/c).*?([^\\/\s]+\.(?:cpp|c|cc|cxx)))",
-      std::regex::icase);
+      R"((?:ClCompile|Compiling|cl\s.*/c).*?([^\\/\s]+\.(?:cpp|c|cc|cxx)))", std::regex::icase);
   // Bare filename line — the dominant MSBuild output. Match: optional leading
   // whitespace, optional "N>" project-prefix, then just a filename. Reject
   // junk like "1>Checking Build System" by requiring the .cpp/.c/.cc/.cxx
   // extension and disallowing path separators.
   static std::regex bare_file_regex(
-      R"(^\s*(?:\d+>)?\s*([A-Za-z_][\w\-]*\.(?:cpp|c|cc|cxx|cpp\.obj))\s*$)",
-      std::regex::icase);
+      R"(^\s*(?:\d+>)?\s*([A-Za-z_][\w\-]*\.(?:cpp|c|cc|cxx|cpp\.obj))\s*$)", std::regex::icase);
   // Link/output line: "foo.vcxproj -> D:\path\foo.exe|.lib|.dll"
-  static std::regex link_regex(
-      R"(\s*\d*>?\s*[^\s]+\.vcxproj\s*->\s*([^\s]+\.(?:exe|dll|lib)))",
-      std::regex::icase);
+  static std::regex link_regex(R"(\s*\d*>?\s*[^\s]+\.vcxproj\s*->\s*([^\s]+\.(?:exe|dll|lib)))",
+                               std::regex::icase);
 
   std::string captured;
   std::smatch match;
   if (std::regex_search(line, match, msbuild_regex)) {
     captured = match[1].str();
   } else if (std::regex_search(line, match, link_regex)) {
-    std::string p = match[1].str();
+    std::string p       = match[1].str();
     cforge_size_t slash = p.find_last_of("/\\");
-    captured = "[link] " + (slash != std::string::npos ? p.substr(slash + 1) : p);
+    captured            = "[link] " + (slash != std::string::npos ? p.substr(slash + 1) : p);
   } else if (std::regex_match(line, match, bare_file_regex)) {
     captured = match[1].str();
   } else {
@@ -154,18 +153,17 @@ bool build_progress::parse_msbuild_progress(const std::string &line) {
 
   if (!current_file_.empty()) {
     file_timing timing;
-    timing.filename = current_file_;
+    timing.filename   = current_file_;
     timing.start_time = current_file_start_;
-    timing.end_time = std::chrono::steady_clock::now();
+    timing.end_time   = std::chrono::steady_clock::now();
     timing.duration_seconds =
-        std::chrono::duration<double>(timing.end_time - timing.start_time)
-            .count();
+        std::chrono::duration<double>(timing.end_time - timing.start_time).count();
     timings_.emplace_back(timing);
   }
 
   current_step_++;
-  has_progress_ = true;
-  current_file_ = captured;
+  has_progress_       = true;
+  current_file_       = captured;
   current_file_start_ = std::chrono::steady_clock::now();
 
   return true;
@@ -175,9 +173,8 @@ std::string build_progress::extract_filename(const std::string &line) {
   // Try to extract a meaningful filename from the build action
 
   // Pattern: Building CXX object path/to/file.cpp.obj
-  static std::regex obj_regex(
-      R"(Building\s+(?:CXX|C)\s+object\s+.*?([^\\/]+\.(?:cpp|c|cc|cxx)))",
-      std::regex::icase);
+  static std::regex obj_regex(R"(Building\s+(?:CXX|C)\s+object\s+.*?([^\\/]+\.(?:cpp|c|cc|cxx)))",
+                              std::regex::icase);
   std::smatch match;
   if (std::regex_search(line, match, obj_regex)) {
     return match[1].str();
@@ -198,9 +195,8 @@ std::string build_progress::extract_filename(const std::string &line) {
   }
 
   // Pattern: CMakeFiles/target.dir/path/file.cpp.obj
-  static std::regex cmake_obj_regex(
-      R"(CMakeFiles/[^/]+\.dir/.*?([^\\/]+\.(?:cpp|c|cc|cxx))\.o)",
-      std::regex::icase);
+  static std::regex cmake_obj_regex(R"(CMakeFiles/[^/]+\.dir/.*?([^\\/]+\.(?:cpp|c|cc|cxx))\.o)",
+                                    std::regex::icase);
   if (std::regex_search(line, match, cmake_obj_regex)) {
     return match[1].str();
   }
@@ -216,8 +212,9 @@ std::string build_progress::get_current_file() const {
 
 cforge_double_t build_progress::get_progress() const {
   std::lock_guard<std::mutex> lock(mutex_);
-  if (total_steps_ == 0)
+  if (total_steps_ == 0) {
     return 0.0;
+  }
   return static_cast<cforge_double_t>(current_step_) / static_cast<cforge_double_t>(total_steps_);
 }
 
@@ -244,10 +241,9 @@ std::vector<file_timing> build_progress::get_slowest_files(cforge_size_t count) 
   std::lock_guard<std::mutex> lock(mutex_);
 
   std::vector<file_timing> sorted = timings_;
-  std::sort(sorted.begin(), sorted.end(),
-            [](const file_timing &a, const file_timing &b) {
-              return a.duration_seconds > b.duration_seconds;
-            });
+  std::sort(sorted.begin(), sorted.end(), [](const file_timing &a, const file_timing &b) {
+    return a.duration_seconds > b.duration_seconds;
+  });
 
   if (sorted.size() > count) {
     sorted.resize(count);
@@ -257,7 +253,7 @@ std::vector<file_timing> build_progress::get_slowest_files(cforge_size_t count) 
 
 void build_progress::file_started(const std::string &filename) {
   std::lock_guard<std::mutex> lock(mutex_);
-  current_file_ = filename;
+  current_file_       = filename;
   current_file_start_ = std::chrono::steady_clock::now();
 }
 
@@ -265,21 +261,24 @@ void build_progress::file_finished(const std::string &filename) {
   std::lock_guard<std::mutex> lock(mutex_);
 
   file_timing timing;
-  timing.filename = filename;
+  timing.filename   = filename;
   timing.start_time = current_file_start_;
-  timing.end_time = std::chrono::steady_clock::now();
+  timing.end_time   = std::chrono::steady_clock::now();
   timing.duration_seconds =
-      std::chrono::duration<double>(timing.end_time - timing.start_time)
-          .count();
+      std::chrono::duration<double>(timing.end_time - timing.start_time).count();
   timings_.emplace_back(timing);
 }
 
-void display_progress_bar(cforge_int_t current, cforge_int_t total, cforge_int_t width,
+void display_progress_bar(cforge_int_t current,
+                          cforge_int_t total,
+                          cforge_int_t width,
                           bool show_percentage) {
-  if (total <= 0)
+  if (total <= 0) {
     return;
+  }
 
-  cforge_double_t progress = static_cast<cforge_double_t>(current) / static_cast<cforge_double_t>(total);
+  cforge_double_t progress = static_cast<cforge_double_t>(current)
+                           / static_cast<cforge_double_t>(total);
   cforge_int_t filled = static_cast<cforge_int_t>(progress * width);
 
   std::string bar;
@@ -287,17 +286,17 @@ void display_progress_bar(cforge_int_t current, cforge_int_t total, cforge_int_t
 
   for (cforge_int_t i = 0; i < width; ++i) {
     if (i < filled) {
-      bar += "\xe2\x96\x88"; // Unicode full block (UTF-8)
+      bar += "\xe2\x96\x88";  // Unicode full block (UTF-8)
     } else {
-      bar += "\xe2\x96\x91"; // Unicode light shade (UTF-8)
+      bar += "\xe2\x96\x91";  // Unicode light shade (UTF-8)
     }
   }
 
   std::string line = fmt::format("   [{}]", bar);
 
   if (show_percentage) {
-    cforge_int_t percent = static_cast<cforge_int_t>(progress * 100);
-    line += fmt::format(" {:3d}% ({}/{})", percent, current, total);
+    cforge_int_t percent  = static_cast<cforge_int_t>(progress * 100);
+    line                 += fmt::format(" {:3d}% ({}/{})", percent, current, total);
   }
 
   // Use carriage return to update in place
@@ -311,4 +310,4 @@ void clear_progress_line() {
   cforge::logger::clear_line();
 }
 
-} // namespace cforge
+}  // namespace cforge

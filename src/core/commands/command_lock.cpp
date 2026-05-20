@@ -9,6 +9,7 @@
  */
 
 #include "cforge/log.hpp"
+
 #include "core/commands.hpp"
 #include "core/constants.h"
 #include "core/lockfile.hpp"
@@ -27,16 +28,17 @@
  */
 cforge_int_t cforge_cmd_lock(const cforge_context_t *ctx) {
   std::filesystem::path current_dir = ctx->working_dir;
-  bool verbose = cforge_is_verbose();
+  bool verbose                      = cforge_is_verbose();
 
   // Parse command options
-  bool verify_only = false;
-  bool clean_lock = false;
+  bool verify_only  = false;
+  bool clean_lock   = false;
   bool force_update = false;
 
   for (cforge_int_t i = 0; i < ctx->args.arg_count; ++i) {
-    if (ctx->args.args[i] == nullptr)
+    if (ctx->args.args[i] == nullptr) {
       continue;
+    }
     std::string arg = ctx->args.args[i];
 
     if (arg == "--verify") {
@@ -91,8 +93,7 @@ cforge_int_t cforge_cmd_lock(const cforge_context_t *ctx) {
         std::filesystem::remove(lock_path);
         cforge::logger::removing(std::string(cforge::LOCK_FILE));
       } catch (const std::exception &e) {
-        cforge::logger::print_error("Failed to remove lock file: " +
-                            std::string(e.what()));
+        cforge::logger::print_error("Failed to remove lock file: " + std::string(e.what()));
         return 1;
       }
     } else {
@@ -104,14 +105,12 @@ cforge_int_t cforge_cmd_lock(const cforge_context_t *ctx) {
   // Load project configuration
   cforge::toml_reader config;
   if (!config.load(config_path.string())) {
-    cforge::logger::print_error("Failed to load configuration: " +
-                        config_path.string());
+    cforge::logger::print_error("Failed to load configuration: " + config_path.string());
     return 1;
   }
 
   // Get dependencies directory (default: deps)
-  std::string deps_dir_str =
-      config.get_string("dependencies.directory", "deps");
+  std::string deps_dir_str       = config.get_string("dependencies.directory", "deps");
   std::filesystem::path deps_dir = current_dir / deps_dir_str;
 
   // Handle --verify option
@@ -119,8 +118,7 @@ cforge_int_t cforge_cmd_lock(const cforge_context_t *ctx) {
     cforge::logger::print_action("Verifying", "dependencies against lock file");
 
     if (!cforge::lockfile::exists(current_dir)) {
-      cforge::logger::print_warning(
-          "No lock file found. Run 'cforge lock' to create one");
+      cforge::logger::print_warning("No lock file found. Run 'cforge lock' to create one");
       return 1;
     }
 
@@ -129,24 +127,22 @@ cforge_int_t cforge_cmd_lock(const cforge_context_t *ctx) {
       return 0;
     } else {
       cforge::logger::print_error("Dependencies do not match lock file");
-      cforge::logger::print_action(
-          "Help", "run 'cforge lock' to update, or 'cforge deps' to restore");
+      cforge::logger::print_action("Help",
+                                   "run 'cforge lock' to update, or 'cforge deps' to restore");
       return 1;
     }
   }
 
   // Check if lock file already exists
   if (cforge::lockfile::exists(current_dir) && !force_update) {
-    cforge::logger::print_action("Checking",
-                         "lock file already exists. Use --force to regenerate");
+    cforge::logger::print_action("Checking", "lock file already exists. Use --force to regenerate");
 
     // Still verify it
     if (cforge::verify_lockfile(current_dir, deps_dir, verbose)) {
       cforge::logger::print_action("Verified", "dependencies match lock file");
       return 0;
     } else {
-      cforge::logger::print_warning(
-          "Dependencies have changed. Use --force to update lock file");
+      cforge::logger::print_warning("Dependencies have changed. Use --force to update lock file");
       return 1;
     }
   }
@@ -195,7 +191,7 @@ cforge_int_t cforge_cmd_lock(const cforge_context_t *ctx) {
       std::string version = config.get_string("dependencies." + key, "*");
 
       // Try to get package info from registry
-      auto pkg_info = reg.get_package(key);
+      auto pkg_info                = reg.get_package(key);
       std::string resolved_version = version;
       std::string repository;
       std::string git_tag;
@@ -216,7 +212,7 @@ cforge_int_t cforge_cmd_lock(const cforge_context_t *ctx) {
         }
         // If no explicit tag, use tag pattern
         if (git_tag.empty() && !pkg_info->tags.pattern.empty()) {
-          git_tag = pkg_info->tags.pattern;
+          git_tag    = pkg_info->tags.pattern;
           size_t pos = git_tag.find("{version}");
           if (pos != std::string::npos) {
             git_tag.replace(pos, 9, resolved_version);
@@ -243,17 +239,25 @@ cforge_int_t cforge_cmd_lock(const cforge_context_t *ctx) {
 
     // Also handle git dependencies
     for (const auto &key : config.get_table_keys("dependencies.git")) {
-      std::string url = config.get_string("dependencies.git." + key + ".url", "");
-      std::string tag = config.get_string("dependencies.git." + key + ".tag", "");
+      std::string url    = config.get_string("dependencies.git." + key + ".url", "");
+      std::string tag    = config.get_string("dependencies.git." + key + ".tag", "");
       std::string branch = config.get_string("dependencies.git." + key + ".branch", "");
       std::string commit = config.get_string("dependencies.git." + key + ".commit", "");
 
       lock_file << "[dependency." << key << "]\n";
       lock_file << "source_type = \"git\"\n";
-      if (!url.empty()) lock_file << "url = \"" << url << "\"\n";
-      if (!tag.empty()) lock_file << "version = \"" << tag << "\"\n";
-      if (!branch.empty()) lock_file << "branch = \"" << branch << "\"\n";
-      if (!commit.empty()) lock_file << "resolved = \"" << commit << "\"\n";
+      if (!url.empty()) {
+        lock_file << "url = \"" << url << "\"\n";
+      }
+      if (!tag.empty()) {
+        lock_file << "version = \"" << tag << "\"\n";
+      }
+      if (!branch.empty()) {
+        lock_file << "branch = \"" << branch << "\"\n";
+      }
+      if (!commit.empty()) {
+        lock_file << "resolved = \"" << commit << "\"\n";
+      }
       lock_file << "\n";
       has_deps = true;
     }
@@ -267,24 +271,22 @@ cforge_int_t cforge_cmd_lock(const cforge_context_t *ctx) {
     }
 
     cforge::logger::generated(std::string(cforge::LOCK_FILE));
-    cforge::logger::print_action(
-        "Note", "commit this file to version control for reproducible builds");
+    cforge::logger::print_action("Note",
+                                 "commit this file to version control for reproducible builds");
     return 0;
   }
 
   // Non-FetchContent mode: scan deps directory
   if (!std::filesystem::exists(deps_dir)) {
-    cforge::logger::print_warning("Dependencies directory not found: " +
-                          deps_dir.string());
-    cforge::logger::print_action("Help",
-                         "run 'cforge build' first to fetch dependencies");
+    cforge::logger::print_warning("Dependencies directory not found: " + deps_dir.string());
+    cforge::logger::print_action("Help", "run 'cforge build' first to fetch dependencies");
     return 1;
   }
 
   if (cforge::update_lockfile(current_dir, deps_dir, verbose)) {
     cforge::logger::generated(std::string(cforge::LOCK_FILE));
-    cforge::logger::print_action(
-        "Note", "commit this file to version control for reproducible builds");
+    cforge::logger::print_action("Note",
+                                 "commit this file to version control for reproducible builds");
     return 0;
   } else {
     cforge::logger::print_error("Failed to create lock file");

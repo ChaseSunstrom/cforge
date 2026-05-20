@@ -11,6 +11,7 @@
  */
 
 #include "cforge/log.hpp"
+
 #include "core/cache.hpp"
 #include "core/command_registry.hpp"
 #include "core/commands.hpp"
@@ -30,8 +31,8 @@ namespace {
  */
 std::string format_size(cforge_size_t bytes) {
   const char *units[] = {"B", "KB", "MB", "GB", "TB"};
-  int unit = 0;
-  double size = static_cast<double>(bytes);
+  int unit            = 0;
+  double size         = static_cast<double>(bytes);
 
   while (size >= 1024 && unit < 4) {
     size /= 1024;
@@ -49,7 +50,8 @@ std::string format_size(cforge_size_t bytes) {
 cforge_int_t cache_list(const cforge_context_t *ctx) {
   cforge::package_cache cache;
 
-  // Check for package filter (args[0] = "list", args[1] = package name if present)
+  // Check for package filter (args[0] = "list", args[1] = package name if
+  // present)
   std::string filter;
   for (cforge_int_t i = 1; i < ctx->args.arg_count; i++) {
     std::string arg = ctx->args.args[i];
@@ -77,7 +79,9 @@ cforge_int_t cache_list(const cforge_context_t *ctx) {
 
   // Sort by package name, then version
   std::sort(entries.begin(), entries.end(), [](const auto &a, const auto &b) {
-    if (a.key.package != b.key.package) return a.key.package < b.key.package;
+    if (a.key.package != b.key.package) {
+      return a.key.package < b.key.package;
+    }
     return a.key.version < b.key.version;
   });
 
@@ -91,20 +95,19 @@ cforge_int_t cache_list(const cforge_context_t *ctx) {
 
   cforge_size_t total_size = 0;
   for (const auto &entry : entries) {
-    cforge::logger::print_table_row({
-        entry.key.package,
-        entry.key.version,
-        entry.key.platform,
-        entry.key.compiler + entry.key.compiler_ver,
-        entry.key.config,
-        format_size(entry.size_bytes)
-    }, widths);
+    cforge::logger::print_table_row({entry.key.package,
+                                     entry.key.version,
+                                     entry.key.platform,
+                                     entry.key.compiler + entry.key.compiler_ver,
+                                     entry.key.config,
+                                     format_size(entry.size_bytes)},
+                                    widths);
     total_size += entry.size_bytes;
   }
 
   cforge::logger::print_rule(82);
-  cforge::logger::print_plain(
-      std::to_string(entries.size()) + " package(s), " + format_size(total_size) + " total");
+  cforge::logger::print_plain(std::to_string(entries.size()) + " package(s), "
+                              + format_size(total_size) + " total");
 
   return 0;
 }
@@ -115,7 +118,8 @@ cforge_int_t cache_list(const cforge_context_t *ctx) {
 cforge_int_t cache_clean(const cforge_context_t *ctx) {
   cforge::package_cache cache;
 
-  // Check for package filter (args[0] = "clean", args[1] = package name if present)
+  // Check for package filter (args[0] = "clean", args[1] = package name if
+  // present)
   std::string filter;
   for (cforge_int_t i = 1; i < ctx->args.arg_count; i++) {
     std::string arg = ctx->args.args[i];
@@ -128,7 +132,8 @@ cforge_int_t cache_clean(const cforge_context_t *ctx) {
   if (filter.empty()) {
     // Clean entire cache
     auto stats = cache.stats();
-    cforge::logger::print_action("Cleaning", "entire cache (" + format_size(stats.total_size_bytes) + ")");
+    cforge::logger::print_action("Cleaning",
+                                 "entire cache (" + format_size(stats.total_size_bytes) + ")");
 
     cforge_size_t removed = cache.clear();
     cforge::logger::print_success("Removed " + std::to_string(removed) + " cached package(s)");
@@ -141,7 +146,9 @@ cforge_int_t cache_clean(const cforge_context_t *ctx) {
     }
 
     cforge_size_t total_size = 0;
-    for (const auto &e : entries) total_size += e.size_bytes;
+    for (const auto &e : entries) {
+      total_size += e.size_bytes;
+    }
 
     cforge::logger::print_action("Cleaning", filter + " (" + format_size(total_size) + ")");
     cforge_size_t removed = cache.remove_package(filter);
@@ -181,8 +188,8 @@ cforge_int_t cache_prune(const cforge_context_t *ctx) {
   if (removed > 0) {
     auto stats_after = cache.stats();
     cforge::logger::print_success("Removed " + std::to_string(removed) + " old package(s)");
-    cforge::logger::print_status("Freed " +
-        format_size(stats_before.total_size_bytes - stats_after.total_size_bytes));
+    cforge::logger::print_status(
+        "Freed " + format_size(stats_before.total_size_bytes - stats_after.total_size_bytes));
   } else {
     cforge::logger::print_status("Cache is within size limit, nothing to prune");
   }
@@ -210,9 +217,9 @@ cforge_int_t cache_stats(const cforge_context_t * /*ctx*/) {
 
   auto total_requests = stats.cache_hits + stats.cache_misses;
   if (total_requests > 0) {
-    double hit_rate = stats.hit_rate() * 100;
+    double hit_rate          = stats.hit_rate() * 100;
     std::string hit_rate_str = fmt::format("{:.1f}%", hit_rate);
-    auto color = hit_rate >= 50 ? fmt::color::green : fmt::color::yellow;
+    auto color               = hit_rate >= 50 ? fmt::color::green : fmt::color::yellow;
     cforge::logger::print_kv_colored("Hit rate", hit_rate_str, color);
   }
 

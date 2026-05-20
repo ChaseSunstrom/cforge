@@ -39,10 +39,11 @@ void cforge_print_step(cforge_cstring_t action, cforge_cstring_t target);
 void cforge_print_verbose(cforge_cstring_t message);
 
 #ifdef __cplusplus
-} // extern "C"
+}  // extern "C"
 
 #include <fmt/color.h>
 #include <fmt/core.h>
+
 #include <string>
 #include <vector>
 
@@ -69,9 +70,7 @@ enum class log_verbosity {
  */
 class logger {
 public:
-
   // Configuration
-
 
   /**
    * @brief Sets the global verbosity level for logging
@@ -87,7 +86,6 @@ public:
 
   // CARGO-style status messages (right-aligned status word)
 
-
   /**
    * @brief Print a status message with custom action word
    *
@@ -97,8 +95,7 @@ public:
    * @param action The action word (e.g., "Compiling", "Building")
    * @param message The message to print
    */
-  static void print_action(const std::string &action,
-                           const std::string &message);
+  static void print_action(const std::string &action, const std::string &message);
 
   /**
    * @brief Print a cyan status message (info/progress)
@@ -218,9 +215,7 @@ public:
    */
   static void cleaning(const std::string &target);
 
-
   // Build progress display (Rust-style)
-
 
   /**
    * @brief Print "Compiling {file} [current/total]" with optional timing
@@ -230,8 +225,23 @@ public:
    * @param duration_secs Optional duration in seconds (for completed files)
    */
   static void compiling_file(const std::string &file,
-                             cforge_int_t current = 0, cforge_int_t total = 0,
+                             cforge_int_t current          = 0,
+                             cforge_int_t total            = 0,
                              cforge_double_t duration_secs = -1.0);
+
+  /**
+   * @brief Generic per-file/step progress line for non-build commands.
+   *
+   * Emits a permanent "  {action} {target} [current/total]" row to stderr,
+   * clearing any in-place progress bar first (same primitive `compiling_file`
+   * uses). Pair with `progress_bar(..., action=...)` to keep a bar pinned
+   * underneath. Designed for commands that iterate over files such as
+   * `cforge fmt` / `cforge lint`.
+   */
+  static void progress_step(const std::string &action,
+                            const std::string &target,
+                            cforge_int_t current = 0,
+                            cforge_int_t total   = 0);
 
   /**
    * @brief Display a progress bar
@@ -239,9 +249,14 @@ public:
    * @param total Total steps
    * @param in_place If true, update the line in place (use carriage return)
    * @param elapsed_secs Optional elapsed time in seconds to display
+   * @param action Right-aligned status word shown beside the bar
+   *               (default "Building"; pass "Formatting", "Linting", etc.)
    */
-  static void progress_bar(int current, int total, bool in_place = true,
-                           double elapsed_secs = -1.0);
+  static void progress_bar(int current,
+                           int total,
+                           bool in_place             = true,
+                           double elapsed_secs       = -1.0,
+                           const std::string &action = "Building");
 
   /**
    * @brief Clear the current terminal line
@@ -262,9 +277,7 @@ public:
       cforge_double_t total_duration,
       const std::vector<std::pair<std::string, cforge_double_t>> &slowest_files);
 
-
   // Legacy compatibility (maps to new style)
-
 
   /**
    * @brief Print a header/banner (simplified, no box drawing)
@@ -307,8 +320,10 @@ public:
    * @param key_width Width for key column (default 14)
    * @param indent Number of spaces to indent (default 2)
    */
-  static void print_kv(const std::string &key, const std::string &value,
-                       int key_width = 14, int indent = 2);
+  static void print_kv(const std::string &key,
+                       const std::string &value,
+                       int key_width = 14,
+                       int indent    = 2);
 
   /**
    * @brief Print a key-value pair with colored value
@@ -319,9 +334,11 @@ public:
    * @param key_width Width for key column
    * @param indent Number of spaces to indent
    */
-  static void print_kv_colored(const std::string &key, const std::string &value,
+  static void print_kv_colored(const std::string &key,
+                               const std::string &value,
                                fmt::color value_color,
-                               int key_width = 14, int indent = 2);
+                               int key_width = 14,
+                               int indent    = 2);
 
   /**
    * @brief Print a list item with bullet or dash
@@ -334,7 +351,7 @@ public:
    */
   static void print_list_item(const std::string &text,
                               const std::string &bullet = "-",
-                              int indent = 2);
+                              int indent                = 2);
 
   /**
    * @brief Print a dimmed/secondary text line
@@ -372,8 +389,7 @@ public:
    * @param help_lines Vector of help strings
    * @param indent Indentation for each line
    */
-  static void print_help_lines(const std::vector<std::string> &help_lines,
-                               int indent = 2);
+  static void print_help_lines(const std::vector<std::string> &help_lines, int indent = 2);
 
   /**
    * @brief Print a table row with aligned columns
@@ -410,8 +426,7 @@ public:
    * @param cmd Command name (e.g., "build")
    * @param description Brief description
    */
-  static void print_cmd_header(const std::string &cmd,
-                               const std::string &description);
+  static void print_cmd_header(const std::string &cmd, const std::string &description);
 
   /**
    * @brief Print usage line
@@ -449,8 +464,7 @@ public:
    *
    * Example: "  $ cforge build -c Release"
    */
-  static void print_example(const std::string &example,
-                            const std::string &description = "");
+  static void print_example(const std::string &example, const std::string &description = "");
 
   /**
    * @brief Print a subcommand entry
@@ -498,8 +512,7 @@ public:
    * @param code Error code (e.g., "E0104")
    * @param message Error message
    */
-  static void print_error_header(const std::string &code,
-                                 const std::string &message);
+  static void print_error_header(const std::string &code, const std::string &message);
 
   /**
    * @brief Print a warning header with code
@@ -507,8 +520,7 @@ public:
    * @param code Warning code (e.g., "W0100")
    * @param message Warning message
    */
-  static void print_warning_header(const std::string &code,
-                                   const std::string &message);
+  static void print_warning_header(const std::string &code, const std::string &message);
 
   /**
    * @brief Print a file location line for diagnostics
@@ -519,8 +531,7 @@ public:
    * @param line Line number (0 to skip)
    * @param column Column number (0 to skip)
    */
-  static void print_location(const std::string &file_path, int line = 0,
-                             int column = 0);
+  static void print_location(const std::string &file_path, int line = 0, int column = 0);
 
   /**
    * @brief Print a code snippet line with gutter
@@ -529,8 +540,7 @@ public:
    * @param content Line content
    * @param gutter_width Width of the gutter
    */
-  static void print_code_line(int line_number, const std::string &content,
-                              int gutter_width = 4);
+  static void print_code_line(int line_number, const std::string &content, int gutter_width = 4);
 
   /**
    * @brief Print an error pointer line with carets
@@ -539,8 +549,7 @@ public:
    * @param length Length of the pointer (default 1)
    * @param gutter_width Width of the gutter
    */
-  static void print_error_pointer(int column_start, int length = 1,
-                                  int gutter_width = 4);
+  static void print_error_pointer(int column_start, int length = 1, int gutter_width = 4);
 
   /**
    * @brief Print a diagnostic note line
@@ -562,8 +571,7 @@ public:
    * @param description Fix description
    * @param replacement Optional replacement text
    */
-  static void print_diag_fix(const std::string &description,
-                             const std::string &replacement = "");
+  static void print_diag_fix(const std::string &description, const std::string &replacement = "");
 
   /**
    * @brief Print error summary line
@@ -574,8 +582,7 @@ public:
    * @param type Type description (e.g., "compiler error")
    * @param is_error True for error color, false for warning color
    */
-  static void print_error_count(int count, const std::string &type,
-                                bool is_error = true);
+  static void print_error_count(int count, const std::string &type, bool is_error = true);
 
   /**
    * @brief Print a gutter separator line
@@ -593,11 +600,12 @@ private:
    */
   static void print_status_line(const std::string &status,
                                 const std::string &message,
-                                fmt::color status_color, bool is_bold = true,
+                                fmt::color status_color,
+                                bool is_bold = true,
                                 FILE *stream = stdout);
 };
 
-} // namespace cforge
+}  // namespace cforge
 #endif
 
-#endif // CFORGE_LOG_HPP
+#endif  // CFORGE_LOG_HPP

@@ -4,11 +4,14 @@
  */
 
 #include "cforge/log.hpp"
+
 #include "core/commands.hpp"
 #include "core/registry.hpp"
 #include "core/types.h"
-#include <algorithm>
+
 #include <fmt/color.h>
+
+#include <algorithm>
 
 /**
  * @brief Handle the 'info' command
@@ -21,7 +24,7 @@ cforge_int_t cforge_cmd_info(const cforge_context_t *ctx) {
   std::string package_name;
   bool show_versions = false;
   bool show_features = true;
-  bool update_index = false;
+  bool update_index  = false;
 
   for (cforge_int_t i = 0; i < ctx->args.arg_count; ++i) {
     std::string arg = ctx->args.args[i];
@@ -56,7 +59,8 @@ cforge_int_t cforge_cmd_info(const cforge_context_t *ctx) {
   auto pkg = reg.get_package(package_name);
   if (!pkg) {
     cforge::logger::print_error("Package '" + package_name + "' not found");
-    cforge::logger::print_action("Hint", "Run 'cforge search " + package_name + "' to search for similar packages");
+    cforge::logger::print_action(
+        "Hint", "Run 'cforge search " + package_name + "' to search for similar packages");
     return 1;
   }
 
@@ -65,7 +69,7 @@ cforge_int_t cforge_cmd_info(const cforge_context_t *ctx) {
 
   // Package name and version
   std::string latest_version = pkg->versions.empty() ? "?" : pkg->versions[0].version;
-  std::string header = pkg->name + " " + latest_version;
+  std::string header         = pkg->name + " " + latest_version;
   if (pkg->verified) {
     header += " [verified]";
   }
@@ -102,7 +106,9 @@ cforge_int_t cforge_cmd_info(const cforge_context_t *ctx) {
   if (!pkg->keywords.empty()) {
     std::string keywords_str;
     for (cforge_size_t i = 0; i < pkg->keywords.size(); ++i) {
-      if (i > 0) keywords_str += ", ";
+      if (i > 0) {
+        keywords_str += ", ";
+      }
       keywords_str += pkg->keywords[i];
     }
     cforge::logger::print_kv("Keywords:", keywords_str);
@@ -112,7 +118,9 @@ cforge_int_t cforge_cmd_info(const cforge_context_t *ctx) {
   if (!pkg->categories.empty()) {
     std::string categories_str;
     for (cforge_size_t i = 0; i < pkg->categories.size(); ++i) {
-      if (i > 0) categories_str += ", ";
+      if (i > 0) {
+        categories_str += ", ";
+      }
       categories_str += pkg->categories[i];
     }
     cforge::logger::print_kv("Categories:", categories_str);
@@ -128,7 +136,9 @@ cforge_int_t cforge_cmd_info(const cforge_context_t *ctx) {
     if (!pkg->default_features.empty()) {
       std::string defaults;
       for (cforge_size_t i = 0; i < pkg->default_features.size(); ++i) {
-        if (i > 0) defaults += ", ";
+        if (i > 0) {
+          defaults += ", ";
+        }
         defaults += pkg->default_features[i];
       }
       cforge::logger::print_kv("Default:", defaults);
@@ -151,9 +161,8 @@ cforge_int_t cforge_cmd_info(const cforge_context_t *ctx) {
       }
 
       // Show if it's a default feature
-      bool is_default = std::find(pkg->default_features.begin(),
-                                   pkg->default_features.end(),
-                                   name) != pkg->default_features.end();
+      bool is_default = std::find(pkg->default_features.begin(), pkg->default_features.end(), name)
+                     != pkg->default_features.end();
       if (is_default) {
         feature_line += " [default]";
       }
@@ -162,16 +171,16 @@ cforge_int_t cforge_cmd_info(const cforge_context_t *ctx) {
       if (!feat.required_deps.empty()) {
         feature_line += " (requires: ";
         for (cforge_size_t i = 0; i < feat.required_deps.size(); ++i) {
-          if (i > 0) feature_line += ", ";
+          if (i > 0) {
+            feature_line += ", ";
+          }
           feature_line += feat.required_deps[i];
         }
         feature_line += ")";
       }
 
-      cforge::logger::print_kv_colored(name,
-        feature_line.substr(max_name_len + 2),
-        fmt::color::white,
-        max_name_len + 2);
+      cforge::logger::print_kv_colored(
+          name, feature_line.substr(max_name_len + 2), fmt::color::white, max_name_len + 2);
     }
 
     cforge::logger::print_blank();
@@ -183,7 +192,7 @@ cforge_int_t cforge_cmd_info(const cforge_context_t *ctx) {
 
     cforge_size_t count = std::min(cforge_size_t(10), pkg->versions.size());
     for (cforge_size_t i = 0; i < count; ++i) {
-      const auto &ver = pkg->versions[i];
+      const auto &ver          = pkg->versions[i];
       std::string version_info = "tag: " + ver.tag;
 
       if (ver.min_cpp > 11) {
@@ -198,13 +207,15 @@ cforge_int_t cforge_cmd_info(const cforge_context_t *ctx) {
     }
 
     if (pkg->versions.size() > count) {
-      cforge::logger::print_dim("... and " + std::to_string(pkg->versions.size() - count) + " more", 2);
+      cforge::logger::print_dim("... and " + std::to_string(pkg->versions.size() - count) + " more",
+                                2);
     }
 
     cforge::logger::print_blank();
   } else if (!show_versions && !pkg->versions.empty()) {
     // Just show version count
-    cforge::logger::print_dim(std::to_string(pkg->versions.size()) + " version(s) available. Use --versions to see all.");
+    cforge::logger::print_dim(std::to_string(pkg->versions.size())
+                              + " version(s) available. Use --versions to see all.");
     cforge::logger::print_blank();
   }
 
@@ -214,7 +225,9 @@ cforge_int_t cforge_cmd_info(const cforge_context_t *ctx) {
     if (!pkg->maintainer_owners.empty()) {
       std::string owners;
       for (cforge_size_t i = 0; i < pkg->maintainer_owners.size(); ++i) {
-        if (i > 0) owners += ", ";
+        if (i > 0) {
+          owners += ", ";
+        }
         owners += pkg->maintainer_owners[i];
       }
       cforge::logger::print_kv("Owners:", owners);
@@ -222,7 +235,9 @@ cforge_int_t cforge_cmd_info(const cforge_context_t *ctx) {
     if (!pkg->maintainer_authors.empty()) {
       std::string authors;
       for (cforge_size_t i = 0; i < pkg->maintainer_authors.size(); ++i) {
-        if (i > 0) authors += ", ";
+        if (i > 0) {
+          authors += ", ";
+        }
         authors += pkg->maintainer_authors[i];
       }
       cforge::logger::print_kv("Authors:", authors);
@@ -240,8 +255,9 @@ cforge_int_t cforge_cmd_info(const cforge_context_t *ctx) {
     cforge::logger::print_dim("# With features:", 2);
 
     // Show first feature as example
-    auto it = pkg->features.begin();
-    std::string feature_example = "  " + pkg->name + " = { version = \"" + latest_version + "\", features = [";
+    auto it                     = pkg->features.begin();
+    std::string feature_example = "  " + pkg->name + " = { version = \"" + latest_version
+                                + "\", features = [";
     if (it != pkg->features.end()) {
       feature_example += "\"" + it->first + "\"";
     }

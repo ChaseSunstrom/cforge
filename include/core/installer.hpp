@@ -6,14 +6,14 @@
 #ifndef CFORGE_INSTALLER_H
 #define CFORGE_INSTALLER_H
 
+#include "core/toml_reader.hpp"
+#include "core/types.h"
+
 #include <filesystem>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
-
-#include "core/toml_reader.hpp"
-#include "core/types.h"
 
 namespace cforge {
 
@@ -61,12 +61,12 @@ public:
    * @return True if installation was successful
    */
   bool install_project(const std::string &project_path,
-                       const std::string &install_path = "",
-                       bool add_to_path = false,
+                       const std::string &install_path          = "",
+                       bool add_to_path                         = false,
                        const std::string &project_name_override = "",
-                       const std::string &build_config = "",
-                       const std::string &env_var = "",
-                       bool skip_build = false);
+                       const std::string &build_config          = "",
+                       const std::string &env_var               = "",
+                       bool skip_build                          = false);
 
   /**
    * @brief Get the default installation path
@@ -92,8 +92,7 @@ public:
    * @param value Path to assign to the env var
    * @return True if succeeded
    */
-  bool update_env_var(const std::string &var_name,
-                      const std::filesystem::path &value) const;
+  bool update_env_var(const std::string &var_name, const std::filesystem::path &value) const;
 
   /**
    * @brief Update PATH environment variable if needed
@@ -139,10 +138,9 @@ private:
    * @param project_path Path to the project
    * @return toml_reader with loaded project data, or nullptr if failed
    */
-  std::unique_ptr<toml_reader>
-  read_project_config(const std::string &project_path) const;
+  std::unique_ptr<toml_reader> read_project_config(const std::string &project_path) const;
 };
 
-} // namespace cforge
+}  // namespace cforge
 
-#endif // CFORGE_INSTALLER_H
+#endif  // CFORGE_INSTALLER_H

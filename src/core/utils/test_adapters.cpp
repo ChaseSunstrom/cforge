@@ -4,6 +4,7 @@
  */
 
 #include "core/test_adapters.hpp"
+
 #include <algorithm>
 #include <regex>
 #include <sstream>
@@ -19,25 +20,23 @@ bool builtin_test_adapter::detect_from_source(const std::string &source_content)
   std::regex include_regex(R"(#include\s*[<"]test_framework\.h[">])");
   std::regex test_macro_regex(R"(\bTEST\s*\(\s*\w+\s*(?:,\s*\w+\s*)?\)\s*\{)");
 
-  return std::regex_search(source_content, include_regex) ||
-         (std::regex_search(source_content, test_macro_regex) &&
-          source_content.find("gtest") == std::string::npos &&
-          source_content.find("catch") == std::string::npos &&
-          source_content.find("doctest") == std::string::npos);
+  return std::regex_search(source_content, include_regex)
+      || (std::regex_search(source_content, test_macro_regex)
+          && source_content.find("gtest") == std::string::npos
+          && source_content.find("catch") == std::string::npos
+          && source_content.find("doctest") == std::string::npos);
 }
 
-std::string builtin_test_adapter::generate_cmake_setup(
-    const test_config::FrameworkConfig &) const {
+std::string builtin_test_adapter::generate_cmake_setup(const test_config::FrameworkConfig &) const {
   // Built-in framework doesn't need any CMake setup
   return "";
 }
 
 std::string builtin_test_adapter::get_cmake_target() const {
-  return ""; // No additional target needed
+  return "";  // No additional target needed
 }
 
-std::vector<test_result> builtin_test_adapter::parse_output(
-    const std::string &output) const {
+std::vector<test_result> builtin_test_adapter::parse_output(const std::string &output) const {
   std::vector<test_result> results;
 
   // Parse: [RUN] TestName
@@ -58,13 +57,13 @@ std::vector<test_result> builtin_test_adapter::parse_output(
     if (std::regex_search(line, match, run_regex)) {
       current_test = match[1].str();
       test_result result;
-      result.name = current_test;
+      result.name   = current_test;
       result.status = test_status::RUNNING;
 
       // Parse suite.test format
       auto dot = current_test.find('.');
       if (dot != std::string::npos) {
-        result.suite = current_test.substr(0, dot);
+        result.suite     = current_test.substr(0, dot);
         result.test_name = current_test.substr(dot + 1);
       } else {
         result.test_name = current_test;
@@ -83,8 +82,8 @@ std::vector<test_result> builtin_test_adapter::parse_output(
     } else if (std::regex_search(line, match, assert_regex)) {
       if (!current_test.empty() && test_map.count(current_test)) {
         test_map[current_test].failure_message = match[1].str();
-        test_map[current_test].file_path = match[2].str();
-        test_map[current_test].line_number = std::stoi(match[3].str());
+        test_map[current_test].file_path       = match[2].str();
+        test_map[current_test].line_number     = std::stoi(match[3].str());
       }
     }
   }
@@ -100,8 +99,7 @@ std::vector<std::string> builtin_test_adapter::get_list_args() const {
   return {"--list"};
 }
 
-std::vector<std::string> builtin_test_adapter::get_filter_args(
-    const std::string &filter) const {
+std::vector<std::string> builtin_test_adapter::get_filter_args(const std::string &filter) const {
   return {filter};
 }
 
@@ -109,8 +107,7 @@ std::vector<std::string> builtin_test_adapter::get_verbose_args() const {
   return {};
 }
 
-std::vector<std::string> builtin_test_adapter::parse_test_list(
-    const std::string &output) const {
+std::vector<std::string> builtin_test_adapter::parse_test_list(const std::string &output) const {
   std::vector<std::string> tests;
   std::istringstream stream(output);
   std::string line;
@@ -137,19 +134,20 @@ bool gtest_adapter::detect_from_source(const std::string &source_content) const 
   std::regex test_macro_regex(R"(\bTEST(_F|_P)?\s*\()");
   std::regex gmock_regex(R"(#include\s*[<"]gmock/gmock\.h[">])");
 
-  return std::regex_search(source_content, include_regex) ||
-         std::regex_search(source_content, gmock_regex) ||
-         (std::regex_search(source_content, test_macro_regex) &&
-          source_content.find("gtest") != std::string::npos);
+  return std::regex_search(source_content, include_regex)
+      || std::regex_search(source_content, gmock_regex)
+      || (std::regex_search(source_content, test_macro_regex)
+          && source_content.find("gtest") != std::string::npos);
 }
 
-std::string gtest_adapter::generate_cmake_setup(
-    const test_config::FrameworkConfig &config) const {
+std::string gtest_adapter::generate_cmake_setup(const test_config::FrameworkConfig &config) const {
   std::ostringstream ss;
 
   if (config.fetch) {
     std::string version = config.version.empty() ? "v1.14.0" : config.version;
-    if (version[0] != 'v') version = "v" + version;
+    if (version[0] != 'v') {
+      version = "v" + version;
+    }
 
     ss << "# Fetch Google Test\n"
        << "include(FetchContent)\n"
@@ -158,7 +156,8 @@ std::string gtest_adapter::generate_cmake_setup(
        << "  GIT_REPOSITORY https://github.com/google/googletest.git\n"
        << "  GIT_TAG " << version << "\n"
        << ")\n"
-       << "# Prevent overriding parent project's compiler/linker settings on Windows\n"
+       << "# Prevent overriding parent project's compiler/linker settings on "
+          "Windows\n"
        << "set(gtest_force_shared_crt ON CACHE BOOL \"\" FORCE)\n";
 
     // Check for GMock option
@@ -180,8 +179,7 @@ std::string gtest_adapter::get_cmake_target() const {
   return "GTest::gtest_main";
 }
 
-std::vector<test_result> gtest_adapter::parse_output(
-    const std::string &output) const {
+std::vector<test_result> gtest_adapter::parse_output(const std::string &output) const {
   std::vector<test_result> results;
 
   // Parse GTest output format
@@ -209,12 +207,12 @@ std::vector<test_result> gtest_adapter::parse_output(
     if (std::regex_search(line, match, run_regex)) {
       current_test = match[1].str();
       test_result result;
-      result.name = current_test;
+      result.name   = current_test;
       result.status = test_status::RUNNING;
 
       auto dot = current_test.find('.');
       if (dot != std::string::npos) {
-        result.suite = current_test.substr(0, dot);
+        result.suite     = current_test.substr(0, dot);
         result.test_name = current_test.substr(dot + 1);
       } else {
         result.test_name = current_test;
@@ -223,13 +221,13 @@ std::vector<test_result> gtest_adapter::parse_output(
     } else if (std::regex_search(line, match, ok_regex)) {
       std::string name = match[1].str();
       if (test_map.count(name)) {
-        test_map[name].status = test_status::PASSED;
+        test_map[name].status   = test_status::PASSED;
         test_map[name].duration = std::chrono::milliseconds(std::stoi(match[2].str()));
       }
     } else if (std::regex_search(line, match, fail_regex)) {
       std::string name = match[1].str();
       if (test_map.count(name)) {
-        test_map[name].status = test_status::FAILED;
+        test_map[name].status   = test_status::FAILED;
         test_map[name].duration = std::chrono::milliseconds(std::stoi(match[2].str()));
       }
     } else if (std::regex_search(line, match, skip_regex)) {
@@ -239,7 +237,7 @@ std::vector<test_result> gtest_adapter::parse_output(
       }
     } else if (std::regex_search(line, match, failure_loc_regex)) {
       if (!current_test.empty() && test_map.count(current_test)) {
-        test_map[current_test].file_path = match[1].str();
+        test_map[current_test].file_path   = match[1].str();
         test_map[current_test].line_number = std::stoi(match[2].str());
       }
     } else if (std::regex_search(line, match, expected_regex)) {
@@ -264,8 +262,7 @@ std::vector<std::string> gtest_adapter::get_list_args() const {
   return {"--gtest_list_tests"};
 }
 
-std::vector<std::string> gtest_adapter::get_filter_args(
-    const std::string &filter) const {
+std::vector<std::string> gtest_adapter::get_filter_args(const std::string &filter) const {
   return {"--gtest_filter=" + filter};
 }
 
@@ -273,8 +270,7 @@ std::vector<std::string> gtest_adapter::get_verbose_args() const {
   return {"--gtest_print_time=1"};
 }
 
-std::vector<std::string> gtest_adapter::parse_test_list(
-    const std::string &output) const {
+std::vector<std::string> gtest_adapter::parse_test_list(const std::string &output) const {
   std::vector<std::string> tests;
   std::istringstream stream(output);
   std::string line;
@@ -313,18 +309,19 @@ bool catch2_adapter::detect_from_source(const std::string &source_content) const
   std::regex test_case_regex(R"(\bTEST_CASE\s*\()");
   std::regex scenario_regex(R"(\bSCENARIO\s*\()");
 
-  return std::regex_search(source_content, include_regex) ||
-         std::regex_search(source_content, test_case_regex) ||
-         std::regex_search(source_content, scenario_regex);
+  return std::regex_search(source_content, include_regex)
+      || std::regex_search(source_content, test_case_regex)
+      || std::regex_search(source_content, scenario_regex);
 }
 
-std::string catch2_adapter::generate_cmake_setup(
-    const test_config::FrameworkConfig &config) const {
+std::string catch2_adapter::generate_cmake_setup(const test_config::FrameworkConfig &config) const {
   std::ostringstream ss;
 
   if (config.fetch) {
     std::string version = config.version.empty() ? "v3.5.0" : config.version;
-    if (version[0] != 'v') version = "v" + version;
+    if (version[0] != 'v') {
+      version = "v" + version;
+    }
 
     ss << "# Fetch Catch2\n"
        << "include(FetchContent)\n"
@@ -347,8 +344,7 @@ std::string catch2_adapter::get_cmake_target() const {
   return "Catch2::Catch2WithMain";
 }
 
-std::vector<test_result> catch2_adapter::parse_output(
-    const std::string &output) const {
+std::vector<test_result> catch2_adapter::parse_output(const std::string &output) const {
   std::vector<test_result> results;
 
   // Parse Catch2 console output
@@ -381,9 +377,9 @@ std::vector<test_result> catch2_adapter::parse_output(
       }
       in_test = false;
     } else if (std::regex_search(line, match, assertion_regex)) {
-      current_result.file_path = match[1].str();
+      current_result.file_path   = match[1].str();
       current_result.line_number = std::stoi(match[2].str());
-      std::string result_str = match[3].str();
+      std::string result_str     = match[3].str();
 
       if (result_str == "FAILED") {
         current_result.status = test_status::FAILED;
@@ -409,8 +405,7 @@ std::vector<std::string> catch2_adapter::get_list_args() const {
   return {"--list-tests"};
 }
 
-std::vector<std::string> catch2_adapter::get_filter_args(
-    const std::string &filter) const {
+std::vector<std::string> catch2_adapter::get_filter_args(const std::string &filter) const {
   return {filter};
 }
 
@@ -418,8 +413,7 @@ std::vector<std::string> catch2_adapter::get_verbose_args() const {
   return {"-s", "-d", "yes"};  // -s for success, -d for durations
 }
 
-std::vector<std::string> catch2_adapter::parse_test_list(
-    const std::string &output) const {
+std::vector<std::string> catch2_adapter::parse_test_list(const std::string &output) const {
   std::vector<std::string> tests;
   std::istringstream stream(output);
   std::string line;
@@ -428,8 +422,8 @@ std::vector<std::string> catch2_adapter::parse_test_list(
     // Catch2 lists tests one per line
     line.erase(0, line.find_first_not_of(" \t"));
     line.erase(line.find_last_not_of(" \t\r\n") + 1);
-    if (!line.empty() && line.find("All available") == std::string::npos &&
-        line.find("test case") == std::string::npos) {
+    if (!line.empty() && line.find("All available") == std::string::npos
+        && line.find("test case") == std::string::npos) {
       tests.push_back(line);
     }
   }
@@ -445,8 +439,8 @@ bool doctest_adapter::detect_from_source(const std::string &source_content) cons
   std::regex include_regex(R"(#include\s*[<"]doctest/doctest\.h[">])");
   std::regex doctest_regex(R"(#define\s+DOCTEST_CONFIG_IMPLEMENT)");
 
-  return std::regex_search(source_content, include_regex) ||
-         std::regex_search(source_content, doctest_regex);
+  return std::regex_search(source_content, include_regex)
+      || std::regex_search(source_content, doctest_regex);
 }
 
 std::string doctest_adapter::generate_cmake_setup(
@@ -455,7 +449,9 @@ std::string doctest_adapter::generate_cmake_setup(
 
   if (config.fetch) {
     std::string version = config.version.empty() ? "v2.4.11" : config.version;
-    if (version[0] != 'v') version = "v" + version;
+    if (version[0] != 'v') {
+      version = "v" + version;
+    }
 
     ss << "# Fetch doctest\n"
        << "include(FetchContent)\n"
@@ -477,8 +473,7 @@ std::string doctest_adapter::get_cmake_target() const {
   return "doctest::doctest_with_main";
 }
 
-std::vector<test_result> doctest_adapter::parse_output(
-    const std::string &output) const {
+std::vector<test_result> doctest_adapter::parse_output(const std::string &output) const {
   std::vector<test_result> results;
 
   // doctest output format is similar to Catch2
@@ -499,8 +494,8 @@ std::vector<test_result> doctest_adapter::parse_output(
       if (!current_result.name.empty()) {
         results.push_back(current_result);
       }
-      current_result = test_result();
-      current_result.name = match[1].str();
+      current_result        = test_result();
+      current_result.name   = match[1].str();
       current_result.status = test_status::RUNNING;
     } else if (std::regex_search(line, pass_regex)) {
       if (current_result.status == test_status::RUNNING) {
@@ -509,7 +504,7 @@ std::vector<test_result> doctest_adapter::parse_output(
     } else if (std::regex_search(line, fail_regex)) {
       current_result.status = test_status::FAILED;
     } else if (std::regex_search(line, match, loc_regex)) {
-      current_result.file_path = match[1].str();
+      current_result.file_path   = match[1].str();
       current_result.line_number = std::stoi(match[2].str());
     }
   }
@@ -525,8 +520,7 @@ std::vector<std::string> doctest_adapter::get_list_args() const {
   return {"--list-test-cases"};
 }
 
-std::vector<std::string> doctest_adapter::get_filter_args(
-    const std::string &filter) const {
+std::vector<std::string> doctest_adapter::get_filter_args(const std::string &filter) const {
   return {"--test-case=" + filter};
 }
 
@@ -534,8 +528,7 @@ std::vector<std::string> doctest_adapter::get_verbose_args() const {
   return {"--success=true", "--duration=true"};
 }
 
-std::vector<std::string> doctest_adapter::parse_test_list(
-    const std::string &output) const {
+std::vector<std::string> doctest_adapter::parse_test_list(const std::string &output) const {
   std::vector<std::string> tests;
   std::istringstream stream(output);
   std::string line;
@@ -560,13 +553,12 @@ bool bost_test_adapter::detect_from_source(const std::string &source_content) co
   std::regex test_regex(R"(\bBOOST_AUTO_TEST_CASE\s*\()");
   std::regex suite_regex(R"(\bBOOST_AUTO_TEST_SUITE\s*\()");
 
-  return std::regex_search(source_content, include_regex) ||
-         std::regex_search(source_content, test_regex) ||
-         std::regex_search(source_content, suite_regex);
+  return std::regex_search(source_content, include_regex)
+      || std::regex_search(source_content, test_regex)
+      || std::regex_search(source_content, suite_regex);
 }
 
-std::string bost_test_adapter::generate_cmake_setup(
-    const test_config::FrameworkConfig &) const {
+std::string bost_test_adapter::generate_cmake_setup(const test_config::FrameworkConfig &) const {
   std::ostringstream ss;
 
   // Boost.Test is typically installed, not fetched
@@ -580,8 +572,7 @@ std::string bost_test_adapter::get_cmake_target() const {
   return "Boost::unit_test_framework";
 }
 
-std::vector<test_result> bost_test_adapter::parse_output(
-    const std::string &output) const {
+std::vector<test_result> bost_test_adapter::parse_output(const std::string &output) const {
   std::vector<test_result> results;
 
   // Boost.Test output format:
@@ -590,7 +581,8 @@ std::vector<test_result> bost_test_adapter::parse_output(
   // *** No errors detected
   // *** X failures detected
   std::regex test_regex(R"(in\s*\"([^\"]+)\":)");
-  std::regex error_regex(R"(([^\(]+)\((\d+)\):\s*(error|fatal error):\s*in\s*\"([^\"]+)\":\s*(.+))");
+  std::regex error_regex(
+      R"(([^\(]+)\((\d+)\):\s*(error|fatal error):\s*in\s*\"([^\"]+)\":\s*(.+))");
   std::regex pass_regex(R"(\*\*\*\s*No errors detected)");
   std::regex fail_regex(R"(\*\*\*\s*(\d+)\s*failures?\s*detected)");
 
@@ -605,13 +597,13 @@ std::vector<test_result> bost_test_adapter::parse_output(
       std::string test_name = match[4].str();
       if (!test_map.count(test_name)) {
         test_result result;
-        result.name = test_name;
-        result.test_name = test_name;
+        result.name         = test_name;
+        result.test_name    = test_name;
         test_map[test_name] = result;
       }
-      test_map[test_name].status = test_status::FAILED;
-      test_map[test_name].file_path = match[1].str();
-      test_map[test_name].line_number = std::stoi(match[2].str());
+      test_map[test_name].status          = test_status::FAILED;
+      test_map[test_name].file_path       = match[1].str();
+      test_map[test_name].line_number     = std::stoi(match[2].str());
       test_map[test_name].failure_message = match[5].str();
     }
   }
@@ -627,8 +619,7 @@ std::vector<std::string> bost_test_adapter::get_list_args() const {
   return {"--list_content"};
 }
 
-std::vector<std::string> bost_test_adapter::get_filter_args(
-    const std::string &filter) const {
+std::vector<std::string> bost_test_adapter::get_filter_args(const std::string &filter) const {
   return {"--run_test=" + filter};
 }
 
@@ -636,8 +627,7 @@ std::vector<std::string> bost_test_adapter::get_verbose_args() const {
   return {"--log_level=test_suite", "--report_level=detailed"};
 }
 
-std::vector<std::string> bost_test_adapter::parse_test_list(
-    const std::string &output) const {
+std::vector<std::string> bost_test_adapter::parse_test_list(const std::string &output) const {
   std::vector<std::string> tests;
   std::istringstream stream(output);
   std::string line;
@@ -648,7 +638,7 @@ std::vector<std::string> bost_test_adapter::parse_test_list(
     // Look for test case names
     if (line.find("*") != std::string::npos) {
       // This is a test case marker
-      auto pos = line.find("*");
+      auto pos         = line.find("*");
       std::string name = line.substr(pos + 1);
       name.erase(0, name.find_first_not_of(" \t"));
       name.erase(name.find_last_not_of(" \t\r\n") + 1);
@@ -667,19 +657,19 @@ std::vector<std::string> bost_test_adapter::parse_test_list(
 
 std::unique_ptr<i_test_framework_adapter> create_adapter(test_framework fw) {
   switch (fw) {
-  case test_framework::Builtin:
-    return std::make_unique<builtin_test_adapter>();
-  case test_framework::GTest:
-    return std::make_unique<gtest_adapter>();
-  case test_framework::Catch2:
-    return std::make_unique<catch2_adapter>();
-  case test_framework::Doctest:
-    return std::make_unique<doctest_adapter>();
-  case test_framework::BoostTest:
-    return std::make_unique<bost_test_adapter>();
-  default:
-    return std::make_unique<builtin_test_adapter>();
+    case test_framework::Builtin:
+      return std::make_unique<builtin_test_adapter>();
+    case test_framework::GTest:
+      return std::make_unique<gtest_adapter>();
+    case test_framework::Catch2:
+      return std::make_unique<catch2_adapter>();
+    case test_framework::Doctest:
+      return std::make_unique<doctest_adapter>();
+    case test_framework::BoostTest:
+      return std::make_unique<bost_test_adapter>();
+    default:
+      return std::make_unique<builtin_test_adapter>();
   }
 }
 
-} // namespace cforge
+}  // namespace cforge

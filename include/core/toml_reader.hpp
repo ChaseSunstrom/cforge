@@ -6,17 +6,17 @@
 #ifndef CFORGE_TOML_READER_H
 #define CFORGE_TOML_READER_H
 
+#include "core/constants.h"
+#include "core/types.h"
+
+#include <toml++/toml.hpp>
+
 #include <map>
 #include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
-
-#include "core/constants.h"
-#include "core/types.h"
-
-#include <toml++/toml.hpp>
 
 namespace cforge {
 
@@ -74,8 +74,7 @@ public:
    * @param default_value The default value to return if the key is not found
    * @return The value associated with the key, or default_value if not found
    */
-  std::string get_string(const std::string &key,
-                         const std::string &default_value = "") const;
+  std::string get_string(const std::string &key, const std::string &default_value = "") const;
 
   /**
    * @brief Get an integer value from the TOML file
@@ -131,7 +130,8 @@ public:
   /**
    * @brief Get an array of tables from the TOML file
    * @param key The key to look up (e.g., "test.targets" for [[test.targets]])
-   * @return Vector of toml_reader objects, each wrapping one table from the array
+   * @return Vector of toml_reader objects, each wrapping one table from the
+   * array
    */
   std::vector<toml_reader> get_table_array(const std::string &key) const;
 
@@ -153,7 +153,7 @@ public:
   std::string get_string_or_deprecated(const std::string &key,
                                        const std::string &deprecated_key,
                                        const std::string &default_value = "",
-                                       bool warn = true) const;
+                                       bool warn                        = true) const;
 
   /**
    * @brief Check if either a key or its deprecated version exists
@@ -161,19 +161,18 @@ public:
    * @param deprecated_key The deprecated key to check as fallback
    * @return True if either key exists
    */
-  bool has_key_or_deprecated(const std::string &key,
-                             const std::string &deprecated_key) const;
+  bool has_key_or_deprecated(const std::string &key, const std::string &deprecated_key) const;
 
   /**
    * @brief Get the underlying toml::table pointer (for advanced usage)
    * @return Pointer to the toml::table, or nullptr if not loaded
    */
-  const toml::table* get_raw_table() const { return toml_data.get(); }
+  const toml::table *get_raw_table() const { return toml_data.get(); }
 
 private:
-  std::unique_ptr<toml::table> toml_data; // Smart pointer to the toml::table
+  std::unique_ptr<toml::table> toml_data;  // Smart pointer to the toml::table
 };
 
-} // namespace cforge
+}  // namespace cforge
 
-#endif // CFORGE_TOML_READER_H
+#endif  // CFORGE_TOML_READER_H

@@ -4,6 +4,7 @@
  */
 
 #include "cforge/log.hpp"
+
 #include "core/build_utils.hpp"
 #include "core/command_registry.hpp"
 #include "core/commands.hpp"
@@ -33,8 +34,7 @@
  */
 static void make_directory_writable(const std::filesystem::path &dir) {
   try {
-    for (const auto &entry :
-         std::filesystem::recursive_directory_iterator(dir)) {
+    for (const auto &entry : std::filesystem::recursive_directory_iterator(dir)) {
       try {
         std::filesystem::permissions(entry.path(),
                                      std::filesystem::perms::owner_write,
@@ -78,7 +78,7 @@ static bool force_remove_directory(const std::filesystem::path &dir) {
 
 #ifdef _WIN32
   // Third attempt on Windows: use system command
-  std::string cmd = "cmd /c \"rmdir /s /q \"" + dir.string() + "\"\" 2>nul";
+  std::string cmd     = "cmd /c \"rmdir /s /q \"" + dir.string() + "\"\" 2>nul";
   cforge_int_t result = std::system(cmd.c_str());
   if (result == 0 || !std::filesystem::exists(dir)) {
     return true;
@@ -86,12 +86,11 @@ static bool force_remove_directory(const std::filesystem::path &dir) {
 
   // Fourth attempt: use robocopy trick (create empty dir, mirror to target)
   // This can handle files that are locked or have special characters
-  std::filesystem::path temp_empty =
-      std::filesystem::temp_directory_path() / "cforge_empty_dir";
+  std::filesystem::path temp_empty = std::filesystem::temp_directory_path() / "cforge_empty_dir";
   try {
     std::filesystem::create_directories(temp_empty);
-    cmd = "robocopy \"" + temp_empty.string() + "\" \"" + dir.string() +
-          "\" /mir /r:1 /w:1 >nul 2>&1";
+    cmd = "robocopy \"" + temp_empty.string() + "\" \"" + dir.string()
+        + "\" /mir /r:1 /w:1 >nul 2>&1";
     std::system(cmd.c_str());
     std::filesystem::remove_all(temp_empty);
     std::filesystem::remove_all(dir);
@@ -100,8 +99,7 @@ static bool force_remove_directory(const std::filesystem::path &dir) {
     // Clean up temp directory
     try {
       std::filesystem::remove_all(temp_empty);
-    } catch (...) {
-    }
+    } catch (...) {}
   }
 #endif
 
@@ -116,8 +114,7 @@ static bool force_remove_directory(const std::filesystem::path &dir) {
  * @param base_dir Base build directory
  * @return std::vector<std::filesystem::path> List of build directories
  */
-static std::vector<std::filesystem::path>
-find_all_build_dirs(const std::string &base_dir) {
+static std::vector<std::filesystem::path> find_all_build_dirs(const std::string &base_dir) {
   std::vector<std::filesystem::path> build_dirs;
 
   // Add the base directory
@@ -126,8 +123,7 @@ find_all_build_dirs(const std::string &base_dir) {
   // Check for config-specific directories
   std::vector<std::string> configs = {"debug", "relwithdebinfo", "minsizerel"};
   for (const auto &config : configs) {
-    std::filesystem::path config_dir =
-        cforge::get_build_dir_for_config(base_dir, config);
+    std::filesystem::path config_dir = cforge::get_build_dir_for_config(base_dir, config);
     if (std::filesystem::exists(config_dir)) {
       build_dirs.push_back(config_dir);
     }
@@ -143,11 +139,10 @@ find_all_build_dirs(const std::string &base_dir) {
  * @param verbose Verbose output flag
  * @return bool Success flag
  */
-static bool clean_build_directory(const std::filesystem::path &build_dir,
-                                  bool /*verbose*/) {
+static bool clean_build_directory(const std::filesystem::path &build_dir, bool /*verbose*/) {
   if (!std::filesystem::exists(build_dir)) {
-    cforge::logger::print_status("Build directory does not exist, nothing to clean: " +
-                         build_dir.string());
+    cforge::logger::print_status("Build directory does not exist, nothing to clean: "
+                                 + build_dir.string());
     return true;
   }
 
@@ -157,8 +152,7 @@ static bool clean_build_directory(const std::filesystem::path &build_dir,
     cforge::logger::print_action("Removed", build_dir.string());
     return true;
   } else {
-    cforge::logger::print_error("Failed to remove build directory: " +
-                        build_dir.string());
+    cforge::logger::print_error("Failed to remove build directory: " + build_dir.string());
     return false;
   }
 }
@@ -172,14 +166,17 @@ static bool clean_build_directory(const std::filesystem::path &build_dir,
 static bool clean_cmake_files(bool verbose) {
   cforge::logger::cleaning("CMake temporary files");
 
-  std::vector<std::string> cmake_files = {
-      "CMakeCache.txt",        "CMakeFiles",
-      "cmake_install.cmake",   "CMakeScripts",
-      "compile_commands.json", "CTestTestfile.cmake",
-      "CMakeLists.txt.user",   "CMakeLists.txt",
-      "cforge.hash"};
+  std::vector<std::string> cmake_files = {"CMakeCache.txt",
+                                          "CMakeFiles",
+                                          "cmake_install.cmake",
+                                          "CMakeScripts",
+                                          "compile_commands.json",
+                                          "CTestTestfile.cmake",
+                                          "CMakeLists.txt.user",
+                                          "CMakeLists.txt",
+                                          "cforge.hash"};
 
-  bool success = true;
+  bool success       = true;
   cforge_int_t count = 0;
 
   // Remove CMake files from current directory
@@ -191,19 +188,18 @@ static bool clean_cmake_files(bool verbose) {
         if (file == "CMakeLists.txt") {
           // Only remove CMakeLists.txt if cforge.toml exists - it will be
           // regenerated during build
-          if (std::filesystem::exists(std::filesystem::current_path() /
-                                      CFORGE_FILE)) {
+          if (std::filesystem::exists(std::filesystem::current_path() / CFORGE_FILE)) {
             std::filesystem::remove(filepath);
             count++;
             if (verbose) {
-              cforge::logger::print_verbose("Removed: " + filepath.string() +
-                                    " (will be regenerated from cforge.toml)");
+              cforge::logger::print_verbose("Removed: " + filepath.string()
+                                            + " (will be regenerated from cforge.toml)");
             }
           } else {
             // Skip CMakeLists.txt if no cforge.toml exists
             if (verbose) {
-              cforge::logger::print_verbose("Preserving: " + filepath.string() +
-                                    " (no cforge.toml found)");
+              cforge::logger::print_verbose("Preserving: " + filepath.string()
+                                            + " (no cforge.toml found)");
             }
           }
         } else {
@@ -220,22 +216,20 @@ static bool clean_cmake_files(bool verbose) {
           }
         }
       } catch (const std::exception &e) {
-        cforge::logger::print_error("Failed to remove " + filepath.string() + ": " +
-                            std::string(e.what()));
+        cforge::logger::print_error("Failed to remove " + filepath.string() + ": "
+                                    + std::string(e.what()));
         success = false;
       }
     }
   }
 
   if (count > 0) {
-    cforge::logger::print_action("Cleaned",
-                         std::to_string(count) + " CMake files/directories");
+    cforge::logger::print_action("Cleaned", std::to_string(count) + " CMake files/directories");
 
     // Check if CMakeLists.txt was removed and cforge.toml exists
-    if (std::filesystem::exists(std::filesystem::current_path() /
-                                CFORGE_FILE)) {
+    if (std::filesystem::exists(std::filesystem::current_path() / CFORGE_FILE)) {
       cforge::logger::print_status("CMakeLists.txt has been deleted. It will be "
-                           "regenerated from cforge.toml when you run build");
+                                   "regenerated from cforge.toml when you run build");
     }
   } else {
     cforge::logger::print_status("No CMake files found to clean");
@@ -262,8 +256,7 @@ static bool regenerate_cmake_files(const std::filesystem::path &project_dir,
     try {
       std::filesystem::create_directories(build_dir);
     } catch (const std::exception &e) {
-      cforge::logger::print_error("Failed to create build directory: " +
-                          std::string(e.what()));
+      cforge::logger::print_error("Failed to create build directory: " + std::string(e.what()));
       return false;
     }
   }
@@ -281,8 +274,7 @@ static bool regenerate_cmake_files(const std::filesystem::path &project_dir,
   std::vector<std::string> cmake_args;
 
   // Add source directory (relative to build directory)
-  std::filesystem::path rel_path =
-      std::filesystem::relative(project_dir, build_dir);
+  std::filesystem::path rel_path = std::filesystem::relative(project_dir, build_dir);
   cmake_args.push_back(rel_path.string());
 
   // Add generator
@@ -304,8 +296,7 @@ static bool regenerate_cmake_files(const std::filesystem::path &project_dir,
   // Execute cmake command
   cforge::logger::print_status("Running CMake configure");
 
-  bool result =
-      cforge::execute_tool(cmake_cmd, cmake_args, build_dir.string(), "CMake", verbose);
+  bool result = cforge::execute_tool(cmake_cmd, cmake_args, build_dir.string(), "CMake", verbose);
 
   if (!result) {
     cforge::logger::print_error("Failed to regenerate CMake files");
@@ -353,23 +344,23 @@ cforge_int_t cforge_cmd_clean(const cforge_context_t *ctx) {
     // Workspace cleaning: only clean root cforge::workspacebuild outputs
     cforge::logger::cleaning("cforge::workspacebuild outputs");
     // Parse clean arguments
-    bool clean_all = false;
+    bool clean_all   = false;
     bool clean_cmake = true;
-    bool regenerate = false;
+    bool regenerate  = false;
     // bool deep = false; // Reserved for future deep clean functionality
     std::string config_name;
     bool verbose = cforge::logger::get_verbosity() == cforge::log_verbosity::VERBOSITY_VERBOSE;
     for (cforge_int_t i = 0; i < ctx->args.arg_count; ++i) {
       std::string arg = ctx->args.args[i];
-      if (arg == "--all")
+      if (arg == "--all") {
         clean_all = true;
-      else if (arg == "--no-cmake")
+      } else if (arg == "--no-cmake") {
         clean_cmake = false;
-      else if (arg == "--regenerate")
+      } else if (arg == "--regenerate") {
         regenerate = true;
+      }
       // --deep flag reserved for future use
-      else if ((arg == "--config" || arg == "-c") &&
-               i + 1 < ctx->args.arg_count) {
+      else if ((arg == "--config" || arg == "-c") && i + 1 < ctx->args.arg_count) {
         config_name = ctx->args.args[++i];
       }
     }
@@ -400,8 +391,8 @@ cforge_int_t cforge_cmd_clean(const cforge_context_t *ctx) {
           std::filesystem::remove(ws_cmake);
           cforge::logger::print_action("Removed", "cforge::workspaceCMakeLists.txt");
         } catch (const std::exception &e) {
-          cforge::logger::print_error("Failed to remove cforge::workspaceCMakeLists.txt: " +
-                              std::string(e.what()));
+          cforge::logger::print_error("Failed to remove cforge::workspaceCMakeLists.txt: "
+                                      + std::string(e.what()));
         }
       }
 
@@ -431,8 +422,8 @@ cforge_int_t cforge_cmd_clean(const cforge_context_t *ctx) {
   }
   // Check if cforge.toml exists
   if (!std::filesystem::exists(CFORGE_FILE)) {
-    cforge::logger::print_error("Not a valid cforge project (missing " +
-                        std::string(CFORGE_FILE) + ")");
+    cforge::logger::print_error("Not a valid cforge project (missing " + std::string(CFORGE_FILE)
+                                + ")");
     return 1;
   }
 
@@ -450,12 +441,11 @@ cforge_int_t cforge_cmd_clean(const cforge_context_t *ctx) {
   std::string base_build_dir = config.get_string("build.build_dir", "build");
 
   // Check arguments
-  std::string config_name; // Specific configuration to clean
-  bool clean_all = false;  // Clean all configurations
-  bool clean_cmake =
-      true; // Clean CMake files by default since we regenerate CMakeLists.txt
-  bool regenerate = false; // Regenerate CMake files after cleaning
-  bool deep = false;       // Deep clean: remove dependencies directory
+  std::string config_name;   // Specific configuration to clean
+  bool clean_all   = false;  // Clean all configurations
+  bool clean_cmake = true;   // Clean CMake files by default since we regenerate CMakeLists.txt
+  bool regenerate  = false;  // Regenerate CMake files after cleaning
+  bool deep        = false;  // Deep clean: remove dependencies directory
 
   bool verbose = cforge::logger::get_verbosity() == cforge::log_verbosity::VERBOSITY_VERBOSE;
 
@@ -466,13 +456,12 @@ cforge_int_t cforge_cmd_clean(const cforge_context_t *ctx) {
     if (arg == "--all") {
       clean_all = true;
     } else if (arg == "--no-cmake") {
-      clean_cmake = false; // Only way to disable cleaning CMake files
+      clean_cmake = false;  // Only way to disable cleaning CMake files
     } else if (arg == "--regenerate") {
       regenerate = true;
     } else if (arg == "--deep") {
       deep = true;
-    } else if ((arg == "--config" || arg == "-c") &&
-               (i + 1) < ctx->args.arg_count) {
+    } else if ((arg == "--config" || arg == "-c") && (i + 1) < ctx->args.arg_count) {
       config_name = ctx->args.args[++i];
     }
   }
@@ -489,8 +478,8 @@ cforge_int_t cforge_cmd_clean(const cforge_context_t *ctx) {
     cforge::logger::cleaning("all build configurations");
     build_dirs = find_all_build_dirs(base_build_dir);
   } else {
-    cforge::logger::cleaning("build configuration: " +
-                     (config_name.empty() ? "Default" : config_name));
+    cforge::logger::cleaning("build configuration: "
+                             + (config_name.empty() ? "Default" : config_name));
     build_dirs.push_back(cforge::get_build_dir_for_config(base_build_dir, config_name));
   }
 
@@ -509,7 +498,7 @@ cforge_int_t cforge_cmd_clean(const cforge_context_t *ctx) {
 
   // Remove dependencies directory if deep clean specified
   if (deep) {
-    std::string deps_dir = config.get_string("dependencies.directory", "deps");
+    std::string deps_dir            = config.get_string("dependencies.directory", "deps");
     std::filesystem::path deps_path = project_dir / deps_dir;
     if (std::filesystem::exists(deps_path)) {
       cforge::logger::removing(deps_path.string());
@@ -517,21 +506,19 @@ cforge_int_t cforge_cmd_clean(const cforge_context_t *ctx) {
         std::filesystem::remove_all(deps_path);
         cforge::logger::print_action("Removed", deps_path.string());
       } catch (const std::exception &e) {
-        cforge::logger::print_error("Failed to remove dependencies directory: " +
-                            std::string(e.what()));
+        cforge::logger::print_error("Failed to remove dependencies directory: "
+                                    + std::string(e.what()));
         all_cleaned = false;
       }
     } else {
-      cforge::logger::print_status(
-          "Dependencies directory does not exist, nothing to clean: " +
-          deps_path.string());
+      cforge::logger::print_status("Dependencies directory does not exist, nothing to clean: "
+                                   + deps_path.string());
     }
   }
 
   // Regenerate CMake files if requested
   if (regenerate) {
-    std::filesystem::path build_dir =
-        cforge::get_build_dir_for_config(base_build_dir, config_name);
+    std::filesystem::path build_dir = cforge::get_build_dir_for_config(base_build_dir, config_name);
     if (!regenerate_cmake_files(project_dir, build_dir, config_name, verbose)) {
       cforge::logger::print_error("Failed to regenerate CMake files");
       return 1;

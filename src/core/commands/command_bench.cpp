@@ -3,10 +3,12 @@
  * @brief Implementation of the bench command for running benchmarks
  */
 
+#include "core/command.h"
+
 #include "cforge/log.hpp"
+
 #include "core/benchmark_framework.hpp"
 #include "core/benchmark_runner.hpp"
-#include "core/command.h"
 #include "core/command_registry.hpp"
 #include "core/commands.hpp"
 #include "core/process_utils.hpp"
@@ -14,12 +16,13 @@
 #include "core/types.h"
 #include "core/workspace.hpp"
 
+#include <fmt/color.h>
+#include <fmt/core.h>
+
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
-#include <fmt/color.h>
-#include <fmt/core.h>
 #include <fstream>
 #include <iomanip>
 #include <regex>
@@ -37,7 +40,9 @@ static std::string with_commas(cforge_int_t n) {
   std::string out;
   int count = 0;
   for (auto it = s.rbegin(); it != s.rend(); ++it) {
-    if (count != 0 && count % 3 == 0) out.push_back(',');
+    if (count != 0 && count % 3 == 0) {
+      out.push_back(',');
+    }
     out.push_back(*it);
     ++count;
   }
@@ -54,8 +59,7 @@ static std::string with_commas(cforge_int_t n) {
  *   benchmark result: ok. 0 failed; N measured; finished in T
  */
 void print_benchmark_summary(const cforge::benchmark_summary &summary) {
-  fmt::print("\nrunning {} {}\n", summary.total,
-             summary.total == 1 ? "benchmark" : "benchmarks");
+  fmt::print("\nrunning {} {}\n", summary.total, summary.total == 1 ? "benchmark" : "benchmarks");
 
   if (summary.results.empty()) {
     fmt::print("\nbenchmark result: ok. 0 failed; 0 measured; finished in "
@@ -68,10 +72,14 @@ void print_benchmark_summary(const cforge::benchmark_summary &summary) {
   size_t name_width = 0;
   size_t time_width = 0;
   for (const auto &r : summary.results) {
-    if (r.name.size() > name_width) name_width = r.name.size();
+    if (r.name.size() > name_width) {
+      name_width = r.name.size();
+    }
     if (r.success) {
       auto t = cforge::format_bench_time(r.time_ns);
-      if (t.size() > time_width) time_width = t.size();
+      if (t.size() > time_width) {
+        time_width = t.size();
+      }
     }
   }
 
@@ -79,17 +87,18 @@ void print_benchmark_summary(const cforge::benchmark_summary &summary) {
     fmt::print("benchmark {:<{}} ... ", result.name, name_width);
     if (result.success) {
       fmt::print(fmt::fg(fmt::color::green) | fmt::emphasis::bold,
-                 "{:>{}}", cforge::format_bench_time(result.time_ns),
+                 "{:>{}}",
+                 cforge::format_bench_time(result.time_ns),
                  time_width);
       fmt::print("/iter");
       if (result.iterations > 0) {
-        fmt::print(fmt::fg(fmt::color::dim_gray), " (n={})",
-                   with_commas(result.iterations));
+        fmt::print(fmt::fg(fmt::color::dim_gray), " (n={})", with_commas(result.iterations));
       }
       fmt::print("\n");
     } else {
       fmt::print(fmt::emphasis::bold | fmt::fg(fmt::color::red),
-                 "FAILED: {}\n", result.error_message);
+                 "FAILED: {}\n",
+                 result.error_message);
     }
   }
 
@@ -100,11 +109,12 @@ void print_benchmark_summary(const cforge::benchmark_summary &summary) {
     fmt::print(fmt::fg(fmt::color::red) | fmt::emphasis::bold, "FAILED");
   }
   fmt::print(". {} failed; {} measured; finished in {:.2f}s\n",
-             summary.failed, summary.successful,
+             summary.failed,
+             summary.successful,
              summary.total_duration.count() / 1000.0);
 }
 
-} // anonymous namespace
+}  // anonymous namespace
 
 /**
  * @brief Handle the 'bench' command for running benchmarks
@@ -114,7 +124,7 @@ cforge_int_t cforge_cmd_bench(const cforge_context_t *ctx) {
 
   // Parse arguments
   cforge::benchmark_run_options options;
-  options.build_config = "Release"; // Benchmarks should run in Release by default
+  options.build_config = "Release";  // Benchmarks should run in Release by default
   std::string specific_bench;
 
   for (cforge_int_t i = 0; i < ctx->args.arg_count; i++) {
@@ -164,7 +174,7 @@ cforge_int_t cforge_cmd_bench(const cforge_context_t *ctx) {
 
   // Check for benchmark directory
   std::string bench_dir_str = reader.get_string("benchmark.directory", "bench");
-  fs::path bench_dir = project_dir / bench_dir_str;
+  fs::path bench_dir        = project_dir / bench_dir_str;
 
   if (!fs::exists(bench_dir)) {
     cforge::logger::print_warning("Benchmark directory not found: " + bench_dir.string());
@@ -172,33 +182,32 @@ cforge_int_t cforge_cmd_bench(const cforge_context_t *ctx) {
 
     cforge::logger::print_help_section("TO ADD BENCHMARKS");
     cforge::logger::print_list_item("Create a " + bench_dir_str + "/ directory", "1.", 4);
-    cforge::logger::print_list_item(
-        "Drop in any .cpp/.c file with BENCH() macros — that's it.", "2.", 4);
-    cforge::logger::print_list_item(
-        "Or use Google Benchmark / nanobench / Catch2 — auto-detected.", "3.", 4);
+    cforge::logger::print_list_item("Drop in any .cpp/.c file with BENCH() macros — that's it.",
+                                    "2.",
+                                    4);
+    cforge::logger::print_list_item("Or use Google Benchmark / nanobench / Catch2 — auto-detected.",
+                                    "3.",
+                                    4);
     cforge::logger::print_blank();
 
     cforge::logger::print_help_section("EXAMPLE (built-in, no dependencies)");
     cforge::logger::print_dim(bench_dir_str + "/bench_example.cpp:", 4);
-    cforge::logger::print_config_block({
-      "#include \"bench_framework.h\"",
-      "",
-      "BENCH(VectorPush) {",
-      "    std::vector<int> v;",
-      "    for (int i = 0; i < 1000; ++i) v.push_back(i);",
-      "    cf_clobber_();",
-      "}",
-      "",
-      "// No main() needed — cforge generates one."
-    });
+    cforge::logger::print_config_block({"#include \"bench_framework.h\"",
+                                        "",
+                                        "BENCH(VectorPush) {",
+                                        "    std::vector<int> v;",
+                                        "    for (int i = 0; i < 1000; ++i) v.push_back(i);",
+                                        "    cf_clobber_();",
+                                        "}",
+                                        "",
+                                        "// No main() needed — cforge generates one."});
     cforge::logger::print_blank();
 
     cforge::logger::print_help_section("CONFIGURATION (optional)");
-    cforge::logger::print_config_block({
-      "[benchmark]",
-      "directory = \"bench\"",
-      "framework = \"auto\"   # or builtin / google / nanobench / catch2"
-    });
+    cforge::logger::print_config_block(
+        {"[benchmark]",
+         "directory = \"bench\"",
+         "framework = \"auto\"   # or builtin / google / nanobench / catch2"});
     return 0;
   }
 
@@ -224,10 +233,9 @@ cforge_int_t cforge_cmd_bench(const cforge_context_t *ctx) {
   }
 
   for (const auto &target : targets) {
-    cforge::logger::print_action("Found",
-                                 target.name + " (" +
-                                 cforge::benchmark_framework_to_string(target.framework) +
-                                 ")");
+    cforge::logger::print_action(
+        "Found",
+        target.name + " (" + cforge::benchmark_framework_to_string(target.framework) + ")");
   }
 
   // Run benchmarks

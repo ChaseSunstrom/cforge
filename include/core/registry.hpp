@@ -35,8 +35,7 @@ struct package_feature {
   std::string cmake_option;
   std::string description;
   std::vector<std::string> required_deps;
-  std::map<std::string, std::vector<std::string>>
-      required_features; // dep -> features
+  std::map<std::string, std::vector<std::string>> required_features;  // dep -> features
 };
 
 /**
@@ -55,10 +54,12 @@ struct package_version {
  * @brief Git tag discovery configuration
  */
 struct tag_config {
-  std::string pattern = "{version}";  // Pattern like "v{version}", "{version}", "release-{version}"
-  std::string version_regex;           // Regex to extract version from tag (auto-generated from pattern)
-  std::vector<std::string> exclude;    // Tags to exclude (e.g., "nightly", "beta")
-  cforge_int_t max_versions = 50;               // Maximum versions to cache
+  std::string pattern = "{version}";  // Pattern like "v{version}", "{version}",
+                                      // "release-{version}"
+  std::string version_regex;          // Regex to extract version from tag
+                                      // (auto-generated from pattern)
+  std::vector<std::string> exclude;   // Tags to exclude (e.g., "nightly", "beta")
+  cforge_int_t max_versions = 50;     // Maximum versions to cache
 };
 
 /**
@@ -73,10 +74,10 @@ struct platform_setup {
  * @brief Setup configuration for packages requiring generation/build steps
  */
 struct package_setup {
-  std::vector<std::string> commands;        // Commands to run after fetching
-  std::vector<std::string> required_tools;  // Required tools (e.g., ["python", "cmake"])
-  std::string workdir;                      // Working directory (relative to package root)
-  std::vector<std::string> outputs;         // Output files that indicate setup is complete
+  std::vector<std::string> commands;            // Commands to run after fetching
+  std::vector<std::string> required_tools;      // Required tools (e.g., ["python", "cmake"])
+  std::string workdir;                          // Working directory (relative to package root)
+  std::vector<std::string> outputs;             // Output files that indicate setup is complete
   std::map<std::string, std::string> defaults;  // Default option values
 
   // platform-specific overrides
@@ -91,7 +92,7 @@ struct package_setup {
  * @brief Package integration info
  */
 struct package_integration {
-  std::string type; // "cmake", "header_only", "pkg-config"
+  std::string type;  // "cmake", "header_only", "pkg-config"
   std::string cmake_target;
   std::string include_dir;
   std::string single_header;
@@ -153,7 +154,7 @@ struct resolved_dependency {
 
   // Common options
   bool header_only = false;
-  bool link = true;
+  bool link        = true;
   std::vector<std::string> features;
   std::map<std::string, std::string> cmake_options;
   std::map<std::string, std::string> setup_options;  // Merged defaults + user options
@@ -169,7 +170,7 @@ struct resolved_dependency {
  */
 struct dependency_spec {
   std::string name;
-  std::string version; // Can be "1.2.3", "1.2.*", "1.*", "*"
+  std::string version;  // Can be "1.2.3", "1.2.*", "1.*", "*"
   dependency_source source = dependency_source::INDEX;
 
   // Source-specific fields
@@ -181,8 +182,8 @@ struct dependency_spec {
   std::string path;
 
   // Options
-  bool header_only = false;
-  bool link = true;
+  bool header_only      = false;
+  bool link             = true;
   bool default_features = true;
   std::vector<std::string> features;
   std::map<std::string, std::string> setup_options;  // User options for setup commands
@@ -197,8 +198,7 @@ public:
    * @brief Constructor
    * @param cache_dir Directory to cache the index (default: ~/.cforge/registry)
    */
-  explicit registry(
-      const std::filesystem::path &cache_dir = get_default_cache_dir());
+  explicit registry(const std::filesystem::path &cache_dir = get_default_cache_dir());
 
   /**
    * @brief Update the local index cache from remote
@@ -219,8 +219,7 @@ public:
    * @param limit Maximum number of results
    * @return Vector of matching package names
    */
-  std::vector<std::string> search(const std::string &query,
-                                  cforge_size_t limit = 20) const;
+  std::vector<std::string> search(const std::string &query, cforge_size_t limit = 20) const;
 
   /**
    * @brief Get package information
@@ -235,16 +234,14 @@ public:
    * @param version_spec Version specification (e.g., "1.2.*", "*")
    * @return Resolved version string, or empty if not found
    */
-  std::string resolve_version(const std::string &name,
-                              const std::string &version_spec) const;
+  std::string resolve_version(const std::string &name, const std::string &version_spec) const;
 
   /**
    * @brief Resolve a dependency specification to a full resolved dependency
    * @param spec Dependency specification from cforge.toml
    * @return Resolved dependency with all build information
    */
-  std::optional<resolved_dependency>
-  resolve_dependency(const dependency_spec &spec) const;
+  std::optional<resolved_dependency> resolve_dependency(const dependency_spec &spec) const;
 
   /**
    * @brief Get all available packages
@@ -290,8 +287,7 @@ private:
    * @param name Package name
    * @return Package info if found
    */
-  std::optional<package_info>
-  load_package_file(const std::string &name) const;
+  std::optional<package_info> load_package_file(const std::string &name) const;
 
   /**
    * @brief Fetch Git tags from a remote repository
@@ -299,8 +295,8 @@ private:
    * @param config Tag configuration (pattern, excludes)
    * @return Vector of discovered versions
    */
-  std::vector<package_version>
-  fetch_git_tags(const std::string &repo_url, const tag_config &config) const;
+  std::vector<package_version> fetch_git_tags(const std::string &repo_url,
+                                              const tag_config &config) const;
 
   /**
    * @brief Convert a tag pattern to a regex for version extraction
@@ -315,8 +311,7 @@ private:
    * @param pattern Tag pattern (e.g., "v{version}")
    * @return Tag string (e.g., "v1.2.3")
    */
-  static std::string version_to_tag(const std::string &version,
-                                     const std::string &pattern);
+  static std::string version_to_tag(const std::string &version, const std::string &pattern);
 
   /**
    * @brief Load cached versions for a package
@@ -339,8 +334,7 @@ private:
    * @param spec Version specification (e.g., "1.2.*")
    * @return true if version matches spec
    */
-  static bool version_matches(const std::string &version,
-                              const std::string &spec);
+  static bool version_matches(const std::string &version, const std::string &spec);
 
   /**
    * @brief Compare two semantic versions
@@ -363,8 +357,7 @@ private:
  * @param config_path Path to cforge.toml
  * @return Vector of dependency specifications
  */
-std::vector<dependency_spec>
-parse_dependencies(const std::filesystem::path &config_path);
+std::vector<dependency_spec> parse_dependencies(const std::filesystem::path &config_path);
 
 /**
  * @brief Parse a single dependency entry from TOML
@@ -372,9 +365,8 @@ parse_dependencies(const std::filesystem::path &config_path);
  * @param value TOML value (string version or table)
  * @return Dependency specification
  */
-dependency_spec parse_dependency_entry(const std::string &name,
-                                        const std::string &table_prefix);
+dependency_spec parse_dependency_entry(const std::string &name, const std::string &table_prefix);
 
-} // namespace cforge
+}  // namespace cforge
 
-#endif // CFORGE_REGISTRY_HPP
+#endif  // CFORGE_REGISTRY_HPP

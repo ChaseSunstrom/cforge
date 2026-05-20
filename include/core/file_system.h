@@ -38,8 +38,7 @@ typedef enum {
 /**
  * @brief Initialize a path
  */
-cforge_fs_error_t cforge_path_init(cforge_path_t *path,
-                                   cforge_cstring_t path_str);
+cforge_fs_error_t cforge_path_init(cforge_path_t *path, cforge_cstring_t path_str);
 
 /**
  * @brief Free a path
@@ -71,8 +70,7 @@ bool cforge_path_is_file(const cforge_path_t *path);
 /**
  * @brief Create a directory
  */
-cforge_fs_error_t cforge_create_directory(const cforge_path_t *path,
-                                          bool recursive);
+cforge_fs_error_t cforge_create_directory(const cforge_path_t *path, bool recursive);
 
 /**
  * @brief Remove a file
@@ -82,8 +80,7 @@ cforge_fs_error_t cforge_remove_file(const cforge_path_t *path);
 /**
  * @brief Remove a directory
  */
-cforge_fs_error_t cforge_remove_directory(const cforge_path_t *path,
-                                          bool recursive);
+cforge_fs_error_t cforge_remove_directory(const cforge_path_t *path, bool recursive);
 
 /**
  * @brief Read the contents of a file

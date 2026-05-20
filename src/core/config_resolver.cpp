@@ -4,7 +4,9 @@
  */
 
 #include "core/config_resolver.hpp"
+
 #include "cforge/log.hpp"
+
 #include "core/types.h"
 
 #include <algorithm>
@@ -15,8 +17,9 @@ namespace cforge {
 // Helper to convert string to lowercase
 static std::string to_lower(const std::string &str) {
   std::string result = str;
-  std::transform(result.begin(), result.end(), result.begin(),
-                 [](unsigned char c) { return std::tolower(c); });
+  std::transform(result.begin(), result.end(), result.begin(), [](unsigned char c) {
+    return std::tolower(c);
+  });
   return result;
 }
 
@@ -34,14 +37,14 @@ platform get_current_platform() {
 
 std::string platform_to_string(platform platform) {
   switch (platform) {
-  case platform::WINDOWS:
-    return "windows";
-  case platform::LINUX:
-    return "linux";
-  case platform::MACOS:
-    return "macos";
-  default:
-    return "unknown";
+    case platform::WINDOWS:
+      return "windows";
+    case platform::LINUX:
+      return "linux";
+    case platform::MACOS:
+      return "macos";
+    default:
+      return "unknown";
   }
 }
 
@@ -63,11 +66,11 @@ compiler detect_compiler() {
 #elif defined(__MINGW32__) || defined(__MINGW64__)
   return compiler::MINGW;
 #elif defined(__clang__)
-  #if defined(__apple_build_version__)
-    return compiler::APPLE_CLANG;
-  #else
-    return compiler::CLANG;
-  #endif
+#if defined(__apple_build_version__)
+  return compiler::APPLE_CLANG;
+#else
+  return compiler::CLANG;
+#endif
 #elif defined(__GNUC__)
   return compiler::GCC;
 #else
@@ -77,18 +80,18 @@ compiler detect_compiler() {
 
 std::string compiler_to_string(compiler compiler) {
   switch (compiler) {
-  case compiler::MSVC:
-    return "msvc";
-  case compiler::GCC:
-    return "gcc";
-  case compiler::CLANG:
-    return "clang";
-  case compiler::APPLE_CLANG:
-    return "apple_clang";
-  case compiler::MINGW:
-    return "mingw";
-  default:
-    return "unknown";
+    case compiler::MSVC:
+      return "msvc";
+    case compiler::GCC:
+      return "gcc";
+    case compiler::CLANG:
+      return "clang";
+    case compiler::APPLE_CLANG:
+      return "apple_clang";
+    case compiler::MINGW:
+      return "mingw";
+    default:
+      return "unknown";
   }
 }
 
@@ -110,7 +113,7 @@ compiler string_to_compiler(const std::string &str) {
 
 bool matches_current_platform(const std::vector<std::string> &platforms) {
   if (platforms.empty()) {
-    return true; // No restriction means all platforms
+    return true;  // No restriction means all platforms
   }
 
   platform current = get_current_platform();
@@ -125,8 +128,8 @@ bool matches_current_platform(const std::vector<std::string> &platforms) {
 // config_resolver implementation
 
 config_resolver::config_resolver(const toml_reader &config)
-    : config_(config), platform_(get_current_platform()),
-      compiler_(detect_compiler()) {}
+    : config_(config), platform_(get_current_platform()), compiler_(detect_compiler()) {
+}
 
 void config_resolver::set_platform(platform platform) {
   platform_ = platform;
@@ -146,13 +149,11 @@ void config_resolver::merge_arrays(std::vector<std::string> &target,
   }
 }
 
-std::vector<std::string>
-config_resolver::get_section_array(const std::string &key) const {
+std::vector<std::string> config_resolver::get_section_array(const std::string &key) const {
   return config_.get_string_array(key);
 }
 
-std::vector<std::string>
-config_resolver::resolve_defines(const std::string &build_config) const {
+std::vector<std::string> config_resolver::resolve_defines(const std::string &build_config) const {
   std::vector<std::string> result;
   std::string platform_str = platform_to_string(platform_);
   std::string compiler_str = compiler_to_string(compiler_);
@@ -168,8 +169,9 @@ config_resolver::resolve_defines(const std::string &build_config) const {
   merge_arrays(result, get_section_array("compiler." + compiler_str + ".defines"));
 
   // 4. platform+compiler nested defines
-  merge_arrays(result, get_section_array("platform." + platform_str +
-                                         ".compiler." + compiler_str + ".defines"));
+  merge_arrays(result,
+               get_section_array("platform." + platform_str + ".compiler." + compiler_str
+                                 + ".defines"));
 
   // 5. Build config defines (support both singular and plural naming)
   if (!build_config.empty()) {
@@ -185,8 +187,7 @@ config_resolver::resolve_defines(const std::string &build_config) const {
   return result;
 }
 
-std::vector<std::string>
-config_resolver::resolve_flags(const std::string &build_config) const {
+std::vector<std::string> config_resolver::resolve_flags(const std::string &build_config) const {
   std::vector<std::string> result;
   std::string platform_str = platform_to_string(platform_);
   std::string compiler_str = compiler_to_string(compiler_);
@@ -202,8 +203,9 @@ config_resolver::resolve_flags(const std::string &build_config) const {
   merge_arrays(result, get_section_array("compiler." + compiler_str + ".flags"));
 
   // 4. platform+compiler nested flags
-  merge_arrays(result, get_section_array("platform." + platform_str +
-                                         ".compiler." + compiler_str + ".flags"));
+  merge_arrays(result,
+               get_section_array("platform." + platform_str + ".compiler." + compiler_str
+                                 + ".flags"));
 
   // 5. Build config flags
   if (!build_config.empty()) {
@@ -232,8 +234,9 @@ std::vector<std::string> config_resolver::resolve_links() const {
   merge_arrays(result, get_section_array("compiler." + compiler_str + ".links"));
 
   // 4. platform+compiler nested links
-  merge_arrays(result, get_section_array("platform." + platform_str +
-                                         ".compiler." + compiler_str + ".links"));
+  merge_arrays(result,
+               get_section_array("platform." + platform_str + ".compiler." + compiler_str
+                                 + ".links"));
 
   return result;
 }
@@ -255,14 +258,14 @@ std::vector<std::string> config_resolver::resolve_frameworks() const {
   merge_arrays(result, get_section_array("compiler." + compiler_str + ".frameworks"));
 
   // 3. platform+compiler nested frameworks
-  merge_arrays(result, get_section_array("platform.macos.compiler." +
-                                         compiler_str + ".frameworks"));
+  merge_arrays(result,
+               get_section_array("platform.macos.compiler." + compiler_str + ".frameworks"));
 
   return result;
 }
 
-std::vector<std::string>
-config_resolver::resolve_cmake_args(const std::string &build_config) const {
+std::vector<std::string> config_resolver::resolve_cmake_args(
+    const std::string &build_config) const {
   std::vector<std::string> result;
   std::string config_lower = to_lower(build_config);
 
@@ -278,8 +281,7 @@ config_resolver::resolve_cmake_args(const std::string &build_config) const {
   return result;
 }
 
-linker_options
-config_resolver::resolve_linker_options(const std::string &build_config) const {
+linker_options config_resolver::resolve_linker_options(const std::string &build_config) const {
   linker_options result;
   std::string platform_str = platform_to_string(platform_);
   std::string compiler_str = compiler_to_string(compiler_);
@@ -302,7 +304,8 @@ config_resolver::resolve_linker_options(const std::string &build_config) const {
     merge_linker_options(result, parse_linker_options(config_, compiler_section));
   }
 
-  // 4. Platform+Compiler nested linker options from [linker.platform.<plat>.compiler.<comp>]
+  // 4. Platform+Compiler nested linker options from
+  // [linker.platform.<plat>.compiler.<comp>]
   std::string nested_section = "linker.platform." + platform_str + ".compiler." + compiler_str;
   if (config_.has_key(nested_section)) {
     merge_linker_options(result, parse_linker_options(config_, nested_section));
@@ -321,12 +324,12 @@ config_resolver::resolve_linker_options(const std::string &build_config) const {
 
 resolved_config config_resolver::resolve(const std::string &build_config) const {
   resolved_config cfg;
-  cfg.defines = resolve_defines(build_config);
-  cfg.flags = resolve_flags(build_config);
-  cfg.links = resolve_links();
+  cfg.defines    = resolve_defines(build_config);
+  cfg.flags      = resolve_flags(build_config);
+  cfg.links      = resolve_links();
   cfg.frameworks = resolve_frameworks();
   cfg.cmake_args = resolve_cmake_args(build_config);
-  cfg.linker = resolve_linker_options(build_config);
+  cfg.linker     = resolve_linker_options(build_config);
   return cfg;
 }
 
@@ -345,4 +348,4 @@ bool config_resolver::has_section(const std::string &section_prefix) const {
   return false;
 }
 
-} // namespace cforge
+}  // namespace cforge

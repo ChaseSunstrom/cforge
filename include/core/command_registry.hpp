@@ -23,10 +23,10 @@ namespace cforge {
  * @brief Flag definition for command help
  */
 struct flag_def {
-  std::string short_name;     // "-c"
-  std::string long_name;      // "--config"
+  std::string short_name;  // "-c"
+  std::string long_name;   // "--config"
   std::string description;
-  std::string value_name;     // "CONFIG" for "--config <CONFIG>"
+  std::string value_name;  // "CONFIG" for "--config <CONFIG>"
   std::string default_value;
   bool required = false;
 };
@@ -35,15 +35,15 @@ struct flag_def {
  * @brief Command definition
  */
 struct command_def {
-  std::string name;                         // Primary command name
-  std::vector<std::string> aliases;         // Alternative names
-  std::string brief;                        // One-line description
-  std::string description;                  // Detailed description
-  std::string usage;                        // Usage pattern (e.g., "build [options] [target]")
-  std::vector<flag_def> flags;              // Command-specific flags
-  std::vector<std::string> examples;        // Usage examples
-  std::vector<std::string> see_also;        // Related commands
-  bool hidden = false;                      // Don't show in help listing
+  std::string name;                   // Primary command name
+  std::vector<std::string> aliases;   // Alternative names
+  std::string brief;                  // One-line description
+  std::string description;            // Detailed description
+  std::string usage;                  // Usage pattern (e.g., "build [options] [target]")
+  std::vector<flag_def> flags;        // Command-specific flags
+  std::vector<std::string> examples;  // Usage examples
+  std::vector<std::string> see_also;  // Related commands
+  bool hidden = false;                // Don't show in help listing
 
   // Handler function
   std::function<cforge_int_t(const cforge_context_t *)> handler;
@@ -142,9 +142,9 @@ public:
                                            cforge_size_t max_suggestions = 3) const;
 
 private:
-  command_registry() = default;
-  ~command_registry() = default;
-  command_registry(const command_registry &) = delete;
+  command_registry()                                    = default;
+  ~command_registry()                                   = default;
+  command_registry(const command_registry &)            = delete;
   command_registry &operator=(const command_registry &) = delete;
 
   std::vector<command_def> commands_;
@@ -169,6 +169,6 @@ void register_builtin_commands();
  */
 extern const std::vector<flag_def> global_flags;
 
-} // namespace cforge
+}  // namespace cforge
 
-#endif // CFORGE_COMMAND_REGISTRY_HPP
+#endif  // CFORGE_COMMAND_REGISTRY_HPP

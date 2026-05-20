@@ -5,10 +5,11 @@
 
 // Prevent Windows min/max macros from conflicting with std::min/max
 #if defined(_WIN32) && !defined(NOMINMAX)
-  #define NOMINMAX
+#define NOMINMAX
 #endif
 
 #include "cforge/log.hpp"
+
 #include "core/build_utils.hpp"
 #include "core/command_registry.hpp"
 #include "core/commands.hpp"
@@ -40,7 +41,9 @@ BOOL WINAPI console_handler(DWORD signal) {
   return FALSE;
 }
 #else
-void signal_handler(int) { g_should_exit = true; }
+void signal_handler(int) {
+  g_should_exit = true;
+}
 #endif
 
 /**
@@ -59,8 +62,7 @@ std::filesystem::file_time_type get_mtime(const fs::path &path) {
  */
 class FileWatcher {
 public:
-  FileWatcher(const fs::path &root_dir,
-              const std::vector<std::string> &extensions)
+  FileWatcher(const fs::path &root_dir, const std::vector<std::string> &extensions)
       : m_root(root_dir), m_extensions(extensions) {
     scan_files();
   }
@@ -135,20 +137,22 @@ private:
   void scan_files() { scan_directory(m_root); }
 
   void scan_directory(const fs::path &dir) {
-    if (!fs::exists(dir))
+    if (!fs::exists(dir)) {
       return;
+    }
 
     try {
       for (const auto &entry : fs::recursive_directory_iterator(dir)) {
-        if (!entry.is_regular_file())
+        if (!entry.is_regular_file()) {
           continue;
+        }
 
         // Skip build directories
         std::string path_str = entry.path().string();
-        if (path_str.find("build") != std::string::npos ||
-            path_str.find(".git") != std::string::npos ||
-            path_str.find("deps") != std::string::npos ||
-            path_str.find("vendor") != std::string::npos) {
+        if (path_str.find("build") != std::string::npos
+            || path_str.find(".git") != std::string::npos
+            || path_str.find("deps") != std::string::npos
+            || path_str.find("vendor") != std::string::npos) {
           continue;
         }
 
@@ -170,14 +174,15 @@ private:
   void scan_for_new_files() {
     try {
       for (const auto &entry : fs::recursive_directory_iterator(m_root)) {
-        if (!entry.is_regular_file())
+        if (!entry.is_regular_file()) {
           continue;
+        }
 
         std::string path_str = entry.path().string();
-        if (path_str.find("build") != std::string::npos ||
-            path_str.find(".git") != std::string::npos ||
-            path_str.find("deps") != std::string::npos ||
-            path_str.find("vendor") != std::string::npos) {
+        if (path_str.find("build") != std::string::npos
+            || path_str.find(".git") != std::string::npos
+            || path_str.find("deps") != std::string::npos
+            || path_str.find("vendor") != std::string::npos) {
           continue;
         }
 
@@ -218,20 +223,26 @@ private:
  * - CMake reconfiguration when needed
  * - The actual build with proper config support
  */
-bool run_build(const fs::path &project_dir, const std::string &config,
-               bool verbose, bool toml_changed = false) {
+bool run_build(const fs::path &project_dir,
+               const std::string &config,
+               bool verbose,
+               bool toml_changed = false) {
   auto start = std::chrono::steady_clock::now();
 
   // Get build directory
-  fs::path build_dir = cforge::get_build_dir_for_config(
-      (project_dir / DEFAULT_BUILD_DIR).string(), config, true);
+  fs::path build_dir =
+      cforge::get_build_dir_for_config((project_dir / DEFAULT_BUILD_DIR).string(), config, true);
 
-  // Prepare project for build (handles CMakeLists.txt regeneration and CMake config)
-  auto prep_result = cforge::prepare_project_for_build(
-      project_dir, build_dir, config, verbose,
-      toml_changed,  // Force regeneration if toml changed
-      false          // Don't force reconfigure unless needed
-  );
+  // Prepare project for build (handles CMakeLists.txt regeneration and CMake
+  // config)
+  auto prep_result =
+      cforge::prepare_project_for_build(project_dir,
+                                        build_dir,
+                                        config,
+                                        verbose,
+                                        toml_changed,  // Force regeneration if toml changed
+                                        false          // Don't force reconfigure unless needed
+      );
 
   if (!prep_result.success) {
     cforge::logger::print_error(prep_result.error_message);
@@ -249,13 +260,11 @@ bool run_build(const fs::path &project_dir, const std::string &config,
   // Run the actual build
   bool build_success = cforge::run_cmake_build(build_dir, config, "", 0, verbose);
 
-  auto end = std::chrono::steady_clock::now();
-  auto duration =
-      std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+  auto end      = std::chrono::steady_clock::now();
+  auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
 
   if (build_success) {
-    cforge::logger::finished("build",
-                     fmt::format("{:.2f}s", duration.count() / 1000.0));
+    cforge::logger::finished("build", fmt::format("{:.2f}s", duration.count() / 1000.0));
     return true;
   } else {
     cforge::logger::print_error("Build failed");
@@ -263,7 +272,7 @@ bool run_build(const fs::path &project_dir, const std::string &config,
   }
 }
 
-} // anonymous namespace
+}  // anonymous namespace
 
 /**
  * @brief Handle the 'watch' command for auto-rebuild
@@ -281,10 +290,10 @@ cforge_int_t cforge_cmd_watch(const cforge_context_t *ctx) {
   fs::path project_dir = ctx->working_dir;
 
   // Parse arguments
-  std::string config = "";
-  bool verbose = false;
-  bool run_after_build = false;
-  cforge_int_t poll_interval_ms = 500; // Default: check every 500ms
+  std::string config            = "";
+  bool verbose                  = false;
+  bool run_after_build          = false;
+  cforge_int_t poll_interval_ms = 500;  // Default: check every 500ms
 
   for (cforge_int_t i = 0; i < ctx->args.arg_count; i++) {
     std::string arg = ctx->args.args[i];
@@ -320,15 +329,20 @@ cforge_int_t cforge_cmd_watch(const cforge_context_t *ctx) {
 
   // Set up file watcher
   std::vector<std::string> extensions = {
-      ".cpp", ".cc", ".cxx", ".c", ".hpp", ".hxx", ".h",
-      ".toml" // Also watch config changes
+      ".cpp",
+      ".cc",
+      ".cxx",
+      ".c",
+      ".hpp",
+      ".hxx",
+      ".h",
+      ".toml"  // Also watch config changes
   };
 
   FileWatcher watcher(project_dir, extensions);
 
   cforge::logger::print_header("Watching for changes...");
-  cforge::logger::print_status("Tracking " + std::to_string(watcher.file_count()) +
-                       " files");
+  cforge::logger::print_status("Tracking " + std::to_string(watcher.file_count()) + " files");
   cforge::logger::print_status("Build config: " + (config.empty() ? "Debug" : config));
   cforge::logger::print_status("Press Ctrl+C to stop");
   cforge::logger::print_blank();
@@ -347,12 +361,12 @@ cforge_int_t cforge_cmd_watch(const cforge_context_t *ctx) {
 
     if (watcher.check_for_changes()) {
       auto changed = watcher.get_changed_files();
-      auto added = watcher.get_new_files();
+      auto added   = watcher.get_new_files();
       auto deleted = watcher.get_deleted_files();
 
       // Check if any toml file changed (triggers CMakeLists.txt regeneration)
       bool toml_changed = false;
-      auto check_toml = [&toml_changed](const std::vector<fs::path> &files) {
+      auto check_toml   = [&toml_changed](const std::vector<fs::path> &files) {
         for (const auto &file : files) {
           if (file.extension() == ".toml") {
             toml_changed = true;
@@ -381,7 +395,8 @@ cforge_int_t cforge_cmd_watch(const cforge_context_t *ctx) {
       }
 
       if (toml_changed) {
-        cforge::logger::print_action("Config", "cforge.toml changed, will regenerate CMakeLists.txt");
+        cforge::logger::print_action("Config",
+                                     "cforge.toml changed, will regenerate CMakeLists.txt");
       }
 
       cforge::logger::print_blank();
@@ -402,8 +417,8 @@ cforge_int_t cforge_cmd_watch(const cforge_context_t *ctx) {
           fs::path build_dir = cforge::get_build_dir_for_config(
               (project_dir / DEFAULT_BUILD_DIR).string(), effective_config, false);
 
-          fs::path exe_path = cforge::find_project_binary(
-              build_dir, project_name, effective_config, "executable");
+          fs::path exe_path =
+              cforge::find_project_binary(build_dir, project_name, effective_config, "executable");
 
           if (!exe_path.empty() && fs::exists(exe_path)) {
             cforge::logger::print_blank();
@@ -411,16 +426,16 @@ cforge_int_t cforge_cmd_watch(const cforge_context_t *ctx) {
             cforge::logger::print_rule(40);
 
             auto run_result = cforge::execute_process(
-                exe_path.string(), {}, project_dir.string(),
+                exe_path.string(),
+                {},
+                project_dir.string(),
                 [](const std::string &line) { cforge::logger::print_plain(line); },
-                [](const std::string &line) {
-                  cforge::logger::print_error(line);
-                });
+                [](const std::string &line) { cforge::logger::print_error(line); });
 
             cforge::logger::print_rule(40);
             if (run_result.exit_code != 0) {
-              cforge::logger::print_warning("Process exited with code " +
-                                    std::to_string(run_result.exit_code));
+              cforge::logger::print_warning("Process exited with code "
+                                            + std::to_string(run_result.exit_code));
             }
           } else {
             cforge::logger::print_warning("Could not find executable: " + project_name);

@@ -4,14 +4,15 @@
  */
 
 #include "cforge/log.hpp"
+
 #include "core/commands.hpp"
 #include "core/constants.h"
 #include "core/process_utils.hpp"
 #include "core/toml_reader.hpp"
 #include "core/workspace.hpp"
-#include <filesystem>
 
 #include <algorithm>
+#include <filesystem>
 #include <map>
 #include <string>
 #include <vector>
@@ -73,7 +74,8 @@ static void list_commands() {
   cforge::logger::print_list_item("version      Display version information");
   cforge::logger::print_list_item("help         Display help information");
   cforge::logger::print_blank();
-  cforge::logger::print_dim("Run 'cforge help <command>' for more information about a specific command.");
+  cforge::logger::print_dim("Run 'cforge help <command>' for more information "
+                            "about a specific command.");
   cforge::logger::print_blank();
 }
 
@@ -82,21 +84,20 @@ static void list_commands() {
  */
 static void list_project_settings() {
   cforge::logger::print_section("Available project settings in cforge.toml:");
-  cforge::logger::print_config_block({
-    "[project]",
-    "name = \"project-name\"        # Required: Project name",
-    "version = \"0.1.0\"           # Optional: Project version",
-    "cpp_standard = \"17\"         # Optional: C++ standard version",
-    "",
-    "[build]",
-    "build_dir = \"build\"         # Optional: Build directory name",
-    "build_type = \"Release\"      # Optional: Default build type",
-    "",
-    "[dependencies]",
-    "vcpkg = [\"fmt\", \"spdlog\"] # Optional: vcpkg dependencies",
-    "vcpkg_triplet = \"x64-windows\" # Optional: vcpkg triplet",
-    "vcpkg_path = \"/path/to/vcpkg\" # Optional: Custom vcpkg path"
-  });
+  cforge::logger::print_config_block(
+      {"[project]",
+       "name = \"project-name\"        # Required: Project name",
+       "version = \"0.1.0\"           # Optional: Project version",
+       "cpp_standard = \"17\"         # Optional: C++ standard version",
+       "",
+       "[build]",
+       "build_dir = \"build\"         # Optional: Build directory name",
+       "build_type = \"Release\"      # Optional: Default build type",
+       "",
+       "[dependencies]",
+       "vcpkg = [\"fmt\", \"spdlog\"] # Optional: vcpkg dependencies",
+       "vcpkg_triplet = \"x64-windows\" # Optional: vcpkg triplet",
+       "vcpkg_path = \"/path/to/vcpkg\" # Optional: Custom vcpkg path"});
   cforge::logger::print_blank();
 }
 
@@ -141,8 +142,9 @@ cforge_int_t cforge_cmd_list(const cforge_context_t *ctx) {
       cforge::logger::print_section("Workspace projects:");
       for (const auto &proj : ws.get_projects()) {
         std::string proj_info = proj.name;
-        if (proj.is_startup_project)
+        if (proj.is_startup_project) {
           proj_info += " (startup)";
+        }
         proj_info += " (" + proj.path.string() + ")";
         cforge::logger::print_list_item(proj_info);
       }
@@ -183,8 +185,7 @@ cforge_int_t cforge_cmd_list(const cforge_context_t *ctx) {
         cforge::logger::print_blank();
       } else {
         // Project-level dependencies from cforge.toml
-        std::filesystem::path toml_path =
-            std::filesystem::path(ctx->working_dir) / CFORGE_FILE;
+        std::filesystem::path toml_path = std::filesystem::path(ctx->working_dir) / CFORGE_FILE;
         cforge::toml_reader cfg;
         if (!cfg.load(toml_path.string())) {
           cforge::logger::print_error("Failed to load cforge.toml");
@@ -242,22 +243,19 @@ cforge_int_t cforge_cmd_list(const cforge_context_t *ctx) {
       }
       // Include isolated projects
       for (const auto &proj : ws.get_projects()) {
-        if (proj.dependencies.empty() &&
-            std::find(all_deps.begin(), all_deps.end(), proj.name) ==
-                all_deps.end()) {
+        if (proj.dependencies.empty()
+            && std::find(all_deps.begin(), all_deps.end(), proj.name) == all_deps.end()) {
           cforge::logger::print_plain("  " + proj.name);
         }
       }
       cforge::logger::print_blank();
     } else if (category == "scripts") {
       // List configured scripts
-      std::filesystem::path toml_path =
-          std::filesystem::path(ctx->working_dir) /
-          (ctx->is_workspace ? WORKSPACE_FILE : CFORGE_FILE);
+      std::filesystem::path toml_path = std::filesystem::path(ctx->working_dir)
+                                      / (ctx->is_workspace ? WORKSPACE_FILE : CFORGE_FILE);
       cforge::toml_reader cfg;
       if (!cfg.load(toml_path.string())) {
-        cforge::logger::print_error("Failed to load configuration: " +
-                            toml_path.string());
+        cforge::logger::print_error("Failed to load configuration: " + toml_path.string());
         return 1;
       }
       cforge::logger::print_section("Configured scripts:");
@@ -278,9 +276,8 @@ cforge_int_t cforge_cmd_list(const cforge_context_t *ctx) {
       cforge::logger::print_blank();
     } else {
       cforge::logger::print_error("Unknown list category: " + category);
-      cforge::logger::print_plain(
-          "Available categories: configs, generators, targets, commands, "
-          "settings, projects, order, dependencies, graph, scripts");
+      cforge::logger::print_plain("Available categories: configs, generators, targets, commands, "
+                                  "settings, projects, order, dependencies, graph, scripts");
       return 1;
     }
   } else {

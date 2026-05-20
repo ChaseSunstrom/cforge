@@ -15,6 +15,7 @@
  */
 
 #include "cforge/log.hpp"
+
 #include "core/command_registry.hpp"
 #include "core/commands.hpp"
 #include "core/constants.h"
@@ -38,18 +39,18 @@ namespace {
  * @brief Create a modified context for subcommand dispatch
  */
 cforge_context_t create_subcommand_context(const cforge_context_t *ctx,
-                                            const char *subcommand,
-                                            cforge_int_t arg_offset) {
+                                           const char *subcommand,
+                                           cforge_int_t arg_offset) {
   cforge_context_t sub_ctx = *ctx;
-  sub_ctx.args.command = const_cast<char *>(subcommand);
+  sub_ctx.args.command     = const_cast<char *>(subcommand);
 
   // Shift arguments to skip the subcommand
   if (ctx->args.arg_count > arg_offset) {
     sub_ctx.args.arg_count = ctx->args.arg_count - arg_offset;
-    sub_ctx.args.args = ctx->args.args + arg_offset;
+    sub_ctx.args.args      = ctx->args.args + arg_offset;
   } else {
     sub_ctx.args.arg_count = 0;
-    sub_ctx.args.args = nullptr;
+    sub_ctx.args.args      = nullptr;
   }
 
   return sub_ctx;
@@ -68,7 +69,7 @@ cforge_int_t deps_outdated(const cforge_context_t *ctx) {
   }
 
   // Parse arguments
-  bool verbose = false;
+  bool verbose      = false;
   bool update_first = false;
 
   for (cforge_int_t i = 1; i < ctx->args.arg_count; i++) {
@@ -112,15 +113,15 @@ cforge_int_t deps_outdated(const cforge_context_t *ctx) {
     std::string latest;
     std::string source;
   };
+
   std::vector<outdated_info> outdated;
 
   // Check index/registry dependencies
   auto deps = reader.get_table_keys("dependencies");
   for (const auto &dep_name : deps) {
     // Skip special sections
-    if (dep_name == "git" || dep_name == "vcpkg" || dep_name == "system" ||
-        dep_name == "directory" || dep_name == "fetch_content" ||
-        dep_name == "project" || dep_name == "subdirectory") {
+    if (dep_name == "git" || dep_name == "vcpkg" || dep_name == "system" || dep_name == "directory"
+        || dep_name == "fetch_content" || dep_name == "project" || dep_name == "subdirectory") {
       continue;
     }
 
@@ -145,7 +146,7 @@ cforge_int_t deps_outdated(const cforge_context_t *ctx) {
     for (const auto &ver : pkg_info->versions) {
       if (!ver.yanked) {
         latest_version = ver.version;
-        break; // First non-yanked is latest
+        break;  // First non-yanked is latest
       }
     }
 
@@ -174,12 +175,14 @@ cforge_int_t deps_outdated(const cforge_context_t *ctx) {
             parts.push_back(0);
           }
         }
-        while (parts.size() < 3) parts.push_back(0);
+        while (parts.size() < 3) {
+          parts.push_back(0);
+        }
         return parts;
       };
 
       auto current_parts = parse_ver(resolved_current);
-      auto latest_parts = parse_ver(latest_version);
+      auto latest_parts  = parse_ver(latest_version);
 
       bool is_outdated = false;
       for (size_t i = 0; i < 3; i++) {
@@ -212,8 +215,7 @@ cforge_int_t deps_outdated(const cforge_context_t *ctx) {
   }
 
   cforge::logger::print_blank();
-  cforge::logger::print_action("Found", std::to_string(outdated.size()) +
-                                            " outdated package(s)");
+  cforge::logger::print_action("Found", std::to_string(outdated.size()) + " outdated package(s)");
   cforge::logger::print_plain("");
   cforge::logger::print_plain("Run 'cforge deps add <package>@<version>' to update");
 
@@ -234,7 +236,7 @@ cforge_int_t deps_list(const cforge_context_t *ctx) {
 
   // Parse arguments
   [[maybe_unused]] bool verbose = false;
-  std::string format = "table"; // table, json, simple
+  std::string format            = "table";  // table, json, simple
 
   for (cforge_int_t i = 1; i < ctx->args.arg_count; i++) {
     std::string arg = ctx->args.args[i];
@@ -269,19 +271,19 @@ cforge_int_t deps_list(const cforge_context_t *ctx) {
     std::string source;
     std::vector<std::string> features;
   };
+
   std::vector<dep_entry> all_deps;
 
   // Index dependencies
   auto deps = reader.get_table_keys("dependencies");
   for (const auto &dep_name : deps) {
-    if (dep_name == "git" || dep_name == "vcpkg" || dep_name == "system" ||
-        dep_name == "directory" || dep_name == "fetch_content" ||
-        dep_name == "project" || dep_name == "subdirectory") {
+    if (dep_name == "git" || dep_name == "vcpkg" || dep_name == "system" || dep_name == "directory"
+        || dep_name == "fetch_content" || dep_name == "project" || dep_name == "subdirectory") {
       continue;
     }
 
     dep_entry entry;
-    entry.name = dep_name;
+    entry.name   = dep_name;
     entry.source = "index";
 
     std::string ver = reader.get_string("dependencies." + dep_name, "");
@@ -305,10 +307,11 @@ cforge_int_t deps_list(const cforge_context_t *ctx) {
   auto git_deps = reader.get_table_keys("dependencies.git");
   for (const auto &dep_name : git_deps) {
     dep_entry entry;
-    entry.name = dep_name;
+    entry.name   = dep_name;
     entry.source = "git";
-    entry.version = reader.get_string("dependencies.git." + dep_name + ".tag",
-                    reader.get_string("dependencies.git." + dep_name + ".branch", "HEAD"));
+    entry.version =
+        reader.get_string("dependencies.git." + dep_name + ".tag",
+                          reader.get_string("dependencies.git." + dep_name + ".branch", "HEAD"));
     all_deps.push_back(entry);
   }
 
@@ -316,8 +319,8 @@ cforge_int_t deps_list(const cforge_context_t *ctx) {
   auto vcpkg_packages = reader.get_string_array("dependencies.vcpkg.packages");
   for (const auto &pkg : vcpkg_packages) {
     dep_entry entry;
-    entry.name = pkg;
-    entry.source = "vcpkg";
+    entry.name    = pkg;
+    entry.source  = "vcpkg";
     entry.version = "-";
     all_deps.push_back(entry);
   }
@@ -326,8 +329,8 @@ cforge_int_t deps_list(const cforge_context_t *ctx) {
   auto system_deps = reader.get_table_keys("dependencies.system");
   for (const auto &dep_name : system_deps) {
     dep_entry entry;
-    entry.name = dep_name;
-    entry.source = "system";
+    entry.name    = dep_name;
+    entry.source  = "system";
     entry.version = "-";
     all_deps.push_back(entry);
   }
@@ -337,10 +340,12 @@ cforge_int_t deps_list(const cforge_context_t *ctx) {
     cforge::logger::print_plain("{");
     cforge::logger::print_plain("  \"dependencies\": [");
     for (size_t i = 0; i < all_deps.size(); i++) {
-      const auto &dep = all_deps[i];
-      std::string line = "    { \"name\": \"" + dep.name + "\", \"version\": \"" +
-                         dep.version + "\", \"source\": \"" + dep.source + "\" }";
-      if (i < all_deps.size() - 1) line += ",";
+      const auto &dep  = all_deps[i];
+      std::string line = "    { \"name\": \"" + dep.name + "\", \"version\": \"" + dep.version
+                       + "\", \"source\": \"" + dep.source + "\" }";
+      if (i < all_deps.size() - 1) {
+        line += ",";
+      }
       cforge::logger::print_plain(line);
     }
     cforge::logger::print_plain("  ]");
@@ -366,7 +371,9 @@ cforge_int_t deps_list(const cforge_context_t *ctx) {
       std::string features_str = dep.features.empty() ? "-" : "";
       for (size_t i = 0; i < dep.features.size(); i++) {
         features_str += dep.features[i];
-        if (i < dep.features.size() - 1) features_str += ", ";
+        if (i < dep.features.size() - 1) {
+          features_str += ", ";
+        }
       }
 
       cforge::logger::print_table_row({dep.name, dep.version, dep.source, features_str}, widths, 2);
@@ -379,7 +386,7 @@ cforge_int_t deps_list(const cforge_context_t *ctx) {
   return 0;
 }
 
-} // anonymous namespace
+}  // anonymous namespace
 
 /**
  * @brief Handle the 'deps' command - unified dependency management
@@ -389,7 +396,8 @@ cforge_int_t deps_list(const cforge_context_t *ctx) {
  */
 cforge_int_t cforge_cmd_deps(const cforge_context_t *ctx) {
   // Get subcommand - first non-flag argument
-  // Note: When called from dispatcher, args[0] is already the subcommand (not "deps")
+  // Note: When called from dispatcher, args[0] is already the subcommand (not
+  // "deps")
   std::string subcommand;
 
   for (cforge_int_t i = 0; i < ctx->args.arg_count; i++) {
@@ -438,16 +446,16 @@ cforge_int_t cforge_cmd_deps(const cforge_context_t *ctx) {
 
     // Allocate fixed array: "update" + "--packages" + extra args
     cforge_int_t total_count = 2 + extra_count;
-    char **new_args = static_cast<char **>(malloc(
-        static_cast<size_t>(total_count) * sizeof(char *)));
+    char **new_args =
+        static_cast<char **>(malloc(static_cast<size_t>(total_count) * sizeof(char *)));
     new_args[0] = strdup("update");
     new_args[1] = strdup("--packages");
     for (cforge_int_t i = 1; i < ctx->args.arg_count; i++) {
       new_args[2 + (i - 1)] = strdup(ctx->args.args[i]);
     }
 
-    sub_ctx.args.command = new_args[0];
-    sub_ctx.args.args = new_args;
+    sub_ctx.args.command   = new_args[0];
+    sub_ctx.args.args      = new_args;
     sub_ctx.args.arg_count = total_count;
 
     cforge_int_t result = cforge_cmd_update(&sub_ctx);

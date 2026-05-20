@@ -4,6 +4,7 @@
  */
 
 #include "cforge/log.hpp"
+
 #include "core/commands.hpp"
 #include "core/toml_reader.hpp"
 #include "core/types.h"
@@ -28,8 +29,8 @@ std::string to_pascal_case(const std::string &input) {
     if (c == '_' || c == '-' || c == ' ') {
       capitalize_next = true;
     } else if (capitalize_next) {
-      result += std::toupper(c);
-      capitalize_next = false;
+      result          += std::toupper(c);
+      capitalize_next  = false;
     } else {
       result += c;
     }
@@ -70,13 +71,15 @@ std::string to_upper_case(const std::string &input) {
 /**
  * @brief Generate a C++ class header file
  */
-bool generate_class_header(const fs::path &path, const std::string &class_name,
+bool generate_class_header(const fs::path &path,
+                           const std::string &class_name,
                            const std::string &namespace_name) {
   std::ofstream file(path);
-  if (!file)
+  if (!file) {
     return false;
+  }
 
-  std::string guard = to_upper_case(class_name) + "_HPP";
+  std::string guard       = to_upper_case(class_name) + "_HPP";
   std::string pascal_name = to_pascal_case(class_name);
 
   file << "#pragma once\n\n";
@@ -101,15 +104,11 @@ bool generate_class_header(const fs::path &path, const std::string &class_name,
   file << "     */\n";
   file << "    ~" << pascal_name << "() = default;\n\n";
   file << "    // Copy operations\n";
-  file << "    " << pascal_name << "(const " << pascal_name
-       << "&) = default;\n";
-  file << "    " << pascal_name << "& operator=(const " << pascal_name
-       << "&) = default;\n\n";
+  file << "    " << pascal_name << "(const " << pascal_name << "&) = default;\n";
+  file << "    " << pascal_name << "& operator=(const " << pascal_name << "&) = default;\n\n";
   file << "    // Move operations\n";
-  file << "    " << pascal_name << "(" << pascal_name
-       << "&&) noexcept = default;\n";
-  file << "    " << pascal_name << "& operator=(" << pascal_name
-       << "&&) noexcept = default;\n\n";
+  file << "    " << pascal_name << "(" << pascal_name << "&&) noexcept = default;\n";
+  file << "    " << pascal_name << "& operator=(" << pascal_name << "&&) noexcept = default;\n\n";
   file << "private:\n";
   file << "    // Member variables\n";
   file << "};\n";
@@ -126,12 +125,14 @@ bool generate_class_header(const fs::path &path, const std::string &class_name,
 /**
  * @brief Generate a C++ class implementation file
  */
-bool generate_class_source(const fs::path &path, const std::string &class_name,
+bool generate_class_source(const fs::path &path,
+                           const std::string &class_name,
                            const std::string &header_name,
                            const std::string &namespace_name) {
   std::ofstream file(path);
-  if (!file)
+  if (!file) {
     return false;
+  }
 
   std::string pascal_name = to_pascal_case(class_name);
 
@@ -153,11 +154,13 @@ bool generate_class_source(const fs::path &path, const std::string &class_name,
 /**
  * @brief Generate a header-only file
  */
-bool generate_header(const fs::path &path, const std::string &name,
+bool generate_header(const fs::path &path,
+                     const std::string &name,
                      const std::string &namespace_name) {
   std::ofstream file(path);
-  if (!file)
+  if (!file) {
     return false;
+  }
 
   std::string guard = to_upper_case(name) + "_HPP";
 
@@ -183,18 +186,19 @@ bool generate_header(const fs::path &path, const std::string &name,
 /**
  * @brief Generate a test file
  */
-bool generate_test(const fs::path &path, const std::string &test_name,
+bool generate_test(const fs::path &path,
+                   const std::string &test_name,
                    const std::string &test_framework) {
   std::ofstream file(path);
-  if (!file)
+  if (!file) {
     return false;
+  }
 
   std::string pascal_name = to_pascal_case(test_name);
 
   if (test_framework == "catch2") {
     file << "#include <catch2/catch_test_macros.hpp>\n\n";
-    file << "TEST_CASE(\"" << pascal_name << " tests\", \"[" << test_name
-         << "]\") {\n";
+    file << "TEST_CASE(\"" << pascal_name << " tests\", \"[" << test_name << "]\") {\n";
     file << "    SECTION(\"basic test\") {\n";
     file << "        REQUIRE(true);\n";
     file << "    }\n";
@@ -256,8 +260,9 @@ bool generate_test(const fs::path &path, const std::string &test_name,
  */
 bool generate_main(const fs::path &path) {
   std::ofstream file(path);
-  if (!file)
+  if (!file) {
     return false;
+  }
 
   file << "#include <iostream>\n\n";
   file << "int main(int argc, char* argv[]) {\n";
@@ -271,13 +276,15 @@ bool generate_main(const fs::path &path) {
 /**
  * @brief Generate a struct header
  */
-bool generate_struct(const fs::path &path, const std::string &struct_name,
+bool generate_struct(const fs::path &path,
+                     const std::string &struct_name,
                      const std::string &namespace_name) {
   std::ofstream file(path);
-  if (!file)
+  if (!file) {
     return false;
+  }
 
-  std::string guard = to_upper_case(struct_name) + "_HPP";
+  std::string guard       = to_upper_case(struct_name) + "_HPP";
   std::string pascal_name = to_pascal_case(struct_name);
 
   file << "#pragma once\n\n";
@@ -307,13 +314,15 @@ bool generate_struct(const fs::path &path, const std::string &struct_name,
 /**
  * @brief Generate an interface (abstract class) header
  */
-bool generate_interface(const fs::path &path, const std::string &interface_name,
+bool generate_interface(const fs::path &path,
+                        const std::string &interface_name,
                         const std::string &namespace_name) {
   std::ofstream file(path);
-  if (!file)
+  if (!file) {
     return false;
+  }
 
-  std::string guard = to_upper_case(interface_name) + "_HPP";
+  std::string guard       = to_upper_case(interface_name) + "_HPP";
   std::string pascal_name = to_pascal_case(interface_name);
 
   file << "#pragma once\n\n";
@@ -335,10 +344,8 @@ bool generate_interface(const fs::path &path, const std::string &interface_name,
   file << "\n";
   file << "protected:\n";
   file << "    " << pascal_name << "() = default;\n";
-  file << "    " << pascal_name << "(const " << pascal_name
-       << "&) = default;\n";
-  file << "    " << pascal_name << "& operator=(const " << pascal_name
-       << "&) = default;\n";
+  file << "    " << pascal_name << "(const " << pascal_name << "&) = default;\n";
+  file << "    " << pascal_name << "& operator=(const " << pascal_name << "&) = default;\n";
   file << "};\n";
 
   if (!namespace_name.empty()) {
@@ -350,7 +357,7 @@ bool generate_interface(const fs::path &path, const std::string &interface_name,
   return true;
 }
 
-} // anonymous namespace
+}  // anonymous namespace
 
 /**
  * @brief Handle the 'new' command for creating files from templates
@@ -406,7 +413,8 @@ cforge_int_t cforge_cmd_new(const cforge_context_t *ctx) {
     cforge::logger::print_help_section("EXAMPLES");
     cforge::logger::print_example("cforge new class MyClass", "Create class files");
     cforge::logger::print_example("cforge new class MyClass -n myproject", "With namespace");
-    cforge::logger::print_example("cforge new header utils -o include/myproject", "Custom output dir");
+    cforge::logger::print_example("cforge new header utils -o include/myproject",
+                                  "Custom output dir");
     cforge::logger::print_example("cforge new test MyClass --framework catch2", "Create test file");
     return 0;
   }
@@ -428,13 +436,13 @@ cforge_int_t cforge_cmd_new(const cforge_context_t *ctx) {
 
   // Determine output directories
   fs::path include_dir = project_dir / "include";
-  fs::path src_dir = project_dir / "src";
-  fs::path test_dir = project_dir / "tests";
+  fs::path src_dir     = project_dir / "src";
+  fs::path test_dir    = project_dir / "tests";
 
   if (!output_dir.empty()) {
     include_dir = project_dir / output_dir;
-    src_dir = project_dir / output_dir;
-    test_dir = project_dir / output_dir;
+    src_dir     = project_dir / output_dir;
+    test_dir    = project_dir / output_dir;
   }
 
   std::string snake_name = to_snake_case(name);
@@ -461,8 +469,7 @@ cforge_int_t cforge_cmd_new(const cforge_context_t *ctx) {
     cforge::logger::print_action("Created", header_path.string());
 
     std::string header_include = snake_name + ".hpp";
-    if (!generate_class_source(source_path, name, header_include,
-                               namespace_name)) {
+    if (!generate_class_source(source_path, name, header_include, namespace_name)) {
       cforge::logger::print_error("Failed to create " + source_path.string());
       return 1;
     }
@@ -524,7 +531,7 @@ cforge_int_t cforge_cmd_new(const cforge_context_t *ctx) {
 
     // Try to detect test framework from config
     std::string test_framework = "";
-    fs::path config_file = project_dir / "cforge.toml";
+    fs::path config_file       = project_dir / "cforge.toml";
     if (fs::exists(config_file)) {
       cforge::toml_reader config;
       config.load(config_file.string());

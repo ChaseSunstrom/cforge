@@ -24,11 +24,11 @@ namespace cforge {
  * @brief Remote cache configuration
  */
 struct remote_cache_config {
-  std::string url;           // Base URL (e.g., "https://cache.example.com/cforge")
-  bool enabled = false;      // Whether remote cache is enabled
-  bool push_enabled = false; // Whether to upload built packages
-  std::string api_key;       // Optional authentication key
-  int timeout_seconds = 60;  // Request timeout
+  std::string url;            // Base URL (e.g., "https://cache.example.com/cforge")
+  bool enabled      = false;  // Whether remote cache is enabled
+  bool push_enabled = false;  // Whether to upload built packages
+  std::string api_key;        // Optional authentication key
+  int timeout_seconds = 60;   // Request timeout
 
   /**
    * @brief Load remote cache config from global config file
@@ -173,8 +173,7 @@ public:
    * @param local_cache Local cache instance
    * @param remote_config Remote cache configuration (can be disabled)
    */
-  unified_cache(package_cache &local_cache,
-                const remote_cache_config &remote_config = {});
+  unified_cache(package_cache &local_cache, const remote_cache_config &remote_config = {});
 
   /**
    * @brief Check if a package is available (local or remote)
@@ -214,6 +213,6 @@ private:
   remote_cache remote_;
 };
 
-} // namespace cforge
+}  // namespace cforge
 
-#endif // CFORGE_REMOTE_CACHE_HPP
+#endif  // CFORGE_REMOTE_CACHE_HPP

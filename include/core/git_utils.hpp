@@ -6,6 +6,7 @@
 #pragma once
 
 #include "cforge/log.hpp"
+
 #include "core/process_utils.hpp"
 
 #include <filesystem>
@@ -30,11 +31,11 @@ struct git_result {
  */
 struct git_clone_options {
   std::string url;
-  std::string tag;      // Tag to checkout (optional)
-  std::string branch;   // Branch to checkout (optional)
-  std::string commit;   // Commit to checkout (optional)
-  bool shallow = false; // Use shallow clone (--depth 1)
-  bool quiet = true;    // Suppress Git output
+  std::string tag;               // Tag to checkout (optional)
+  std::string branch;            // Branch to checkout (optional)
+  std::string commit;            // Commit to checkout (optional)
+  bool shallow         = false;  // Use shallow clone (--depth 1)
+  bool quiet           = true;   // Suppress Git output
   cforge_int_t timeout = 120;    // Timeout in seconds
 };
 
@@ -42,7 +43,9 @@ struct git_clone_options {
  * @brief Check if Git is available
  * @return true if git command is available
  */
-inline bool is_git_available() { return is_command_available("git", 5); }
+inline bool is_git_available() {
+  return is_command_available("git", 5);
+}
 
 /**
  * @brief Check if a directory is a Git repository
@@ -63,15 +66,14 @@ inline bool is_git_repository(const std::filesystem::path &dir) {
  */
 inline git_result git_execute(const std::vector<std::string> &args,
                               const std::string &working_dir = "",
-                              cforge_int_t timeout = 60) {
+                              cforge_int_t timeout           = 60) {
   git_result result;
 
-  process_result pr =
-      execute_process("git", args, working_dir, nullptr, nullptr, timeout);
+  process_result pr = execute_process("git", args, working_dir, nullptr, nullptr, timeout);
 
-  result.success = pr.success && pr.exit_code == 0;
-  result.output = pr.stdout_output;
-  result.error = pr.stderr_output;
+  result.success   = pr.success && pr.exit_code == 0;
+  result.output    = pr.stdout_output;
+  result.error     = pr.stderr_output;
   result.exit_code = pr.exit_code;
 
   return result;
@@ -126,9 +128,10 @@ inline git_result git_clone(const std::string &url,
  * @return git_result with operation outcome
  */
 inline git_result git_checkout(const std::filesystem::path &repo_dir,
-                               const std::string &ref, bool quiet = true) {
+                               const std::string &ref,
+                               bool quiet = true) {
   if (ref.empty()) {
-    return {true, "", "", 0}; // Nothing to checkout
+    return {true, "", "", 0};  // Nothing to checkout
   }
 
   std::vector<std::string> args = {"checkout"};
@@ -142,13 +145,13 @@ inline git_result git_checkout(const std::filesystem::path &repo_dir,
   // If failed and ref doesn't start with 'v', try with 'v' prefix
   if (!result.success && !ref.empty() && ref[0] != 'v') {
     args.back() = "v" + ref;
-    result = git_execute(args, repo_dir.string());
+    result      = git_execute(args, repo_dir.string());
   }
 
   // If failed and ref starts with 'v', try without 'v' prefix
   if (!result.success && ref.length() > 1 && ref[0] == 'v') {
     args.back() = ref.substr(1);
-    result = git_execute(args, repo_dir.string());
+    result      = git_execute(args, repo_dir.string());
   }
 
   return result;
@@ -163,7 +166,8 @@ inline git_result git_checkout(const std::filesystem::path &repo_dir,
  * @return git_result with operation outcome
  */
 inline git_result git_fetch(const std::filesystem::path &repo_dir,
-                            bool fetch_tags = true, bool quiet = true) {
+                            bool fetch_tags = true,
+                            bool quiet      = true) {
   std::vector<std::string> args = {"fetch"};
 
   if (fetch_tags) {
@@ -184,8 +188,7 @@ inline git_result git_fetch(const std::filesystem::path &repo_dir,
  * @param quiet Suppress output
  * @return git_result with operation outcome
  */
-inline git_result git_pull(const std::filesystem::path &repo_dir,
-                           bool quiet = true) {
+inline git_result git_pull(const std::filesystem::path &repo_dir, bool quiet = true) {
   std::vector<std::string> args = {"pull"};
 
   if (quiet) {
@@ -232,15 +235,13 @@ inline std::string git_get_head_commit(const std::filesystem::path &repo_dir,
  * @param repo_dir Repository directory
  * @return Branch name or empty string if detached HEAD
  */
-inline std::string
-git_get_current_branch(const std::filesystem::path &repo_dir) {
-  git_result result =
-      git_execute({"rev-parse", "--abbrev-ref", "HEAD"}, repo_dir.string());
+inline std::string git_get_current_branch(const std::filesystem::path &repo_dir) {
+  git_result result = git_execute({"rev-parse", "--abbrev-ref", "HEAD"}, repo_dir.string());
 
   if (result.success) {
     std::string branch = result.output;
     branch.erase(branch.find_last_not_of(" \n\r\t") + 1);
-    if (branch != "HEAD") { // HEAD means detached
+    if (branch != "HEAD") {  // HEAD means detached
       return branch;
     }
   }
@@ -255,8 +256,8 @@ git_get_current_branch(const std::filesystem::path &repo_dir) {
  * @return Tag name or empty string if no tag points to HEAD
  */
 inline std::string git_get_head_tag(const std::filesystem::path &repo_dir) {
-  git_result result = git_execute(
-      {"describe", "--tags", "--exact-match", "HEAD"}, repo_dir.string());
+  git_result result = git_execute({"describe", "--tags", "--exact-match", "HEAD"},
+                                  repo_dir.string());
 
   if (result.success) {
     std::string tag = result.output;
@@ -285,10 +286,12 @@ inline bool clone_or_update_dependency(const std::string &url,
                                        bool verbose = false) {
   // Determine what ref to checkout
   std::string ref = options.commit;
-  if (ref.empty())
+  if (ref.empty()) {
     ref = options.tag;
-  if (ref.empty())
+  }
+  if (ref.empty()) {
     ref = options.branch;
+  }
 
   if (std::filesystem::exists(dest) && is_git_repository(dest)) {
     // Repository exists - fetch and checkout
@@ -305,8 +308,7 @@ inline bool clone_or_update_dependency(const std::string &url,
     if (!ref.empty()) {
       git_result checkout_result = git_checkout(dest, ref, !verbose);
       if (!checkout_result.success) {
-        logger::print_error("Failed to checkout " + ref + " in " +
-                            dest.string());
+        logger::print_error("Failed to checkout " + ref + " in " + dest.string());
         return false;
       }
     }
@@ -324,8 +326,7 @@ inline bool clone_or_update_dependency(const std::string &url,
     try {
       std::filesystem::create_directories(dest.parent_path());
     } catch (const std::exception &e) {
-      logger::print_error("Failed to create directory: " +
-                          std::string(e.what()));
+      logger::print_error("Failed to create directory: " + std::string(e.what()));
       return false;
     }
   }
@@ -351,4 +352,4 @@ inline bool clone_or_update_dependency(const std::string &url,
   return true;
 }
 
-} // namespace cforge
+}  // namespace cforge

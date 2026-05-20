@@ -4,12 +4,16 @@
  */
 
 #include "core/test_output_formatter.hpp"
-#include "core/types.h"
+
 #include "cforge/log.hpp"
-#include <algorithm>
-#include <filesystem>
+
+#include "core/types.h"
+
 #include <fmt/color.h>
 #include <fmt/core.h>
+
+#include <algorithm>
+#include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -23,7 +27,8 @@ namespace fs = std::filesystem;
 // Constructor
 // ============================================================================
 
-test_output_formatter::test_output_formatter(style style) : m_style(style) {}
+test_output_formatter::test_output_formatter(style style) : m_style(style) {
+}
 
 // ============================================================================
 // Formatting Methods (return strings)
@@ -36,15 +41,13 @@ std::string test_output_formatter::format_run_start(cforge_int_t total_tests) {
 }
 
 std::string test_output_formatter::format_build_start(const std::string &target_name,
-                                                     test_framework framework) {
+                                                      test_framework framework) {
   std::ostringstream ss;
-  ss << "    Building test " << target_name
-     << " (" << test_framework_to_string(framework) << ")\n";
+  ss << "    Building test " << target_name << " (" << test_framework_to_string(framework) << ")\n";
   return ss.str();
 }
 
-std::string test_output_formatter::format_execution_start(
-    const std::string &executable_path) {
+std::string test_output_formatter::format_execution_start(const std::string &executable_path) {
   std::ostringstream ss;
   ss << "     Running " << shorten_path(executable_path) << "\n";
   return ss.str();
@@ -185,8 +188,7 @@ std::string test_output_formatter::format_summary(const test_summary &summary) {
     ss << "ok";
   }
 
-  ss << ". " << summary.passed << " passed; "
-     << summary.failed << " failed";
+  ss << ". " << summary.passed << " passed; " << summary.failed << " failed";
 
   if (summary.skipped > 0) {
     ss << "; " << summary.skipped << " ignored";
@@ -201,8 +203,7 @@ std::string test_output_formatter::format_summary(const test_summary &summary) {
   return ss.str();
 }
 
-std::string test_output_formatter::format_test_list(
-    const std::vector<std::string> &tests) {
+std::string test_output_formatter::format_test_list(const std::vector<std::string> &tests) {
   auto grouped = group_tests_by_suite(tests);
 
   std::ostringstream ss;
@@ -232,21 +233,20 @@ std::string test_output_formatter::format_test_list(
 
 void test_output_formatter::print_run_start(cforge_int_t total_tests) {
   // Cargo format: blank line, then "running N tests" plain (no right-align).
-  fmt::print("\nrunning {} {}\n", total_tests,
-             total_tests == 1 ? "test" : "tests");
+  fmt::print("\nrunning {} {}\n", total_tests, total_tests == 1 ? "test" : "tests");
 }
 
 void test_output_formatter::print_build_start(const std::string &target_name,
-                                             test_framework framework) {
-  logger::print_action("Building", "test " + target_name + " (" + test_framework_to_string(framework) + ")");
+                                              test_framework framework) {
+  logger::print_action("Building",
+                       "test " + target_name + " (" + test_framework_to_string(framework) + ")");
 }
 
 void test_output_formatter::print_execution_start(const std::string &executable_path) {
   logger::print_action("Running", shorten_path(executable_path));
 }
 
-void test_output_formatter::print_test_result(const test_result &result,
-                                               size_t name_pad_width) {
+void test_output_formatter::print_test_result(const test_result &result, size_t name_pad_width) {
   // Cargo format: "test <name> ... <status>". When name_pad_width is set,
   // we left-pad the name so the "..." column lines up across all results.
   if (name_pad_width > result.name.size()) {
@@ -372,7 +372,9 @@ void test_output_formatter::print_all_failures(const std::vector<test_result> &r
     }
   }
 
-  if (!has_failures) return;
+  if (!has_failures) {
+    return;
+  }
 
   fmt::print("\n");
   fmt::print(fmt::emphasis::bold, "failures:\n\n");
@@ -385,8 +387,7 @@ void test_output_formatter::print_all_failures(const std::vector<test_result> &r
   fmt::print("\n");
   fmt::print(fmt::emphasis::bold, "failures:\n");
   for (const auto &result : results) {
-    if (result.status == test_status::FAILED ||
-        result.status == test_status::TIMEOUT) {
+    if (result.status == test_status::FAILED || result.status == test_status::TIMEOUT) {
       fmt::print("    {}\n", result.name);
     }
   }
@@ -395,7 +396,8 @@ void test_output_formatter::print_all_failures(const std::vector<test_result> &r
 void test_output_formatter::print_summary(const test_summary &summary) {
   const bool ok = summary.failed == 0 && summary.timeout == 0;
 
-  // Cargo format: "test result: ok. N passed; N failed; N ignored; finished in T"
+  // Cargo format: "test result: ok. N passed; N failed; N ignored; finished in
+  // T"
   fmt::print("\ntest result: ");
   if (ok) {
     fmt::print(fg(fmt::color::green) | fmt::emphasis::bold, "ok");
@@ -413,7 +415,7 @@ void test_output_formatter::print_summary(const test_summary &summary) {
 }
 
 void test_output_formatter::print_test_list(const std::vector<std::string> &tests) {
-  auto grouped = group_tests_by_suite(tests);
+  auto grouped               = group_tests_by_suite(tests);
   constexpr int STATUS_WIDTH = 12;
 
   logger::print_action("Listing", std::to_string(tests.size()) + " tests");
@@ -446,11 +448,15 @@ void test_output_formatter::print_native_output(const std::string &output) {
 // ============================================================================
 
 std::string test_output_formatter::read_source_line(const std::string &file_path,
-                                                   cforge_int_t line_number) {
-  if (line_number <= 0) return "";
+                                                    cforge_int_t line_number) {
+  if (line_number <= 0) {
+    return "";
+  }
 
   std::ifstream file(file_path);
-  if (!file) return "";
+  if (!file) {
+    return "";
+  }
 
   std::string line;
   cforge_int_t current_line = 0;
@@ -469,16 +475,15 @@ std::string test_output_formatter::read_source_line(const std::string &file_path
   return "";
 }
 
-std::string test_output_formatter::shorten_path(const std::string &path,
-                                               cforge_size_t max_length) {
+std::string test_output_formatter::shorten_path(const std::string &path, cforge_size_t max_length) {
   if (path.length() <= max_length) {
     return path;
   }
 
   // Try to get relative path from current directory
   try {
-    fs::path abs_path = fs::absolute(path);
-    fs::path rel_path = fs::relative(abs_path);
+    fs::path abs_path   = fs::absolute(path);
+    fs::path rel_path   = fs::relative(abs_path);
     std::string rel_str = rel_path.string();
     if (rel_str.length() < path.length()) {
       if (rel_str.length() <= max_length) {
@@ -514,8 +519,8 @@ std::string test_output_formatter::format_duration(std::chrono::milliseconds dur
   }
 }
 
-std::map<std::string, std::vector<std::string>>
-test_output_formatter::group_tests_by_suite(const std::vector<std::string> &tests) {
+std::map<std::string, std::vector<std::string>> test_output_formatter::group_tests_by_suite(
+    const std::vector<std::string> &tests) {
   std::map<std::string, std::vector<std::string>> grouped;
 
   for (const auto &test : tests) {
@@ -530,7 +535,7 @@ test_output_formatter::group_tests_by_suite(const std::vector<std::string> &test
 
     if (sep != std::string::npos) {
       std::string suite = test.substr(0, sep);
-      std::string name = test.substr(sep + (test[sep] == ':' ? 2 : 1));
+      std::string name  = test.substr(sep + (test[sep] == ':' ? 2 : 1));
       grouped[suite].push_back(name);
     } else {
       grouped[""].push_back(test);
@@ -540,4 +545,4 @@ test_output_formatter::group_tests_by_suite(const std::vector<std::string> &test
   return grouped;
 }
 
-} // namespace cforge
+}  // namespace cforge

@@ -4,6 +4,7 @@
  */
 
 #include "cforge/log.hpp"
+
 #include "core/command_registry.hpp"
 #include "core/commands.hpp"
 #include "core/constants.h"
@@ -11,21 +12,24 @@
 #include "core/types.h"
 #include "core/workspace.hpp"
 
-#include <filesystem>
 #include <fmt/color.h>
 #include <fmt/core.h>
+
+#include <filesystem>
 
 namespace cforge {
 
 static cforge_int_t analyze_project(const std::filesystem::path &project_dir,
-                           bool include_deps, bool json_output, cforge_int_t limit) {
+                                    bool include_deps,
+                                    bool json_output,
+                                    cforge_int_t limit) {
   cforge::logger::print_action("Analyzing", project_dir.string());
 
   cforge::include_analyzer analyzer(project_dir);
   cforge::include_analysis_result result = analyzer.analyze(include_deps);
 
-  cforge::logger::print_verbose("Analyzed " + std::to_string(result.total_files_analyzed) +
-                        " files");
+  cforge::logger::print_verbose("Analyzed " + std::to_string(result.total_files_analyzed)
+                                + " files");
 
   if (!result.has_cycles) {
     if (json_output) {
@@ -49,21 +53,21 @@ static cforge_int_t analyze_project(const std::filesystem::path &project_dir,
     cforge::logger::print_plain(cforge::format_circular_chains(chains_to_show));
 
     if (limit > 0 && static_cast<cforge_size_t>(limit) < result.chains.size()) {
-      cforge::logger::print_warning("... and " + std::to_string(result.chains.size() - limit) +
-                                    " more chains (use --limit to see more)");
+      cforge::logger::print_warning("... and " + std::to_string(result.chains.size() - limit)
+                                    + " more chains (use --limit to see more)");
     }
   }
 
-  return 1; // Return non-zero if cycles found
+  return 1;  // Return non-zero if cycles found
 }
 
-} // namespace cforge
+}  // namespace cforge
 
 cforge_int_t cforge_cmd_circular(const cforge_context_t *ctx) {
-  bool include_deps = false;
-  bool check_workspace= false;
-  bool json_output = false;
-  cforge_int_t limit = 0;
+  bool include_deps    = false;
+  bool check_workspace = false;
+  bool json_output     = false;
+  cforge_int_t limit   = 0;
 
   // Parse arguments
   for (cforge_int_t i = 0; i < ctx->args.arg_count; ++i) {
@@ -75,7 +79,7 @@ cforge_int_t cforge_cmd_circular(const cforge_context_t *ctx) {
     } else if (arg == "--include-deps") {
       include_deps = true;
     } else if (arg == "--workspace") {
-      check_workspace= true;
+      check_workspace = true;
     } else if (arg == "--json") {
       json_output = true;
     } else if (arg == "--limit" && i + 1 < ctx->args.arg_count) {
@@ -93,16 +97,18 @@ cforge_int_t cforge_cmd_circular(const cforge_context_t *ctx) {
   // Check if we're in a workspace
   auto [is_ws, workspace_dir] = cforge::is_in_workspace(current_dir);
 
-  // Auto-detect workspace: if we're in a cforge::workspaceand at the cforge::workspaceroot, enable cforge::workspacemode
+  // Auto-detect workspace: if we're in a cforge::workspaceand at the
+  // cforge::workspaceroot, enable cforge::workspacemode
   if (is_ws && !check_workspace) {
     // Check if current directory is the cforge::workspaceroot
     if (current_dir == workspace_dir) {
-      cforge::logger::print_verbose("Auto-detected cforge::workspaceroot, enabling cforge::workspacemode");
-      check_workspace= true;
+      cforge::logger::print_verbose("Auto-detected cforge::workspaceroot, "
+                                    "enabling cforge::workspacemode");
+      check_workspace = true;
     }
   }
 
-  if (check_workspace&& is_ws) {
+  if (check_workspace && is_ws) {
     // Analyze all projects in workspace
     cforge::workspace ws;
     if (!ws.load(workspace_dir)) {
@@ -113,11 +119,12 @@ cforge_int_t cforge_cmd_circular(const cforge_context_t *ctx) {
     cforge::logger::print_action("Checking", "workspace " + ws.get_name());
 
     cforge_int_t total_cycles = 0;
-    auto projects = ws.get_projects();
+    auto projects             = ws.get_projects();
 
     for (const auto &project : projects) {
       if (std::filesystem::exists(project.path)) {
-        cforge_int_t result = cforge::analyze_project(project.path, include_deps, json_output, limit);
+        cforge_int_t result =
+            cforge::analyze_project(project.path, include_deps, json_output, limit);
         if (result > 0) {
           total_cycles++;
         }
@@ -125,8 +132,8 @@ cforge_int_t cforge_cmd_circular(const cforge_context_t *ctx) {
     }
 
     if (total_cycles > 0) {
-      cforge::logger::print_warning(std::to_string(total_cycles) +
-                            " project(s) have circular dependencies");
+      cforge::logger::print_warning(std::to_string(total_cycles)
+                                    + " project(s) have circular dependencies");
       return 1;
     }
 

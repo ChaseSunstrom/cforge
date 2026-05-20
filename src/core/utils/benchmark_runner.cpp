@@ -4,10 +4,12 @@
  */
 
 #include "core/benchmark_runner.hpp"
+
+#include "cforge/log.hpp"
+
 #include "core/build_utils.hpp"
 #include "core/process_utils.hpp"
 #include "core/workspace.hpp"
-#include "cforge/log.hpp"
 
 #include <algorithm>
 #include <fstream>
@@ -36,7 +38,9 @@ static std::string to_cmake_path(const fs::path &path) {
 // Read a file fully into a string.
 static std::string read_file_to_string(const fs::path &path) {
   std::ifstream in(path);
-  if (!in) return {};
+  if (!in) {
+    return {};
+  }
   std::ostringstream oss;
   oss << in.rdbuf();
   return oss.str();
@@ -45,25 +49,41 @@ static std::string read_file_to_string(const fs::path &path) {
 // Recursive bounded executable search.
 static fs::path find_exec_in_dir(const fs::path &build_dir,
                                  const std::vector<std::string> &name_candidates) {
-  if (!fs::exists(build_dir)) return {};
+  if (!fs::exists(build_dir)) {
+    return {};
+  }
   std::error_code ec;
   for (auto it = fs::recursive_directory_iterator(
-                  build_dir, fs::directory_options::skip_permission_denied, ec);
-       !ec && it != fs::recursive_directory_iterator(); it.increment(ec)) {
-    if (it.depth() > 6) { it.disable_recursion_pending(); continue; }
-    if (!it->is_regular_file(ec)) continue;
+           build_dir, fs::directory_options::skip_permission_denied, ec);
+       !ec && it != fs::recursive_directory_iterator();
+       it.increment(ec)) {
+    if (it.depth() > 6) {
+      it.disable_recursion_pending();
+      continue;
+    }
+    if (!it->is_regular_file(ec)) {
+      continue;
+    }
     const auto &p = it->path();
-    auto stem = p.stem().string();
+    auto stem     = p.stem().string();
     auto filename = p.filename().string();
-    auto ext = p.extension().string();
+    auto ext      = p.extension().string();
 #ifdef _WIN32
-    if (ext != ".exe") continue;
+    if (ext != ".exe") {
+      continue;
+    }
 #else
-    if (!ext.empty() && ext != ".out") continue;
-    if (filename.find("CMake") != std::string::npos) continue;
+    if (!ext.empty() && ext != ".out") {
+      continue;
+    }
+    if (filename.find("CMake") != std::string::npos) {
+      continue;
+    }
 #endif
     for (const auto &cand : name_candidates) {
-      if (stem == cand || filename == cand) return p;
+      if (stem == cand || filename == cand) {
+        return p;
+      }
     }
   }
   return {};
@@ -432,26 +452,25 @@ static CFB_MAYBE_UNUSED int cf_run_benches(int argc, char** argv) {
 
 class builtin_bench_adapter : public i_benchmark_framework_adapter {
 public:
-  benchmark_framework get_framework() const override {
-    return benchmark_framework::Builtin;
-  }
+  benchmark_framework get_framework() const override { return benchmark_framework::Builtin; }
 
   bool detect_from_source(const std::string &content) const override {
     // Match either an explicit include or a BENCH( macro use that is NOT one
     // of the other frameworks' macros.
-    if (content.find("bench_framework.h") != std::string::npos) return true;
-    if (content.find("BENCH(") != std::string::npos &&
-        content.find("benchmark/benchmark.h") == std::string::npos &&
-        content.find("nanobench") == std::string::npos &&
-        content.find("catch2") == std::string::npos &&
-        content.find("Catch2") == std::string::npos) {
+    if (content.find("bench_framework.h") != std::string::npos) {
+      return true;
+    }
+    if (content.find("BENCH(") != std::string::npos
+        && content.find("benchmark/benchmark.h") == std::string::npos
+        && content.find("nanobench") == std::string::npos
+        && content.find("catch2") == std::string::npos
+        && content.find("Catch2") == std::string::npos) {
       return true;
     }
     return false;
   }
 
-  std::string generate_cmake_setup(
-      const benchmark_config::FrameworkConfig &) const override {
+  std::string generate_cmake_setup(const benchmark_config::FrameworkConfig &) const override {
     // Header-only and zero-fetch — runtime is purely in-target.
     return std::string();
   }
@@ -470,16 +489,16 @@ public:
       std::smatch m;
       if (std::regex_search(line, m, line_re)) {
         benchmark_result r;
-        r.name = m[1].str();
-        r.iterations = std::stoll(m[2].str());
-        r.time_ns = std::stod(m[3].str());
-        r.cpu_time_ns = r.time_ns; // we don't separate wall/cpu
-        r.stddev_ns = std::stod(m[4].str());
-        r.min_time_ns = std::stod(m[5].str());
-        r.max_time_ns = std::stod(m[6].str());
+        r.name         = m[1].str();
+        r.iterations   = std::stoll(m[2].str());
+        r.time_ns      = std::stod(m[3].str());
+        r.cpu_time_ns  = r.time_ns;  // we don't separate wall/cpu
+        r.stddev_ns    = std::stod(m[4].str());
+        r.min_time_ns  = std::stod(m[5].str());
+        r.max_time_ns  = std::stod(m[6].str());
         r.mean_time_ns = r.time_ns;
-        r.success = true;
-        r.time_unit = "ns";
+        r.success      = true;
+        r.time_unit    = "ns";
         results.push_back(r);
       }
     }
@@ -503,16 +522,14 @@ public:
 
 class google_benchmark_adapter : public i_benchmark_framework_adapter {
 public:
-  benchmark_framework get_framework() const override {
-    return benchmark_framework::GoogleBench;
-  }
+  benchmark_framework get_framework() const override { return benchmark_framework::GoogleBench; }
 
   bool detect_from_source(const std::string &source_content) const override {
-    return source_content.find("#include <benchmark/benchmark.h>") != std::string::npos ||
-           source_content.find("#include \"benchmark/benchmark.h\"") != std::string::npos ||
-           source_content.find("BENCHMARK(") != std::string::npos ||
-           source_content.find("BENCHMARK_DEFINE_F") != std::string::npos ||
-           source_content.find("BENCHMARK_REGISTER_F") != std::string::npos;
+    return source_content.find("#include <benchmark/benchmark.h>") != std::string::npos
+        || source_content.find("#include \"benchmark/benchmark.h\"") != std::string::npos
+        || source_content.find("BENCHMARK(") != std::string::npos
+        || source_content.find("BENCHMARK_DEFINE_F") != std::string::npos
+        || source_content.find("BENCHMARK_REGISTER_F") != std::string::npos;
   }
 
   std::string generate_cmake_setup(const benchmark_config::FrameworkConfig &config) const override {
@@ -554,22 +571,26 @@ public:
       std::smatch match;
       if (std::regex_search(line, match, bench_regex)) {
         benchmark_result result;
-        result.name = match[1].str();
-        result.time_ns = std::stod(match[2].str());
-        result.time_unit = match[3].str();
+        result.name        = match[1].str();
+        result.time_ns     = std::stod(match[2].str());
+        result.time_unit   = match[3].str();
         result.cpu_time_ns = std::stod(match[4].str());
-        result.iterations = std::stoll(match[6].str());
+        result.iterations  = std::stoll(match[6].str());
 
         // Convert to nanoseconds
         double multiplier = 1.0;
-        if (result.time_unit == "us") multiplier = 1000;
-        else if (result.time_unit == "ms") multiplier = 1000000;
-        else if (result.time_unit == "s") multiplier = 1000000000;
+        if (result.time_unit == "us") {
+          multiplier = 1000;
+        } else if (result.time_unit == "ms") {
+          multiplier = 1000000;
+        } else if (result.time_unit == "s") {
+          multiplier = 1000000000;
+        }
 
-        result.time_ns *= multiplier;
+        result.time_ns     *= multiplier;
         result.cpu_time_ns *= multiplier;
-        result.time_unit = "ns";
-        result.success = true;
+        result.time_unit    = "ns";
+        result.success      = true;
 
         results.push_back(result);
       }
@@ -582,9 +603,7 @@ public:
     return {"--benchmark_filter=" + filter};
   }
 
-  std::vector<std::string> get_json_args() const override {
-    return {"--benchmark_format=json"};
-  }
+  std::vector<std::string> get_json_args() const override { return {"--benchmark_format=json"}; }
 };
 
 // ============================================================================
@@ -593,14 +612,12 @@ public:
 
 class nanobench_adapter : public i_benchmark_framework_adapter {
 public:
-  benchmark_framework get_framework() const override {
-    return benchmark_framework::Nanobench;
-  }
+  benchmark_framework get_framework() const override { return benchmark_framework::Nanobench; }
 
   bool detect_from_source(const std::string &source_content) const override {
-    return source_content.find("#include <nanobench.h>") != std::string::npos ||
-           source_content.find("#define ANKERL_NANOBENCH_IMPLEMENT") != std::string::npos ||
-           source_content.find("ankerl::nanobench") != std::string::npos;
+    return source_content.find("#include <nanobench.h>") != std::string::npos
+        || source_content.find("#define ANKERL_NANOBENCH_IMPLEMENT") != std::string::npos
+        || source_content.find("ankerl::nanobench") != std::string::npos;
   }
 
   std::string generate_cmake_setup(const benchmark_config::FrameworkConfig &config) const override {
@@ -620,9 +637,7 @@ public:
     return cmake.str();
   }
 
-  std::string get_cmake_target() const override {
-    return "nanobench";
-  }
+  std::string get_cmake_target() const override { return "nanobench"; }
 
   std::vector<benchmark_result> parse_output(const std::string &output) const override {
     std::vector<benchmark_result> results;
@@ -645,9 +660,13 @@ public:
         result.time_ns = std::stod(time_str);
 
         std::string unit = match[2].str();
-        if (unit == "us") result.time_ns *= 1000;
-        else if (unit == "ms") result.time_ns *= 1000000;
-        else if (unit == "s") result.time_ns *= 1000000000;
+        if (unit == "us") {
+          result.time_ns *= 1000;
+        } else if (unit == "ms") {
+          result.time_ns *= 1000000;
+        } else if (unit == "s") {
+          result.time_ns *= 1000000000;
+        }
 
         result.success = true;
         results.push_back(result);
@@ -658,11 +677,11 @@ public:
   }
 
   std::vector<std::string> get_filter_args(const std::string &) const override {
-    return {}; // Nanobench doesn't have built-in filtering
+    return {};  // Nanobench doesn't have built-in filtering
   }
 
   std::vector<std::string> get_json_args() const override {
-    return {}; // Nanobench uses different output methods
+    return {};  // Nanobench uses different output methods
   }
 };
 
@@ -672,14 +691,12 @@ public:
 
 class catch2_benchmark_adapter : public i_benchmark_framework_adapter {
 public:
-  benchmark_framework get_framework() const override {
-    return benchmark_framework::Catch2Bench;
-  }
+  benchmark_framework get_framework() const override { return benchmark_framework::Catch2Bench; }
 
   bool detect_from_source(const std::string &source_content) const override {
-    return (source_content.find("#include <catch2/") != std::string::npos ||
-            source_content.find("#include \"catch2/") != std::string::npos) &&
-           source_content.find("BENCHMARK") != std::string::npos;
+    return (source_content.find("#include <catch2/") != std::string::npos
+            || source_content.find("#include \"catch2/") != std::string::npos)
+        && source_content.find("BENCHMARK") != std::string::npos;
   }
 
   std::string generate_cmake_setup(const benchmark_config::FrameworkConfig &config) const override {
@@ -699,11 +716,10 @@ public:
     return cmake.str();
   }
 
-  std::string get_cmake_target() const override {
-    return "Catch2::Catch2WithMain";
-  }
+  std::string get_cmake_target() const override { return "Catch2::Catch2WithMain"; }
 
-  std::vector<benchmark_result> parse_output([[maybe_unused]] const std::string &output) const override {
+  std::vector<benchmark_result> parse_output(
+      [[maybe_unused]] const std::string &output) const override {
     std::vector<benchmark_result> results;
     // Catch2 benchmark output format varies, parse basic format
     // TODO: Implement full Catch2 benchmark parsing
@@ -715,9 +731,7 @@ public:
     return {"-n", filter};
   }
 
-  std::vector<std::string> get_json_args() const override {
-    return {"--reporter", "json"};
-  }
+  std::vector<std::string> get_json_args() const override { return {"--reporter", "json"}; }
 };
 
 // ============================================================================
@@ -726,17 +740,17 @@ public:
 
 std::unique_ptr<i_benchmark_framework_adapter> create_benchmark_adapter(benchmark_framework fw) {
   switch (fw) {
-  case benchmark_framework::Builtin:
-    return std::make_unique<builtin_bench_adapter>();
-  case benchmark_framework::GoogleBench:
-    return std::make_unique<google_benchmark_adapter>();
-  case benchmark_framework::Nanobench:
-    return std::make_unique<nanobench_adapter>();
-  case benchmark_framework::Catch2Bench:
-    return std::make_unique<catch2_benchmark_adapter>();
-  default:
-    // Default to the builtin framework — zero-config, works with no fetch.
-    return std::make_unique<builtin_bench_adapter>();
+    case benchmark_framework::Builtin:
+      return std::make_unique<builtin_bench_adapter>();
+    case benchmark_framework::GoogleBench:
+      return std::make_unique<google_benchmark_adapter>();
+    case benchmark_framework::Nanobench:
+      return std::make_unique<nanobench_adapter>();
+    case benchmark_framework::Catch2Bench:
+      return std::make_unique<catch2_benchmark_adapter>();
+    default:
+      // Default to the builtin framework — zero-config, works with no fetch.
+      return std::make_unique<builtin_bench_adapter>();
   }
 }
 
@@ -744,17 +758,16 @@ std::unique_ptr<i_benchmark_framework_adapter> create_benchmark_adapter(benchmar
 // Benchmark Runner Implementation
 // ============================================================================
 
-benchmark_runner::benchmark_runner(const fs::path &project_dir,
-                                   const toml_reader &config)
-    : m_project_dir(project_dir), m_project_config(config) {}
+benchmark_runner::benchmark_runner(const fs::path &project_dir, const toml_reader &config)
+    : m_project_dir(project_dir), m_project_config(config) {
+}
 
 benchmark_runner::~benchmark_runner() = default;
 
 bool benchmark_runner::load_config() {
   // Load benchmark directory
-  m_bench_config.directory =
-      m_project_dir /
-      m_project_config.get_string("benchmark.directory", "bench");
+  m_bench_config.directory = m_project_dir
+                           / m_project_config.get_string("benchmark.directory", "bench");
 
   // Resolve the project's build directory (so bench output sits next to test
   // output instead of in a parallel hidden tree).
@@ -765,24 +778,21 @@ bool benchmark_runner::load_config() {
   m_build_base_dir = m_project_dir / build_dir_str;
 
   // Load framework
-  std::string fw_str = m_project_config.get_string("benchmark.framework", "auto");
+  std::string fw_str               = m_project_config.get_string("benchmark.framework", "auto");
   m_bench_config.default_framework = string_to_benchmark_framework(fw_str);
 
   // Load build type
-  m_bench_config.default_build_type =
-      m_project_config.get_string("benchmark.build_type", "Release");
+  m_bench_config.default_build_type = m_project_config.get_string("benchmark.build_type",
+                                                                  "Release");
 
   // Load auto-link setting
-  m_bench_config.auto_link_project =
-      m_project_config.get_bool("benchmark.auto_link_project", true);
+  m_bench_config.auto_link_project = m_project_config.get_bool("benchmark.auto_link_project", true);
 
   return true;
 }
 
 fs::path benchmark_runner::get_bench_gen_dir(const std::string &target_name) const {
-  fs::path base = m_build_base_dir.empty()
-                      ? m_project_dir / "build"
-                      : m_build_base_dir;
+  fs::path base = m_build_base_dir.empty() ? m_project_dir / "build" : m_build_base_dir;
   return base / "bench" / target_name;
 }
 
@@ -806,21 +816,27 @@ fs::path benchmark_runner::write_builtin_header(const fs::path &gen_dir) {
 
 fs::path benchmark_runner::generate_main_if_needed(const benchmark_target &target,
                                                    const fs::path &gen_dir) {
-  if (target.framework != benchmark_framework::Builtin &&
-      target.framework != benchmark_framework::Auto) {
+  if (target.framework != benchmark_framework::Builtin
+      && target.framework != benchmark_framework::Auto) {
     return {};
   }
   static const std::regex main_re(R"(\bint\s+main\s*\()");
   for (const auto &src : target.source_files) {
     std::string contents = read_file_to_string(src);
-    if (std::regex_search(contents, main_re)) return {};
+    if (std::regex_search(contents, main_re)) {
+      return {};
+    }
   }
   fs::path main_path = gen_dir / "cforge_bench_main.cpp";
   std::ofstream out(main_path);
-  if (!out) return {};
-  out << "// Auto-generated by cforge — runs all auto-registered BENCH() macros.\n"
+  if (!out) {
+    return {};
+  }
+  out << "// Auto-generated by cforge — runs all auto-registered BENCH() "
+         "macros.\n"
          "#include \"bench_framework.h\"\n"
-         "int main(int argc, char** argv) { return cf_run_benches(argc, argv); }\n";
+         "int main(int argc, char** argv) { return cf_run_benches(argc, argv); "
+         "}\n";
   return main_path;
 }
 
@@ -848,7 +864,9 @@ std::vector<benchmark_target> benchmark_runner::auto_discover_targets() {
   // Look for benchmark source files
   std::vector<fs::path> bench_sources;
   for (const auto &entry : fs::recursive_directory_iterator(m_bench_config.directory)) {
-    if (!entry.is_regular_file()) continue;
+    if (!entry.is_regular_file()) {
+      continue;
+    }
 
     std::string ext = entry.path().extension().string();
     if (ext == ".cpp" || ext == ".cc" || ext == ".cxx") {
@@ -933,13 +951,13 @@ std::vector<benchmark_target> benchmark_runner::load_explicit_targets() {
 
     // Load other properties
     target.dependencies = table.get_string_array("dependencies");
-    target.defines = table.get_string_array("defines");
-    target.includes = table.get_string_array("includes");
-    target.enabled = table.get_bool("enabled", true);
+    target.defines      = table.get_string_array("defines");
+    target.includes     = table.get_string_array("includes");
+    target.enabled      = table.get_bool("enabled", true);
 
     // Parse framework (default to auto-detection)
     std::string fw_str = table.get_string("framework", "auto");
-    target.framework = string_to_benchmark_framework(fw_str);
+    target.framework   = string_to_benchmark_framework(fw_str);
 
     // Expand source globs and resolve paths
     for (const auto &src : target.sources) {
@@ -951,21 +969,23 @@ std::vector<benchmark_target> benchmark_runner::load_explicit_targets() {
       // Handle glob patterns
       if (src.find('*') != std::string::npos) {
         // Simple glob expansion for common patterns
-        std::string pattern = src_path.string();
-        fs::path search_dir = src_path.parent_path();
+        std::string pattern      = src_path.string();
+        fs::path search_dir      = src_path.parent_path();
         std::string file_pattern = src_path.filename().string();
 
         if (fs::exists(search_dir)) {
           for (const auto &entry : fs::directory_iterator(search_dir)) {
-            if (!entry.is_regular_file()) continue;
+            if (!entry.is_regular_file()) {
+              continue;
+            }
 
             std::string filename = entry.path().filename().string();
             // Simple wildcard matching (*.cpp matches any .cpp file)
             if (file_pattern == "*.cpp" || file_pattern == "*.cc" || file_pattern == "*.cxx") {
               std::string ext = entry.path().extension().string();
-              if ((file_pattern == "*.cpp" && ext == ".cpp") ||
-                  (file_pattern == "*.cc" && ext == ".cc") ||
-                  (file_pattern == "*.cxx" && ext == ".cxx")) {
+              if ((file_pattern == "*.cpp" && ext == ".cpp")
+                  || (file_pattern == "*.cc" && ext == ".cc")
+                  || (file_pattern == "*.cxx" && ext == ".cxx")) {
                 target.source_files.push_back(entry.path());
               }
             }
@@ -998,8 +1018,7 @@ benchmark_framework benchmark_runner::detect_framework(const fs::path &source_fi
   }
 
   std::ifstream file(source_file);
-  std::string content((std::istreambuf_iterator<char>(file)),
-                      std::istreambuf_iterator<char>());
+  std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
 
   // Try the well-known external frameworks first; if none claim the source
   // and we see signs of cforge's BENCH() macro, fall through to Builtin.
@@ -1066,13 +1085,14 @@ bool benchmark_runner::generate_benchmark_cmake(const benchmark_target &target) 
   // [dependencies]) via FetchContent — same way the test runner does — so
   // benchmarks that #include project headers transitively depending on these
   // libraries can compile.
-  configure_index_dependencies_fetchcontent_phase1(m_project_dir,
-                                                   m_project_config, out);
+  configure_index_dependencies_fetchcontent_phase1(m_project_dir, m_project_config, out);
 
   // Framework-specific CMake setup (FetchContent etc.) — empty for builtin.
   benchmark_config::FrameworkConfig fw_config;
   std::string fw_setup = adapter->generate_cmake_setup(fw_config);
-  if (!fw_setup.empty()) out << fw_setup << "\n";
+  if (!fw_setup.empty()) {
+    out << fw_setup << "\n";
+  }
 
   // Sources
   out << "set(BENCH_SOURCES\n";
@@ -1100,19 +1120,22 @@ bool benchmark_runner::generate_benchmark_cmake(const benchmark_target &target) 
   out << ")\n\n";
 
   // Phase 2: emit target_link_libraries() calls for the FetchContent deps.
-  configure_index_dependencies_fetchcontent_phase2(m_project_dir,
-                                                   m_project_config, out);
+  configure_index_dependencies_fetchcontent_phase2(m_project_dir, m_project_config, out);
 
   // Link the framework adapter target (e.g. benchmark::benchmark_main) and
   // any user-listed deps.
   out << "target_link_libraries(${PROJECT_NAME} PRIVATE\n";
   std::string fw_target = adapter->get_cmake_target();
-  if (!fw_target.empty()) out << "  " << fw_target << "\n";
+  if (!fw_target.empty()) {
+    out << "  " << fw_target << "\n";
+  }
 
   // Auto-link the project under test (symmetric with test_runner).
   if (should_auto_link_project()) {
     std::string project_target = get_project_link_target();
-    if (!project_target.empty()) out << "  " << project_target << "\n";
+    if (!project_target.empty()) {
+      out << "  " << project_target << "\n";
+    }
   }
 
   for (const auto &dep : target.dependencies) {
@@ -1122,30 +1145,30 @@ bool benchmark_runner::generate_benchmark_cmake(const benchmark_target &target) 
 
   if (!target.defines.empty()) {
     out << "target_compile_definitions(${PROJECT_NAME} PRIVATE\n";
-    for (const auto &def : target.defines) out << "  " << def << "\n";
+    for (const auto &def : target.defines) {
+      out << "  " << def << "\n";
+    }
     out << ")\n\n";
   }
 
   // Register with CTest so `ctest -L bench` etc. surface benchmarks too.
-  out << "add_test(NAME " << target.name
-      << " COMMAND ${PROJECT_NAME})\n"
-      << "set_tests_properties(" << target.name
-      << " PROPERTIES LABELS \"bench\")\n";
+  out << "add_test(NAME " << target.name << " COMMAND ${PROJECT_NAME})\n"
+      << "set_tests_properties(" << target.name << " PROPERTIES LABELS \"bench\")\n";
 
   return true;
 }
 
 bool benchmark_runner::configure_cmake(const benchmark_target &target,
-                                        const std::string &build_config) {
-  fs::path gen_dir = get_bench_gen_dir(target.name);
+                                       const std::string &build_config) {
+  fs::path gen_dir   = get_bench_gen_dir(target.name);
   fs::path build_dir = get_bench_build_dir(target.name);
   fs::create_directories(build_dir);
 
-  std::vector<std::string> args = {
-      "-S", to_cmake_path(gen_dir),
-      "-B", to_cmake_path(build_dir),
-      "-DCMAKE_BUILD_TYPE=" + build_config
-  };
+  std::vector<std::string> args = {"-S",
+                                   to_cmake_path(gen_dir),
+                                   "-B",
+                                   to_cmake_path(build_dir),
+                                   "-DCMAKE_BUILD_TYPE=" + build_config};
 
 #ifdef _WIN32
   // Use the same generator as the main project if specified; otherwise let
@@ -1157,14 +1180,13 @@ bool benchmark_runner::configure_cmake(const benchmark_target &target,
   }
 #endif
 
-  auto result = execute_process("cmake", args, m_project_dir.string(),
-                                nullptr, nullptr, 120);
+  auto result = execute_process("cmake", args, m_project_dir.string(), nullptr, nullptr, 120);
   return result.exit_code == 0;
 }
 
 bool benchmark_runner::build_target(const benchmark_target &target,
-                                     const std::string &build_config,
-                                     bool verbose) {
+                                    const std::string &build_config,
+                                    bool verbose) {
   fs::path build_dir = get_bench_build_dir(target.name);
 
   // Match `cforge build` UX: progress bar in non-verbose, structured per-line
@@ -1178,8 +1200,8 @@ bool benchmark_runner::build_target(const benchmark_target &target,
 
   fs::path exe = find_benchmark_executable(target, build_config);
   if (exe.empty()) {
-    m_error = "Build reported success but no executable was produced for " +
-              target.name + " (likely a compile error — see output above).";
+    m_error = "Build reported success but no executable was produced for " + target.name
+            + " (likely a compile error — see output above).";
     return false;
   }
 
@@ -1218,9 +1240,9 @@ bool benchmark_runner::build_benchmarks(const std::string &config, bool verbose)
 }
 
 fs::path benchmark_runner::find_benchmark_executable(const benchmark_target &target,
-                                                      const std::string &build_config) {
-  fs::path build_dir = get_bench_build_dir(target.name);
-  std::string exe_base = target.name + "_bench"; // CMake project name
+                                                     const std::string &build_config) {
+  fs::path build_dir   = get_bench_build_dir(target.name);
+  std::string exe_base = target.name + "_bench";  // CMake project name
 
   // Fast-path probes for common single- and multi-config layouts.
   std::vector<fs::path> fast = {
@@ -1234,7 +1256,9 @@ fs::path benchmark_runner::find_benchmark_executable(const benchmark_target &tar
       build_dir / "bin" / exe_base,
   };
   for (const auto &p : fast) {
-    if (fs::exists(p)) return p;
+    if (fs::exists(p)) {
+      return p;
+    }
   }
 
   // Recursive walk fallback so generator-specific layouts still work.
@@ -1245,15 +1269,13 @@ fs::path benchmark_runner::find_benchmark_executable(const benchmark_target &tar
   return find_exec_in_dir(build_dir, name_candidates);
 }
 
-std::vector<benchmark_result> benchmark_runner::run_target(
-    const benchmark_target &target,
-    const benchmark_run_options &options) {
-
+std::vector<benchmark_result> benchmark_runner::run_target(const benchmark_target &target,
+                                                           const benchmark_run_options &options) {
   fs::path exe = find_benchmark_executable(target, options.build_config);
   if (exe.empty()) {
     benchmark_result error_result;
-    error_result.name = target.name;
-    error_result.success = false;
+    error_result.name          = target.name;
+    error_result.success       = false;
     error_result.error_message = "Executable not found";
     return {error_result};
   }
@@ -1279,9 +1301,8 @@ std::vector<benchmark_result> benchmark_runner::run_target(
   // the clean table — streaming the raw [BRUN]/[BENCH] lines and then also
   // printing the parsed table produced a wall of duplicated/noisy output.
   // Verbose / --json / --csv users still get live output so they can pipe it.
-  const bool stream_live =
-      options.verbose || options.json_output || options.csv_output ||
-      logger::get_verbosity() == log_verbosity::VERBOSITY_VERBOSE;
+  const bool stream_live = options.verbose || options.json_output || options.csv_output
+                        || logger::get_verbosity() == log_verbosity::VERBOSITY_VERBOSE;
 
   std::function<void(const std::string &)> stdout_cb = nullptr;
   std::function<void(const std::string &)> stderr_cb = nullptr;
@@ -1302,15 +1323,14 @@ std::vector<benchmark_result> benchmark_runner::run_target(
     };
   }
 
-  auto result = execute_process(exe.string(), args, m_project_dir.string(),
-                                stdout_cb, stderr_cb, kBenchTimeoutSec);
+  auto result = execute_process(
+      exe.string(), args, m_project_dir.string(), stdout_cb, stderr_cb, kBenchTimeoutSec);
 
   if (result.exit_code != 0) {
     benchmark_result error_result;
-    error_result.name = target.name;
-    error_result.success = false;
-    error_result.error_message = "Benchmark exited with code " +
-                                  std::to_string(result.exit_code);
+    error_result.name          = target.name;
+    error_result.success       = false;
+    error_result.error_message = "Benchmark exited with code " + std::to_string(result.exit_code);
     if (!stream_live && !result.stderr_output.empty()) {
       // Surface error text the user didn't see streamed.
       logger::print_error(result.stderr_output);
@@ -1333,11 +1353,11 @@ benchmark_summary benchmark_runner::run_benchmarks(const benchmark_run_options &
       // Surface the build failure as a failed result so the exit code is
       // non-zero and the user sees a clear error in the summary.
       benchmark_result br;
-      br.name = "<build>";
-      br.success = false;
+      br.name          = "<build>";
+      br.success       = false;
       br.error_message = m_error.empty() ? "Build failed" : m_error;
       summary.results.push_back(br);
-      summary.total = 1;
+      summary.total  = 1;
       summary.failed = 1;
       return summary;
     }
@@ -1346,7 +1366,9 @@ benchmark_summary benchmark_runner::run_benchmarks(const benchmark_run_options &
   auto targets = discover_targets();
 
   for (const auto &target : targets) {
-    if (!target.enabled) continue;
+    if (!target.enabled) {
+      continue;
+    }
 
     logger::print_action("Running", target.name);
 
@@ -1363,25 +1385,28 @@ benchmark_summary benchmark_runner::run_benchmarks(const benchmark_run_options &
     }
   }
 
-  auto end = std::chrono::steady_clock::now();
-  summary.total_duration =
-      std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+  auto end               = std::chrono::steady_clock::now();
+  summary.total_duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
 
   return summary;
 }
 
 bool benchmark_runner::should_auto_link_project() const {
-  if (!m_bench_config.auto_link_project) return false;
+  if (!m_bench_config.auto_link_project) {
+    return false;
+  }
   std::string type = m_project_config.get_string("project.binary_type", "executable");
   // Same set of library-like binary types as test_runner.
-  return (type == "library" || type == "static_library" ||
-          type == "shared_library" || type == "static" || type == "shared");
+  return (type == "library" || type == "static_library" || type == "shared_library"
+          || type == "static" || type == "shared");
 }
 
 std::string benchmark_runner::get_project_link_target() const {
   std::string name = m_project_config.get_string("project.name", "");
-  if (name.empty()) return {};
+  if (name.empty()) {
+    return {};
+  }
   return name;
 }
 
-} // namespace cforge
+}  // namespace cforge

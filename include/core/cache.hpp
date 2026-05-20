@@ -41,7 +41,8 @@ struct cache_key {
 
   /**
    * @brief Generate the full cache key string
-   * @return Key in format: "pkg-ver-platform-compiler-ver-config-arch-cppXX-hash"
+   * @return Key in format:
+   * "pkg-ver-platform-compiler-ver-config-arch-cppXX-hash"
    */
   std::string to_string() const;
 
@@ -113,17 +114,17 @@ struct cache_manifest {
 
   // Files with checksums
   struct file_entry {
-    std::string path;       // Relative path within cache entry
+    std::string path;  // Relative path within cache entry
     cforge_size_t size;
-    std::string checksum;   // FNV-1a hash
+    std::string checksum;  // FNV-1a hash
   };
+
   std::vector<file_entry> files;
 
   /**
    * @brief Load manifest from file
    */
-  static std::optional<cache_manifest>
-  load(const std::filesystem::path &manifest_path);
+  static std::optional<cache_manifest> load(const std::filesystem::path &manifest_path);
 
   /**
    * @brief Save manifest to file
@@ -183,8 +184,7 @@ public:
    * @brief Constructor
    * @param cache_dir Cache directory (default: ~/.cforge/cache)
    */
-  explicit package_cache(
-      const std::filesystem::path &cache_dir = get_default_cache_dir());
+  explicit package_cache(const std::filesystem::path &cache_dir = get_default_cache_dir());
 
   /**
    * @brief Check if a package is in the cache
@@ -203,7 +203,8 @@ public:
   /**
    * @brief Store a built package in the cache
    * @param key Cache key for the package
-   * @param build_output Directory containing built artifacts (include/, lib/, etc.)
+   * @param build_output Directory containing built artifacts (include/, lib/,
+   * etc.)
    * @return true if successfully cached
    */
   bool store(const cache_key &key, const std::filesystem::path &build_output);
@@ -322,14 +323,12 @@ private:
   /**
    * @brief Copy directory recursively
    */
-  static bool copy_directory(const std::filesystem::path &src,
-                             const std::filesystem::path &dst);
+  static bool copy_directory(const std::filesystem::path &src, const std::filesystem::path &dst);
 
   /**
    * @brief Generate manifest for a directory
    */
-  static cache_manifest generate_manifest(const cache_key &key,
-                                          const std::filesystem::path &dir);
+  static cache_manifest generate_manifest(const cache_key &key, const std::filesystem::path &dir);
 };
 
 /**
@@ -354,6 +353,6 @@ cache_key generate_cache_key(const std::string &package_name,
  */
 std::string hash_cmake_options(const std::map<std::string, std::string> &options);
 
-} // namespace cforge
+}  // namespace cforge
 
-#endif // CFORGE_CACHE_HPP
+#endif  // CFORGE_CACHE_HPP

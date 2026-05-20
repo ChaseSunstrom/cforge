@@ -1,7 +1,5 @@
 #pragma once
 
-#include "types.h"
-
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
@@ -9,6 +7,8 @@
 #include <sstream>
 #include <string>
 #include <unordered_map>
+
+#include "types.h"
 
 namespace cforge {
 
@@ -20,7 +20,7 @@ namespace cforge {
  */
 class dependency_hash {
 public:
-  dependency_hash() = default;
+  dependency_hash()  = default;
   ~dependency_hash() = default;
 
   /**
@@ -79,8 +79,7 @@ public:
    * @param dir_path Directory path
    * @return Hash string based on directory contents
    */
-  static std::string
-  calculate_directory_hash(const std::filesystem::path &dir_path);
+  static std::string calculate_directory_hash(const std::filesystem::path &dir_path);
 
   /**
    * @brief Check if the build cache (hash) data exists yet.
@@ -108,7 +107,7 @@ private:
   static constexpr const char *HASH_FILE = "cforge.lock";
 
   // FNV-1a hash constants
-  static constexpr uint64_t FNV_PRIME = 1099511628211ULL;
+  static constexpr uint64_t FNV_PRIME        = 1099511628211ULL;
   static constexpr uint64_t FNV_OFFSET_BASIS = 14695981039346656037ULL;
 
   /**
@@ -137,7 +136,7 @@ private:
    * @brief Get current timestamp in ISO 8601 format
    */
   static std::string get_timestamp() {
-    auto now = std::chrono::system_clock::now();
+    auto now  = std::chrono::system_clock::now();
     auto time = std::chrono::system_clock::to_time_t(now);
     std::stringstream ss;
     ss << std::put_time(std::gmtime(&time), "%Y-%m-%dT%H:%M:%SZ");
@@ -149,11 +148,12 @@ private:
    */
   static std::string trim(const std::string &str) {
     cforge_size_t start = str.find_first_not_of(" \t\r\n");
-    if (start == std::string::npos)
+    if (start == std::string::npos) {
       return "";
+    }
     cforge_size_t end = str.find_last_not_of(" \t\r\n");
     return str.substr(start, end - start + 1);
   }
 };
 
-} // namespace cforge
+}  // namespace cforge

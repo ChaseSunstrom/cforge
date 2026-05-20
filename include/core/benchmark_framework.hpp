@@ -5,8 +5,6 @@
 
 #pragma once
 
-#include "types.h"
-
 #include <chrono>
 #include <filesystem>
 #include <functional>
@@ -16,43 +14,45 @@
 #include <string>
 #include <vector>
 
+#include "types.h"
+
 namespace cforge {
 
 /**
  * @brief Supported benchmark frameworks
  */
 enum class benchmark_framework {
-  Auto,           // Auto-detect from source
-  Builtin,        // cforge's BENCH() macro — zero-config, no fetch
-  GoogleBench,    // Google Benchmark
-  Nanobench,      // nanobench (header-only)
-  Catch2Bench,    // Catch2's BENCHMARK macro
-  Nonius,         // Nonius benchmark
-  Celero          // Celero benchmark
+  Auto,         // Auto-detect from source
+  Builtin,      // cforge's BENCH() macro — zero-config, no fetch
+  GoogleBench,  // Google Benchmark
+  Nanobench,    // nanobench (header-only)
+  Catch2Bench,  // Catch2's BENCHMARK macro
+  Nonius,       // Nonius benchmark
+  Celero        // Celero benchmark
 };
 
 /**
  * @brief Individual benchmark result
  */
 struct benchmark_result {
-  std::string name;           // Benchmark name (e.g., "BM_VectorPush")
-  std::string suite;          // Benchmark suite/group
+  std::string name;   // Benchmark name (e.g., "BM_VectorPush")
+  std::string suite;  // Benchmark suite/group
 
   // Timing metrics
-  double time_ns = 0;         // Real time per iteration (nanoseconds)
-  double cpu_time_ns = 0;     // CPU time per iteration (nanoseconds)
-  int64_t iterations = 0;     // Number of iterations run
+  double time_ns     = 0;  // Real time per iteration (nanoseconds)
+  double cpu_time_ns = 0;  // CPU time per iteration (nanoseconds)
+  int64_t iterations = 0;  // Number of iterations run
 
   // Additional metrics
   double bytes_per_second = 0;
   double items_per_second = 0;
 
   // Statistics
-  double min_time_ns = 0;
-  double max_time_ns = 0;
-  double mean_time_ns = 0;
+  double min_time_ns    = 0;
+  double max_time_ns    = 0;
+  double mean_time_ns   = 0;
   double median_time_ns = 0;
-  double stddev_ns = 0;
+  double stddev_ns      = 0;
 
   // Status
   bool success = true;
@@ -67,7 +67,7 @@ struct benchmark_result {
  */
 struct benchmark_target {
   std::string name;
-  std::vector<std::string> sources;       // Source files
+  std::vector<std::string> sources;  // Source files
   benchmark_framework framework = benchmark_framework::Auto;
   std::vector<std::string> dependencies;  // Link dependencies
   std::vector<std::string> defines;
@@ -85,8 +85,8 @@ struct benchmark_target {
 struct benchmark_config {
   std::filesystem::path directory{"bench"};
   benchmark_framework default_framework = benchmark_framework::Auto;
-  std::string default_build_type = "Release";
-  bool auto_link_project = true;
+  std::string default_build_type        = "Release";
+  bool auto_link_project                = true;
 
   // Framework-specific settings
   struct FrameworkConfig {
@@ -94,6 +94,7 @@ struct benchmark_config {
     std::string version;
     std::map<std::string, std::string> options;
   };
+
   std::map<benchmark_framework, FrameworkConfig> framework_configs;
 
   // Discovered/explicit targets
@@ -104,9 +105,9 @@ struct benchmark_config {
  * @brief Benchmark run summary statistics
  */
 struct benchmark_summary {
-  int total = 0;
+  int total      = 0;
   int successful = 0;
-  int failed = 0;
+  int failed     = 0;
   std::chrono::milliseconds total_duration{0};
 
   // Results for summary
@@ -118,22 +119,22 @@ struct benchmark_summary {
  */
 inline std::string benchmark_framework_to_string(benchmark_framework fw) {
   switch (fw) {
-  case benchmark_framework::Auto:
-    return "auto";
-  case benchmark_framework::Builtin:
-    return "builtin";
-  case benchmark_framework::GoogleBench:
-    return "google";
-  case benchmark_framework::Nanobench:
-    return "nanobench";
-  case benchmark_framework::Catch2Bench:
-    return "catch2";
-  case benchmark_framework::Nonius:
-    return "nonius";
-  case benchmark_framework::Celero:
-    return "celero";
-  default:
-    return "unknown";
+    case benchmark_framework::Auto:
+      return "auto";
+    case benchmark_framework::Builtin:
+      return "builtin";
+    case benchmark_framework::GoogleBench:
+      return "google";
+    case benchmark_framework::Nanobench:
+      return "nanobench";
+    case benchmark_framework::Catch2Bench:
+      return "catch2";
+    case benchmark_framework::Nonius:
+      return "nonius";
+    case benchmark_framework::Celero:
+      return "celero";
+    default:
+      return "unknown";
   }
 }
 
@@ -141,20 +142,27 @@ inline std::string benchmark_framework_to_string(benchmark_framework fw) {
  * @brief Convert string to BenchmarkFramework enum
  */
 inline benchmark_framework string_to_benchmark_framework(const std::string &str) {
-  if (str == "auto")
+  if (str == "auto") {
     return benchmark_framework::Auto;
-  if (str == "builtin" || str == "cforge")
+  }
+  if (str == "builtin" || str == "cforge") {
     return benchmark_framework::Builtin;
-  if (str == "google" || str == "googlebenchmark" || str == "gbench")
+  }
+  if (str == "google" || str == "googlebenchmark" || str == "gbench") {
     return benchmark_framework::GoogleBench;
-  if (str == "nanobench" || str == "nano")
+  }
+  if (str == "nanobench" || str == "nano") {
     return benchmark_framework::Nanobench;
-  if (str == "catch2" || str == "catch")
+  }
+  if (str == "catch2" || str == "catch") {
     return benchmark_framework::Catch2Bench;
-  if (str == "nonius")
+  }
+  if (str == "nonius") {
     return benchmark_framework::Nonius;
-  if (str == "celero")
+  }
+  if (str == "celero") {
     return benchmark_framework::Celero;
+  }
   return benchmark_framework::Auto;
 }
 
@@ -197,8 +205,8 @@ public:
    * @param config Framework-specific configuration
    * @return CMake code as string
    */
-  virtual std::string
-  generate_cmake_setup(const benchmark_config::FrameworkConfig &config) const = 0;
+  virtual std::string generate_cmake_setup(
+      const benchmark_config::FrameworkConfig &config) const = 0;
 
   /**
    * @brief Get the CMake target name to link against
@@ -211,16 +219,14 @@ public:
    * @param output Raw output from benchmark execution
    * @return Vector of benchmark results
    */
-  virtual std::vector<benchmark_result>
-  parse_output(const std::string &output) const = 0;
+  virtual std::vector<benchmark_result> parse_output(const std::string &output) const = 0;
 
   /**
    * @brief Get command-line args for filtering benchmarks
    * @param filter The filter pattern
    * @return Vector of arguments
    */
-  virtual std::vector<std::string>
-  get_filter_args(const std::string &filter) const = 0;
+  virtual std::vector<std::string> get_filter_args(const std::string &filter) const = 0;
 
   /**
    * @brief Get command-line args for JSON output
@@ -229,4 +235,4 @@ public:
   virtual std::vector<std::string> get_json_args() const = 0;
 };
 
-} // namespace cforge
+}  // namespace cforge

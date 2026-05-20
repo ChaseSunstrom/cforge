@@ -6,6 +6,7 @@
 #pragma once
 
 #include "core/toml_reader.hpp"
+
 #include <algorithm>
 #include <filesystem>
 #include <memory>
@@ -20,11 +21,10 @@ namespace cforge {
  * @param project_list String containing comma-separated project names
  * @return Vector of individual project names
  */
-inline std::vector<std::string>
-split_project_list(const std::string &project_list) {
+inline std::vector<std::string> split_project_list(const std::string &project_list) {
   std::vector<std::string> result;
   std::string::size_type start = 0;
-  std::string::size_type end = 0;
+  std::string::size_type end   = 0;
 
   while ((end = project_list.find(',', start)) != std::string::npos) {
     // Extract the substring and trim whitespace
@@ -52,10 +52,8 @@ struct workspace_project {
   std::string name;
   std::filesystem::path path;
   std::vector<std::string> dependencies;
-  bool is_startup =
-      false; ///< Runtime flag: true if this is the active startup project
-  bool is_startup_project =
-      false; ///< Config flag: true if marked as startup in workspace config
+  bool is_startup         = false;  ///< Runtime flag: true if this is the active startup project
+  bool is_startup_project = false;  ///< Config flag: true if marked as startup in workspace config
 };
 
 /**
@@ -113,8 +111,7 @@ public:
    * @param dependency Dependency name
    * @return true if successful
    */
-  bool add_project_dependency(const std::string &project_name,
-                              const std::string &dependency);
+  bool add_project_dependency(const std::string &project_name, const std::string &dependency);
 
   /**
    * @brief Get all projects in the workspace
@@ -179,6 +176,7 @@ private:
   std::string description_;
   std::vector<workspace_project> projects_;
 };
+
 class workspace {
 public:
   bool load(const std::filesystem::path &workspace_path);
@@ -198,15 +196,19 @@ public:
   bool set_startup_project(const std::string &project_name);
 
   bool build_all(const std::string &config, cforge_int_t num_jobs, bool verbose) const;
-  bool build_project(const std::string &project_name, const std::string &config,
-                     cforge_int_t num_jobs, bool verbose,
+  bool build_project(const std::string &project_name,
+                     const std::string &config,
+                     cforge_int_t num_jobs,
+                     bool verbose,
                      const std::string &target = "") const;
 
   bool run_startup_project(const std::vector<std::string> &args,
-                           const std::string &config, bool verbose) const;
+                           const std::string &config,
+                           bool verbose) const;
   bool run_project(const std::string &project_name,
                    const std::vector<std::string> &args,
-                   const std::string &config, bool verbose) const;
+                   const std::string &config,
+                   bool verbose) const;
 
   static bool is_workspace_dir(const std::filesystem::path &dir);
   static bool create_workspace(const std::filesystem::path &workspace_path,
@@ -214,9 +216,9 @@ public:
 
   // Helper method to get a project by name
   const workspace_project *get_project_by_name(const std::string &name) const {
-    auto it = std::find_if(
-        projects_.begin(), projects_.end(),
-        [&name](const workspace_project &p) { return p.name == name; });
+    auto it = std::find_if(projects_.begin(), projects_.end(), [&name](const workspace_project &p) {
+      return p.name == name;
+    });
     if (it != projects_.end()) {
       return &(*it);
     }
@@ -265,8 +267,7 @@ bool generate_workspace_cmakelists(const std::filesystem::path &workspace_dir,
  * @return std::pair<bool, std::filesystem::path> Pair of (is_workspace,
  * workspace_directory)
  */
-std::pair<bool, std::filesystem::path>
-is_in_workspace(const std::filesystem::path &path);
+std::pair<bool, std::filesystem::path> is_in_workspace(const std::filesystem::path &path);
 
 /**
  * @brief Add Git dependencies configuration to CMakeLists.txt
@@ -288,10 +289,9 @@ void configure_git_dependencies_in_cmake(const toml_reader &project_config,
  * @param project_config Project configuration from cforge.toml
  * @param cmakelists Output stream
  */
-void configure_index_dependencies_fetchcontent_phase1(
-    const std::filesystem::path &project_dir,
-    const toml_reader &project_config,
-    std::ofstream &cmakelists);
+void configure_index_dependencies_fetchcontent_phase1(const std::filesystem::path &project_dir,
+                                                      const toml_reader &project_config,
+                                                      std::ofstream &cmakelists);
 
 /**
  * @brief Configure index dependencies using FetchContent - Phase 2
@@ -301,10 +301,9 @@ void configure_index_dependencies_fetchcontent_phase1(
  * @param project_config Project configuration from cforge.toml
  * @param cmakelists Output stream
  */
-void configure_index_dependencies_fetchcontent_phase2(
-    const std::filesystem::path &project_dir,
-    const toml_reader &project_config,
-    std::ofstream &cmakelists);
+void configure_index_dependencies_fetchcontent_phase2(const std::filesystem::path &project_dir,
+                                                      const toml_reader &project_config,
+                                                      std::ofstream &cmakelists);
 
 /**
  * @brief Get the workspace configuration file path
@@ -316,4 +315,4 @@ void configure_index_dependencies_fetchcontent_phase2(
  */
 std::filesystem::path get_workspace_config_path(const std::filesystem::path &workspace_path);
 
-} // namespace cforge
+}  // namespace cforge

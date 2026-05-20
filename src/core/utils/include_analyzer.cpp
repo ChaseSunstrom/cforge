@@ -1,10 +1,13 @@
 /**
  * @file include_analyzer.cpp
- * @brief Implementation of include graph analysis for circular dependency detection
+ * @brief Implementation of include graph analysis for circular dependency
+ * detection
  */
 
 #include "core/include_analyzer.hpp"
+
 #include "core/types.h"
+
 #include <algorithm>
 #include <fstream>
 #include <regex>
@@ -12,9 +15,8 @@
 
 namespace cforge {
 
-include_analyzer::include_analyzer(
-    const std::filesystem::path &project_dir,
-    const std::vector<std::filesystem::path> &include_paths)
+include_analyzer::include_analyzer(const std::filesystem::path &project_dir,
+                                   const std::vector<std::filesystem::path> &include_paths)
     : project_dir_(project_dir), include_paths_(include_paths) {
   // Add project include directory if it exists
   std::filesystem::path include_dir = project_dir / "include";
@@ -71,8 +73,7 @@ std::string include_analyzer::normalize_path(const std::filesystem::path &path) 
   }
 }
 
-std::vector<std::string>
-include_analyzer::parse_includes(const std::filesystem::path &file_path) {
+std::vector<std::string> include_analyzer::parse_includes(const std::filesystem::path &file_path) {
   std::vector<std::string> includes;
 
   std::ifstream file(file_path);
@@ -95,11 +96,10 @@ include_analyzer::parse_includes(const std::filesystem::path &file_path) {
   return includes;
 }
 
-std::filesystem::path
-include_analyzer::resolve_include(const std::string &include_path,
-                                   const std::filesystem::path &from_file) {
+std::filesystem::path include_analyzer::resolve_include(const std::string &include_path,
+                                                        const std::filesystem::path &from_file) {
   // First, try relative to the file containing the include
-  std::filesystem::path dir = from_file.parent_path();
+  std::filesystem::path dir       = from_file.parent_path();
   std::filesystem::path candidate = dir / include_path;
   if (std::filesystem::exists(candidate)) {
     return std::filesystem::canonical(candidate);
@@ -123,8 +123,8 @@ include_analyzer::resolve_include(const std::string &include_path,
   return {};
 }
 
-std::map<std::string, std::vector<std::string>>
-include_analyzer::build_include_graph(bool include_deps) {
+std::map<std::string, std::vector<std::string>> include_analyzer::build_include_graph(
+    bool include_deps) {
   std::map<std::string, std::vector<std::string>> graph;
   std::set<std::string> processed;
 
@@ -133,10 +133,9 @@ include_analyzer::build_include_graph(bool include_deps) {
 
   // Find all source files in project
   try {
-    for (auto &entry :
-         std::filesystem::recursive_directory_iterator(project_dir_)) {
-      if (entry.is_regular_file() && has_valid_extension(entry.path()) &&
-          !is_excluded(entry.path())) {
+    for (auto &entry : std::filesystem::recursive_directory_iterator(project_dir_)) {
+      if (entry.is_regular_file() && has_valid_extension(entry.path())
+          && !is_excluded(entry.path())) {
         to_process.push_back(entry.path());
       }
     }
@@ -167,11 +166,9 @@ include_analyzer::build_include_graph(bool include_deps) {
         // Check if this is a project file or a dependency
         bool is_project_file = false;
         try {
-          auto rel = std::filesystem::relative(resolved, project_dir_);
-          is_project_file =
-              !rel.empty() && rel.string().find("..") != 0 && !is_excluded(resolved);
-        } catch (...) {
-        }
+          auto rel        = std::filesystem::relative(resolved, project_dir_);
+          is_project_file = !rel.empty() && rel.string().find("..") != 0 && !is_excluded(resolved);
+        } catch (...) {}
 
         if (is_project_file || include_deps) {
           resolved_includes.push_back(resolved_norm);
@@ -190,11 +187,12 @@ include_analyzer::build_include_graph(bool include_deps) {
   return graph;
 }
 
-void include_analyzer::dfs_find_cycles(
-    const std::string &node,
-    const std::map<std::string, std::vector<std::string>> &graph,
-    std::set<std::string> &visited, std::set<std::string> &rec_stack,
-    std::vector<std::string> &path, std::vector<circular_chain> &cycles) {
+void include_analyzer::dfs_find_cycles(const std::string &node,
+                                       const std::map<std::string, std::vector<std::string>> &graph,
+                                       std::set<std::string> &visited,
+                                       std::set<std::string> &rec_stack,
+                                       std::vector<std::string> &path,
+                                       std::vector<circular_chain> &cycles) {
   visited.insert(node);
   rec_stack.insert(node);
   path.push_back(node);
@@ -219,7 +217,7 @@ void include_analyzer::dfs_find_cycles(
             chain.files.push_back(p);
           }
         }
-        chain.files.push_back(neighbor); // Complete the cycle
+        chain.files.push_back(neighbor);  // Complete the cycle
 
         cycles.push_back(chain);
       }
@@ -250,11 +248,11 @@ include_analysis_result include_analyzer::analyze(bool include_deps) {
   include_analysis_result result;
 
   // Build the include graph
-  result.include_graph = build_include_graph(include_deps);
+  result.include_graph        = build_include_graph(include_deps);
   result.total_files_analyzed = static_cast<cforge_int_t>(result.include_graph.size());
 
   // Find all cycles
-  result.chains = find_cycles(result.include_graph);
+  result.chains     = find_cycles(result.include_graph);
   result.has_cycles = !result.chains.empty();
 
   return result;
@@ -280,12 +278,12 @@ std::string format_circular_chains(const std::vector<circular_chain> &chains) {
         // Build tree prefix
         prefix = "  ";
         for (cforge_size_t k = 1; k < j; ++k) {
-          prefix += "\xe2\x94\x82   "; // │
+          prefix += "\xe2\x94\x82   ";  // │
         }
         if (j == chain.files.size() - 1) {
-          prefix += "\xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 "; // └──
+          prefix += "\xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 ";  // └──
         } else {
-          prefix += "\xe2\x94\x9c\xe2\x94\x80\xe2\x94\x80 "; // ├──
+          prefix += "\xe2\x94\x9c\xe2\x94\x80\xe2\x94\x80 ";  // ├──
         }
       }
 
@@ -293,7 +291,7 @@ std::string format_circular_chains(const std::vector<circular_chain> &chains) {
 
       // Mark the circular reference
       if (j == chain.files.size() - 1) {
-        ss << "  \xe2\x86\x90 CIRCULAR (back to root)"; // ←
+        ss << "  \xe2\x86\x90 CIRCULAR (back to root)";  // ←
       }
       ss << "\n";
     }
@@ -306,8 +304,7 @@ std::string format_circular_chains(const std::vector<circular_chain> &chains) {
   return ss.str();
 }
 
-std::string
-format_circular_chains_json(const std::vector<circular_chain> &chains) {
+std::string format_circular_chains_json(const std::vector<circular_chain> &chains) {
   std::ostringstream ss;
   ss << "{\n";
   ss << "  \"circular_dependencies\": [\n";
@@ -339,4 +336,4 @@ format_circular_chains_json(const std::vector<circular_chain> &chains) {
   return ss.str();
 }
 
-} // namespace cforge
+}  // namespace cforge

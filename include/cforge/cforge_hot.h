@@ -39,7 +39,8 @@ typedef struct cforge_hot_ctx cforge_hot_ctx;
  * <library_parent>/../.cforge/hot_reload_signal (i.e. one level above the
  * build/lib/ directory that contains the .dll/.so).
  *
- * @param library_path  Path to the compiled shared library (.dll / .so / .dylib).
+ * @param library_path  Path to the compiled shared library (.dll / .so /
+ * .dylib).
  * @return Pointer to a newly allocated cforge_hot_ctx, or NULL on failure.
  *         Call cforge_hot_last_error() for a human-readable error string.
  */
@@ -66,7 +67,8 @@ int cforge_hot_reload(cforge_hot_ctx *ctx);
  * pointer address changes when the library is swapped.
  *
  * @param ctx          Context returned by cforge_hot_load().
- * @param symbol_name  Name of the exported symbol (use extern "C" in the module).
+ * @param symbol_name  Name of the exported symbol (use extern "C" in the
+ * module).
  * @return Pointer to the symbol, or NULL if not found.
  */
 void *cforge_hot_get_symbol(cforge_hot_ctx *ctx, const char *symbol_name);
@@ -87,7 +89,8 @@ int cforge_hot_get_version(cforge_hot_ctx *ctx);
  * defined by CFORGE_HOT_POLLING_MS (default 50 ms).
  *
  * @param ctx        Context returned by cforge_hot_load().
- * @param on_reload  Callback invoked after each successful reload (may be NULL).
+ * @param on_reload  Callback invoked after each successful reload (may be
+ * NULL).
  */
 void cforge_hot_watch(cforge_hot_ctx *ctx, void (*on_reload)(cforge_hot_ctx *));
 

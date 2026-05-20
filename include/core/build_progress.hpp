@@ -5,13 +5,13 @@
 
 #pragma once
 
-#include "types.h"
-
 #include <chrono>
 #include <functional>
 #include <mutex>
 #include <string>
 #include <vector>
+
+#include "types.h"
 
 namespace cforge {
 
@@ -94,8 +94,8 @@ private:
   mutable std::mutex mutex_;
   std::string current_file_;
   cforge_int_t current_step_ = 0;
-  cforge_int_t total_steps_ = 0;
-  bool has_progress_ = false;
+  cforge_int_t total_steps_  = 0;
+  bool has_progress_         = false;
 
   std::vector<file_timing> timings_;
   std::chrono::steady_clock::time_point current_file_start_;
@@ -128,7 +128,9 @@ private:
  * @param width Width of the progress bar in characters
  * @param show_percentage Whether to show percentage
  */
-void display_progress_bar(cforge_int_t current, cforge_int_t total, cforge_int_t width = 20,
+void display_progress_bar(cforge_int_t current,
+                          cforge_int_t total,
+                          cforge_int_t width   = 20,
                           bool show_percentage = true);
 
 /**
@@ -136,4 +138,4 @@ void display_progress_bar(cforge_int_t current, cforge_int_t total, cforge_int_t
  */
 void clear_progress_line();
 
-} // namespace cforge
+}  // namespace cforge

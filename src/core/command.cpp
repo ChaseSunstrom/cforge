@@ -3,13 +3,17 @@
  * @brief Implementation of command handling utilities
  */
 
-#include <stdio.h>
-#include <filesystem>
-#include <toml++/toml.hpp>
+#include "core/command.h"
 
 #include "cforge/log.hpp"
-#include "core/command.h"
+
 #include "core/commands.hpp"
+
+#include <toml++/toml.hpp>
+
+#include <filesystem>
+
+#include <stdio.h>
 
 // Function to check if the current directory is a workspace
 bool cforge_is_workspace_dir(void) {
@@ -22,12 +26,11 @@ bool cforge_is_workspace_dir(void) {
       }
     } catch (const toml::parse_error &err) {
       // TOML parse error - log it and fall through to legacy check
-      cforge::logger::print_verbose("Failed to parse cforge.toml: " +
-                                    std::string(err.description()));
+      cforge::logger::print_verbose("Failed to parse cforge.toml: "
+                                    + std::string(err.description()));
     } catch (const std::exception &ex) {
       // Other errors - log and fall through to legacy check
-      cforge::logger::print_verbose("Error reading cforge.toml: " +
-                                    std::string(ex.what()));
+      cforge::logger::print_verbose("Error reading cforge.toml: " + std::string(ex.what()));
     }
   }
 
@@ -36,8 +39,7 @@ bool cforge_is_workspace_dir(void) {
 }
 
 // Function to parse command line arguments
-void cforge_parse_args(cforge_int_t argc, cforge_string_t argv[],
-                       cforge_command_args_t *args) {
+void cforge_parse_args(cforge_int_t argc, cforge_string_t argv[], cforge_command_args_t *args) {
   memset(args, 0, sizeof(cforge_command_args_t));
 
   // Need at least one argument (the command)
@@ -50,7 +52,7 @@ void cforge_parse_args(cforge_int_t argc, cforge_string_t argv[],
 
   // Allocate memory for additional arguments
   // We allocate for all possible arguments to simplify management
-  args->args = (cforge_string_t *)malloc((argc - 1) * sizeof(cforge_string_t));
+  args->args      = (cforge_string_t *)malloc((argc - 1) * sizeof(cforge_string_t));
   args->arg_count = 0;
 
   if (!args->args) {
@@ -68,25 +70,33 @@ void cforge_parse_args(cforge_int_t argc, cforge_string_t argv[],
     // Also check for specific options
     if (strcmp(argv[i], "--config") == 0 && i + 1 < argc) {
       i++;
-      if (args->config) free(args->config);
+      if (args->config) {
+        free(args->config);
+      }
       args->config = strdup(argv[i]);
       // Also add this to args array
       args->args[args->arg_count++] = strdup(argv[i]);
     } else if (strcmp(argv[i], "--variant") == 0 && i + 1 < argc) {
       i++;
-      if (args->variant) free(args->variant);
+      if (args->variant) {
+        free(args->variant);
+      }
       args->variant = strdup(argv[i]);
       // Also add this to args array
       args->args[args->arg_count++] = strdup(argv[i]);
     } else if (strcmp(argv[i], "--target") == 0 && i + 1 < argc) {
       i++;
-      if (args->target) free(args->target);
+      if (args->target) {
+        free(args->target);
+      }
       args->target = strdup(argv[i]);
       // Also add this to args array
       args->args[args->arg_count++] = strdup(argv[i]);
     } else if (strcmp(argv[i], "--verbosity") == 0 && i + 1 < argc) {
       i++;
-      if (args->verbosity) free(args->verbosity);
+      if (args->verbosity) {
+        free(args->verbosity);
+      }
       args->verbosity = strdup(argv[i]);
       // Also add this to args array
       args->args[args->arg_count++] = strdup(argv[i]);
@@ -97,22 +107,30 @@ void cforge_parse_args(cforge_int_t argc, cforge_string_t argv[],
 
     // Handle --config=value format
     if (strncmp(argv[i], "--config=", 9) == 0) {
-      if (args->config) free(args->config);
+      if (args->config) {
+        free(args->config);
+      }
       args->config = strdup(argv[i] + 9);
     }
     // Handle --variant=value format
     else if (strncmp(argv[i], "--variant=", 10) == 0) {
-      if (args->variant) free(args->variant);
+      if (args->variant) {
+        free(args->variant);
+      }
       args->variant = strdup(argv[i] + 10);
     }
     // Handle --target=value format
     else if (strncmp(argv[i], "--target=", 9) == 0) {
-      if (args->target) free(args->target);
+      if (args->target) {
+        free(args->target);
+      }
       args->target = strdup(argv[i] + 9);
     }
     // Handle --verbosity=value format
     else if (strncmp(argv[i], "--verbosity=", 12) == 0) {
-      if (args->verbosity) free(args->verbosity);
+      if (args->verbosity) {
+        free(args->verbosity);
+      }
       args->verbosity = strdup(argv[i] + 12);
     }
   }
@@ -179,8 +197,9 @@ void cforge_free_args(cforge_command_args_t *args) {
 
 // Verbosity handling
 void cforge_set_verbosity(cforge_cstring_t level) {
-  if (!level)
+  if (!level) {
     return;
+  }
 
   if (strcmp(level, "quiet") == 0) {
     cforge_set_verbosity_impl(CFORGE_VERBOSITY_QUIET);

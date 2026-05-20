@@ -1,6 +1,8 @@
 #include "core/workspace_utils.hpp"
+
 #include "core/constants.h"
 #include "core/toml_reader.hpp"
+
 #include <toml++/toml.hpp>
 
 #include <algorithm>
@@ -13,20 +15,17 @@
 
 namespace cforge {
 
-std::vector<std::string>
-uppercase_generators(const std::vector<std::string> &generators) {
+std::vector<std::string> uppercase_generators(const std::vector<std::string> &generators) {
   std::vector<std::string> result;
   for (const auto &gen : generators) {
     std::string upper_gen = gen;
-    std::transform(upper_gen.begin(), upper_gen.end(), upper_gen.begin(),
-                   ::toupper);
+    std::transform(upper_gen.begin(), upper_gen.end(), upper_gen.begin(), ::toupper);
     result.push_back(upper_gen);
   }
   return result;
 }
 
-std::string join_strings(const std::vector<std::string> &strings,
-                         const std::string &delimiter) {
+std::string join_strings(const std::vector<std::string> &strings, const std::string &delimiter) {
   std::string result;
   bool first = true;
 
@@ -35,39 +34,40 @@ std::string join_strings(const std::vector<std::string> &strings,
       result += delimiter;
     }
     result += str;
-    first = false;
+    first   = false;
   }
 
   return result;
 }
 
-std::vector<std::string>
-get_workspace_projects(const std::filesystem::path &workspace_dir) {
+std::vector<std::string> get_workspace_projects(const std::filesystem::path &workspace_dir) {
   std::vector<std::string> projects;
   for (const auto &entry : std::filesystem::directory_iterator(workspace_dir)) {
-    if (entry.is_directory() &&
-        std::filesystem::exists(entry.path() / CFORGE_FILE)) {
+    if (entry.is_directory() && std::filesystem::exists(entry.path() / CFORGE_FILE)) {
       projects.push_back(entry.path().filename().string());
     }
   }
   return projects;
 }
 
-static bool
-dfs_visit(const std::string &proj,
-          const std::map<std::string, std::vector<std::string>> &deps,
-          std::set<std::string> &visiting, std::set<std::string> &visited,
-          std::vector<std::string> &out) {
-  if (visited.count(proj))
+static bool dfs_visit(const std::string &proj,
+                      const std::map<std::string, std::vector<std::string>> &deps,
+                      std::set<std::string> &visiting,
+                      std::set<std::string> &visited,
+                      std::vector<std::string> &out) {
+  if (visited.count(proj)) {
     return true;
-  if (visiting.count(proj))
-    return false; // cycle
+  }
+  if (visiting.count(proj)) {
+    return false;  // cycle
+  }
   visiting.insert(proj);
   auto it = deps.find(proj);
   if (it != deps.end()) {
     for (const auto &dep : it->second) {
-      if (!dfs_visit(dep, deps, visiting, visited, out))
+      if (!dfs_visit(dep, deps, visiting, visited, out)) {
         return false;
+      }
     }
   }
   visiting.erase(proj);
@@ -76,9 +76,8 @@ dfs_visit(const std::string &proj,
   return true;
 }
 
-std::vector<std::string>
-topo_sort_projects(const std::filesystem::path &workspace_dir,
-                   const std::vector<std::string> &projects) {
+std::vector<std::string> topo_sort_projects(const std::filesystem::path &workspace_dir,
+                                            const std::vector<std::string> &projects) {
   // Build dependency map
   std::map<std::string, std::vector<std::string>> deps_map;
   for (const auto &proj : projects) {
@@ -101,4 +100,4 @@ topo_sort_projects(const std::filesystem::path &workspace_dir,
   return sorted;
 }
 
-} // namespace cforge
+}  // namespace cforge

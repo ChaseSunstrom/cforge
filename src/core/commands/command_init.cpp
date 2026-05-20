@@ -4,6 +4,7 @@
  */
 
 #include "cforge/log.hpp"
+
 #include "core/command_registry.hpp"
 #include "core/commands.hpp"
 #include "core/constants.h"
@@ -40,11 +41,10 @@ static bool g_force_overwrite = false;
  * @param project_list String containing comma-separated project names
  * @return Vector of individual project names
  */
-static std::vector<std::string>
-parse_project_list(const std::string &project_list) {
+static std::vector<std::string> parse_project_list(const std::string &project_list) {
   std::vector<std::string> result;
   std::string::size_type start = 0;
-  std::string::size_type end = 0;
+  std::string::size_type end   = 0;
 
   // First try comma-separated format
   if (project_list.find(',') != std::string::npos) {
@@ -248,8 +248,7 @@ static bool create_cmakelists(const std::filesystem::path &project_path,
   }
 
   cmakelists << "cmake_minimum_required(VERSION 3.14)\n\n";
-  cmakelists << "project(" << project_name
-             << " VERSION 0.1.0 LANGUAGES CXX)\n\n";
+  cmakelists << "project(" << project_name << " VERSION 0.1.0 LANGUAGES CXX)\n\n";
 
   // C++ standard
   cmakelists << "# Set C++ standard\n";
@@ -259,12 +258,9 @@ static bool create_cmakelists(const std::filesystem::path &project_path,
 
   // Output directories
   cmakelists << "# Set output directories\n";
-  cmakelists
-      << "set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY \"${CMAKE_BINARY_DIR}/lib\")\n";
-  cmakelists
-      << "set(CMAKE_LIBRARY_OUTPUT_DIRECTORY \"${CMAKE_BINARY_DIR}/lib\")\n";
-  cmakelists
-      << "set(CMAKE_RUNTIME_OUTPUT_DIRECTORY \"${CMAKE_BINARY_DIR}/bin\")\n\n";
+  cmakelists << "set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY \"${CMAKE_BINARY_DIR}/lib\")\n";
+  cmakelists << "set(CMAKE_LIBRARY_OUTPUT_DIRECTORY \"${CMAKE_BINARY_DIR}/lib\")\n";
+  cmakelists << "set(CMAKE_RUNTIME_OUTPUT_DIRECTORY \"${CMAKE_BINARY_DIR}/bin\")\n\n";
 
   // Enhanced workspace project support
   if (workspace_aware) {
@@ -285,8 +281,7 @@ static bool create_cmakelists(const std::filesystem::path &project_path,
     cmakelists << "        message(STATUS \"Using workspace dependency: "
                   "${DEP_NAME}\")\n";
     cmakelists << "        if(DEFINED CFORGE_${DEP_NAME}_INCLUDE)\n";
-    cmakelists
-        << "            include_directories(${CFORGE_${DEP_NAME}_INCLUDE})\n";
+    cmakelists << "            include_directories(${CFORGE_${DEP_NAME}_INCLUDE})\n";
     cmakelists << "            message(STATUS \"  Include path: "
                   "${CFORGE_${DEP_NAME}_INCLUDE}\")\n";
     cmakelists << "        endif()\n";
@@ -326,18 +321,16 @@ static bool create_cmakelists(const std::filesystem::path &project_path,
   cmakelists << "set(TARGET_NAME ${PROJECT_NAME})\n\n";
 
   // Project type based on init template
-  if (g_template_name == "executable" || g_template_name == "app" ||
-      g_template_name == "application") {
+  if (g_template_name == "executable" || g_template_name == "app"
+      || g_template_name == "application") {
     cmakelists << "# This is an executable project\n";
     cmakelists << "add_executable(${TARGET_NAME} ${SOURCES})\n";
     cmakelists << "set(PROJECT_TYPE \"executable\")\n\n";
-  } else if (g_template_name == "shared-library" ||
-             g_template_name == "shared_library") {
+  } else if (g_template_name == "shared-library" || g_template_name == "shared_library") {
     cmakelists << "# This is a shared library project\n";
     cmakelists << "add_library(${TARGET_NAME} SHARED ${SOURCES})\n";
     cmakelists << "set(PROJECT_TYPE \"shared_library\")\n\n";
-  } else if (g_template_name == "header-only" ||
-             g_template_name == "header_only") {
+  } else if (g_template_name == "header-only" || g_template_name == "header_only") {
     cmakelists << "# This is a header-only interface library project\n";
     cmakelists << "add_library(${TARGET_NAME} INTERFACE)\n";
     cmakelists << "set(PROJECT_TYPE \"interface\")\n\n";
@@ -381,8 +374,7 @@ static bool create_cmakelists(const std::filesystem::path &project_path,
   cmakelists << "    install(TARGETS ${TARGET_NAME}\n";
   cmakelists << "        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}\n";
   cmakelists << "        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}\n";
-  cmakelists
-      << "        PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}\n";
+  cmakelists << "        PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}\n";
   cmakelists << "    )\n";
   cmakelists << "    # Install headers\n";
   cmakelists << "    install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/\n";
@@ -445,15 +437,16 @@ static bool create_cforge_toml(const std::filesystem::path &project_path,
   config << "# Project configuration for " << project_name << "\n\n";
 
   // Embedded template generates a completely different cforge.toml
-  if (g_template_name == "embedded" || g_template_name == "bare-metal" ||
-      g_template_name == "bare_metal") {
+  if (g_template_name == "embedded" || g_template_name == "bare-metal"
+      || g_template_name == "bare_metal") {
     config << "[project]\n";
     config << "name = \"" << project_name << "\"\n";
     config << "version = \"0.1.0\"\n";
     config << "description = \"An embedded project created with cforge\"\n";
     config << "binary_type = \"executable\"\n";
     config << "c_standard = \"99\"\n";
-    config << "c_extensions = true         # Enable GNU extensions (e.g., gnu99)\n";
+    config << "c_extensions = true         # Enable GNU extensions (e.g., "
+              "gnu99)\n";
     config << "languages = [\"C\", \"ASM\"]   # Enable C and assembly support\n";
     config << "authors = [\"Your Name <your.email@example.com>\"]\n";
     config << "license = \"MIT\"\n\n";
@@ -480,19 +473,22 @@ static bool create_cforge_toml(const std::filesystem::path &project_path,
 
     config << "# Compiler flags (adjust for your target MCU)\n";
     config << "[compiler.gcc]\n";
-    config << "# flags = [\"-mmcu=YOUR_MCU\", \"-funsigned-char\", \"-ffunction-sections\", \"-fdata-sections\"]\n\n";
+    config << "# flags = [\"-mmcu=YOUR_MCU\", \"-funsigned-char\", "
+              "\"-ffunction-sections\", \"-fdata-sections\"]\n\n";
 
     config << "# Linker configuration\n";
     config << "[linker]\n";
     config << "# scripts = [\"link/linker.ld\"]   # Custom linker script\n";
     config << "# flags = [\"-mmcu=YOUR_MCU\"]     # MCU-specific linker flags\n";
-    config << "dead_code_strip = true              # Remove unused code sections\n";
+    config << "dead_code_strip = true              # Remove unused code "
+              "sections\n";
     config << "map_file = true                     # Generate memory map file\n\n";
 
     config << "# Cross-compilation profile (configure for your target)\n";
     config << "[cross.profile.target]\n";
     config << "system = \"Generic\"                # Bare-metal target\n";
-    config << "# processor = \"avr\"              # Target processor architecture\n";
+    config << "# processor = \"avr\"              # Target processor "
+              "architecture\n";
     config << "# compilers = { c = \"avr-gcc\", cxx = \"avr-g++\" }\n";
     config << "# variables = { CMAKE_ASM_COMPILER = \"avr-gcc\" }\n";
     config << "nostdlib = true                     # No standard library\n";
@@ -501,12 +497,17 @@ static bool create_cforge_toml(const std::filesystem::path &project_path,
     config << "\n";
     config << "# Post-build commands (e.g., generate .hex from .elf)\n";
     config << "# post_build = [\n";
-    config << "#     \"avr-objcopy -R .eeprom -O ihex $<TARGET_FILE:${PROJECT_NAME}> $<TARGET_FILE_DIR:${PROJECT_NAME}>/${PROJECT_NAME}.hex\",\n";
-    config << "#     \"avr-size --mcu=YOUR_MCU -C $<TARGET_FILE:${PROJECT_NAME}>\"\n";
+    config << "#     \"avr-objcopy -R .eeprom -O ihex "
+              "$<TARGET_FILE:${PROJECT_NAME}> "
+              "$<TARGET_FILE_DIR:${PROJECT_NAME}>/${PROJECT_NAME}.hex\",\n";
+    config << "#     \"avr-size --mcu=YOUR_MCU -C "
+              "$<TARGET_FILE:${PROJECT_NAME}>\"\n";
     config << "# ]\n";
     config << "\n";
     config << "# Flash/upload command\n";
-    config << "# flash = \"avrdude -c arduino -p YOUR_MCU -P /dev/ttyUSB0 -b 115200 -D -U flash:w:$<TARGET_FILE_DIR:${PROJECT_NAME}>/${PROJECT_NAME}.hex\"\n";
+    config << "# flash = \"avrdude -c arduino -p YOUR_MCU -P /dev/ttyUSB0 -b "
+              "115200 -D -U "
+              "flash:w:$<TARGET_FILE_DIR:${PROJECT_NAME}>/${PROJECT_NAME}.hex\"\n";
 
     config.close();
     cforge::logger::print_verbose("Created embedded cforge.toml");
@@ -521,16 +522,14 @@ static bool create_cforge_toml(const std::filesystem::path &project_path,
   config << "cpp_standard = \"" << cpp_version << "\"\n";
   config << "c_standard = \"11\"\n";
 
-  if (g_template_name == "executable" || g_template_name == "app" ||
-      g_template_name == "application") {
+  if (g_template_name == "executable" || g_template_name == "app"
+      || g_template_name == "application") {
     config << "binary_type = \"executable\"  # executable, shared_lib, "
               "static_lib, or header_only\n";
-  } else if (g_template_name == "shared-library" ||
-             g_template_name == "shared_library") {
+  } else if (g_template_name == "shared-library" || g_template_name == "shared_library") {
     config << "binary_type = \"shared_lib\"  # executable, shared_lib, "
               "static_lib, or header_only\n";
-  } else if (g_template_name == "header-only" ||
-             g_template_name == "header_only") {
+  } else if (g_template_name == "header-only" || g_template_name == "header_only") {
     config << "binary_type = \"header_only\"  # executable, shared_lib, "
               "static_lib, or header_only\n";
   } else {
@@ -539,10 +538,8 @@ static bool create_cforge_toml(const std::filesystem::path &project_path,
   }
 
   config << "authors = [\"Your Name <your.email@example.com>\"]\n";
-  config << "homepage = \"https://github.com/yourusername/" << project_name
-         << "\"\n";
-  config << "repository = \"https://github.com/yourusername/" << project_name
-         << ".git\"\n";
+  config << "homepage = \"https://github.com/yourusername/" << project_name << "\"\n";
+  config << "repository = \"https://github.com/yourusername/" << project_name << ".git\"\n";
   config << "license = \"MIT\"\n\n";
 
   config << "[build]\n";
@@ -551,7 +548,8 @@ static bool create_cforge_toml(const std::filesystem::path &project_path,
   config << "directory = \"build\"\n";
   config << "source_dirs = [\"src\"]\n";
   config << "include_dirs = [\"include\"]\n";
-  config << "export_compile_commands = true  # Generate compile_commands.json for IDEs\n";
+  config << "export_compile_commands = true  # Generate compile_commands.json "
+            "for IDEs\n";
   config << "# position_independent_code = true  # For shared libraries\n";
   config << "# Uncomment to specify custom source patterns\n";
   config << "# source_patterns = [\"src/*.cpp\", \"src/**/*.cpp\"]\n";
@@ -561,16 +559,23 @@ static bool create_cforge_toml(const std::filesystem::path &project_path,
   // Add build configuration for different build types
   // Using portable options that work across MSVC, GCC, and Clang
   config << "[build.config.debug]\n";
-  config << "optimize = \"debug\"      # Portable: maps to /Od (MSVC) or -Og (GCC/Clang)\n";
-  config << "debug_info = true        # Portable: maps to /Zi (MSVC) or -g (GCC/Clang)\n";
-  config << "warnings = \"all\"        # Portable: maps to /W4 (MSVC) or -Wall -Wextra (GCC/Clang)\n";
+  config << "optimize = \"debug\"      # Portable: maps to /Od (MSVC) or -Og "
+            "(GCC/Clang)\n";
+  config << "debug_info = true        # Portable: maps to /Zi (MSVC) or -g "
+            "(GCC/Clang)\n";
+  config << "warnings = \"all\"        # Portable: maps to /W4 (MSVC) or -Wall "
+            "-Wextra (GCC/Clang)\n";
   config << "defines = [\"DEBUG=1\"]\n";
-  config << "# sanitizers = [\"address\"]  # Enable AddressSanitizer for debug builds\n\n";
+  config << "# sanitizers = [\"address\"]  # Enable AddressSanitizer for debug "
+            "builds\n\n";
 
   config << "[build.config.release]\n";
-  config << "optimize = \"speed\"      # Portable: maps to /O2 (MSVC) or -O2 (GCC/Clang)\n";
-  config << "warnings = \"all\"        # Portable: maps to /W4 (MSVC) or -Wall -Wextra (GCC/Clang)\n";
-  config << "lto = true              # Link-time optimization: /GL+/LTCG (MSVC) or -flto (GCC/Clang)\n";
+  config << "optimize = \"speed\"      # Portable: maps to /O2 (MSVC) or -O2 "
+            "(GCC/Clang)\n";
+  config << "warnings = \"all\"        # Portable: maps to /W4 (MSVC) or -Wall "
+            "-Wextra (GCC/Clang)\n";
+  config << "lto = true              # Link-time optimization: /GL+/LTCG "
+            "(MSVC) or -flto (GCC/Clang)\n";
   config << "defines = [\"NDEBUG\"]\n\n";
 
   config << "[build.config.relwithdebinfo]\n";
@@ -580,7 +585,8 @@ static bool create_cforge_toml(const std::filesystem::path &project_path,
   config << "defines = [\"NDEBUG\"]\n\n";
 
   config << "[build.config.minsizerel]\n";
-  config << "optimize = \"size\"       # Portable: maps to /O1 /Os (MSVC) or -Os (GCC/Clang)\n";
+  config << "optimize = \"size\"       # Portable: maps to /O1 /Os (MSVC) or "
+            "-Os (GCC/Clang)\n";
   config << "defines = [\"NDEBUG\"]\n\n";
 
   config << "[test]\n";
@@ -630,7 +636,8 @@ static bool create_cforge_toml(const std::filesystem::path &project_path,
   config << "# include_dirs = [\"/usr/local/include/custom\"]\n";
   config << "# library_dirs = [\"/usr/local/lib\"]\n";
   config << "# libraries = [\"custom\"]\n";
-  config << "# platforms = [\"linux\", \"macos\"]  # Optional: limit to platforms\n\n";
+  config << "# platforms = [\"linux\", \"macos\"]  # Optional: limit to "
+            "platforms\n\n";
 
   config << "# Subdirectory dependencies (for existing CMake projects)\n";
   config << "# [dependencies.subdirectory.spdlog]\n";
@@ -640,7 +647,8 @@ static bool create_cforge_toml(const std::filesystem::path &project_path,
 
   // Platform-specific configuration
   config << "# Platform-specific configuration\n";
-  config << "# Portable options: optimize, warnings, debug_info, sanitizers, lto,\n";
+  config << "# Portable options: optimize, warnings, debug_info, sanitizers, "
+            "lto,\n";
   config << "#                   exceptions, rtti, hardening, visibility\n";
   config << "# [platform.windows]\n";
   config << "# hardening = \"full\"      # Portable: /GS /sdl /GUARD:CF (MSVC)\n";
@@ -648,7 +656,8 @@ static bool create_cforge_toml(const std::filesystem::path &project_path,
   config << "# links = [\"kernel32\", \"user32\"]\n";
   config << "#\n";
   config << "# [platform.linux]\n";
-  config << "# hardening = \"basic\"     # Portable: -fstack-protector-strong -D_FORTIFY_SOURCE=2\n";
+  config << "# hardening = \"basic\"     # Portable: -fstack-protector-strong "
+            "-D_FORTIFY_SOURCE=2\n";
   config << "# defines = [\"LINUX\"]\n";
   config << "# links = [\"pthread\", \"dl\"]\n";
   config << "#\n";
@@ -659,16 +668,19 @@ static bool create_cforge_toml(const std::filesystem::path &project_path,
 
   // Compiler-specific configuration
   config << "# Compiler-specific configuration\n";
-  config << "# Portable options work here too - they translate to the right flags\n";
+  config << "# Portable options work here too - they translate to the right "
+            "flags\n";
   config << "# [compiler.msvc]\n";
   config << "# warnings = \"strict\"     # Portable: /W4 /WX\n";
   config << "# defines = [\"_CRT_SECURE_NO_WARNINGS\"]\n";
   config << "#\n";
   config << "# [compiler.gcc]\n";
-  config << "# warnings = \"pedantic\"   # Portable: -Wall -Wextra -Wpedantic -Werror\n";
+  config << "# warnings = \"pedantic\"   # Portable: -Wall -Wextra -Wpedantic "
+            "-Werror\n";
   config << "#\n";
   config << "# [compiler.clang]\n";
-  config << "# warnings = \"pedantic\"   # Portable: -Wall -Wextra -Wpedantic -Werror\n";
+  config << "# warnings = \"pedantic\"   # Portable: -Wall -Wextra -Wpedantic "
+            "-Werror\n";
   config << "#\n";
   config << "# [compiler.mingw]\n";
   config << "# warnings = \"all\"        # Portable: -Wall -Wextra\n";
@@ -701,24 +713,29 @@ static bool create_cforge_toml(const std::filesystem::path &project_path,
   config << "# [cross.variables]  # Custom CMake variables\n";
   config << "# ANDROID_ABI = \"arm64-v8a\"\n";
   config << "#\n";
-  config << "# Cross-compilation profiles (use with: cforge build --profile <name>)\n";
+  config << "# Cross-compilation profiles (use with: cforge build --profile "
+            "<name>)\n";
   config << "# [cross.profile.android-arm64]\n";
   config << "# system = \"Android\"\n";
   config << "# processor = \"aarch64\"\n";
-  config << "# toolchain = \"${ANDROID_NDK}/build/cmake/android.toolchain.cmake\"\n";
-  config << "# variables = { ANDROID_ABI = \"arm64-v8a\", ANDROID_PLATFORM = \"android-24\" }\n";
+  config << "# toolchain = "
+            "\"${ANDROID_NDK}/build/cmake/android.toolchain.cmake\"\n";
+  config << "# variables = { ANDROID_ABI = \"arm64-v8a\", ANDROID_PLATFORM = "
+            "\"android-24\" }\n";
   config << "#\n";
   config << "# [cross.profile.raspberry-pi]\n";
   config << "# system = \"Linux\"\n";
   config << "# processor = \"armv7l\"\n";
-  config << "# compilers = { c = \"arm-linux-gnueabihf-gcc\", cxx = \"arm-linux-gnueabihf-g++\" }\n";
+  config << "# compilers = { c = \"arm-linux-gnueabihf-gcc\", cxx = "
+            "\"arm-linux-gnueabihf-g++\" }\n";
   config << "# sysroot = \"/path/to/rpi-sysroot\"\n\n";
 
   // CMake integration
   config << "# CMake integration\n";
   config << "# [cmake]\n";
   config << "# generator = \"Ninja\"  # Optional: override CMake generator\n";
-  config << "# includes = [\"cmake/custom.cmake\"]  # Custom CMake files to include\n";
+  config << "# includes = [\"cmake/custom.cmake\"]  # Custom CMake files to "
+            "include\n";
   config << "# module_paths = [\"cmake/modules\"]  # Custom module paths\n";
 
   config.close();
@@ -742,8 +759,8 @@ static bool create_main_cpp(const std::filesystem::path &project_path,
   }
 
   // Create main.c for embedded/bare-metal projects
-  if (g_template_name == "embedded" || g_template_name == "bare-metal" ||
-      g_template_name == "bare_metal") {
+  if (g_template_name == "embedded" || g_template_name == "bare-metal"
+      || g_template_name == "bare_metal") {
     std::filesystem::path main_c_path = src_dir / "main.c";
 
     if (std::filesystem::exists(main_c_path) && !g_force_overwrite) {
@@ -829,8 +846,7 @@ static bool create_main_cpp(const std::filesystem::path &project_path,
     main_cpp << " * @return int Exit code\n";
     main_cpp << " */\n";
     main_cpp << "int main(int argc, char* argv[]) {\n";
-    main_cpp << "    std::cout << \"Hello from " << project_name
-             << "!\" << std::endl;\n";
+    main_cpp << "    std::cout << \"Hello from " << project_name << "!\" << std::endl;\n";
     main_cpp << "    return 0;\n";
     main_cpp << "}\n";
 
@@ -865,14 +881,12 @@ static bool create_include_files(const std::filesystem::path &project_path,
   }
 
   // Create example.hpp
-  std::filesystem::path example_header_path =
-      project_include_dir / "example.hpp";
+  std::filesystem::path example_header_path = project_include_dir / "example.hpp";
 
   if (std::filesystem::exists(example_header_path) && !g_force_overwrite) {
     cforge::logger::print_warning("example.hpp already exists, skipping");
     return true;
-  } else if (std::filesystem::exists(example_header_path) &&
-             g_force_overwrite) {
+  } else if (std::filesystem::exists(example_header_path) && g_force_overwrite) {
     cforge::logger::print_action("Overwriting", "example.hpp");
   }
 
@@ -884,8 +898,7 @@ static bool create_include_files(const std::filesystem::path &project_path,
 
   example_header << "/**\n";
   example_header << " * @file example.hpp\n";
-  example_header << " * @brief Example header file for " << project_name
-                 << "\n";
+  example_header << " * @brief Example header file for " << project_name << "\n";
   example_header << " */\n\n";
   example_header << "#pragma once\n\n";
   example_header << "namespace " << project_name << " {\n\n";
@@ -906,9 +919,8 @@ static bool create_include_files(const std::filesystem::path &project_path,
  * @param project_name Project name (normalized with underscores for code usage)
  * @return bool Success flag
  */
-static bool
-create_example_implementation(const std::filesystem::path &project_path,
-                              const std::string &project_name) {
+static bool create_example_implementation(const std::filesystem::path &project_path,
+                                          const std::string &project_name) {
   std::filesystem::path src_dir = project_path / "src";
 
   if (!std::filesystem::exists(src_dir)) {
@@ -933,14 +945,13 @@ create_example_implementation(const std::filesystem::path &project_path,
 
   example_cpp << "/**\n";
   example_cpp << " * @file example.cpp\n";
-  example_cpp << " * @brief Implementation of example functions for "
-              << project_name << "\n";
+  example_cpp << " * @brief Implementation of example functions for " << project_name << "\n";
   example_cpp << " */\n\n";
   example_cpp << "#include \"" << project_name << "/example.hpp\"\n\n";
   example_cpp << "namespace " << project_name << " {\n\n";
   example_cpp << "const char* get_example_message() {\n";
-  example_cpp << "    return \"This is an example function from the "
-              << project_name << " library.\";\n";
+  example_cpp << "    return \"This is an example function from the " << project_name
+              << " library.\";\n";
   example_cpp << "}\n\n";
   example_cpp << "} // namespace " << project_name << "\n";
 
@@ -981,25 +992,24 @@ static bool create_test_files(const std::filesystem::path &project_path,
     if (!test_example.is_open()) {
       return false;
     }
-    test_example
-        << "/**\n"
-        << " * @file test_example.cpp\n"
-        << " * @brief Example tests for " << project_name << "\n"
-        << " *\n"
-        << " * Run with: `cforge test`. cforge provides the test framework —\n"
-        << " * no main() needed, no extra config, no external dependencies.\n"
-        << " */\n\n"
-        << "#include \"test_framework.h\"\n\n"
-        << "TEST(Example, BasicAssertions) {\n"
-        << "    cf_assert(1 + 1 == 2);\n"
-        << "    cf_assert_eq(2 * 3, 6);\n"
-        << "    return 0;\n"
-        << "}\n\n"
-        << "TEST(Example, StringCompare) {\n"
-        << "    const char *a = \"hello\";\n"
-        << "    cf_assert(a != nullptr);\n"
-        << "    return 0;\n"
-        << "}\n";
+    test_example << "/**\n"
+                 << " * @file test_example.cpp\n"
+                 << " * @brief Example tests for " << project_name << "\n"
+                 << " *\n"
+                 << " * Run with: `cforge test`. cforge provides the test framework —\n"
+                 << " * no main() needed, no extra config, no external dependencies.\n"
+                 << " */\n\n"
+                 << "#include \"test_framework.h\"\n\n"
+                 << "TEST(Example, BasicAssertions) {\n"
+                 << "    cf_assert(1 + 1 == 2);\n"
+                 << "    cf_assert_eq(2 * 3, 6);\n"
+                 << "    return 0;\n"
+                 << "}\n\n"
+                 << "TEST(Example, StringCompare) {\n"
+                 << "    const char *a = \"hello\";\n"
+                 << "    cf_assert(a != nullptr);\n"
+                 << "    return 0;\n"
+                 << "}\n";
     test_example.close();
   }
 
@@ -1042,15 +1052,14 @@ static bool create_license_file(const std::filesystem::path &project_path,
   }
 
   // Get current year for the license
-  auto now = std::chrono::system_clock::now();
-  std::time_t current_time = std::chrono::system_clock::to_time_t(now);
-  std::tm *time_info = std::localtime(&current_time);
+  auto now                  = std::chrono::system_clock::now();
+  std::time_t current_time  = std::chrono::system_clock::to_time_t(now);
+  std::tm *time_info        = std::localtime(&current_time);
   cforge_int_t current_year = time_info->tm_year + 1900;
 
   if (license_type == "MIT") {
     license << "MIT License\n\n";
-    license << "Copyright (c) " << current_year << " " << project_name
-            << "\n\n";
+    license << "Copyright (c) " << current_year << " " << project_name << "\n\n";
     license << "Permission is hereby granted, free of charge, to any person "
                "obtaining a copy\n";
     license << "of this software and associated documentation files (the "
@@ -1100,8 +1109,7 @@ static bool create_license_file(const std::filesystem::path &project_path,
     license << "limitations under the License.\n";
   } else if (license_type == "GPL-3.0") {
     license << project_name << "\n";
-    license << "Copyright (C) " << current_year << " " << project_name
-            << "\n\n";
+    license << "Copyright (C) " << current_year << " " << project_name << "\n\n";
     license << "This program is free software: you can redistribute it and/or "
                "modify\n";
     license << "it under the terms of the GNU General Public License as "
@@ -1122,8 +1130,7 @@ static bool create_license_file(const std::filesystem::path &project_path,
                "<https://www.gnu.org/licenses/>.\n";
   } else if (license_type == "BSD-2-Clause") {
     license << "BSD 2-Clause License\n\n";
-    license << "Copyright (c) " << current_year << ", " << project_name
-            << "\n\n";
+    license << "Copyright (c) " << current_year << ", " << project_name << "\n\n";
     license << "Redistribution and use in source and binary forms, with or "
                "without\n";
     license << "modification, are permitted provided that the following "
@@ -1159,8 +1166,7 @@ static bool create_license_file(const std::filesystem::path &project_path,
   } else {
     // Fallback to MIT
     license << "MIT License\n\n";
-    license << "Copyright (c) " << current_year << " " << project_name
-            << "\n";
+    license << "Copyright (c) " << current_year << " " << project_name << "\n";
   }
 
   license.close();
@@ -1174,7 +1180,9 @@ static bool create_license_file(const std::filesystem::path &project_path,
  *
  * @return bool True if git is available
  */
-static bool is_git_available() { return cforge::is_command_available("git"); }
+static bool is_git_available() {
+  return cforge::is_command_available("git");
+}
 
 /**
  * @brief Init a new git repository if requested and git is available
@@ -1185,18 +1193,17 @@ static bool is_git_available() { return cforge::is_command_available("git"); }
  * requested)
  */
 [[maybe_unused]] static bool init_git_repository(const std::filesystem::path &project_path,
-                                bool verbose) {
+                                                 bool verbose) {
   // If Git initialization wasn't explicitly requested, just return success
   if (!verbose) {
-    cforge::logger::print_action("Skipped",
-                         "git initialization (use --git flag to enable)");
+    cforge::logger::print_action("Skipped", "git initialization (use --git flag to enable)");
     return true;
   }
 
   // First check if git is available
   if (!is_git_available()) {
     cforge::logger::print_warning("Git not found in PATH, skipping git initialization");
-    return true; // Not critical for project creation
+    return true;  // Not critical for project creation
   }
 
   cforge::logger::print_action("Initializing", "git repository");
@@ -1204,8 +1211,7 @@ static bool is_git_available() { return cforge::is_command_available("git"); }
   std::vector<std::string> git_args = {"init"};
 
   // Use a shorter timeout for git init
-  bool result =
-      cforge::execute_tool("git", git_args, project_path.string(), "Git", verbose, 20);
+  bool result = cforge::execute_tool("git", git_args, project_path.string(), "Git", verbose, 20);
 
   if (result) {
     cforge::logger::created("git repository");
@@ -1216,31 +1222,27 @@ static bool is_git_available() { return cforge::is_command_available("git"); }
 
       // Add all files
       std::vector<std::string> git_add_args = {"add", "."};
-      bool add_result = cforge::execute_tool("git", git_add_args, project_path.string(),
-                                     "Git add", verbose, 10);
+      bool add_result =
+          cforge::execute_tool("git", git_add_args, project_path.string(), "Git add", verbose, 10);
 
       if (add_result) {
         // Commit
-        std::vector<std::string> git_commit_args = {"commit", "-m",
-                                                    "Initial commit"};
-        bool commit_result =
-            cforge::execute_tool("git", git_commit_args, project_path.string(),
-                         "Git commit", verbose, 10);
+        std::vector<std::string> git_commit_args = {"commit", "-m", "Initial commit"};
+        bool commit_result                       = cforge::execute_tool(
+            "git", git_commit_args, project_path.string(), "Git commit", verbose, 10);
 
         if (commit_result) {
           cforge::logger::created("initial commit");
         } else {
-          cforge::logger::print_warning(
-              "Failed to create initial commit. This is not critical");
+          cforge::logger::print_warning("Failed to create initial commit. This is not critical");
         }
       } else {
-        cforge::logger::print_warning(
-            "Failed to add files to git. This is not critical");
+        cforge::logger::print_warning("Failed to add files to git. This is not critical");
       }
     }
   } else {
     cforge::logger::print_warning("Failed to initialize git repository. This is not "
-                          "critical for project creation");
+                                  "critical for project creation");
   }
 
   // Return true regardless of git initialization result
@@ -1284,16 +1286,14 @@ static std::string normalize_project_name(const std::string &name) {
  * @param cpp_standard C++ standard
  * @return bool Success flag
  */
-static bool
-generate_workspace_cmakelists(const std::filesystem::path &workspace_dir,
-                              const std::string &workspace_name,
-                              const std::vector<std::string> &project_names,
-                              const std::string &cpp_standard) {
+static bool generate_workspace_cmakelists(const std::filesystem::path &workspace_dir,
+                                          const std::string &workspace_name,
+                                          const std::vector<std::string> &project_names,
+                                          const std::string &cpp_standard) {
   std::filesystem::path cmakelists_path = workspace_dir / "CMakeLists.txt";
 
   if (std::filesystem::exists(cmakelists_path) && !g_force_overwrite) {
-    cforge::logger::print_warning(
-        "Workspace-level CMakeLists.txt already exists, skipping");
+    cforge::logger::print_warning("Workspace-level CMakeLists.txt already exists, skipping");
     return true;
   } else if (std::filesystem::exists(cmakelists_path) && g_force_overwrite) {
     cforge::logger::print_action("Overwriting", "workspace-level CMakeLists.txt");
@@ -1301,8 +1301,8 @@ generate_workspace_cmakelists(const std::filesystem::path &workspace_dir,
 
   std::ofstream cmakelists(cmakelists_path);
   if (!cmakelists.is_open()) {
-    cforge::logger::print_error("Failed to create workspace CMakeLists.txt at: " +
-                        cmakelists_path.string());
+    cforge::logger::print_error("Failed to create workspace CMakeLists.txt at: "
+                                + cmakelists_path.string());
     return false;
   }
 
@@ -1323,8 +1323,7 @@ generate_workspace_cmakelists(const std::filesystem::path &workspace_dir,
   cmakelists << "# Set output directories for the workspace\n";
   cmakelists << "set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)\n";
   cmakelists << "set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)\n";
-  cmakelists
-      << "set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)\n\n";
+  cmakelists << "set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)\n\n";
 
   cmakelists << "# Enable testing for the workspace\n";
   cmakelists << "enable_testing()\n\n";
@@ -1336,14 +1335,14 @@ generate_workspace_cmakelists(const std::filesystem::path &workspace_dir,
   cmakelists << "\n";
 
   cmakelists << "# Print workspace configuration details\n";
-  cmakelists << "message(STATUS \"Configured workspace: " << workspace_name
-             << "\")\n";
+  cmakelists << "message(STATUS \"Configured workspace: " << workspace_name << "\")\n";
   cmakelists << "message(STATUS \"  - C++ Standard: ${CMAKE_CXX_STANDARD}\")\n";
   cmakelists << "message(STATUS \"  - Build Type: ${CMAKE_BUILD_TYPE}\")\n";
   cmakelists << "message(STATUS \"  - Projects: ";
   for (cforge_size_t i = 0; i < project_names.size(); ++i) {
-    if (i > 0)
+    if (i > 0) {
       cmakelists << ", ";
+    }
     cmakelists << project_names[i];
   }
   cmakelists << "\")\n";
@@ -1367,11 +1366,12 @@ generate_workspace_cmakelists(const std::filesystem::path &workspace_dir,
  */
 static bool create_project(const std::filesystem::path &project_path,
                            const std::string &project_name,
-                           const std::string &cpp_version, bool /*with_git*/,
+                           const std::string &cpp_version,
+                           bool /*with_git*/,
                            bool with_tests,
                            const std::string & /*cmake_preset*/ = "",
-                           const std::string & /*build_type*/ = "Debug",
-                           const std::string &license_type = "MIT") {
+                           const std::string & /*build_type*/   = "Debug",
+                           const std::string &license_type      = "MIT") {
   try {
     // Create the project directory if it doesn't exist
     if (!std::filesystem::exists(project_path)) {
@@ -1392,15 +1392,13 @@ static bool create_project(const std::filesystem::path &project_path,
     }
 
     // Create CMakeLists.txt
-    if (!create_cmakelists(project_path, project_name, cpp_version,
-                           with_tests)) {
+    if (!create_cmakelists(project_path, project_name, cpp_version, with_tests)) {
       cforge::logger::print_error("Failed to create CMakeLists.txt");
       return false;
     }
 
     // Create cforge.toml configuration
-    if (!create_cforge_toml(project_path, project_name, cpp_version,
-                            with_tests)) {
+    if (!create_cforge_toml(project_path, project_name, cpp_version, with_tests)) {
       cforge::logger::print_error("Failed to create cforge.toml");
       return false;
     }
@@ -1462,48 +1460,45 @@ cforge_int_t cforge_cmd_init(const cforge_context_t *ctx) {
 
   try {
     // Check if a workspace configuration file exists in the current directory
-    std::filesystem::path workspace_file_path =
-        std::filesystem::path(ctx->working_dir) / WORKSPACE_FILE;
+    std::filesystem::path workspace_file_path = std::filesystem::path(ctx->working_dir)
+                                              / WORKSPACE_FILE;
     bool workspace_file_exists = std::filesystem::exists(workspace_file_path);
 
     // Default project and workspace names - use current directory name as
     // default project name
-    std::string project_name =
-        std::filesystem::path(ctx->working_dir).filename().string();
-    bool is_workspace = false;
-    bool from_file = false;
+    std::string project_name = std::filesystem::path(ctx->working_dir).filename().string();
+    bool is_workspace        = false;
+    bool from_file           = false;
     std::string workspace_name;
     std::vector<std::string> project_names;
-    std::string cpp_standard = "17";
-    bool with_tests = false;
-    bool with_git = false;
+    std::string cpp_standard  = "17";
+    bool with_tests           = false;
+    bool with_git             = false;
     std::string template_name = "executable";
-    bool has_projects_flag = false;
+    bool has_projects_flag    = false;
 
     // Interactive mode tracking
-    bool yes_flag = false;
+    bool yes_flag            = false;
     std::string license_type = "MIT";
-    bool has_name_flag = false;
-    bool has_template_flag = false;
-    bool has_cpp_flag = false;
-    bool has_tests_flag = false;
-    bool has_git_flag = false;
-    bool has_license_flag = false;
+    bool has_name_flag       = false;
+    bool has_template_flag   = false;
+    bool has_cpp_flag        = false;
+    bool has_tests_flag      = false;
+    bool has_git_flag        = false;
+    bool has_license_flag    = false;
 
     // Option arrays for interactive prompts
-    static const std::vector<std::string> template_options =
-        {"executable", "static-lib", "shared-library", "header-only",
-         "embedded"};
-    static const std::vector<std::string> standard_options =
-        {"17", "11", "14", "20", "23"};
-    static const std::vector<std::string> license_options =
-        {"MIT", "Apache-2.0", "GPL-3.0", "BSD-2-Clause", "None"};
+    static const std::vector<std::string> template_options = {
+        "executable", "static-lib", "shared-library", "header-only", "embedded"};
+    static const std::vector<std::string> standard_options = {"17", "11", "14", "20", "23"};
+    static const std::vector<std::string> license_options  = {
+        "MIT", "Apache-2.0", "GPL-3.0", "BSD-2-Clause", "None"};
 
     // Process command line arguments - improved parsing
     if (ctx->args.args) {
       // First check for positional project name (before any flag)
       if (ctx->args.arg_count > 0 && ctx->args.args[0][0] != '-') {
-        project_name = ctx->args.args[0];
+        project_name  = ctx->args.args[0];
         has_name_flag = true;
       }
 
@@ -1522,14 +1517,14 @@ cforge_int_t cforge_cmd_init(const cforge_context_t *ctx) {
         // Handle --name or -n parameter
         else if (arg == "--name" || arg == "-n") {
           if (i + 1 < ctx->args.arg_count && ctx->args.args[i + 1][0] != '-') {
-            project_name = ctx->args.args[i + 1];
+            project_name  = ctx->args.args[i + 1];
             has_name_flag = true;
-            i++; // Skip the value in next iteration
+            i++;  // Skip the value in next iteration
           }
         }
         // Handle --name=VALUE format
         else if (arg.compare(0, 7, "--name=") == 0) {
-          project_name = arg.substr(7);
+          project_name  = arg.substr(7);
           has_name_flag = true;
         }
         // Handle --workspace or -w parameter
@@ -1539,16 +1534,15 @@ cforge_int_t cforge_cmd_init(const cforge_context_t *ctx) {
           // Check if next argument exists and is a value (not a flag)
           if (i + 1 < ctx->args.arg_count && ctx->args.args[i + 1][0] != '-') {
             workspace_name = ctx->args.args[i + 1];
-            i++; // Skip the value in next iteration
+            i++;  // Skip the value in next iteration
           } else {
             // Use current directory name if no name provided
-            workspace_name =
-                std::filesystem::path(ctx->working_dir).filename().string();
+            workspace_name = std::filesystem::path(ctx->working_dir).filename().string();
           }
         }
         // Handle --workspace=VALUE format
         else if (arg.compare(0, 12, "--workspace=") == 0) {
-          is_workspace = true;
+          is_workspace   = true;
           workspace_name = arg.substr(12);
         }
         // Handle --projects or -p parameter
@@ -1558,18 +1552,16 @@ cforge_int_t cforge_cmd_init(const cforge_context_t *ctx) {
           // If the next argument is a flag or end of args, use empty project
           // list
           if (i + 1 >= ctx->args.arg_count || ctx->args.args[i + 1][0] == '-') {
-            cforge::logger::print_warning(
-                "--projects flag provided but no projects specified");
+            cforge::logger::print_warning("--projects flag provided but no projects specified");
             continue;
           }
 
           // Check if it's a comma-separated list
-          if (std::string(ctx->args.args[i + 1]).find(',') !=
-              std::string::npos) {
+          if (std::string(ctx->args.args[i + 1]).find(',') != std::string::npos) {
             // Parse comma-separated list
             std::string projects_arg = ctx->args.args[i + 1];
-            project_names = parse_project_list(projects_arg);
-            i++; // Skip the list in next iteration
+            project_names            = parse_project_list(projects_arg);
+            i++;  // Skip the list in next iteration
           } else {
             // Collect all arguments until next flag
             cforge_int_t j = i + 1;
@@ -1577,21 +1569,21 @@ cforge_int_t cforge_cmd_init(const cforge_context_t *ctx) {
               project_names.push_back(ctx->args.args[j]);
               j++;
             }
-            i = j - 1; // Update index to the last project name
+            i = j - 1;  // Update index to the last project name
           }
         }
         // Handle --projects=VALUE format
         else if (arg.compare(0, 11, "--projects=") == 0) {
-          has_projects_flag = true;
+          has_projects_flag         = true;
           std::string projects_list = arg.substr(11);
-          project_names = parse_project_list(projects_list);
+          project_names             = parse_project_list(projects_list);
         }
         // Handle --cpp or -c parameter for C++ standard
         else if (arg == "--cpp" || arg == "-c") {
           if (i + 1 < ctx->args.arg_count) {
             cpp_standard = ctx->args.args[i + 1];
             has_cpp_flag = true;
-            i++; // Skip the value in next iteration
+            i++;  // Skip the value in next iteration
           }
         }
         // Handle --cpp=VALUE format
@@ -1601,25 +1593,25 @@ cforge_int_t cforge_cmd_init(const cforge_context_t *ctx) {
         }
         // Handle --with-tests or -t flag
         else if (arg == "--with-tests" || arg == "-t") {
-          with_tests = true;
+          with_tests     = true;
           has_tests_flag = true;
         }
         // Handle --with-git or -g flag
         else if (arg == "--with-git" || arg == "-g") {
-          with_git = true;
+          with_git     = true;
           has_git_flag = true;
         }
         // Handle --template parameter
         else if (arg == "--template") {
           if (i + 1 < ctx->args.arg_count) {
-            template_name = ctx->args.args[i + 1];
+            template_name     = ctx->args.args[i + 1];
             has_template_flag = true;
-            i++; // Skip the value in next iteration
+            i++;  // Skip the value in next iteration
           }
         }
         // Handle --template=VALUE format
         else if (arg.compare(0, 11, "--template=") == 0) {
-          template_name = arg.substr(11);
+          template_name     = arg.substr(11);
           has_template_flag = true;
         }
         // Handle -y / --yes flag (accept all defaults)
@@ -1630,24 +1622,25 @@ cforge_int_t cforge_cmd_init(const cforge_context_t *ctx) {
         else if (arg == "--license") {
           if (i + 1 < ctx->args.arg_count) {
             std::string raw_license = ctx->args.args[++i];
-            has_license_flag = true;
-            auto to_lower_fn = [](std::string s) {
+            has_license_flag        = true;
+            auto to_lower_fn        = [](std::string s) {
               std::transform(s.begin(), s.end(), s.begin(), ::tolower);
               return s;
             };
             std::string raw_lower = to_lower_fn(raw_license);
-            bool valid = false;
+            bool valid            = false;
             for (const auto &opt : license_options) {
               if (to_lower_fn(opt) == raw_lower) {
-                license_type = opt; // Store canonical form
-                valid = true;
+                license_type = opt;  // Store canonical form
+                valid        = true;
                 break;
               }
             }
             if (!valid) {
               cforge::logger::print_error(
-                  "Invalid license type: " + raw_license +
-                  ". Valid values: MIT, Apache-2.0, GPL-3.0, BSD-2-Clause, None");
+                  "Invalid license type: " + raw_license
+                  + ". Valid values: MIT, Apache-2.0, GPL-3.0, BSD-2-Clause, "
+                    "None");
               return 1;
             }
           }
@@ -1655,24 +1648,24 @@ cforge_int_t cforge_cmd_init(const cforge_context_t *ctx) {
         // Handle --license=VALUE format
         else if (arg.compare(0, 10, "--license=") == 0) {
           std::string raw_license = arg.substr(10);
-          has_license_flag = true;
-          auto to_lower_fn = [](std::string s) {
+          has_license_flag        = true;
+          auto to_lower_fn        = [](std::string s) {
             std::transform(s.begin(), s.end(), s.begin(), ::tolower);
             return s;
           };
           std::string raw_lower = to_lower_fn(raw_license);
-          bool valid = false;
+          bool valid            = false;
           for (const auto &opt : license_options) {
             if (to_lower_fn(opt) == raw_lower) {
               license_type = opt;
-              valid = true;
+              valid        = true;
               break;
             }
           }
           if (!valid) {
             cforge::logger::print_error(
-                "Invalid license type: " + raw_license +
-                ". Valid values: MIT, Apache-2.0, GPL-3.0, BSD-2-Clause, None");
+                "Invalid license type: " + raw_license
+                + ". Valid values: MIT, Apache-2.0, GPL-3.0, BSD-2-Clause, None");
             return 1;
           }
         }
@@ -1683,33 +1676,32 @@ cforge_int_t cforge_cmd_init(const cforge_context_t *ctx) {
     g_template_name = template_name;
 
     // Interactive mode: only for single-project, non-workspace flows with a TTY
-    bool needs_interactive = cforge::is_interactive_terminal() && !yes_flag &&
-                             !is_workspace && !from_file && !has_projects_flag;
+    bool needs_interactive = cforge::is_interactive_terminal() && !yes_flag && !is_workspace
+                          && !from_file && !has_projects_flag;
 
     if (needs_interactive) {
       cforge::logger::print_action("Creating", "new project");
       cforge::logger::print_blank();
 
-      if (!has_name_flag)
-        project_name =
-            cforge::prompt_text("Project name", project_name);
+      if (!has_name_flag) {
+        project_name = cforge::prompt_text("Project name", project_name);
+      }
       if (!has_template_flag) {
-        int idx =
-            cforge::prompt_select("Template", template_options, 0);
+        int idx       = cforge::prompt_select("Template", template_options, 0);
         template_name = template_options[idx];
       }
       if (!has_cpp_flag) {
-        int idx =
-            cforge::prompt_select("C++ standard", standard_options, 0);
+        int idx      = cforge::prompt_select("C++ standard", standard_options, 0);
         cpp_standard = standard_options[idx];
       }
-      if (!has_tests_flag)
+      if (!has_tests_flag) {
         with_tests = cforge::prompt_confirm("Include tests", true);
-      if (!has_git_flag)
+      }
+      if (!has_git_flag) {
         with_git = cforge::prompt_confirm("Initialize git", true);
+      }
       if (!has_license_flag) {
-        int idx =
-            cforge::prompt_select("License", license_options, 0);
+        int idx      = cforge::prompt_select("License", license_options, 0);
         license_type = license_options[idx];
       }
 
@@ -1757,8 +1749,8 @@ cforge_int_t cforge_cmd_init(const cforge_context_t *ctx) {
       // Load the workspace configuration
       cforge::workspace_config config;
       if (!config.load(workspace_file_path.string())) {
-        cforge::logger::print_error("Failed to load workspace configuration from " +
-                            workspace_file_path.string());
+        cforge::logger::print_error("Failed to load workspace configuration from "
+                                    + workspace_file_path.string());
         return 1;
       }
 
@@ -1773,23 +1765,20 @@ cforge_int_t cforge_cmd_init(const cforge_context_t *ctx) {
         cforge::logger::creating(project.name);
 
         // Create the project directory
-        std::filesystem::path project_dir =
-            std::filesystem::path(ctx->working_dir) / project.path;
+        std::filesystem::path project_dir = std::filesystem::path(ctx->working_dir) / project.path;
         if (!std::filesystem::exists(project_dir)) {
           try {
             std::filesystem::create_directories(project_dir);
           } catch (const std::exception &ex) {
-            cforge::logger::print_error("Failed to create project directory: " +
-                                project_dir.string() + " Error: " + ex.what());
+            cforge::logger::print_error("Failed to create project directory: "
+                                        + project_dir.string() + " Error: " + ex.what());
             continue;
           }
         }
 
         // Create the project files
-        if (!create_project(project_dir, project.name, cpp_standard, with_git,
-                            with_tests)) {
-          cforge::logger::print_error("Failed to create project '" + project.name +
-                              "'");
+        if (!create_project(project_dir, project.name, cpp_standard, with_git, with_tests)) {
+          cforge::logger::print_error("Failed to create project '" + project.name + "'");
           continue;
         }
 
@@ -1815,13 +1804,12 @@ cforge_int_t cforge_cmd_init(const cforge_context_t *ctx) {
           try {
             bool created = std::filesystem::create_directories(workspace_dir);
             if (!created) {
-              cforge::logger::print_error(
-                  "Failed to create workspace directory (returned false)");
+              cforge::logger::print_error("Failed to create workspace directory (returned false)");
               return 1;
             }
           } catch (const std::exception &ex) {
-            cforge::logger::print_error("Exception creating workspace directory: " +
-                                std::string(ex.what()));
+            cforge::logger::print_error("Exception creating workspace directory: "
+                                        + std::string(ex.what()));
             return 1;
           }
         }
@@ -1832,17 +1820,16 @@ cforge_int_t cforge_cmd_init(const cforge_context_t *ctx) {
         std::string test_path = (workspace_dir / "cforge_test_file").string();
         std::ofstream test_file(test_path);
         if (!test_file.is_open()) {
-          cforge::logger::print_error("Workspace directory is not writable: " +
-                              workspace_dir.string());
-          cforge::logger::print_error(
-              "Please check permissions or try a different location");
+          cforge::logger::print_error("Workspace directory is not writable: "
+                                      + workspace_dir.string());
+          cforge::logger::print_error("Please check permissions or try a different location");
           return 1;
         }
         test_file.close();
         std::filesystem::remove(test_path);
       } catch (const std::exception &ex) {
-        cforge::logger::print_error("Failed to write to workspace directory: " +
-                            std::string(ex.what()));
+        cforge::logger::print_error("Failed to write to workspace directory: "
+                                    + std::string(ex.what()));
         return 1;
       }
 
@@ -1850,35 +1837,31 @@ cforge_int_t cforge_cmd_init(const cforge_context_t *ctx) {
 
       // Create workspace configuration file directly
       if (std::filesystem::exists(config_path) && !g_force_overwrite) {
-        cforge::logger::print_warning("Workspace configuration file '" +
-                              config_path.string() +
-                              "' already exists. Skipping creation");
+        cforge::logger::print_warning("Workspace configuration file '" + config_path.string()
+                                      + "' already exists. Skipping creation");
       } else {
         if (std::filesystem::exists(config_path) && g_force_overwrite) {
           cforge::logger::print_action("Overwriting", "workspace configuration");
         }
         std::ofstream config_file(config_path);
         if (!config_file.is_open()) {
-          cforge::logger::print_error(
-              "Failed to create workspace configuration file: " +
-              config_path.string());
+          cforge::logger::print_error("Failed to create workspace configuration file: "
+                                      + config_path.string());
           return 1;
         }
         // Write a basic TOML configuration
         config_file << "[workspace]\n";
         config_file << "name = \"" << workspace_name << "\"\n";
-        config_file
-            << "description = \"A C++ workspace created with cforge\"\n\n";
+        config_file << "description = \"A C++ workspace created with cforge\"\n\n";
 
         // Write projects as array-of-tables
         for (cforge_size_t i = 0; i < project_names.size(); ++i) {
           const auto &proj_name = project_names[i];
-          bool is_startup = (i == 0); // first project marked startup
+          bool is_startup       = (i == 0);  // first project marked startup
           config_file << "[[workspace.project]]\n";
           config_file << "name    = \"" << proj_name << "\"\n";
           config_file << "path    = \"" << proj_name << "\"\n";
-          config_file << "startup = " << (is_startup ? "true" : "false")
-                      << "\n\n";
+          config_file << "startup = " << (is_startup ? "true" : "false") << "\n\n";
         }
         // Optionally record main_project fallback
         if (!project_names.empty()) {
@@ -1890,10 +1873,9 @@ cforge_int_t cforge_cmd_init(const cforge_context_t *ctx) {
       }
 
       // Generate workspace-level CMakeLists.txt
-      if (!generate_workspace_cmakelists(workspace_dir, workspace_name,
-                                         project_names, cpp_standard)) {
-        cforge::logger::print_warning(
-            "Failed to generate workspace-level CMakeLists.txt");
+      if (!generate_workspace_cmakelists(
+              workspace_dir, workspace_name, project_names, cpp_standard)) {
+        cforge::logger::print_warning("Failed to generate workspace-level CMakeLists.txt");
         // Continue anyway, not critical
       }
 
@@ -1905,8 +1887,7 @@ cforge_int_t cforge_cmd_init(const cforge_context_t *ctx) {
         cforge::logger::creating(proj_name);
 
         // Create the project with detailed logging
-        if (!create_project(project_dir, proj_name, cpp_standard, with_git,
-                            with_tests)) {
+        if (!create_project(project_dir, proj_name, cpp_standard, with_git, with_tests)) {
           cforge::logger::print_error("Failed to create project '" + proj_name + "'");
           all_projects_success = false;
           // Continue with other projects instead of stopping
@@ -1919,8 +1900,8 @@ cforge_int_t cforge_cmd_init(const cforge_context_t *ctx) {
       if (all_projects_success) {
         cforge::logger::finished(workspace_name);
       } else {
-        cforge::logger::print_warning("Workspace '" + workspace_name +
-                              "' created with some errors");
+        cforge::logger::print_warning("Workspace '" + workspace_name
+                                      + "' created with some errors");
       }
 
       return all_projects_success ? 0 : 1;
@@ -1933,30 +1914,29 @@ cforge_int_t cforge_cmd_init(const cforge_context_t *ctx) {
         cforge::logger::creating(proj_name);
 
         // Create the project in a new directory named after the project
-        std::filesystem::path project_dir =
-            std::filesystem::path(ctx->working_dir) / proj_name;
+        std::filesystem::path project_dir = std::filesystem::path(ctx->working_dir) / proj_name;
 
         // Create the directory if it doesn't exist
         if (!std::filesystem::exists(project_dir)) {
           try {
             bool created = std::filesystem::create_directories(project_dir);
             if (!created) {
-              cforge::logger::print_error("Failed to create project directory for '" +
-                                  proj_name + "' (returned false)");
+              cforge::logger::print_error("Failed to create project directory for '" + proj_name
+                                          + "' (returned false)");
               all_projects_success = false;
               continue;
             }
           } catch (const std::exception &ex) {
-            cforge::logger::print_error("Exception creating project directory for '" +
-                                proj_name + "': " + std::string(ex.what()));
+            cforge::logger::print_error("Exception creating project directory for '" + proj_name
+                                        + "': " + std::string(ex.what()));
             all_projects_success = false;
             continue;
           }
         }
 
         // Create the project files
-        if (!create_project(project_dir, proj_name, cpp_standard, with_git,
-                            with_tests, "", "Debug")) {
+        if (!create_project(
+                project_dir, proj_name, cpp_standard, with_git, with_tests, "", "Debug")) {
           cforge::logger::print_error("Failed to create project '" + proj_name + "'");
           all_projects_success = false;
           continue;
@@ -1989,13 +1969,12 @@ cforge_int_t cforge_cmd_init(const cforge_context_t *ctx) {
           try {
             bool created = std::filesystem::create_directories(project_dir);
             if (!created) {
-              cforge::logger::print_error(
-                  "Failed to create project directory (returned false)");
+              cforge::logger::print_error("Failed to create project directory (returned false)");
               return 1;
             }
           } catch (const std::exception &ex) {
-            cforge::logger::print_error("Exception creating project directory: " +
-                                std::string(ex.what()));
+            cforge::logger::print_error("Exception creating project directory: "
+                                        + std::string(ex.what()));
             return 1;
           }
         }
@@ -2010,27 +1989,30 @@ cforge_int_t cforge_cmd_init(const cforge_context_t *ctx) {
         std::string test_path = (project_dir / "cforge_test_file").string();
         std::ofstream test_file(test_path);
         if (!test_file.is_open()) {
-          cforge::logger::print_error("Directory is not writable: " +
-                              project_dir.string());
-          cforge::logger::print_error(
-              "Please check permissions or try a different location");
+          cforge::logger::print_error("Directory is not writable: " + project_dir.string());
+          cforge::logger::print_error("Please check permissions or try a different location");
           return 1;
         }
         test_file.close();
         std::filesystem::remove(test_path);
       } catch (const std::exception &ex) {
-        cforge::logger::print_error("Failed to write to directory: " +
-                            std::string(ex.what()));
+        cforge::logger::print_error("Failed to write to directory: " + std::string(ex.what()));
         return 1;
       }
 
       // Default build type and CMake preset
-      std::string build_type = "Debug";
+      std::string build_type   = "Debug";
       std::string cmake_preset = "";
 
       // Create the project with detailed logging
-      if (!create_project(project_dir, project_name, cpp_standard, with_git,
-                          with_tests, cmake_preset, build_type, license_type)) {
+      if (!create_project(project_dir,
+                          project_name,
+                          cpp_standard,
+                          with_git,
+                          with_tests,
+                          cmake_preset,
+                          build_type,
+                          license_type)) {
         cforge::logger::print_error("Failed to create project '" + project_name + "'");
         return 1;
       }
@@ -2040,8 +2022,7 @@ cforge_int_t cforge_cmd_init(const cforge_context_t *ctx) {
 
     return 0;
   } catch (const std::exception &ex) {
-    cforge::logger::print_error("Failed to initialize project: " +
-                        std::string(ex.what()));
+    cforge::logger::print_error("Failed to initialize project: " + std::string(ex.what()));
     return 1;
   }
 }

@@ -11,12 +11,12 @@
 #ifndef CFORGE_CONFIG_RESOLVER_HPP
 #define CFORGE_CONFIG_RESOLVER_HPP
 
+#include "core/portable_flags.hpp"
+#include "core/toml_reader.hpp"
+
 #include <map>
 #include <string>
 #include <vector>
-
-#include "core/toml_reader.hpp"
-#include "core/portable_flags.hpp"
 
 namespace cforge {
 
@@ -157,25 +157,32 @@ public:
 
   /**
    * @brief Resolve macOS frameworks
-   * @return List of frameworks (empty on non-macOS)
+   * @return List of frameworks
+   * (empty on non-macOS)
    */
   std::vector<std::string> resolve_frameworks() const;
 
   /**
    * @brief Resolve CMake arguments for a given build configuration
+   *
    * @param build_config The build configuration name
-   * @return Merged list of CMake arguments
+   * @return Merged list
+   * of CMake arguments
    */
   std::vector<std::string> resolve_cmake_args(const std::string &build_config = "") const;
 
   /**
    * @brief Resolve linker options for a given build configuration
    *
-   * Merges linker options from multiple sources with priority:
-   * linker < linker.platform < linker.compiler < linker.platform.compiler < linker.config
+
+   * * Merges linker options from multiple sources with priority:
+   * linker <
+   * linker.platform < linker.compiler < linker.platform.compiler <
+   * linker.config
    *
    * @param build_config The build configuration name
-   * @return Merged linker options
+
+   * * @return Merged linker options
    */
   linker_options resolve_linker_options(const std::string &build_config = "") const;
 
@@ -211,8 +218,7 @@ private:
   /**
    * @brief Merge string arrays (append unique values)
    */
-  void merge_arrays(std::vector<std::string> &target,
-                   const std::vector<std::string> &source) const;
+  void merge_arrays(std::vector<std::string> &target, const std::vector<std::string> &source) const;
 
   /**
    * @brief Get values from a section key
@@ -220,6 +226,6 @@ private:
   std::vector<std::string> get_section_array(const std::string &key) const;
 };
 
-} // namespace cforge
+}  // namespace cforge
 
-#endif // CFORGE_CONFIG_RESOLVER_HPP
+#endif  // CFORGE_CONFIG_RESOLVER_HPP

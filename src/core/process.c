@@ -3,11 +3,11 @@
  * @brief Implementation of process and command execution utilities
  */
 
+#include "core/process.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-#include "core/process.h"
 
 // Platform-specific includes
 #ifdef _WIN32
@@ -29,22 +29,22 @@ extern "C" {
 // String representation of process status
 cforge_cstring_t cforge_process_status_str(cforge_process_status_t status) {
   switch (status) {
-  case CFORGE_PROC_SUCCESS:
-    return "Success";
-  case CFORGE_PROC_RUNNING:
-    return "Running";
-  case CFORGE_PROC_ERROR_START:
-    return "Error starting process";
-  case CFORGE_PROC_ERROR_WAIT:
-    return "Error waiting for process";
-  case CFORGE_PROC_ERROR_TIMEOUT:
-    return "Process timed out";
-  case CFORGE_PROC_ERROR_SIGNAL:
-    return "Process terminated by signal";
-  case CFORGE_PROC_ERROR_NONZERO:
-    return "Process exited with non-zero code";
-  default:
-    return "Unknown status";
+    case CFORGE_PROC_SUCCESS:
+      return "Success";
+    case CFORGE_PROC_RUNNING:
+      return "Running";
+    case CFORGE_PROC_ERROR_START:
+      return "Error starting process";
+    case CFORGE_PROC_ERROR_WAIT:
+      return "Error waiting for process";
+    case CFORGE_PROC_ERROR_TIMEOUT:
+      return "Process timed out";
+    case CFORGE_PROC_ERROR_SIGNAL:
+      return "Process terminated by signal";
+    case CFORGE_PROC_ERROR_NONZERO:
+      return "Process exited with non-zero code";
+    default:
+      return "Unknown status";
   }
 }
 
@@ -74,8 +74,7 @@ cforge_process_status_t cforge_process_init(cforge_process_t *process,
   }
 
   // Allocate space for arguments
-  process->args =
-      (cforge_string_t *)malloc((arg_count + 1) * sizeof(cforge_string_t));
+  process->args = (cforge_string_t *)malloc((arg_count + 1) * sizeof(cforge_string_t));
   if (!process->args) {
     free(process->command);
     process->command = NULL;
@@ -92,13 +91,13 @@ cforge_process_status_t cforge_process_init(cforge_process_t *process,
       }
       free(process->args);
       free(process->command);
-      process->args = NULL;
+      process->args    = NULL;
       process->command = NULL;
       return CFORGE_PROC_ERROR_START;
     }
   }
-  process->args[arg_count] = NULL; // Null terminate argument list
-  process->arg_count = arg_count;
+  process->args[arg_count] = NULL;  // Null terminate argument list
+  process->arg_count       = arg_count;
 
   return CFORGE_PROC_SUCCESS;
 }
@@ -160,10 +159,10 @@ void cforge_process_free(cforge_process_t *process) {
 
 // Windows implementation of process_start
 #ifdef _WIN32
-cforge_process_status_t
-cforge_process_start(cforge_process_t *process, cforge_cstring_t working_dir,
-                     cforge_redirect_t stdout_redirect,
-                     cforge_redirect_t stderr_redirect) {
+cforge_process_status_t cforge_process_start(cforge_process_t *process,
+                                             cforge_cstring_t working_dir,
+                                             cforge_redirect_t stdout_redirect,
+                                             cforge_redirect_t stderr_redirect) {
   if (!process || !process->command) {
     return CFORGE_PROC_ERROR_START;
   }
@@ -174,8 +173,8 @@ cforge_process_start(cforge_process_t *process, cforge_cstring_t working_dir,
   }
 
   SECURITY_ATTRIBUTES sa = {0};
-  sa.nLength = sizeof(SECURITY_ATTRIBUTES);
-  sa.bInheritHandle = TRUE;
+  sa.nLength             = sizeof(SECURITY_ATTRIBUTES);
+  sa.bInheritHandle      = TRUE;
 
   HANDLE stdout_read = NULL, stdout_write = NULL;
   HANDLE stderr_read = NULL, stderr_write = NULL;
@@ -187,56 +186,58 @@ cforge_process_start(cforge_process_t *process, cforge_cstring_t working_dir,
     }
     SetHandleInformation(stdout_read, HANDLE_FLAG_INHERIT, 0);
   } else if (stdout_redirect == CFORGE_REDIRECT_NULL) {
-    stdout_write =
-        CreateFile("NUL", GENERIC_WRITE, 0, &sa, OPEN_EXISTING, 0, NULL);
+    stdout_write = CreateFile("NUL", GENERIC_WRITE, 0, &sa, OPEN_EXISTING, 0, NULL);
   }
 
   // Setup stderr redirection
   if (stderr_redirect == CFORGE_REDIRECT_PIPE) {
     if (!CreatePipe(&stderr_read, &stderr_write, &sa, 0)) {
-      if (stdout_read)
+      if (stdout_read) {
         CloseHandle(stdout_read);
-      if (stdout_write)
+      }
+      if (stdout_write) {
         CloseHandle(stdout_write);
+      }
       return CFORGE_PROC_ERROR_START;
     }
     SetHandleInformation(stderr_read, HANDLE_FLAG_INHERIT, 0);
   } else if (stderr_redirect == CFORGE_REDIRECT_NULL) {
-    stderr_write =
-        CreateFile("NUL", GENERIC_WRITE, 0, &sa, OPEN_EXISTING, 0, NULL);
+    stderr_write = CreateFile("NUL", GENERIC_WRITE, 0, &sa, OPEN_EXISTING, 0, NULL);
   }
 
   // Construct command line
   cforge_string_t command_line = NULL;
-  cforge_size_t total_length =
-      strlen(process->command) + 3; // Space for quotes and space
+  cforge_size_t total_length   = strlen(process->command) + 3;  // Space for quotes and space
 
   for (cforge_size_t i = 0; i < process->arg_count; i++) {
-    total_length += strlen(process->args[i]) + 3; // Space for quotes and space
+    total_length += strlen(process->args[i]) + 3;  // Space for quotes and space
   }
 
-  command_line =
-      (cforge_string_t)malloc(total_length + 1); // +1 for null terminator
+  command_line = (cforge_string_t)malloc(total_length + 1);  // +1 for null terminator
   if (!command_line) {
-    if (stdout_read)
+    if (stdout_read) {
       CloseHandle(stdout_read);
-    if (stdout_write)
+    }
+    if (stdout_write) {
       CloseHandle(stdout_write);
-    if (stderr_read)
+    }
+    if (stderr_read) {
       CloseHandle(stderr_read);
-    if (stderr_write)
+    }
+    if (stderr_write) {
       CloseHandle(stderr_write);
+    }
     return CFORGE_PROC_ERROR_START;
   }
 
   // Build command line with proper quoting using safe string operations
-  cforge_size_t pos = 0;
+  cforge_size_t pos       = 0;
   cforge_size_t remaining = total_length + 1;
 
   // Write command with quotes
   int written = snprintf(command_line + pos, remaining, "\"%s\"", process->command);
   if (written > 0 && (cforge_size_t)written < remaining) {
-    pos += written;
+    pos       += written;
     remaining -= written;
   }
 
@@ -244,66 +245,69 @@ cforge_process_start(cforge_process_t *process, cforge_cstring_t working_dir,
   for (cforge_size_t i = 0; i < process->arg_count && remaining > 4; i++) {
     written = snprintf(command_line + pos, remaining, " \"%s\"", process->args[i]);
     if (written > 0 && (cforge_size_t)written < remaining) {
-      pos += written;
+      pos       += written;
       remaining -= written;
     }
   }
-  command_line[pos] = '\0'; // Ensure null termination
+  command_line[pos] = '\0';  // Ensure null termination
 
   // Setup process information
-  STARTUPINFO si = {0};
+  STARTUPINFO si         = {0};
   PROCESS_INFORMATION pi = {0};
 
-  si.cb = sizeof(STARTUPINFO);
-  si.dwFlags = STARTF_USESTDHANDLES;
-  si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
-  si.hStdOutput = stdout_redirect != CFORGE_REDIRECT_NONE
-                      ? stdout_write
-                      : GetStdHandle(STD_OUTPUT_HANDLE);
-  si.hStdError = stderr_redirect != CFORGE_REDIRECT_NONE
-                     ? stderr_write
-                     : GetStdHandle(STD_ERROR_HANDLE);
+  si.cb         = sizeof(STARTUPINFO);
+  si.dwFlags    = STARTF_USESTDHANDLES;
+  si.hStdInput  = GetStdHandle(STD_INPUT_HANDLE);
+  si.hStdOutput = stdout_redirect != CFORGE_REDIRECT_NONE ? stdout_write
+                                                          : GetStdHandle(STD_OUTPUT_HANDLE);
+  si.hStdError  = stderr_redirect != CFORGE_REDIRECT_NONE ? stderr_write
+                                                          : GetStdHandle(STD_ERROR_HANDLE);
 
   // Create the process
-  BOOL result =
-      CreateProcess(NULL,         // Application name (NULL = use command line)
-                    command_line, // Command line
-                    NULL,         // Process security attributes
-                    NULL,         // Thread security attributes
-                    TRUE,         // Inherit handles
-                    0,            // Creation flags
-                    NULL,         // Environment
-                    working_dir,  // Working directory
-                    &si,          // Startup info
-                    &pi           // Process information
-      );
+  BOOL result = CreateProcess(NULL,          // Application name (NULL = use command line)
+                              command_line,  // Command line
+                              NULL,          // Process security attributes
+                              NULL,          // Thread security attributes
+                              TRUE,          // Inherit handles
+                              0,             // Creation flags
+                              NULL,          // Environment
+                              working_dir,   // Working directory
+                              &si,           // Startup info
+                              &pi            // Process information
+  );
 
   // Free command line
   free(command_line);
 
   if (!result) {
     DWORD error = GetLastError();
-    if (stdout_read)
+    if (stdout_read) {
       CloseHandle(stdout_read);
-    if (stdout_write)
+    }
+    if (stdout_write) {
       CloseHandle(stdout_write);
-    if (stderr_read)
+    }
+    if (stderr_read) {
       CloseHandle(stderr_read);
-    if (stderr_write)
+    }
+    if (stderr_write) {
       CloseHandle(stderr_write);
+    }
     return CFORGE_PROC_ERROR_START;
   }
 
   // Store process information
-  process->handle = (cforge_pointer_t)pi.hProcess;
+  process->handle        = (cforge_pointer_t)pi.hProcess;
   process->stdout_handle = (cforge_pointer_t)stdout_read;
   process->stderr_handle = (cforge_pointer_t)stderr_read;
 
   // Close unused handles
-  if (stdout_write)
+  if (stdout_write) {
     CloseHandle(stdout_write);
-  if (stderr_write)
+  }
+  if (stderr_write) {
     CloseHandle(stderr_write);
+  }
   CloseHandle(pi.hThread);
 
   process->status = CFORGE_PROC_RUNNING;
@@ -311,10 +315,10 @@ cforge_process_start(cforge_process_t *process, cforge_cstring_t working_dir,
 }
 #else
 // POSIX implementation of process_start
-cforge_process_status_t
-cforge_process_start(cforge_process_t *process, cforge_cstring_t working_dir,
-                     cforge_redirect_t stdout_redirect,
-                     cforge_redirect_t stderr_redirect) {
+cforge_process_status_t cforge_process_start(cforge_process_t *process,
+                                             cforge_cstring_t working_dir,
+                                             cforge_redirect_t stdout_redirect,
+                                             cforge_redirect_t stderr_redirect) {
   if (!process || !process->command) {
     return CFORGE_PROC_ERROR_START;
   }
@@ -340,10 +344,12 @@ cforge_process_start(cforge_process_t *process, cforge_cstring_t working_dir,
   // Setup stderr redirection
   if (stderr_redirect == CFORGE_REDIRECT_PIPE) {
     if (pipe(stderr_pipe) != 0) {
-      if (stdout_pipe[0] != -1)
+      if (stdout_pipe[0] != -1) {
         close(stdout_pipe[0]);
-      if (stdout_pipe[1] != -1)
+      }
+      if (stdout_pipe[1] != -1) {
         close(stdout_pipe[1]);
+      }
       return CFORGE_PROC_ERROR_START;
     }
     // Set non-blocking mode for the read end
@@ -355,14 +361,18 @@ cforge_process_start(cforge_process_t *process, cforge_cstring_t working_dir,
 
   if (pid < 0) {
     // Fork failed
-    if (stdout_pipe[0] != -1)
+    if (stdout_pipe[0] != -1) {
       close(stdout_pipe[0]);
-    if (stdout_pipe[1] != -1)
+    }
+    if (stdout_pipe[1] != -1) {
       close(stdout_pipe[1]);
-    if (stderr_pipe[0] != -1)
+    }
+    if (stderr_pipe[0] != -1) {
       close(stderr_pipe[0]);
-    if (stderr_pipe[1] != -1)
+    }
+    if (stderr_pipe[1] != -1) {
       close(stderr_pipe[1]);
+    }
     return CFORGE_PROC_ERROR_START;
   }
 
@@ -403,8 +413,8 @@ cforge_process_start(cforge_process_t *process, cforge_cstring_t working_dir,
     }
 
     // Prepare arguments for execvp
-    cforge_char_t **args = (cforge_char_t **)malloc((process->arg_count + 2) *
-                                                    sizeof(cforge_char_t *));
+    cforge_char_t **args =
+        (cforge_char_t **)malloc((process->arg_count + 2) * sizeof(cforge_char_t *));
     if (!args) {
       _exit(EXIT_FAILURE);
     }
@@ -431,10 +441,12 @@ cforge_process_start(cforge_process_t *process, cforge_cstring_t working_dir,
   process->handle = (cforge_pointer_t)(intptr_t)pid;
 
   // Close write ends of pipes
-  if (stdout_pipe[1] != -1)
+  if (stdout_pipe[1] != -1) {
     close(stdout_pipe[1]);
-  if (stderr_pipe[1] != -1)
+  }
+  if (stderr_pipe[1] != -1) {
     close(stderr_pipe[1]);
+  }
 
   // Store read ends of pipes
   if (stdout_redirect == CFORGE_REDIRECT_PIPE) {
@@ -452,8 +464,7 @@ cforge_process_start(cforge_process_t *process, cforge_cstring_t working_dir,
 
 // Windows implementation of process_wait
 #ifdef _WIN32
-cforge_process_status_t cforge_process_wait(cforge_process_t *process,
-                                            cforge_uint_t timeout_ms) {
+cforge_process_status_t cforge_process_wait(cforge_process_t *process, cforge_uint_t timeout_ms) {
   if (!process || !process->handle) {
     return CFORGE_PROC_ERROR_WAIT;
   }
@@ -486,8 +497,7 @@ cforge_process_status_t cforge_process_wait(cforge_process_t *process,
 }
 #else
 // POSIX implementation of process_wait
-cforge_process_status_t cforge_process_wait(cforge_process_t *process,
-                                            cforge_uint_t timeout_ms) {
+cforge_process_status_t cforge_process_wait(cforge_process_t *process, cforge_uint_t timeout_ms) {
   if (!process || !process->handle) {
     return CFORGE_PROC_ERROR_WAIT;
   }
@@ -505,11 +515,10 @@ cforge_process_status_t cforge_process_wait(cforge_process_t *process,
 
     if (WIFEXITED(status)) {
       process->exit_code = WEXITSTATUS(status);
-      process->status = process->exit_code == 0 ? CFORGE_PROC_SUCCESS
-                                                : CFORGE_PROC_ERROR_NONZERO;
+      process->status = process->exit_code == 0 ? CFORGE_PROC_SUCCESS : CFORGE_PROC_ERROR_NONZERO;
     } else if (WIFSIGNALED(status)) {
       process->exit_code = WTERMSIG(status);
-      process->status = CFORGE_PROC_ERROR_SIGNAL;
+      process->status    = CFORGE_PROC_ERROR_SIGNAL;
     } else {
       process->status = CFORGE_PROC_ERROR_WAIT;
     }
@@ -526,11 +535,11 @@ cforge_process_status_t cforge_process_wait(cforge_process_t *process,
         // Process has exited
         if (WIFEXITED(status)) {
           process->exit_code = WEXITSTATUS(status);
-          process->status = process->exit_code == 0 ? CFORGE_PROC_SUCCESS
-                                                    : CFORGE_PROC_ERROR_NONZERO;
+          process->status    = process->exit_code == 0 ? CFORGE_PROC_SUCCESS
+                                                       : CFORGE_PROC_ERROR_NONZERO;
         } else if (WIFSIGNALED(status)) {
           process->exit_code = WTERMSIG(status);
-          process->status = CFORGE_PROC_ERROR_SIGNAL;
+          process->status    = CFORGE_PROC_ERROR_SIGNAL;
         } else {
           process->status = CFORGE_PROC_ERROR_WAIT;
         }
@@ -538,16 +547,15 @@ cforge_process_status_t cforge_process_wait(cforge_process_t *process,
       } else if (wait_result == 0) {
         // Process still running, check timeout
         clock_gettime(CLOCK_MONOTONIC, &current_time);
-        cforge_ulong_t elapsed_ms =
-            (current_time.tv_sec - start_time.tv_sec) * 1000 +
-            (current_time.tv_nsec - start_time.tv_nsec) / 1000000;
+        cforge_ulong_t elapsed_ms = (current_time.tv_sec - start_time.tv_sec) * 1000
+                                  + (current_time.tv_nsec - start_time.tv_nsec) / 1000000;
 
         if (elapsed_ms >= timeout_ms) {
           return CFORGE_PROC_ERROR_TIMEOUT;
         }
 
         // Sleep a bit to avoid busy waiting
-        usleep(10000); // 10ms
+        usleep(10000);  // 10ms
       } else {
         // Error
         return CFORGE_PROC_ERROR_WAIT;
@@ -587,7 +595,7 @@ cforge_process_status_t cforge_process_terminate(cforge_process_t *process) {
   }
 
   // Wait a moment for the process to terminate
-  usleep(100000); // 100ms
+  usleep(100000);  // 100ms
 
   // Check if process is still running
   if (kill(pid, 0) == 0) {
@@ -613,8 +621,7 @@ cforge_process_status_t cforge_process_read_stdout(cforge_process_t *process,
   }
 
   DWORD read_bytes = 0;
-  if (!ReadFile((HANDLE)process->stdout_handle, buffer, (DWORD)size,
-                &read_bytes, NULL)) {
+  if (!ReadFile((HANDLE)process->stdout_handle, buffer, (DWORD)size, &read_bytes, NULL)) {
     return CFORGE_PROC_ERROR_WAIT;
   }
 
@@ -631,7 +638,7 @@ cforge_process_status_t cforge_process_read_stdout(cforge_process_t *process,
     return CFORGE_PROC_ERROR_WAIT;
   }
 
-  cforge_int_t fd = (cforge_int_t)(intptr_t)process->stdout_handle;
+  cforge_int_t fd         = (cforge_int_t)(intptr_t)process->stdout_handle;
   cforge_int_t read_bytes = read(fd, buffer, size);
 
   if (read_bytes < 0) {
@@ -659,8 +666,7 @@ cforge_process_status_t cforge_process_read_stderr(cforge_process_t *process,
   }
 
   DWORD read_bytes = 0;
-  if (!ReadFile((HANDLE)process->stderr_handle, buffer, (DWORD)size,
-                &read_bytes, NULL)) {
+  if (!ReadFile((HANDLE)process->stderr_handle, buffer, (DWORD)size, &read_bytes, NULL)) {
     return CFORGE_PROC_ERROR_WAIT;
   }
 
@@ -677,7 +683,7 @@ cforge_process_status_t cforge_process_read_stderr(cforge_process_t *process,
     return CFORGE_PROC_ERROR_WAIT;
   }
 
-  cforge_int_t fd = (cforge_int_t)(intptr_t)process->stderr_handle;
+  cforge_int_t fd         = (cforge_int_t)(intptr_t)process->stderr_handle;
   cforge_int_t read_bytes = read(fd, buffer, size);
 
   if (read_bytes < 0) {
@@ -739,8 +745,7 @@ cforge_process_status_t cforge_run_command(cforge_cstring_t command,
   }
 
   // Start process with redirection
-  status = cforge_process_start(&process, working_dir, CFORGE_REDIRECT_PIPE,
-                                CFORGE_REDIRECT_PIPE);
+  status = cforge_process_start(&process, working_dir, CFORGE_REDIRECT_PIPE, CFORGE_REDIRECT_PIPE);
   if (status != CFORGE_PROC_SUCCESS) {
     cforge_process_free(&process);
     return status;
@@ -759,10 +764,12 @@ cforge_process_status_t cforge_run_command(cforge_cstring_t command,
   output->stderr_data = (cforge_string_t)malloc(stderr_capacity);
 
   if (!output->stdout_data || !output->stderr_data) {
-    if (output->stdout_data)
+    if (output->stdout_data) {
       free(output->stdout_data);
-    if (output->stderr_data)
+    }
+    if (output->stderr_data) {
       free(output->stderr_data);
+    }
     output->stdout_data = NULL;
     output->stderr_data = NULL;
     cforge_process_terminate(&process);
@@ -775,23 +782,21 @@ cforge_process_status_t cforge_run_command(cforge_cstring_t command,
 
   // Read from stdout and stderr until process is done
   cforge_process_status_t wait_status = CFORGE_PROC_RUNNING;
-  cforge_uint_t wait_time = 0;
-  const cforge_uint_t wait_interval = 10; // ms
+  cforge_uint_t wait_time             = 0;
+  const cforge_uint_t wait_interval   = 10;  // ms
 
   while (wait_status == CFORGE_PROC_RUNNING) {
     cforge_size_t bytes_read = 0;
 
     // Read from stdout
-    status = cforge_process_read_stdout(&process, stdout_buffer,
-                                        BUFFER_SIZE - 1, &bytes_read);
+    status = cforge_process_read_stdout(&process, stdout_buffer, BUFFER_SIZE - 1, &bytes_read);
     if (status == CFORGE_PROC_SUCCESS && bytes_read > 0) {
       stdout_buffer[bytes_read] = '\0';
 
       // Ensure we have enough space
       if (output->stdout_size + bytes_read + 1 > stdout_capacity) {
         stdout_capacity *= 2;
-        cforge_string_t new_buffer =
-            (cforge_string_t)realloc(output->stdout_data, stdout_capacity);
+        cforge_string_t new_buffer = (cforge_string_t)realloc(output->stdout_data, stdout_capacity);
         if (!new_buffer) {
           free(output->stdout_data);
           free(output->stderr_data);
@@ -806,22 +811,20 @@ cforge_process_status_t cforge_run_command(cforge_cstring_t command,
 
       // Append to output using safe string copy
       memcpy(output->stdout_data + output->stdout_size, stdout_buffer, bytes_read);
-      output->stdout_size += bytes_read;
-      output->stdout_data[output->stdout_size] = '\0';
+      output->stdout_size                      += bytes_read;
+      output->stdout_data[output->stdout_size]  = '\0';
     }
 
     // Read from stderr
     bytes_read = 0;
-    status = cforge_process_read_stderr(&process, stderr_buffer,
-                                        BUFFER_SIZE - 1, &bytes_read);
+    status     = cforge_process_read_stderr(&process, stderr_buffer, BUFFER_SIZE - 1, &bytes_read);
     if (status == CFORGE_PROC_SUCCESS && bytes_read > 0) {
       stderr_buffer[bytes_read] = '\0';
 
       // Ensure we have enough space
       if (output->stderr_size + bytes_read + 1 > stderr_capacity) {
         stderr_capacity *= 2;
-        cforge_string_t new_buffer =
-            (cforge_string_t)realloc(output->stderr_data, stderr_capacity);
+        cforge_string_t new_buffer = (cforge_string_t)realloc(output->stderr_data, stderr_capacity);
         if (!new_buffer) {
           free(output->stdout_data);
           free(output->stderr_data);
@@ -836,8 +839,8 @@ cforge_process_status_t cforge_run_command(cforge_cstring_t command,
 
       // Append to output using safe string copy
       memcpy(output->stderr_data + output->stderr_size, stderr_buffer, bytes_read);
-      output->stderr_size += bytes_read;
-      output->stderr_data[output->stderr_size] = '\0';
+      output->stderr_size                      += bytes_read;
+      output->stderr_data[output->stderr_size]  = '\0';
     }
 
     // Check if process has finished (non-blocking)
@@ -864,7 +867,7 @@ cforge_process_status_t cforge_run_command(cforge_cstring_t command,
 
   // Store exit code and status
   output->exit_code = process.exit_code;
-  output->status = process.status;
+  output->status    = process.status;
 
   // Clean up process
   cforge_process_free(&process);
@@ -885,30 +888,26 @@ bool cforge_command_exists(cforge_cstring_t command) {
 #ifdef _WIN32
   // On Windows, try 'where' command to find executables
   const cforge_char_t *where_cmd = "where";
-  cforge_string_t where_args[] = {(cforge_string_t)command, NULL};
+  cforge_string_t where_args[]   = {(cforge_string_t)command, NULL};
 
-  if (cforge_process_init(&process, where_cmd, where_args) !=
-      CFORGE_PROC_SUCCESS) {
+  if (cforge_process_init(&process, where_cmd, where_args) != CFORGE_PROC_SUCCESS) {
     return false;
   }
 #else
   // On Unix systems, try 'which' command
   const cforge_char_t *which_cmd = "which";
-  cforge_string_t which_args[] = {command, NULL};
+  cforge_string_t which_args[]   = {command, NULL};
 
-  if (cforge_process_init(&process, which_cmd, which_args) !=
-      CFORGE_PROC_SUCCESS) {
+  if (cforge_process_init(&process, which_cmd, which_args) != CFORGE_PROC_SUCCESS) {
     return false;
   }
 #endif
 
   // Redirect output to null
-  cforge_process_start(&process, NULL, CFORGE_REDIRECT_NULL,
-                       CFORGE_REDIRECT_NULL);
+  cforge_process_start(&process, NULL, CFORGE_REDIRECT_NULL, CFORGE_REDIRECT_NULL);
 
   // Wait for completion
-  cforge_process_status_t status =
-      cforge_process_wait(&process, 5000); // 5 second timeout
+  cforge_process_status_t status = cforge_process_wait(&process, 5000);  // 5 second timeout
 
   // Clean up
   cforge_process_free(&process);

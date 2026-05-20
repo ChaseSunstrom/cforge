@@ -5,12 +5,14 @@
  */
 
 #include "cforge/log.hpp"
+
 #include "core/command_registry.hpp"
 #include "core/commands.hpp"
-#include "core/types.h"
 #include "core/platform.hpp"
 #include "core/process_utils.hpp"
 #include "core/toml_reader.hpp"
+#include "core/tool_installer.hpp"
+#include "core/types.h"
 
 #include <filesystem>
 #include <fstream>
@@ -24,7 +26,12 @@ namespace {
  * @brief Check if Doxygen is available
  */
 bool is_doxygen_available() {
-  return cforge::is_command_available("doxygen", 5);
+  if (cforge::is_command_available("doxygen", 5)) {
+    return true;
+  }
+  // Fall back to the canonical install paths the installer registry knows
+  // about, so an existing install with a stale PATH still counts.
+  return !cforge::locate_installed_tool("doxygen").empty();
 }
 
 /**
@@ -32,22 +39,21 @@ bool is_doxygen_available() {
  * Uses platform-specific paths including Homebrew on macOS
  */
 std::string find_doxygen() {
-
-  // Get platform-specific doxygen paths from platform.hpp
-  auto paths = cforge::platform::get_doxygen_paths();
-
-  // Also try just "doxygen" in PATH
+  // PATH first (covers user-managed installs and POSIX package managers).
   if (cforge::is_command_available("doxygen", 5)) {
     return "doxygen";
   }
-
-  for (const auto &path : paths) {
+  // Then the tool_installer registry — single source of truth for the per-
+  // platform install paths winget/choco/brew/apt actually drop binaries at.
+  if (auto p = cforge::locate_installed_tool("doxygen"); !p.empty()) {
+    return p;
+  }
+  // Finally the legacy platform-specific paths kept for back-compat.
+  for (const auto &path : cforge::platform::get_doxygen_paths()) {
     if (fs::exists(path)) {
       return path;
     }
   }
-
-  // Fallback to just the command name
   return "doxygen";
 }
 
@@ -105,7 +111,7 @@ bool generate_doxyfile(const fs::path &project_dir,
   return true;
 }
 
-} // anonymous namespace
+}  // anonymous namespace
 
 /**
  * @brief Handle the 'doc' command for generating documentation
@@ -123,10 +129,10 @@ cforge_int_t cforge_cmd_doc(const cforge_context_t *ctx) {
   fs::path project_dir = ctx->working_dir;
 
   // Parse arguments
-  bool verbose = false;
-  bool open_docs = false;
+  bool verbose                = false;
+  bool open_docs              = false;
   bool generate_doxyfile_only = false;
-  std::string output_dir = "docs";
+  std::string output_dir      = "docs";
 
   for (cforge_int_t i = 0; i < ctx->args.arg_count; i++) {
     std::string arg = ctx->args.args[i];
@@ -136,8 +142,7 @@ cforge_int_t cforge_cmd_doc(const cforge_context_t *ctx) {
       open_docs = true;
     } else if (arg == "--init") {
       generate_doxyfile_only = true;
-    } else if ((arg == "-o" || arg == "--output") &&
-               i + 1 < ctx->args.arg_count) {
+    } else if ((arg == "-o" || arg == "--output") && i + 1 < ctx->args.arg_count) {
       output_dir = ctx->args.args[++i];
     }
   }
@@ -153,11 +158,11 @@ cforge_int_t cforge_cmd_doc(const cforge_context_t *ctx) {
   cforge::toml_reader reader;
   reader.load(config_file.string());
   std::string project_name = reader.get_string("project.name", "Project");
-  std::string version = reader.get_string("project.version", "1.0.0");
+  std::string version      = reader.get_string("project.version", "1.0.0");
 
   // Check for existing Doxyfile
   fs::path doxyfile_path = project_dir / "Doxyfile";
-  bool has_doxyfile = fs::exists(doxyfile_path);
+  bool has_doxyfile      = fs::exists(doxyfile_path);
 
   if (!has_doxyfile || generate_doxyfile_only) {
     cforge::logger::print_action("Generating", "Doxyfile");
@@ -174,13 +179,22 @@ cforge_int_t cforge_cmd_doc(const cforge_context_t *ctx) {
     }
   }
 
-  // Check if Doxygen is available
+  // Check if Doxygen is available. If not, offer to install it interactively.
+  std::string doxygen_override;
   if (!is_doxygen_available()) {
-    cforge::logger::print_error("Doxygen not found. Please install Doxygen:");
-    cforge::logger::print_plain("  Windows: choco install doxygen.install");
-    cforge::logger::print_plain("  macOS:   brew install doxygen");
-    cforge::logger::print_plain("  Linux:   sudo apt install doxygen");
-    return 1;
+    cforge::logger::print_error("Doxygen not found in PATH");
+    auto r = cforge::offer_install_tool("doxygen");
+    if (r.status == cforge::install_result::installed && !r.path.empty()) {
+      doxygen_override = r.path;
+    }
+    if (doxygen_override.empty() && !is_doxygen_available()) {
+      if (r.status != cforge::install_result::declined) {
+        cforge::logger::print_plain("  Windows: winget install DimitriVanHeesch.Doxygen");
+        cforge::logger::print_plain("  macOS:   brew install doxygen");
+        cforge::logger::print_plain("  Linux:   sudo apt install doxygen");
+      }
+      return 1;
+    }
   }
 
   // Create output directory
@@ -192,11 +206,15 @@ cforge_int_t cforge_cmd_doc(const cforge_context_t *ctx) {
   // Run Doxygen
   cforge::logger::print_action("Generating", "documentation with Doxygen");
 
-  std::string doxygen_cmd = find_doxygen();
+  // Prefer the absolute path we got back from a fresh install — PATH in this
+  // process may not reflect the new entry until the user opens a new shell.
+  std::string doxygen_cmd       = doxygen_override.empty() ? find_doxygen() : doxygen_override;
   std::vector<std::string> args = {doxyfile_path.string()};
 
   auto result = cforge::execute_process(
-      doxygen_cmd, args, project_dir.string(),
+      doxygen_cmd,
+      args,
+      project_dir.string(),
       [verbose](const std::string &line) {
         if (verbose) {
           cforge::logger::print_verbose(line);
@@ -211,15 +229,14 @@ cforge_int_t cforge_cmd_doc(const cforge_context_t *ctx) {
       });
 
   if (result.exit_code != 0) {
-    cforge::logger::print_error("Doxygen failed with exit code " +
-                        std::to_string(result.exit_code));
+    cforge::logger::print_error("Doxygen failed with exit code "
+                                + std::to_string(result.exit_code));
     return 1;
   }
 
   fs::path html_index = docs_path / "html" / "index.html";
   if (fs::exists(html_index)) {
-    cforge::logger::print_action("Generated",
-                         "documentation at " + html_index.string());
+    cforge::logger::print_action("Generated", "documentation at " + html_index.string());
 
     // Open in browser if requested
     if (open_docs) {

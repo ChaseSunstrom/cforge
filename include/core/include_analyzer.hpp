@@ -5,13 +5,13 @@
 
 #pragma once
 
-#include "types.h"
-
 #include <filesystem>
 #include <map>
 #include <set>
 #include <string>
 #include <vector>
+
+#include "types.h"
 
 namespace cforge {
 
@@ -19,19 +19,18 @@ namespace cforge {
  * @brief Represents a circular dependency chain
  */
 struct circular_chain {
-  std::vector<std::string> files; ///< Files in the chain (last = first to show cycle)
-  std::string root;               ///< The file where the cycle starts
+  std::vector<std::string> files;  ///< Files in the chain (last = first to show cycle)
+  std::string root;                ///< The file where the cycle starts
 };
 
 /**
  * @brief Result of include analysis
  */
 struct include_analysis_result {
-  std::vector<circular_chain> chains; ///< All circular dependency chains found
-  std::map<std::string, std::vector<std::string>>
-      include_graph; ///< Full include graph
+  std::vector<circular_chain> chains;  ///< All circular dependency chains found
+  std::map<std::string, std::vector<std::string>> include_graph;  ///< Full include graph
   cforge_int_t total_files_analyzed = 0;
-  bool has_cycles = false;
+  bool has_cycles                   = false;
 };
 
 /**
@@ -73,10 +72,9 @@ public:
 private:
   std::filesystem::path project_dir_;
   std::vector<std::filesystem::path> include_paths_;
-  std::vector<std::string> extensions_ = {".hpp", ".h", ".cpp", ".c", ".cc",
-                                          ".cxx", ".hxx"};
-  std::vector<std::string> excluded_dirs_ = {"build", "vendor", "deps",
-                                             "third_party", "external", "node_modules"};
+  std::vector<std::string> extensions_    = {".hpp", ".h", ".cpp", ".c", ".cc", ".cxx", ".hxx"};
+  std::vector<std::string> excluded_dirs_ = {
+      "build", "vendor", "deps", "third_party", "external", "node_modules"};
 
   /**
    * @brief Parse a source file for #include directives
@@ -92,32 +90,32 @@ private:
    * @return Resolved path or empty if not found
    */
   std::filesystem::path resolve_include(const std::string &include_path,
-                                         const std::filesystem::path &from_file);
+                                        const std::filesystem::path &from_file);
 
   /**
    * @brief Build the full include graph
    * @param include_deps Whether to include dependency files
    * @return Map of file -> included files
    */
-  std::map<std::string, std::vector<std::string>>
-  build_include_graph(bool include_deps);
+  std::map<std::string, std::vector<std::string>> build_include_graph(bool include_deps);
 
   /**
    * @brief Find all cycles in the include graph using DFS
    * @param graph The include graph
    * @return Vector of all circular chains
    */
-  std::vector<circular_chain>
-  find_cycles(const std::map<std::string, std::vector<std::string>> &graph);
+  std::vector<circular_chain> find_cycles(
+      const std::map<std::string, std::vector<std::string>> &graph);
 
   /**
    * @brief DFS helper for cycle detection
    */
-  void dfs_find_cycles(
-      const std::string &node,
-      const std::map<std::string, std::vector<std::string>> &graph,
-      std::set<std::string> &visited, std::set<std::string> &rec_stack,
-      std::vector<std::string> &path, std::vector<circular_chain> &cycles);
+  void dfs_find_cycles(const std::string &node,
+                       const std::map<std::string, std::vector<std::string>> &graph,
+                       std::set<std::string> &visited,
+                       std::set<std::string> &rec_stack,
+                       std::vector<std::string> &path,
+                       std::vector<circular_chain> &cycles);
 
   /**
    * @brief Check if a path is within excluded directories
@@ -149,4 +147,4 @@ std::string format_circular_chains(const std::vector<circular_chain> &chains);
  */
 std::string format_circular_chains_json(const std::vector<circular_chain> &chains);
 
-} // namespace cforge
+}  // namespace cforge

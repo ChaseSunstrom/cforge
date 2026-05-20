@@ -4,6 +4,7 @@
  */
 
 #include "core/http_client.hpp"
+
 #include "core/types.h"
 
 #include <algorithm>
@@ -31,8 +32,8 @@
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
-#include <windows.h>
 #include <process.h>
+#include <windows.h>
 #define getpid _getpid
 #else
 #include <unistd.h>
@@ -56,10 +57,10 @@ std::optional<parsed_url> parsed_url::parse(const std::string &url) {
 
   parsed_url result;
   result.scheme = match[1];
-  result.host = match[2];
-  result.port = match[3].matched ? std::stoi(match[3]) : (result.scheme == "https" ? 443 : 80);
-  result.path = match[4].matched ? std::string(match[4]) : "/";
-  result.query = match[5].matched ? std::string(match[5]).substr(1) : "";
+  result.host   = match[2];
+  result.port   = match[3].matched ? std::stoi(match[3]) : (result.scheme == "https" ? 443 : 80);
+  result.path   = match[4].matched ? std::string(match[4]) : "/";
+  result.query  = match[5].matched ? std::string(match[5]).substr(1) : "";
 
   return result;
 }
@@ -81,7 +82,7 @@ std::string parsed_url::to_string() const {
 // http_client implementation
 // ============================================================================
 
-http_client::http_client() = default;
+http_client::http_client()  = default;
 http_client::~http_client() = default;
 
 #ifdef CFORGE_USE_WINHTTP
@@ -92,12 +93,10 @@ bool http_client::is_available() {
   return true;  // WinHTTP is always available on Windows
 }
 
-std::optional<http_response> http_client::perform_request(
-    const std::string &method,
-    const std::string &url,
-    const std::vector<char> &body,
-    const http_request_options &options) {
-
+std::optional<http_response> http_client::perform_request(const std::string &method,
+                                                          const std::string &url,
+                                                          const std::vector<char> &body,
+                                                          const http_request_options &options) {
   auto parsed = parsed_url::parse(url);
   if (!parsed) {
     last_error_ = "Invalid URL: " + url;
@@ -117,7 +116,8 @@ std::optional<http_response> http_client::perform_request(
   HINTERNET session = WinHttpOpen(L"cforge/1.0",
                                   WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
                                   WINHTTP_NO_PROXY_NAME,
-                                  WINHTTP_NO_PROXY_BYPASS, 0);
+                                  WINHTTP_NO_PROXY_BYPASS,
+                                  0);
   if (!session) {
     last_error_ = "Failed to initialize WinHTTP";
     return std::nullopt;
@@ -129,8 +129,8 @@ std::optional<http_response> http_client::perform_request(
 
   // Connect to server
   std::wstring host_w = to_wstring(parsed->host);
-  HINTERNET connect = WinHttpConnect(session, host_w.c_str(),
-                                     static_cast<INTERNET_PORT>(parsed->port), 0);
+  HINTERNET connect =
+      WinHttpConnect(session, host_w.c_str(), static_cast<INTERNET_PORT>(parsed->port), 0);
   if (!connect) {
     last_error_ = "Failed to connect to " + parsed->host;
     WinHttpCloseHandle(session);
@@ -138,13 +138,18 @@ std::optional<http_response> http_client::perform_request(
   }
 
   // Create request
-  std::wstring path_w = to_wstring(parsed->path + (parsed->query.empty() ? "" : "?" + parsed->query));
+  std::wstring path_w =
+      to_wstring(parsed->path + (parsed->query.empty() ? "" : "?" + parsed->query));
   std::wstring method_w = to_wstring(method);
 
-  DWORD flags = (parsed->scheme == "https") ? WINHTTP_FLAG_SECURE : 0;
-  HINTERNET request = WinHttpOpenRequest(connect, method_w.c_str(), path_w.c_str(),
-                                         nullptr, WINHTTP_NO_REFERER,
-                                         WINHTTP_DEFAULT_ACCEPT_TYPES, flags);
+  DWORD flags       = (parsed->scheme == "https") ? WINHTTP_FLAG_SECURE : 0;
+  HINTERNET request = WinHttpOpenRequest(connect,
+                                         method_w.c_str(),
+                                         path_w.c_str(),
+                                         nullptr,
+                                         WINHTTP_NO_REFERER,
+                                         WINHTTP_DEFAULT_ACCEPT_TYPES,
+                                         flags);
   if (!request) {
     last_error_ = "Failed to create request";
     WinHttpCloseHandle(connect);
@@ -162,15 +167,19 @@ std::optional<http_response> http_client::perform_request(
   }
 
   if (!headers.empty()) {
-    WinHttpAddRequestHeaders(request, headers.c_str(), static_cast<DWORD>(-1),
-                             WINHTTP_ADDREQ_FLAG_ADD);
+    WinHttpAddRequestHeaders(
+        request, headers.c_str(), static_cast<DWORD>(-1), WINHTTP_ADDREQ_FLAG_ADD);
   }
 
   // Send request
-  BOOL success = WinHttpSendRequest(request, WINHTTP_NO_ADDITIONAL_HEADERS, 0,
-                                    body.empty() ? WINHTTP_NO_REQUEST_DATA : const_cast<char*>(body.data()),
+  BOOL success = WinHttpSendRequest(request,
+                                    WINHTTP_NO_ADDITIONAL_HEADERS,
+                                    0,
+                                    body.empty() ? WINHTTP_NO_REQUEST_DATA
+                                                 : const_cast<char *>(body.data()),
                                     static_cast<DWORD>(body.size()),
-                                    static_cast<DWORD>(body.size()), 0);
+                                    static_cast<DWORD>(body.size()),
+                                    0);
   if (!success) {
     last_error_ = "Failed to send request";
     WinHttpCloseHandle(request);
@@ -191,9 +200,13 @@ std::optional<http_response> http_client::perform_request(
 
   // Get status code
   DWORD status_code = 0;
-  DWORD size = sizeof(status_code);
-  WinHttpQueryHeaders(request, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
-                      WINHTTP_HEADER_NAME_BY_INDEX, &status_code, &size, WINHTTP_NO_HEADER_INDEX);
+  DWORD size        = sizeof(status_code);
+  WinHttpQueryHeaders(request,
+                      WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
+                      WINHTTP_HEADER_NAME_BY_INDEX,
+                      &status_code,
+                      &size,
+                      WINHTTP_NO_HEADER_INDEX);
 
   http_response response;
   response.status_code = static_cast<int>(status_code);
@@ -202,7 +215,9 @@ std::optional<http_response> http_client::perform_request(
   std::vector<char> buffer(8192);
   DWORD bytes_read = 0;
   while (WinHttpReadData(request, buffer.data(), static_cast<DWORD>(buffer.size()), &bytes_read)) {
-    if (bytes_read == 0) break;
+    if (bytes_read == 0) {
+      break;
+    }
     response.body.insert(response.body.end(), buffer.begin(), buffer.begin() + bytes_read);
 
     if (options.progress_callback) {
@@ -237,12 +252,10 @@ bool http_client::is_available() {
 #endif
 }
 
-std::optional<http_response> http_client::perform_request(
-    const std::string &method,
-    const std::string &url,
-    const std::vector<char> &body,
-    const http_request_options &options) {
-
+std::optional<http_response> http_client::perform_request(const std::string &method,
+                                                          const std::string &url,
+                                                          const std::vector<char> &body,
+                                                          const http_request_options &options) {
   if (!is_available()) {
     last_error_ = "curl not found. Install curl to enable remote cache.";
     return std::nullopt;
@@ -292,7 +305,9 @@ std::optional<http_response> http_client::perform_request(
   FILE *pipe = popen(cmd.str().c_str(), "r");
   if (!pipe) {
     last_error_ = "Failed to execute curl";
-    if (!temp_file.empty()) std::remove(temp_file.c_str());
+    if (!temp_file.empty()) {
+      std::remove(temp_file.c_str());
+    }
     return std::nullopt;
   }
 
@@ -337,27 +352,27 @@ std::optional<http_response> http_client::perform_request(
 #endif
 
 std::optional<http_response> http_client::get(const std::string &url,
-                                               const http_request_options &options) {
+                                              const http_request_options &options) {
   return perform_request("GET", url, {}, options);
 }
 
 std::optional<http_response> http_client::head(const std::string &url,
-                                                const http_request_options &options) {
+                                               const http_request_options &options) {
   return perform_request("HEAD", url, {}, options);
 }
 
 std::optional<http_response> http_client::put(const std::string &url,
-                                               const std::vector<char> &body,
-                                               const std::string &content_type,
-                                               const http_request_options &options) {
-  auto opts = options;
+                                              const std::vector<char> &body,
+                                              const std::string &content_type,
+                                              const http_request_options &options) {
+  auto opts                    = options;
   opts.headers["Content-Type"] = content_type;
   return perform_request("PUT", url, body, opts);
 }
 
 bool http_client::download_file(const std::string &url,
-                                 const std::filesystem::path &dest_path,
-                                 const http_request_options &options) {
+                                const std::filesystem::path &dest_path,
+                                const http_request_options &options) {
   auto response = get(url, options);
   if (!response || !response->ok()) {
     return false;
@@ -378,8 +393,8 @@ bool http_client::download_file(const std::string &url,
 }
 
 bool http_client::upload_file(const std::string &url,
-                               const std::filesystem::path &source_path,
-                               const http_request_options &options) {
+                              const std::filesystem::path &source_path,
+                              const http_request_options &options) {
   // Read file
   std::ifstream in(source_path, std::ios::binary);
   if (!in) {
@@ -387,11 +402,10 @@ bool http_client::upload_file(const std::string &url,
     return false;
   }
 
-  std::vector<char> body((std::istreambuf_iterator<char>(in)),
-                         std::istreambuf_iterator<char>());
+  std::vector<char> body((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
 
   auto response = put(url, body, "application/octet-stream", options);
   return response && response->ok();
 }
 
-} // namespace cforge
+}  // namespace cforge

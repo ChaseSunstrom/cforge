@@ -2,12 +2,13 @@
  * @file command_test.cpp
  * @brief Implementation of the 'test' command to run project tests
  *
- * Supports multiple test frameworks (GTest, Catch2, doctest, Boost.Test, Builtin)
- * with CARGO/Rust-style output formatting by default.
- * Supports workspace-level test execution across all projects.
+ * Supports multiple test frameworks (GTest, Catch2, doctest, Boost.Test,
+ * Builtin) with CARGO/Rust-style output formatting by default. Supports
+ * workspace-level test execution across all projects.
  */
 
 #include "cforge/log.hpp"
+
 #include "core/command_registry.hpp"
 #include "core/commands.hpp"
 #include "core/constants.h"
@@ -18,10 +19,11 @@
 #include "core/types.h"
 #include "core/workspace.hpp"
 
+#include <fmt/core.h>
+
 #include <algorithm>
 #include <cstring>
 #include <filesystem>
-#include <fmt/core.h>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -40,11 +42,11 @@ namespace {
 struct TestOptions {
   std::string build_config = "Debug";
   std::string filter;
-  bool native_output = false;
-  bool no_build = false;
-  bool list_only = false;
-  bool verbose = false;
-  cforge_int_t jobs = 0;
+  bool native_output   = false;
+  bool no_build        = false;
+  bool list_only       = false;
+  bool verbose         = false;
+  cforge_int_t jobs    = 0;
   cforge_int_t timeout = 0;
 };
 
@@ -76,7 +78,9 @@ TestOptions parse_test_options(const cforge_context_t *ctx) {
       opts.timeout = std::stoi(ctx->args.args[++i]);
     } else if (arg == "-c" || arg == "--config") {
       // Skip - handled by ctx->args.config
-      if (i + 1 < ctx->args.arg_count) ++i;
+      if (i + 1 < ctx->args.arg_count) {
+        ++i;
+      }
     } else if (arg[0] != '-' && opts.filter.empty()) {
       // Positional argument is a filter
       opts.filter = arg;
@@ -101,9 +105,9 @@ TestOptions parse_test_options(const cforge_context_t *ctx) {
  * @return int Exit code (0 for success)
  */
 cforge_int_t run_tests_for_project(const std::filesystem::path &project_dir,
-                          const TestOptions &opts,
-                          cforge::test_summary &summary_out,
-                          std::vector<cforge::test_result> &results_out) {
+                                   const TestOptions &opts,
+                                   cforge::test_summary &summary_out,
+                                   std::vector<cforge::test_result> &results_out) {
   namespace fs = std::filesystem;
 
   // Load project configuration
@@ -122,7 +126,7 @@ cforge_int_t run_tests_for_project(const std::filesystem::path &project_dir,
 
   // Determine test directory
   std::string test_dir = cfg.get_string("test.directory", "tests");
-  fs::path tests_dir = project_dir / test_dir;
+  fs::path tests_dir   = project_dir / test_dir;
 
   // Create test directory if it doesn't exist
   if (!fs::exists(tests_dir)) {
@@ -144,7 +148,7 @@ cforge_int_t run_tests_for_project(const std::filesystem::path &project_dir,
   auto targets = runner.discover_targets();
   if (targets.empty()) {
     cforge::logger::print_verbose("No test targets found in " + project_name);
-    return 0; // Not an error - project just has no tests
+    return 0;  // Not an error - project just has no tests
   }
 
   // List mode
@@ -157,13 +161,13 @@ cforge_int_t run_tests_for_project(const std::filesystem::path &project_dir,
 
   // Run tests
   cforge::test_run_options run_opts;
-  run_opts.build_config = opts.build_config;
-  run_opts.filter = opts.filter;
-  run_opts.native_output = opts.native_output;
-  run_opts.no_build = opts.no_build;
-  run_opts.list_only = opts.list_only;
-  run_opts.verbose = opts.verbose;
-  run_opts.jobs = opts.jobs;
+  run_opts.build_config     = opts.build_config;
+  run_opts.filter           = opts.filter;
+  run_opts.native_output    = opts.native_output;
+  run_opts.no_build         = opts.no_build;
+  run_opts.list_only        = opts.list_only;
+  run_opts.verbose          = opts.verbose;
+  run_opts.jobs             = opts.jobs;
   run_opts.timeout_override = opts.timeout;
 
   // Execute tests
@@ -178,7 +182,7 @@ cforge_int_t run_tests_for_project(const std::filesystem::path &project_dir,
   return 0;
 }
 
-} // anonymous namespace
+}  // anonymous namespace
 
 /**
  * @brief Handle the 'test' command
@@ -232,7 +236,7 @@ cforge_int_t cforge_cmd_test(const cforge_context_t *ctx) {
 
     // Get projects in build order (respects dependencies)
     auto build_order = ws.get_build_order();
-    auto projects = ws.get_projects();
+    auto projects    = ws.get_projects();
 
     // Aggregate results across all projects
     cforge::test_summary total_summary{};
@@ -241,13 +245,14 @@ cforge_int_t cforge_cmd_test(const cforge_context_t *ctx) {
     cforge_int_t projects_failed = 0;
 
     // Create formatter for output
-    cforge::test_output_formatter formatter(
-        opts.native_output ? cforge::test_output_formatter::style::NATIVE
-                           : cforge::test_output_formatter::style::CARGO);
+    cforge::test_output_formatter formatter(opts.native_output
+                                                ? cforge::test_output_formatter::style::NATIVE
+                                                : cforge::test_output_formatter::style::CARGO);
 
     for (const auto &project_name : build_order) {
       // Find the project
-      auto it = std::find_if(projects.begin(), projects.end(),
+      auto it = std::find_if(projects.begin(),
+                             projects.end(),
                              [&project_name](const cforge::workspace_project &p) {
                                return p.name == project_name;
                              });
@@ -279,13 +284,14 @@ cforge_int_t cforge_cmd_test(const cforge_context_t *ctx) {
       cforge::test_summary project_summary{};
       std::vector<cforge::test_result> project_results;
 
-      cforge_int_t result = run_tests_for_project(project.path, opts, project_summary, project_results);
+      cforge_int_t result =
+          run_tests_for_project(project.path, opts, project_summary, project_results);
 
       // Aggregate results
-      total_summary.passed += project_summary.passed;
-      total_summary.failed += project_summary.failed;
-      total_summary.skipped += project_summary.skipped;
-      total_summary.timeout += project_summary.timeout;
+      total_summary.passed         += project_summary.passed;
+      total_summary.failed         += project_summary.failed;
+      total_summary.skipped        += project_summary.skipped;
+      total_summary.timeout        += project_summary.timeout;
       total_summary.total_duration += project_summary.total_duration;
 
       // Copy results with project prefix
@@ -310,7 +316,9 @@ cforge_int_t cforge_cmd_test(const cforge_context_t *ctx) {
 
       size_t name_w = 0;
       for (const auto &result : all_results) {
-        if (result.name.size() > name_w) name_w = result.name.size();
+        if (result.name.size() > name_w) {
+          name_w = result.name.size();
+        }
       }
       for (const auto &result : all_results) {
         formatter.print_test_result(result, name_w);
@@ -323,8 +331,8 @@ cforge_int_t cforge_cmd_test(const cforge_context_t *ctx) {
       formatter.print_summary(total_summary);
 
       cforge::logger::print_blank();
-      cforge::logger::print_plain("Projects tested: " + std::to_string(projects_tested) +
-                                  ", Projects with failures: " + std::to_string(projects_failed));
+      cforge::logger::print_plain("Projects tested: " + std::to_string(projects_tested)
+                                  + ", Projects with failures: " + std::to_string(projects_failed));
     }
 
     // Return failure if any tests failed
@@ -352,7 +360,7 @@ cforge_int_t cforge_cmd_test(const cforge_context_t *ctx) {
 
   // Determine test directory
   std::string test_dir = cfg.get_string("test.directory", "tests");
-  fs::path tests_dir = project_dir / test_dir;
+  fs::path tests_dir   = project_dir / test_dir;
 
   // Create test directory if it doesn't exist
   if (!fs::exists(tests_dir)) {
@@ -371,9 +379,9 @@ cforge_int_t cforge_cmd_test(const cforge_context_t *ctx) {
   }
 
   // Create output formatter
-  cforge::test_output_formatter formatter(
-      opts.native_output ? cforge::test_output_formatter::style::NATIVE
-                         : cforge::test_output_formatter::style::CARGO);
+  cforge::test_output_formatter formatter(opts.native_output
+                                              ? cforge::test_output_formatter::style::NATIVE
+                                              : cforge::test_output_formatter::style::CARGO);
 
   // Discover test targets
   auto targets = runner.discover_targets();
@@ -393,18 +401,18 @@ cforge_int_t cforge_cmd_test(const cforge_context_t *ctx) {
 
   // Run tests
   cforge::test_run_options run_opts;
-  run_opts.build_config = opts.build_config;
-  run_opts.filter = opts.filter;
-  run_opts.native_output = opts.native_output;
-  run_opts.no_build = opts.no_build;
-  run_opts.list_only = opts.list_only;
-  run_opts.verbose = opts.verbose;
-  run_opts.jobs = opts.jobs;
+  run_opts.build_config     = opts.build_config;
+  run_opts.filter           = opts.filter;
+  run_opts.native_output    = opts.native_output;
+  run_opts.no_build         = opts.no_build;
+  run_opts.list_only        = opts.list_only;
+  run_opts.verbose          = opts.verbose;
+  run_opts.jobs             = opts.jobs;
   run_opts.timeout_override = opts.timeout;
 
   // Execute tests
   cforge::test_summary summary = runner.run_tests(run_opts);
-  const auto &results = runner.get_results();
+  const auto &results          = runner.get_results();
 
   // Print results (unless native output, which prints as it runs)
   if (!opts.native_output) {
@@ -413,7 +421,9 @@ cforge_int_t cforge_cmd_test(const cforge_context_t *ctx) {
 
     size_t name_w = 0;
     for (const auto &result : results) {
-      if (result.name.size() > name_w) name_w = result.name.size();
+      if (result.name.size() > name_w) {
+        name_w = result.name.size();
+      }
     }
     for (const auto &result : results) {
       formatter.print_test_result(result, name_w);

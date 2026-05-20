@@ -4,7 +4,9 @@
  */
 
 #include "core/command_registry.hpp"
+
 #include "cforge/log.hpp"
+
 #include "core/commands.hpp"
 
 #include <algorithm>
@@ -14,10 +16,10 @@ namespace cforge {
 
 // Global flags available to all commands
 const std::vector<flag_def> global_flags = {
-    {"-c", "--config", "Build configuration (Debug, Release, etc.)", "CONFIG", "", false},
-    {"-v", "--verbose", "Enable verbose output", "", "", false},
-    {"-q", "--quiet", "Suppress non-essential output", "", "", false},
-    {"-h", "--help", "Show help for this command", "", "", false},
+    {"-c", "--config",  "Build configuration (Debug, Release, etc.)", "CONFIG", "", false},
+    {"-v", "--verbose", "Enable verbose output",                      "",       "", false},
+    {"-q", "--quiet",   "Suppress non-essential output",              "",       "", false},
+    {"-h", "--help",    "Show help for this command",                 "",       "", false},
 };
 
 command_registry &command_registry::instance() {
@@ -108,7 +110,9 @@ std::vector<const command_def *> command_registry::list_commands(bool include_hi
 std::vector<std::string> command_registry::get_completions(const std::string &partial) const {
   std::vector<std::string> result;
   for (const auto &cmd : commands_) {
-    if (cmd.hidden) continue;
+    if (cmd.hidden) {
+      continue;
+    }
     if (cmd.name.find(partial) == 0) {
       result.push_back(cmd.name);
     }
@@ -144,7 +148,9 @@ void command_registry::print_command_help(const std::string &name) const {
   if (!cmd->aliases.empty()) {
     std::string aliases_str;
     for (size_t i = 0; i < cmd->aliases.size(); i++) {
-      if (i > 0) aliases_str += ", ";
+      if (i > 0) {
+        aliases_str += ", ";
+      }
       aliases_str += cmd->aliases[i];
     }
     logger::print_help_section("ALIASES");
@@ -159,7 +165,9 @@ void command_registry::print_command_help(const std::string &name) const {
       std::string flag_str;
       if (!flag.short_name.empty()) {
         flag_str += flag.short_name;
-        if (!flag.long_name.empty()) flag_str += ", ";
+        if (!flag.long_name.empty()) {
+          flag_str += ", ";
+        }
       }
       if (!flag.long_name.empty()) {
         flag_str += flag.long_name;
@@ -183,7 +191,9 @@ void command_registry::print_command_help(const std::string &name) const {
     std::string flag_str;
     if (!flag.short_name.empty()) {
       flag_str += flag.short_name;
-      if (!flag.long_name.empty()) flag_str += ", ";
+      if (!flag.long_name.empty()) {
+        flag_str += ", ";
+      }
     }
     flag_str += flag.long_name;
     logger::print_option(flag_str, flag.description);
@@ -203,7 +213,9 @@ void command_registry::print_command_help(const std::string &name) const {
   if (!cmd->see_also.empty()) {
     std::string see_also_str;
     for (size_t i = 0; i < cmd->see_also.size(); i++) {
-      if (i > 0) see_also_str += ", ";
+      if (i > 0) {
+        see_also_str += ", ";
+      }
       see_also_str += cmd->see_also[i];
     }
     logger::print_help_section("SEE ALSO");
@@ -224,13 +236,13 @@ void command_registry::print_general_help() const {
   };
 
   std::vector<category> categories = {
-      {"Project", {"init", "migrate", "build", "run", "clean", "test", "bench", "flash"}},
-      {"Dependencies", {"deps", "vcpkg"}},
-      {"Code Quality", {"fmt", "lint", "circular"}},
-      {"IDE & Tools", {"ide", "watch", "hot", "doc", "new"}},
-      {"Package", {"package", "install"}},
-      {"Cache", {"cache"}},
-      {"Other", {"version", "upgrade", "doctor", "completions", "help"}},
+      {"Project",      {"init", "migrate", "build", "run", "clean", "test", "bench", "flash"}},
+      {"Dependencies", {"deps", "vcpkg"}                                                     },
+      {"Code Quality", {"fmt", "lint", "circular"}                                           },
+      {"IDE & Tools",  {"ide", "watch", "hot", "doc", "new"}                                 },
+      {"Package",      {"package", "install"}                                                },
+      {"Cache",        {"cache"}                                                             },
+      {"Other",        {"version", "upgrade", "doctor", "completions", "help"}               },
   };
 
   for (const auto &cat : categories) {
@@ -252,18 +264,26 @@ cforge_size_t command_registry::levenshtein_distance(const std::string &a, const
   const cforge_size_t m = a.size();
   const cforge_size_t n = b.size();
 
-  if (m == 0) return n;
-  if (n == 0) return m;
+  if (m == 0) {
+    return n;
+  }
+  if (n == 0) {
+    return m;
+  }
 
   std::vector<std::vector<cforge_size_t>> dp(m + 1, std::vector<cforge_size_t>(n + 1));
 
-  for (cforge_size_t i = 0; i <= m; i++) dp[i][0] = i;
-  for (cforge_size_t j = 0; j <= n; j++) dp[0][j] = j;
+  for (cforge_size_t i = 0; i <= m; i++) {
+    dp[i][0] = i;
+  }
+  for (cforge_size_t j = 0; j <= n; j++) {
+    dp[0][j] = j;
+  }
 
   for (cforge_size_t i = 1; i <= m; i++) {
     for (cforge_size_t j = 1; j <= n; j++) {
       cforge_size_t cost = (a[i - 1] == b[j - 1]) ? 0 : 1;
-      dp[i][j] = std::min({dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + cost});
+      dp[i][j]           = std::min({dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + cost});
     }
   }
 
@@ -275,7 +295,9 @@ std::vector<std::string> command_registry::suggest_similar(const std::string &na
   std::vector<std::pair<cforge_size_t, std::string>> scored;
 
   for (const auto &cmd : commands_) {
-    if (cmd.hidden) continue;
+    if (cmd.hidden) {
+      continue;
+    }
     cforge_size_t dist = levenshtein_distance(name, cmd.name);
     // Only suggest if reasonably close
     if (dist <= 3 || (dist <= name.length() / 2 + 1)) {
@@ -304,14 +326,15 @@ void register_builtin_commands() {
       "build",
       {},
       "Build the project",
-      "Compile the project using CMake. Automatically detects the best generator\n"
+      "Compile the project using CMake. Automatically detects the best "
+      "generator\n"
       "for your platform and handles configuration changes.",
       "build [options] [target]",
       {
-          {"", "--target", "Build specific target", "TARGET", "", false},
-          {"", "--jobs", "Number of parallel jobs", "N", "", false},
-          {"", "--force", "Force full rebuild", "", "", false},
-      },
+        {"", "--target", "Build specific target", "TARGET", "", false},
+        {"", "--jobs", "Number of parallel jobs", "N", "", false},
+        {"", "--force", "Force full rebuild", "", "", false},
+        },
       {"cforge build", "cforge build --config Release", "cforge build --target mylib"},
       {"run", "clean", "test"},
       false,
@@ -327,13 +350,13 @@ void register_builtin_commands() {
       "Create a new cforge project with the standard directory structure.",
       "init [name] [options]",
       {
-          {"", "--lib", "Create a library project", "", "", false},
-          {"", "--exe", "Create an executable project (default)", "", "", false},
-          {"", "--cpp", "C++ standard to use", "STANDARD", "17", false},
-          {"", "--template", "Project template (default, embedded)", "NAME", "default", false},
-      },
-      {"cforge init myproject", "cforge init mylib --lib --cpp 20",
-       "cforge init blink --template embedded"},
+        {"", "--lib", "Create a library project", "", "", false},
+        {"", "--exe", "Create an executable project (default)", "", "", false},
+        {"", "--cpp", "C++ standard to use", "STANDARD", "17", false},
+        {"", "--template", "Project template (default, embedded)", "NAME", "default", false},
+        },
+      {"cforge init myproject",
+        "cforge init mylib --lib --cpp 20", "cforge init blink --template embedded"},
       {"build"},
       false,
       cforge_cmd_init,
@@ -348,8 +371,8 @@ void register_builtin_commands() {
       "Compile the project and execute the resulting binary.",
       "run [options] [-- args]",
       {
-          {"", "--release", "Build in release mode", "", "", false},
-      },
+        {"", "--release", "Build in release mode", "", "", false},
+        },
       {"cforge run", "cforge run --config Release -- --arg1 value1"},
       {"build"},
       false,
@@ -365,8 +388,8 @@ void register_builtin_commands() {
       "Remove the build directory and generated files.",
       "clean [options]",
       {
-          {"", "--all", "Also clean cached dependencies", "", "", false},
-      },
+        {"", "--all", "Also clean cached dependencies", "", "", false},
+        },
       {"cforge clean", "cforge clean --all"},
       {"build"},
       false,
@@ -382,9 +405,9 @@ void register_builtin_commands() {
       "Build and run tests using the detected test framework.",
       "test [options] [filter]",
       {
-          {"", "--filter", "Run only tests matching pattern", "PATTERN", "", false},
-          {"", "--verbose", "Show test output", "", "", false},
-      },
+        {"", "--filter", "Run only tests matching pattern", "PATTERN", "", false},
+        {"", "--verbose", "Show test output", "", "", false},
+        },
       {"cforge test", "cforge test --filter '*unit*'"},
       {"build", "bench"},
       false,
@@ -414,7 +437,8 @@ void register_builtin_commands() {
       "warnings",
       {"warns"},
       "Re-print warnings from the last build",
-      "Replay the warnings from the most recent build using the same formatter.",
+      "Replay the warnings from the most recent build using the same "
+      "formatter.",
       "warnings",
       {},
       {"cforge warnings", "cforge warns"},
@@ -478,8 +502,8 @@ void register_builtin_commands() {
       "Run clang-format on project source files.",
       "fmt [options] [files]",
       {
-          {"", "--check", "Check formatting without making changes", "", "", false},
-      },
+        {"", "--check", "Check formatting without making changes", "", "", false},
+        },
       {"cforge fmt", "cforge fmt --check"},
       {"lint"},
       false,
@@ -495,8 +519,8 @@ void register_builtin_commands() {
       "Run clang-tidy static analysis on project source files.",
       "lint [options] [files]",
       {
-          {"", "--fix", "Automatically apply fixes", "", "", false},
-      },
+        {"", "--fix", "Automatically apply fixes", "", "", false},
+        },
       {"cforge lint", "cforge lint --fix"},
       {"fmt"},
       false,
@@ -514,12 +538,14 @@ void register_builtin_commands() {
       "Benchmarks run in Release mode by default for accurate timing.",
       "bench [options] [benchmark-name]",
       {
-          {"", "--no-build", "Skip building before running", "", "", false},
-          {"", "--filter", "Run only benchmarks matching pattern", "PATTERN", "", false},
-          {"", "--json", "Output in JSON format", "", "", false},
-          {"", "--csv", "Output in CSV format", "", "", false},
-      },
-      {"cforge bench", "cforge bench --filter 'BM_Sort'", "cforge bench --no-build", "cforge bench --json > results.json"},
+        {"", "--no-build", "Skip building before running", "", "", false},
+        {"", "--filter", "Run only benchmarks matching pattern", "PATTERN", "", false},
+        {"", "--json", "Output in JSON format", "", "", false},
+        {"", "--csv", "Output in CSV format", "", "", false},
+        },
+      {"cforge bench",
+        "cforge bench --filter 'BM_Sort'", "cforge bench --no-build",
+        "cforge bench --json > results.json"},
       {"test"},
       false,
       cforge_cmd_bench,
@@ -534,8 +560,8 @@ void register_builtin_commands() {
       "Generate installers and archives for distribution.",
       "package [options]",
       {
-          {"", "--generator", "CPack generator to use", "GEN", "", false},
-      },
+        {"", "--generator", "CPack generator to use", "GEN", "", false},
+        },
       {"cforge package", "cforge package --generator ZIP"},
       {"build", "install"},
       false,
@@ -551,8 +577,8 @@ void register_builtin_commands() {
       "Build and install the project to the system.",
       "install [options]",
       {
-          {"", "--prefix", "Installation prefix", "PATH", "", false},
-      },
+        {"", "--prefix", "Installation prefix", "PATH", "", false},
+        },
       {"cforge install", "cforge install --prefix /usr/local"},
       {"build", "package"},
       false,
@@ -596,8 +622,10 @@ void register_builtin_commands() {
       {"hot-reload"},
       "Start a hot reload session",
       "Build the module as a shared library, launch the host executable, then\n"
-      "watch source files for changes.  On change the shared library is rebuilt\n"
-      "and a signal file is written so the host can swap it in without restarting.\n\n"
+      "watch source files for changes.  On change the shared library is "
+      "rebuilt\n"
+      "and a signal file is written so the host can swap it in without "
+      "restarting.\n\n"
       "Requires a [hot_reload] section in cforge.toml:\n\n"
       "  [hot_reload]\n"
       "  enabled     = true\n"
@@ -607,14 +635,12 @@ void register_builtin_commands() {
       "  watch_dirs  = [\"src\"]         # optional",
       "hot [options]",
       {
-          {"-c", "--config",   "Build configuration (Debug, Release, ...)", "CONFIG", "Debug", false},
-          {"",   "--interval", "Poll interval in milliseconds",              "MS",     "500",   false},
-      },
+        {"-c", "--config", "Build configuration (Debug, Release, ...)", "CONFIG", "Debug", false},
+        {"", "--interval", "Poll interval in milliseconds", "MS", "500", false},
+        },
       {
-          "cforge hot",
-          "cforge hot --config Release",
-          "cforge hot --interval 250",
-      },
+        "cforge hot", "cforge hot --config Release",
+        "cforge hot --interval 250", },
       {"watch", "build"},
       false,
       cforge_cmd_hot,
@@ -629,8 +655,8 @@ void register_builtin_commands() {
       "Generate API documentation using Doxygen.",
       "doc [options]",
       {
-          {"", "--open", "Open docs in browser after generation", "", "", false},
-      },
+        {"", "--open", "Open docs in browser after generation", "", "", false},
+        },
       {"cforge doc", "cforge doc --open"},
       {},
       false,
@@ -661,11 +687,11 @@ void register_builtin_commands() {
       "Analyze header files to find circular include dependencies.",
       "circular [options]",
       {
-          {"", "--include-deps", "Also check dependency headers", "", "", false},
-          {"", "--workspace", "Check all workspace projects", "", "", false},
-          {"", "--json", "Output as JSON", "", "", false},
-          {"", "--limit", "Limit output to first N chains", "N", "", false},
-      },
+        {"", "--include-deps", "Also check dependency headers", "", "", false},
+        {"", "--workspace", "Check all workspace projects", "", "", false},
+        {"", "--json", "Output as JSON", "", "", false},
+        {"", "--limit", "Limit output to first N chains", "N", "", false},
+        },
       {"cforge circular", "cforge circular --workspace", "cforge circular --json"},
       {"lint"},
       false,
@@ -683,9 +709,9 @@ void register_builtin_commands() {
       "Requires a --profile argument specifying which cross profile to use.",
       "flash --profile <name> [options]",
       {
-          {"-P", "--profile", "Cross-compilation profile to use", "NAME", "", true},
-          {"-j", "--jobs", "Number of parallel jobs", "N", "", false},
-      },
+        {"-P", "--profile", "Cross-compilation profile to use", "NAME", "", true},
+        {"-j", "--jobs", "Number of parallel jobs", "N", "", false},
+        },
       {"cforge flash --profile avr", "cforge flash -P esp32 --config Release"},
       {"build"},
       false,
@@ -702,16 +728,14 @@ void register_builtin_commands() {
       "Extraction is best-effort; review the output before building.",
       "migrate [path] [options]",
       {
-          {"-n", "--dry-run",  "Show generated toml without writing", "", "", false},
-          {"-b", "--backup",   "Back up existing cforge.toml before overwriting", "", "", false},
-          {"-o", "--output",   "Output file path", "FILE", "cforge.toml", false},
-      },
+        {"-n", "--dry-run", "Show generated toml without writing", "", "", false},
+        {"-b", "--backup", "Back up existing cforge.toml before overwriting", "", "", false},
+        {"-o", "--output", "Output file path", "FILE", "cforge.toml", false},
+        },
       {
-          "cforge migrate",
-          "cforge migrate ./my-project",
-          "cforge migrate --dry-run",
-          "cforge migrate --backup --output my.toml",
-      },
+        "cforge migrate", "cforge migrate ./my-project",
+        "cforge migrate --dry-run", "cforge migrate --backup --output my.toml",
+        },
       {"init", "build"},
       false,
       cforge_cmd_migrate,
@@ -756,9 +780,9 @@ void register_builtin_commands() {
       "Download, build, and install the latest version of cforge from GitHub.",
       "upgrade [options]",
       {
-          {"", "--path", "Custom installation path", "PATH", "", false},
-          {"", "--add-to-path", "Add install location to PATH", "", "", false},
-      },
+        {"", "--path", "Custom installation path", "PATH", "", false},
+        {"", "--add-to-path", "Add install location to PATH", "", "", false},
+        },
       {"cforge upgrade", "cforge upgrade --path /opt/cforge"},
       {"version", "doctor"},
       false,
@@ -800,45 +824,21 @@ void register_builtin_commands() {
   // Register deprecated commands (removed in this version)
   // -------------------------------------------------------------------------
 
-  reg.register_deprecated({
-      "add", "deps add",
-      "Use 'cforge deps add <package>' instead."
-  });
+  reg.register_deprecated({"add", "deps add", "Use 'cforge deps add <package>' instead."});
 
-  reg.register_deprecated({
-      "remove", "deps remove",
-      "Use 'cforge deps remove <package>' instead."
-  });
+  reg.register_deprecated({"remove", "deps remove", "Use 'cforge deps remove <package>' instead."});
 
-  reg.register_deprecated({
-      "update", "deps update",
-      "Use 'cforge deps update' instead."
-  });
+  reg.register_deprecated({"update", "deps update", "Use 'cforge deps update' instead."});
 
-  reg.register_deprecated({
-      "search", "deps search",
-      "Use 'cforge deps search <query>' instead."
-  });
+  reg.register_deprecated({"search", "deps search", "Use 'cforge deps search <query>' instead."});
 
-  reg.register_deprecated({
-      "info", "deps info",
-      "Use 'cforge deps info <package>' instead."
-  });
+  reg.register_deprecated({"info", "deps info", "Use 'cforge deps info <package>' instead."});
 
-  reg.register_deprecated({
-      "list", "deps list",
-      "Use 'cforge deps list' instead."
-  });
+  reg.register_deprecated({"list", "deps list", "Use 'cforge deps list' instead."});
 
-  reg.register_deprecated({
-      "tree", "deps tree",
-      "Use 'cforge deps tree' instead."
-  });
+  reg.register_deprecated({"tree", "deps tree", "Use 'cforge deps tree' instead."});
 
-  reg.register_deprecated({
-      "lock", "deps lock",
-      "Use 'cforge deps lock' instead."
-  });
+  reg.register_deprecated({"lock", "deps lock", "Use 'cforge deps lock' instead."});
 }
 
-} // namespace cforge
+}  // namespace cforge

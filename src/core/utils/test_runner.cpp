@@ -4,11 +4,13 @@
  */
 
 #include "core/test_runner.hpp"
+
 #include "cforge/log.hpp"
+
 #include "core/build_utils.hpp"
-#include "core/types.h"
 #include "core/process_utils.hpp"
 #include "core/test_adapters.hpp"
+#include "core/types.h"
 #include "core/workspace.hpp"
 
 #include <algorithm>
@@ -36,7 +38,9 @@ static std::string strip_ansi(const std::string &input) {
 // Read a file fully into a string. Empty string on failure.
 static std::string read_file_to_string(const fs::path &path) {
   std::ifstream in(path);
-  if (!in) return {};
+  if (!in) {
+    return {};
+  }
   std::ostringstream oss;
   oss << in.rdbuf();
   return oss.str();
@@ -47,29 +51,40 @@ static std::string read_file_to_string(const fs::path &path) {
 // generators (Ninja vs MSBuild) without hardcoded paths.
 static fs::path find_executable_in_dir(const fs::path &build_dir,
                                        const std::vector<std::string> &name_candidates) {
-  if (!fs::exists(build_dir)) return {};
+  if (!fs::exists(build_dir)) {
+    return {};
+  }
 
   std::error_code ec;
   for (auto it = fs::recursive_directory_iterator(
-                  build_dir, fs::directory_options::skip_permission_denied, ec);
-       !ec && it != fs::recursive_directory_iterator(); it.increment(ec)) {
+           build_dir, fs::directory_options::skip_permission_denied, ec);
+       !ec && it != fs::recursive_directory_iterator();
+       it.increment(ec)) {
     if (it.depth() > 6) {
       it.disable_recursion_pending();
       continue;
     }
-    if (!it->is_regular_file(ec)) continue;
+    if (!it->is_regular_file(ec)) {
+      continue;
+    }
     const auto &p = it->path();
-    auto stem = p.stem().string();
+    auto stem     = p.stem().string();
     auto filename = p.filename().string();
-    auto ext = p.extension().string();
+    auto ext      = p.extension().string();
 
 #ifdef _WIN32
     // Only consider .exe on Windows
-    if (ext != ".exe") continue;
+    if (ext != ".exe") {
+      continue;
+    }
 #else
     // On POSIX, accept extension-less files; skip generated CMake junk
-    if (!ext.empty() && ext != ".out") continue;
-    if (filename.find("CMake") != std::string::npos) continue;
+    if (!ext.empty() && ext != ".out") {
+      continue;
+    }
+    if (filename.find("CMake") != std::string::npos) {
+      continue;
+    }
 #endif
 
     for (const auto &cand : name_candidates) {
@@ -451,7 +466,8 @@ static CF_MAYBE_UNUSED int cf_run_tests_default(void) { return cf_run_tests(0, (
 // ============================================================================
 
 test_runner::test_runner(const fs::path &project_dir, const toml_reader &config)
-    : m_project_dir(project_dir), m_project_config(config) {}
+    : m_project_dir(project_dir), m_project_config(config) {
+}
 
 test_runner::~test_runner() = default;
 
@@ -462,25 +478,22 @@ test_runner::~test_runner() = default;
 bool test_runner::load_config() {
   // Load build directory from config (same as main build uses)
   std::string build_dir_str = m_project_config.get_string("build.build_dir", "build");
-  m_build_base_dir = m_project_dir / build_dir_str;
+  m_build_base_dir          = m_project_dir / build_dir_str;
 
   // Load [test] section defaults
   m_test_config.directory = m_project_config.get_string("test.directory", "tests");
   m_test_config.default_timeout =
       static_cast<cforge_int_t>(m_project_config.get_int("test.timeout", 300));
-  m_test_config.jobs =
-      static_cast<cforge_int_t>(m_project_config.get_int("test.jobs", 0));
-  m_test_config.auto_link_project =
-      m_project_config.get_bool("test.auto_link_project", true);
-  m_test_config.discovery_mode =
-      m_project_config.get_string("test.discovery", "both");
+  m_test_config.jobs = static_cast<cforge_int_t>(m_project_config.get_int("test.jobs", 0));
+  m_test_config.auto_link_project = m_project_config.get_bool("test.auto_link_project", true);
+  m_test_config.discovery_mode    = m_project_config.get_string("test.discovery", "both");
 
   // Parse output style
-  std::string output_style = m_project_config.get_string("test.output_style", "cargo");
+  std::string output_style         = m_project_config.get_string("test.output_style", "cargo");
   m_test_config.cargo_style_output = (output_style != "native");
 
   // Parse default framework
-  std::string fw_str = m_project_config.get_string("test.framework", "auto");
+  std::string fw_str              = m_project_config.get_string("test.framework", "auto");
   m_test_config.default_framework = string_to_test_framework(fw_str);
 
   // Load framework-specific configs
@@ -498,7 +511,7 @@ void test_runner::load_framework_config(test_framework fw, const std::string &se
   }
 
   test_config::FrameworkConfig fc;
-  fc.fetch = m_project_config.get_bool(section + ".fetch", true);
+  fc.fetch   = m_project_config.get_bool(section + ".fetch", true);
   fc.version = m_project_config.get_string(section + ".version", "");
 
   // Load additional options from the section
@@ -532,15 +545,13 @@ std::vector<test_target> test_runner::discover_targets() {
   std::vector<test_target> targets;
 
   // Load explicit targets first (always)
-  if (m_test_config.discovery_mode == "explicit" ||
-      m_test_config.discovery_mode == "both") {
+  if (m_test_config.discovery_mode == "explicit" || m_test_config.discovery_mode == "both") {
     auto explicit_targets = load_explicit_targets();
     targets.insert(targets.end(), explicit_targets.begin(), explicit_targets.end());
   }
 
   // Auto-discover if requested
-  if (m_test_config.discovery_mode == "auto" ||
-      m_test_config.discovery_mode == "both") {
+  if (m_test_config.discovery_mode == "auto" || m_test_config.discovery_mode == "both") {
     auto auto_targets = auto_discover_targets();
 
     // Merge auto-discovered targets, avoiding duplicates
@@ -575,17 +586,17 @@ std::vector<test_target> test_runner::load_explicit_targets() {
       continue;
     }
 
-    target.sources = table.get_string_array("sources");
+    target.sources      = table.get_string_array("sources");
     target.dependencies = table.get_string_array("dependencies");
-    target.defines = table.get_string_array("defines");
-    target.includes = table.get_string_array("includes");
+    target.defines      = table.get_string_array("defines");
+    target.includes     = table.get_string_array("includes");
     target.timeout_seconds =
         static_cast<cforge_int_t>(table.get_int("timeout", m_test_config.default_timeout));
     target.enabled = table.get_bool("enabled", true);
 
     // Parse framework
     std::string fw_str = table.get_string("framework", "auto");
-    target.framework = string_to_test_framework(fw_str);
+    target.framework   = string_to_test_framework(fw_str);
 
     // Expand source globs
     target.source_files = expand_globs(target.sources, m_project_dir);
@@ -618,7 +629,9 @@ std::vector<test_target> test_runner::auto_discover_targets() {
   // Look for test source files
   std::vector<fs::path> test_files;
   for (const auto &entry : fs::recursive_directory_iterator(test_dir)) {
-    if (!entry.is_regular_file()) continue;
+    if (!entry.is_regular_file()) {
+      continue;
+    }
 
     auto ext = entry.path().extension().string();
     if (ext == ".cpp" || ext == ".cxx" || ext == ".cc") {
@@ -641,15 +654,16 @@ std::vector<test_target> test_runner::auto_discover_targets() {
   }
 
   // Create one target per directory (or single target for flat structure)
-  // Note: fs::relative() returns "." on Windows but empty path on some Linux systems
+  // Note: fs::relative() returns "." on Windows but empty path on some Linux
+  // systems
   auto first_rel = files_by_dir.begin()->first;
-  bool is_flat = files_by_dir.size() == 1 &&
-                 (first_rel == "." || first_rel.empty() || first_rel == test_dir.filename());
+  bool is_flat   = files_by_dir.size() == 1
+              && (first_rel == "." || first_rel.empty() || first_rel == test_dir.filename());
   if (is_flat) {
     // Flat structure - single target
     test_target target;
-    target.name = "tests";
-    target.source_files = test_files;
+    target.name            = "tests";
+    target.source_files    = test_files;
     target.timeout_seconds = m_test_config.default_timeout;
 
     // Detect framework from first file
@@ -665,9 +679,9 @@ std::vector<test_target> test_runner::auto_discover_targets() {
       std::replace(target.name.begin(), target.name.end(), '/', '_');
       std::replace(target.name.begin(), target.name.end(), '\\', '_');
 
-      target.source_files = files;
+      target.source_files    = files;
       target.timeout_seconds = m_test_config.default_timeout;
-      target.framework = detect_framework(files.front());
+      target.framework       = detect_framework(files.front());
 
       targets.push_back(std::move(target));
     }
@@ -676,14 +690,14 @@ std::vector<test_target> test_runner::auto_discover_targets() {
   return targets;
 }
 
-std::vector<fs::path> test_runner::expand_globs(
-    const std::vector<std::string> &patterns, const fs::path &base_dir) {
+std::vector<fs::path> test_runner::expand_globs(const std::vector<std::string> &patterns,
+                                                const fs::path &base_dir) {
   std::vector<fs::path> result;
 
   for (const auto &pattern : patterns) {
     // Simple glob expansion - handle ** and *
-    fs::path pattern_path = base_dir / pattern;
-    fs::path search_dir = pattern_path.parent_path();
+    fs::path pattern_path        = base_dir / pattern;
+    fs::path search_dir          = pattern_path.parent_path();
     std::string filename_pattern = pattern_path.filename().string();
 
     // Convert glob to regex
@@ -714,7 +728,9 @@ std::vector<fs::path> test_runner::expand_globs(
 
     auto iterate = [&](auto &iterator) {
       for (const auto &entry : iterator) {
-        if (!entry.is_regular_file()) continue;
+        if (!entry.is_regular_file()) {
+          continue;
+        }
 
         std::string filename = entry.path().filename().string();
         if (std::regex_match(filename, file_regex)) {
@@ -750,13 +766,11 @@ test_framework test_runner::detect_framework(const fs::path &source_file) {
   std::string content = ss.str();
 
   // Try each adapter
-  std::vector<test_framework> frameworks = {
-    test_framework::GTest,
-    test_framework::Catch2,
-    test_framework::Doctest,
-    test_framework::BoostTest,
-    test_framework::Builtin
-  };
+  std::vector<test_framework> frameworks = {test_framework::GTest,
+                                            test_framework::Catch2,
+                                            test_framework::Doctest,
+                                            test_framework::BoostTest,
+                                            test_framework::Builtin};
 
   for (auto fw : frameworks) {
     auto adapter = get_adapter(fw);
@@ -778,8 +792,8 @@ i_test_framework_adapter *test_runner::get_adapter(test_framework fw) {
     return it->second.get();
   }
 
-  auto adapter = create_adapter(fw);
-  auto *ptr = adapter.get();
+  auto adapter   = create_adapter(fw);
+  auto *ptr      = adapter.get();
   m_adapters[fw] = std::move(adapter);
   return ptr;
 }
@@ -803,13 +817,11 @@ fs::path test_runner::write_builtin_header(const fs::path &gen_dir) {
   return inc_dir;
 }
 
-fs::path test_runner::generate_main_if_needed(const test_target &target,
-                                              const fs::path &gen_dir) {
+fs::path test_runner::generate_main_if_needed(const test_target &target, const fs::path &gen_dir) {
   // Only auto-generate for the cforge builtin framework. Other frameworks
   // (GTest's gtest_main, Catch2WithMain, doctest's _IMPLEMENT) handle this
   // themselves.
-  if (target.framework != test_framework::Builtin &&
-      target.framework != test_framework::Auto) {
+  if (target.framework != test_framework::Builtin && target.framework != test_framework::Auto) {
     return {};
   }
 
@@ -820,7 +832,7 @@ fs::path test_runner::generate_main_if_needed(const test_target &target,
   for (const auto &src : target.source_files) {
     std::string contents = read_file_to_string(src);
     if (std::regex_search(contents, main_re)) {
-      return {}; // user has their own main
+      return {};  // user has their own main
     }
   }
 
@@ -830,9 +842,11 @@ fs::path test_runner::generate_main_if_needed(const test_target &target,
     logger::print_warning("Could not write generated test main: " + main_path.string());
     return {};
   }
-  out << "// Auto-generated by cforge — runs all auto-registered TEST() macros.\n"
+  out << "// Auto-generated by cforge — runs all auto-registered TEST() "
+         "macros.\n"
          "#include \"test_framework.h\"\n"
-         "int main(int argc, char** argv) { return cf_run_tests(argc, argv); }\n";
+         "int main(int argc, char** argv) { return cf_run_tests(argc, argv); "
+         "}\n";
   return main_path;
 }
 
@@ -977,8 +991,8 @@ bool test_runner::should_auto_link_project() const {
   }
 
   std::string type = m_project_config.get_string("project.binary_type", "executable");
-  return (type == "library" || type == "static_library" ||
-          type == "shared_library" || type == "static" || type == "shared");
+  return (type == "library" || type == "static_library" || type == "shared_library"
+          || type == "static" || type == "shared");
 }
 
 std::string test_runner::get_project_link_target() const {
@@ -993,19 +1007,18 @@ std::string test_runner::get_project_link_target() const {
 // Building
 // ============================================================================
 
-bool test_runner::configure_cmake(const test_target &target,
-                                  const std::string &build_config) {
-  fs::path gen_dir = get_test_gen_dir(target.name);
+bool test_runner::configure_cmake(const test_target &target, const std::string &build_config) {
+  fs::path gen_dir   = get_test_gen_dir(target.name);
   fs::path build_dir = get_test_build_dir(target.name);
 
   // Ensure build directory exists
   fs::create_directories(build_dir);
 
-  std::vector<std::string> args = {
-    "-S", to_cmake_path(gen_dir),
-    "-B", to_cmake_path(build_dir),
-    "-DCMAKE_BUILD_TYPE=" + build_config
-  };
+  std::vector<std::string> args = {"-S",
+                                   to_cmake_path(gen_dir),
+                                   "-B",
+                                   to_cmake_path(build_dir),
+                                   "-DCMAKE_BUILD_TYPE=" + build_config};
 
 #ifdef _WIN32
   // Use same generator as main project if specified
@@ -1051,8 +1064,8 @@ bool test_runner::build_target(const test_target &target,
   // as a confusing "executable not found".
   fs::path exe = find_test_executable(target, build_config);
   if (exe.empty()) {
-    m_error = "Build reported success but no executable was produced for " +
-              target.name + " (likely a compile error — see output above).";
+    m_error = "Build reported success but no executable was produced for " + target.name
+            + " (likely a compile error — see output above).";
     logger::print_error(m_error);
     return false;
   }
@@ -1067,7 +1080,9 @@ bool test_runner::build_tests(const std::string &config, bool verbose) {
 
   bool all_success = true;
   for (const auto &target : m_test_config.targets) {
-    if (!target.enabled) continue;
+    if (!target.enabled) {
+      continue;
+    }
 
     logger::print_action("Building", "test target: " + target.name);
 
@@ -1106,17 +1121,19 @@ fs::path test_runner::find_test_executable(const test_target &target,
   // recursive walk so we cope with whatever directory layout the configured
   // CMake generator produces.
   std::vector<fs::path> fast_candidates = {
-    build_dir / (target.name + "_test.exe"),
-    build_dir / (target.name + "_test"),
-    build_dir / build_config / (target.name + "_test.exe"),
-    build_dir / build_config / (target.name + "_test"),
-    build_dir / "Debug" / (target.name + "_test.exe"),
-    build_dir / "Debug" / (target.name + "_test"),
-    build_dir / "Release" / (target.name + "_test.exe"),
-    build_dir / "Release" / (target.name + "_test"),
+      build_dir / (target.name + "_test.exe"),
+      build_dir / (target.name + "_test"),
+      build_dir / build_config / (target.name + "_test.exe"),
+      build_dir / build_config / (target.name + "_test"),
+      build_dir / "Debug" / (target.name + "_test.exe"),
+      build_dir / "Debug" / (target.name + "_test"),
+      build_dir / "Release" / (target.name + "_test.exe"),
+      build_dir / "Release" / (target.name + "_test"),
   };
   for (const auto &p : fast_candidates) {
-    if (fs::exists(p)) return p;
+    if (fs::exists(p)) {
+      return p;
+    }
   }
 
   // Fall back to a recursive search keyed on the CMake project name. The
@@ -1124,21 +1141,21 @@ fs::path test_runner::find_test_executable(const test_target &target,
   // and CMake names the executable after the project unless overridden, so
   // this is a stable signal across generators.
   std::vector<std::string> name_candidates = {
-    target.name + "_test",
-    target.name,
+      target.name + "_test",
+      target.name,
   };
   return find_executable_in_dir(build_dir, name_candidates);
 }
 
 std::vector<test_result> test_runner::run_target(const test_target &target,
-                                                const test_run_options &options) {
+                                                 const test_run_options &options) {
   std::vector<test_result> results;
 
   fs::path exe = find_test_executable(target, options.build_config);
   if (exe.empty()) {
     test_result error_result;
-    error_result.name = target.name;
-    error_result.status = test_status::FAILED;
+    error_result.name            = target.name;
+    error_result.status          = test_status::FAILED;
     error_result.failure_message = "Test executable not found";
     results.push_back(error_result);
     return results;
@@ -1148,8 +1165,8 @@ std::vector<test_result> test_runner::run_target(const test_target &target,
   auto *adapter = get_adapter(target.framework);
   if (!adapter) {
     test_result error_result;
-    error_result.name = target.name;
-    error_result.status = test_status::FAILED;
+    error_result.name            = target.name;
+    error_result.status          = test_status::FAILED;
     error_result.failure_message = "No adapter for framework";
     results.push_back(error_result);
     return results;
@@ -1169,23 +1186,22 @@ std::vector<test_result> test_runner::run_target(const test_target &target,
   }
 
   // Execute test
-  cforge_int_t timeout = options.timeout_override > 0 ? options.timeout_override : target.timeout_seconds;
+  cforge_int_t timeout = options.timeout_override > 0 ? options.timeout_override
+                                                      : target.timeout_seconds;
 
-  auto proc_result = execute_process(exe.string(), args,
-                                      m_project_dir.string(),
-                                      nullptr, nullptr, timeout);
+  auto proc_result =
+      execute_process(exe.string(), args, m_project_dir.string(), nullptr, nullptr, timeout);
 
   // Parse output — strip ANSI escape codes first so colored test output still
   // matches the [RUN]/[PASS]/[FAIL] regexes the adapters use.
-  std::string combined_output =
-      strip_ansi(proc_result.stdout_output + proc_result.stderr_output);
+  std::string combined_output = strip_ansi(proc_result.stdout_output + proc_result.stderr_output);
 
   if (options.native_output) {
     // Just print native output, create summary result
     logger::print_plain(combined_output);
 
     test_result summary;
-    summary.name = target.name;
+    summary.name   = target.name;
     summary.status = proc_result.success ? test_status::PASSED : test_status::FAILED;
     results.push_back(summary);
   } else {
@@ -1195,7 +1211,7 @@ std::vector<test_result> test_runner::run_target(const test_target &target,
     // If parsing returned nothing, create a summary result
     if (results.empty()) {
       test_result summary;
-      summary.name = target.name;
+      summary.name   = target.name;
       summary.status = proc_result.success ? test_status::PASSED : test_status::FAILED;
       if (!proc_result.success) {
         summary.failure_message = "Test execution failed";
@@ -1218,14 +1234,16 @@ test_summary test_runner::run_tests(const test_run_options &options) {
   if (!options.no_build) {
     if (!build_tests(options.build_config, options.verbose)) {
       summary.failed = 1;
-      summary.total = 1;
+      summary.total  = 1;
       return summary;
     }
   }
 
   // Run each target
   for (const auto &target : m_test_config.targets) {
-    if (!target.enabled) continue;
+    if (!target.enabled) {
+      continue;
+    }
 
     auto results = run_target(target, options);
     m_results.insert(m_results.end(), results.begin(), results.end());
@@ -1256,8 +1274,8 @@ test_summary test_runner::run_tests(const test_run_options &options) {
   }
 
   auto end_time = std::chrono::steady_clock::now();
-  summary.total_duration = std::chrono::duration_cast<std::chrono::milliseconds>(
-      end_time - start_time);
+  summary.total_duration =
+      std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
 
   return summary;
 }
@@ -1272,7 +1290,9 @@ std::vector<std::string> test_runner::list_tests() {
 
   // For each target, try to get test list
   for (const auto &target : m_test_config.targets) {
-    if (!target.enabled) continue;
+    if (!target.enabled) {
+      continue;
+    }
 
     fs::path exe = find_test_executable(target, "Debug");
     if (exe.empty()) {
@@ -1282,12 +1302,13 @@ std::vector<std::string> test_runner::list_tests() {
     }
 
     auto *adapter = get_adapter(target.framework);
-    if (!adapter) continue;
+    if (!adapter) {
+      continue;
+    }
 
     auto list_args = adapter->get_list_args();
-    auto proc_result = execute_process(exe.string(), list_args,
-                                        m_project_dir.string(),
-                                        nullptr, nullptr, 30);
+    auto proc_result =
+        execute_process(exe.string(), list_args, m_project_dir.string(), nullptr, nullptr, 30);
 
     if (proc_result.success) {
       auto tests = adapter->parse_test_list(proc_result.stdout_output);
@@ -1302,4 +1323,4 @@ std::vector<std::string> test_runner::list_tests() {
   return all_tests;
 }
 
-} // namespace cforge
+}  // namespace cforge

@@ -6,6 +6,7 @@
 #pragma once
 
 #include "core/test_framework.hpp"
+
 #include <regex>
 
 namespace cforge {
@@ -95,4 +96,4 @@ public:
   std::vector<std::string> parse_test_list(const std::string &output) const override;
 };
 
-} // namespace cforge
+}  // namespace cforge

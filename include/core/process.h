@@ -6,10 +6,11 @@
 #ifndef CFORGE_PROCESS_H
 #define CFORGE_PROCESS_H
 
-#include "file_system.h"
-#include "types.h"
 #include <stdbool.h>
 #include <stddef.h>
+
+#include "file_system.h"
+#include "types.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -87,8 +88,7 @@ cforge_process_status_t cforge_process_start(cforge_process_t *process,
 /**
  * @brief Wait for a process to complete
  */
-cforge_process_status_t cforge_process_wait(cforge_process_t *process,
-                                            cforge_uint_t timeout_ms);
+cforge_process_status_t cforge_process_wait(cforge_process_t *process, cforge_uint_t timeout_ms);
 
 /**
  * @brief Terminate a running process

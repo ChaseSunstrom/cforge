@@ -6,7 +6,9 @@
 #pragma once
 
 #include "cforge/log.hpp"
+
 #include "core/error_format.hpp"
+
 #include <cstdio>
 #include <functional>
 #include <iostream>
@@ -21,6 +23,7 @@
 #include <windows.h>
 #else
 #include <cstring>
+
 #include <fcntl.h>
 #include <signal.h>
 #include <sys/types.h>
@@ -48,12 +51,12 @@ struct process_result {
  * @param timeout_seconds Timeout in seconds (0 for no timeout)
  * @return process_result containing exit code and captured output
  */
-process_result execute_process(
-    const std::string &command, const std::vector<std::string> &args = {},
-    const std::string &working_dir = "",
-    std::function<void(const std::string &)> stdout_callback = nullptr,
-    std::function<void(const std::string &)> stderr_callback = nullptr,
-    cforge_int_t timeout_seconds = 5);
+process_result execute_process(const std::string &command,
+                               const std::vector<std::string> &args                     = {},
+                               const std::string &working_dir                           = "",
+                               std::function<void(const std::string &)> stdout_callback = nullptr,
+                               std::function<void(const std::string &)> stderr_callback = nullptr,
+                               cforge_int_t timeout_seconds                             = 5);
 
 /**
  * @brief Convert a string to lowercase
@@ -76,9 +79,10 @@ std::string string_to_lower(const std::string &str);
  */
 bool execute_tool(const std::string &command,
                   const std::vector<std::string> &args = {},
-                  const std::string &working_dir = "",
-                  const std::string &command_name = "", bool verbose = false,
-                  cforge_int_t timeout_seconds = 60);
+                  const std::string &working_dir       = "",
+                  const std::string &command_name      = "",
+                  bool verbose                         = false,
+                  cforge_int_t timeout_seconds         = 60);
 
 /**
  * @brief Check if a command is available in the PATH
@@ -95,8 +99,7 @@ bool is_command_available(const std::string &command, int timeout_seconds = 5);
  * @param generators Vector of generator names to process
  * @return std::vector<std::string> Vector with uppercased generator names
  */
-std::vector<std::string>
-uppercase_generators(const std::vector<std::string> &generators);
+std::vector<std::string> uppercase_generators(const std::vector<std::string> &generators);
 
 /**
  * @brief Join a vector of strings into a single string with a delimiter
@@ -105,10 +108,9 @@ uppercase_generators(const std::vector<std::string> &generators);
  * @param delimiter Delimiter to use between strings
  * @return std::string Joined string
  */
-std::string join_strings(const std::vector<std::string> &strings,
-                         const std::string &delimiter);
+std::string join_strings(const std::vector<std::string> &strings, const std::string &delimiter);
 
 // Global flag to suppress build warnings
 extern bool g_suppress_warnings;
 
-} // namespace cforge
+}  // namespace cforge

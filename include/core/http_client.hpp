@@ -30,6 +30,7 @@ struct http_response {
   std::vector<char> body;
 
   bool ok() const { return status_code >= 200 && status_code < 300; }
+
   std::string body_string() const { return std::string(body.begin(), body.end()); }
 };
 
@@ -38,7 +39,7 @@ struct http_response {
  */
 struct http_request_options {
   std::map<std::string, std::string> headers;
-  int timeout_seconds = 30;
+  int timeout_seconds   = 30;
   bool follow_redirects = true;
   std::string api_key;  // Added to Authorization header if set
 
@@ -137,16 +138,16 @@ private:
  * @brief URL parsing utilities
  */
 struct parsed_url {
-  std::string scheme;   // "https"
-  std::string host;     // "cache.example.com"
-  int port;             // 443
-  std::string path;     // "/cache/pkg-1.0.0"
-  std::string query;    // "foo=bar"
+  std::string scheme;  // "https"
+  std::string host;    // "cache.example.com"
+  int port;            // 443
+  std::string path;    // "/cache/pkg-1.0.0"
+  std::string query;   // "foo=bar"
 
   static std::optional<parsed_url> parse(const std::string &url);
   std::string to_string() const;
 };
 
-} // namespace cforge
+}  // namespace cforge
 
-#endif // CFORGE_HTTP_CLIENT_HPP
+#endif  // CFORGE_HTTP_CLIENT_HPP

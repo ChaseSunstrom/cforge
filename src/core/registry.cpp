@@ -4,10 +4,13 @@
  */
 
 #include "core/registry.hpp"
+
 #include "cforge/log.hpp"
+
 #include "core/process_utils.hpp"
 #include "core/toml_reader.hpp"
 #include "core/types.h"
+
 #include <algorithm>
 #include <chrono>
 #include <cstdlib>
@@ -22,7 +25,9 @@ namespace cforge {
 // Cache validity duration (24 hours)
 static const cforge_int_t CACHE_VALIDITY_HOURS = 24;
 
-std::string registry::get_index_url() { return INDEX_REPO_URL; }
+std::string registry::get_index_url() {
+  return INDEX_REPO_URL;
+}
 
 std::filesystem::path registry::get_default_cache_dir() {
 #ifdef _WIN32
@@ -49,7 +54,8 @@ std::filesystem::path registry::get_default_cache_dir() {
 }
 
 registry::registry(const std::filesystem::path &cache_dir)
-    : cache_dir_(cache_dir), index_dir_(cache_dir / "cforge-index") {}
+    : cache_dir_(cache_dir), index_dir_(cache_dir / "cforge-index") {
+}
 
 bool registry::needs_update() const {
   // Check if index exists
@@ -74,10 +80,8 @@ bool registry::needs_update() const {
   ts_in.close();
 
   // Check if older than CACHE_VALIDITY_HOURS
-  auto now = std::chrono::system_clock::now();
-  auto now_ts =
-      std::chrono::duration_cast<std::chrono::seconds>(now.time_since_epoch())
-          .count();
+  auto now    = std::chrono::system_clock::now();
+  auto now_ts = std::chrono::duration_cast<std::chrono::seconds>(now.time_since_epoch()).count();
 
   return (now_ts - timestamp) > (CACHE_VALIDITY_HOURS * 3600);
 }
@@ -98,9 +102,12 @@ bool registry::update(bool force) {
     logger::updating("package index");
 
     auto result = execute_process(
-        "git", {"pull", "--quiet"}, index_dir_.string(),
+        "git",
+        {"pull", "--quiet"},
+        index_dir_.string(),
         [](const std::string &) {},
-        [](const std::string &line) { logger::print_error(line); }, 60);
+        [](const std::string &line) { logger::print_error(line); },
+        60);
 
     success = result.success;
 
@@ -116,9 +123,12 @@ bool registry::update(bool force) {
     logger::fetching("package index from " INDEX_REPO_URL);
 
     auto result = execute_process(
-        "git", {"clone", "--quiet", "--depth", "1", INDEX_REPO_URL, index_dir_.string()},
-        "", [](const std::string &) {},
-        [](const std::string &line) { logger::print_error(line); }, 120);
+        "git",
+        {"clone", "--quiet", "--depth", "1", INDEX_REPO_URL, index_dir_.string()},
+        "",
+        [](const std::string &) {},
+        [](const std::string &line) { logger::print_error(line); },
+        120);
 
     success = result.success;
   }
@@ -129,9 +139,7 @@ bool registry::update(bool force) {
     std::ofstream ts_out(timestamp_file);
     if (ts_out) {
       auto now = std::chrono::system_clock::now();
-      auto ts = std::chrono::duration_cast<std::chrono::seconds>(
-                    now.time_since_epoch())
-                    .count();
+      auto ts  = std::chrono::duration_cast<std::chrono::seconds>(now.time_since_epoch()).count();
       ts_out << ts;
       ts_out.close();
     }
@@ -142,8 +150,7 @@ bool registry::update(bool force) {
   return success;
 }
 
-std::vector<std::string> registry::search(const std::string &query,
-                                          cforge_size_t limit) const {
+std::vector<std::string> registry::search(const std::string &query, cforge_size_t limit) const {
   std::vector<std::string> results;
   std::filesystem::path packages_dir = index_dir_ / "packages";
 
@@ -152,29 +159,26 @@ std::vector<std::string> registry::search(const std::string &query,
   }
 
   std::string query_lower = query;
-  std::transform(query_lower.begin(), query_lower.end(), query_lower.begin(),
-                 ::tolower);
+  std::transform(query_lower.begin(), query_lower.end(), query_lower.begin(), ::tolower);
 
   // Score-based search results
   std::vector<std::pair<std::string, cforge_int_t>> scored_results;
 
   // Iterate through all package directories
-  for (const auto &letter_dir :
-       std::filesystem::directory_iterator(packages_dir)) {
+  for (const auto &letter_dir : std::filesystem::directory_iterator(packages_dir)) {
     if (!letter_dir.is_directory()) {
       continue;
     }
 
-    for (const auto &pkg_file :
-         std::filesystem::directory_iterator(letter_dir.path())) {
+    for (const auto &pkg_file : std::filesystem::directory_iterator(letter_dir.path())) {
       if (pkg_file.path().extension() != ".toml") {
         continue;
       }
 
-      std::string pkg_name = pkg_file.path().stem().string();
+      std::string pkg_name       = pkg_file.path().stem().string();
       std::string pkg_name_lower = pkg_name;
-      std::transform(pkg_name_lower.begin(), pkg_name_lower.end(),
-                     pkg_name_lower.begin(), ::tolower);
+      std::transform(
+          pkg_name_lower.begin(), pkg_name_lower.end(), pkg_name_lower.begin(), ::tolower);
 
       cforge_int_t score = 0;
 
@@ -194,16 +198,14 @@ std::vector<std::string> registry::search(const std::string &query,
         auto pkg_info = load_package_file(pkg_name);
         if (pkg_info) {
           std::string desc_lower = pkg_info->description;
-          std::transform(desc_lower.begin(), desc_lower.end(),
-                         desc_lower.begin(), ::tolower);
+          std::transform(desc_lower.begin(), desc_lower.end(), desc_lower.begin(), ::tolower);
           if (desc_lower.find(query_lower) != std::string::npos) {
             score = 50;
           }
 
           for (const auto &kw : pkg_info->keywords) {
             std::string kw_lower = kw;
-            std::transform(kw_lower.begin(), kw_lower.end(), kw_lower.begin(),
-                           ::tolower);
+            std::transform(kw_lower.begin(), kw_lower.end(), kw_lower.begin(), ::tolower);
             if (kw_lower == query_lower) {
               score = std::max(score, 75);
             } else if (kw_lower.find(query_lower) != std::string::npos) {
@@ -220,8 +222,9 @@ std::vector<std::string> registry::search(const std::string &query,
   }
 
   // Sort by score (descending)
-  std::sort(scored_results.begin(), scored_results.end(),
-            [](const auto &a, const auto &b) { return a.second > b.second; });
+  std::sort(scored_results.begin(), scored_results.end(), [](const auto &a, const auto &b) {
+    return a.second > b.second;
+  });
 
   // Extract names up to limit
   for (cforge_size_t i = 0; i < std::min(limit, scored_results.size()); ++i) {
@@ -236,8 +239,9 @@ std::optional<package_info> registry::get_package(const std::string &name) const
 }
 
 std::string registry::pattern_to_regex(const std::string &pattern) {
-  // Convert pattern like "v{version}" to regex like "^v([0-9]+\\.[0-9]+\\.?[0-9]*)$"
-  std::string regex_str = "^";
+  // Convert pattern like "v{version}" to regex like
+  // "^v([0-9]+\\.[0-9]+\\.?[0-9]*)$"
+  std::string regex_str     = "^";
   cforge_size_t version_pos = pattern.find("{version}");
 
   if (version_pos == std::string::npos) {
@@ -248,9 +252,8 @@ std::string registry::pattern_to_regex(const std::string &pattern) {
   // Escape everything before {version}
   for (cforge_size_t i = 0; i < version_pos; ++i) {
     char c = pattern[i];
-    if (c == '.' || c == '*' || c == '+' || c == '?' || c == '^' ||
-        c == '$' || c == '[' || c == ']' || c == '(' || c == ')' ||
-        c == '{' || c == '}' || c == '|' || c == '\\') {
+    if (c == '.' || c == '*' || c == '+' || c == '?' || c == '^' || c == '$' || c == '[' || c == ']'
+        || c == '(' || c == ')' || c == '{' || c == '}' || c == '|' || c == '\\') {
       regex_str += '\\';
     }
     regex_str += c;
@@ -262,9 +265,8 @@ std::string registry::pattern_to_regex(const std::string &pattern) {
   // Escape everything after {version}
   for (cforge_size_t i = version_pos + 9; i < pattern.size(); ++i) {
     char c = pattern[i];
-    if (c == '.' || c == '*' || c == '+' || c == '?' || c == '^' ||
-        c == '$' || c == '[' || c == ']' || c == '(' || c == ')' ||
-        c == '{' || c == '}' || c == '|' || c == '\\') {
+    if (c == '.' || c == '*' || c == '+' || c == '?' || c == '^' || c == '$' || c == '[' || c == ']'
+        || c == '(' || c == ')' || c == '{' || c == '}' || c == '|' || c == '\\') {
       regex_str += '\\';
     }
     regex_str += c;
@@ -274,9 +276,8 @@ std::string registry::pattern_to_regex(const std::string &pattern) {
   return regex_str;
 }
 
-std::string registry::version_to_tag(const std::string &version,
-                                      const std::string &pattern) {
-  std::string tag = pattern;
+std::string registry::version_to_tag(const std::string &version, const std::string &pattern) {
+  std::string tag   = pattern;
   cforge_size_t pos = tag.find("{version}");
   if (pos != std::string::npos) {
     tag.replace(pos, 9, version);
@@ -284,9 +285,8 @@ std::string registry::version_to_tag(const std::string &version,
   return tag;
 }
 
-std::vector<package_version>
-registry::fetch_git_tags(const std::string &repo_url,
-                          const tag_config &config) const {
+std::vector<package_version> registry::fetch_git_tags(const std::string &repo_url,
+                                                      const tag_config &config) const {
   std::vector<package_version> versions;
 
   // Check in-memory cache first
@@ -300,9 +300,12 @@ registry::fetch_git_tags(const std::string &repo_url,
   // Run git ls-remote --tags
   std::string stdout_output;
   auto result = execute_process(
-      "git", {"ls-remote", "--tags", "--refs", repo_url}, "",
+      "git",
+      {"ls-remote", "--tags", "--refs", repo_url},
+      "",
       [&stdout_output](const std::string &line) { stdout_output += line + "\n"; },
-      [](const std::string &) {}, 30);
+      [](const std::string &) {},
+      30);
 
   if (!result.success) {
     logger::print_verbose("Failed to fetch tags from " + repo_url);
@@ -351,13 +354,14 @@ registry::fetch_git_tags(const std::string &repo_url,
     if (std::regex_match(tag, match, version_regex) && match.size() >= 2) {
       package_version ver;
       ver.version = match[1].str();
-      ver.tag = tag;
+      ver.tag     = tag;
       versions.emplace_back(ver);
     }
   }
 
   // Sort by version (newest first)
-  std::sort(versions.begin(), versions.end(),
+  std::sort(versions.begin(),
+            versions.end(),
             [](const package_version &a, const package_version &b) {
               return compare_versions(a.version, b.version) > 0;
             });
@@ -373,8 +377,7 @@ registry::fetch_git_tags(const std::string &repo_url,
   return versions;
 }
 
-std::vector<package_version>
-registry::load_version_cache(const std::string &name) const {
+std::vector<package_version> registry::load_version_cache(const std::string &name) const {
   std::vector<package_version> versions;
   // Always use global cache directory for version caching (not project-local)
   std::filesystem::path cache_file = get_default_cache_dir() / "versions" / (name + ".cache");
@@ -385,8 +388,8 @@ registry::load_version_cache(const std::string &name) const {
 
   // Check if cache is still valid (1 hour)
   auto mod_time = std::filesystem::last_write_time(cache_file);
-  auto now = std::filesystem::file_time_type::clock::now();
-  auto age = std::chrono::duration_cast<std::chrono::hours>(now - mod_time);
+  auto now      = std::filesystem::file_time_type::clock::now();
+  auto age      = std::chrono::duration_cast<std::chrono::hours>(now - mod_time);
   if (age.count() > 1) {
     return versions;  // Cache expired
   }
@@ -402,7 +405,7 @@ registry::load_version_cache(const std::string &name) const {
     if (tab_pos != std::string::npos) {
       package_version ver;
       ver.version = line.substr(0, tab_pos);
-      ver.tag = line.substr(tab_pos + 1);
+      ver.tag     = line.substr(tab_pos + 1);
       versions.emplace_back(ver);
     }
   }
@@ -410,9 +413,8 @@ registry::load_version_cache(const std::string &name) const {
   return versions;
 }
 
-void registry::save_version_cache(
-    const std::string &name,
-    const std::vector<package_version> &versions) const {
+void registry::save_version_cache(const std::string &name,
+                                  const std::vector<package_version> &versions) const {
   // Always use global cache directory for version caching (not project-local)
   std::filesystem::path version_cache_dir = get_default_cache_dir() / "versions";
   std::filesystem::create_directories(version_cache_dir);
@@ -428,16 +430,15 @@ void registry::save_version_cache(
   }
 }
 
-std::optional<package_info>
-registry::load_package_file(const std::string &name) const {
+std::optional<package_info> registry::load_package_file(const std::string &name) const {
   // Determine the package file path
   if (name.empty()) {
     return std::nullopt;
   }
 
-  char first_letter = std::tolower(name[0]);
-  std::filesystem::path pkg_file =
-      index_dir_ / "packages" / std::string(1, first_letter) / (name + ".toml");
+  char first_letter              = std::tolower(name[0]);
+  std::filesystem::path pkg_file = index_dir_ / "packages" / std::string(1, first_letter)
+                                 / (name + ".toml");
 
   if (!std::filesystem::exists(pkg_file)) {
     return std::nullopt;
@@ -449,33 +450,32 @@ registry::load_package_file(const std::string &name) const {
   }
 
   package_info info;
-  info.name = reader.get_string("package.name", name);
-  info.description = reader.get_string("package.description", "");
-  info.repository = reader.get_string("package.repository", "");
-  info.homepage = reader.get_string("package.homepage", "");
+  info.name          = reader.get_string("package.name", name);
+  info.description   = reader.get_string("package.description", "");
+  info.repository    = reader.get_string("package.repository", "");
+  info.homepage      = reader.get_string("package.homepage", "");
   info.documentation = reader.get_string("package.documentation", "");
-  info.license = reader.get_string("package.license", "");
-  info.keywords = reader.get_string_array("package.keywords");
-  info.categories = reader.get_string_array("package.categories");
-  info.verified = reader.get_bool("package.verified", false);
+  info.license       = reader.get_string("package.license", "");
+  info.keywords      = reader.get_string_array("package.keywords");
+  info.categories    = reader.get_string_array("package.categories");
+  info.verified      = reader.get_bool("package.verified", false);
 
   // Tag discovery configuration
-  info.tags.pattern = reader.get_string("package.tag_pattern", "v{version}");
-  info.tags.exclude = reader.get_string_array("package.tag_exclude");
-  info.tags.max_versions = reader.get_int("package.max_versions", 50);
+  info.tags.pattern           = reader.get_string("package.tag_pattern", "v{version}");
+  info.tags.exclude           = reader.get_string_array("package.tag_exclude");
+  info.tags.max_versions      = reader.get_int("package.max_versions", 50);
   info.auto_discover_versions = reader.get_bool("package.auto_versions", true);
 
   // Integration - support both old [integration] and new [cmake] sections
-  info.integration.type = reader.get_string("integration.type",
+  info.integration.type               = reader.get_string("integration.type",
                                             reader.get_string("cmake.type", "cmake"));
-  info.integration.cmake_target = reader.get_string("integration.cmake_target",
+  info.integration.cmake_target       = reader.get_string("integration.cmake_target",
                                                     reader.get_string("cmake.target", ""));
-  info.integration.include_dir = reader.get_string("integration.include_dir",
+  info.integration.include_dir        = reader.get_string("integration.include_dir",
                                                    reader.get_string("cmake.include_dir", ""));
-  info.integration.single_header = reader.get_string("integration.single_header", "");
-  info.integration.cmake_subdir = reader.get_string("integration.cmake_subdir", "");
-  info.integration.header_only_option =
-      reader.get_string("integration.header_only_option", "");
+  info.integration.single_header      = reader.get_string("integration.single_header", "");
+  info.integration.cmake_subdir       = reader.get_string("integration.cmake_subdir", "");
+  info.integration.header_only_option = reader.get_string("integration.header_only_option", "");
 
   // Check if header_only is set at cmake level
   if (reader.get_bool("cmake.header_only", false)) {
@@ -495,10 +495,10 @@ registry::load_package_file(const std::string &name) const {
     }
 
     package_feature feat;
-    feat.name = feature_name;
+    feat.name          = feature_name;
     std::string prefix = "features." + feature_name;
-    feat.cmake_option = reader.get_string(prefix + ".option", "");
-    feat.description = reader.get_string(prefix + ".description", "");
+    feat.cmake_option  = reader.get_string(prefix + ".option", "");
+    feat.description   = reader.get_string(prefix + ".description", "");
     // Support both inline requires and nested requires.dependencies
     feat.required_deps = reader.get_string_array(prefix + ".requires");
     if (feat.required_deps.empty()) {
@@ -510,23 +510,23 @@ registry::load_package_file(const std::string &name) const {
 
   // Setup commands (for packages requiring generation/build steps)
   if (reader.has_key("setup")) {
-    info.setup.commands = reader.get_string_array("setup.commands");
+    info.setup.commands       = reader.get_string_array("setup.commands");
     info.setup.required_tools = reader.get_string_array("setup.requires");
-    info.setup.workdir = reader.get_string("setup.workdir", ".");
-    info.setup.outputs = reader.get_string_array("setup.outputs");
-    info.setup.defaults = reader.get_string_map("setup.defaults");
+    info.setup.workdir        = reader.get_string("setup.workdir", ".");
+    info.setup.outputs        = reader.get_string_array("setup.outputs");
+    info.setup.defaults       = reader.get_string_map("setup.defaults");
 
     // Platform-specific overrides
     if (reader.has_key("setup.windows")) {
-      info.setup.windows.commands = reader.get_string_array("setup.windows.commands");
+      info.setup.windows.commands       = reader.get_string_array("setup.windows.commands");
       info.setup.windows.required_tools = reader.get_string_array("setup.windows.requires");
     }
     if (reader.has_key("setup.linux")) {
-      info.setup.linux_os.commands = reader.get_string_array("setup.linux.commands");
+      info.setup.linux_os.commands       = reader.get_string_array("setup.linux.commands");
       info.setup.linux_os.required_tools = reader.get_string_array("setup.linux.requires");
     }
     if (reader.has_key("setup.macos")) {
-      info.setup.macos.commands = reader.get_string_array("setup.macos.commands");
+      info.setup.macos.commands       = reader.get_string_array("setup.macos.commands");
       info.setup.macos.required_tools = reader.get_string_array("setup.macos.requires");
     }
   }
@@ -551,7 +551,7 @@ registry::load_package_file(const std::string &name) const {
           info.versions.emplace_back(current_ver);
         }
         current_ver = package_version();
-        in_version = true;
+        in_version  = true;
       } else if (in_version) {
         if (line[0] == '[' && line.find("[[") != 0) {
           // New section, save current version
@@ -563,7 +563,7 @@ registry::load_package_file(const std::string &name) const {
           // Parse version fields
           cforge_size_t eq_pos = line.find('=');
           if (eq_pos != std::string::npos) {
-            std::string key = line.substr(0, eq_pos);
+            std::string key   = line.substr(0, eq_pos);
             std::string value = line.substr(eq_pos + 1);
 
             // Trim key and value
@@ -571,8 +571,7 @@ registry::load_package_file(const std::string &name) const {
             value.erase(0, value.find_first_not_of(" \t"));
 
             // Remove quotes from value
-            if (value.size() >= 2 && value.front() == '"' &&
-                value.back() == '"') {
+            if (value.size() >= 2 && value.front() == '"' && value.back() == '"') {
               value = value.substr(1, value.size() - 2);
             }
 
@@ -583,8 +582,7 @@ registry::load_package_file(const std::string &name) const {
             } else if (key == "min_cpp") {
               try {
                 current_ver.min_cpp = std::stoi(value);
-              } catch (...) {
-              }
+              } catch (...) {}
             } else if (key == "yanked") {
               current_ver.yanked = (value == "true");
             }
@@ -599,8 +597,7 @@ registry::load_package_file(const std::string &name) const {
     }
 
     // If no explicit versions and auto-discover is enabled, fetch from Git
-    if (info.versions.empty() && info.auto_discover_versions &&
-        !info.repository.empty()) {
+    if (info.versions.empty() && info.auto_discover_versions && !info.repository.empty()) {
       // Try cache first
       info.versions = load_version_cache(name);
 
@@ -617,14 +614,14 @@ registry::load_package_file(const std::string &name) const {
   }
 
   // Maintainers
-  info.maintainer_owners = reader.get_string_array("maintainers.owners");
+  info.maintainer_owners  = reader.get_string_array("maintainers.owners");
   info.maintainer_authors = reader.get_string_array("maintainers.authors");
 
   return info;
 }
 
 std::string registry::resolve_version(const std::string &name,
-                                       const std::string &version_spec) const {
+                                      const std::string &version_spec) const {
   auto pkg = get_package(name);
   if (!pkg || pkg->versions.empty()) {
     return "";
@@ -632,7 +629,8 @@ std::string registry::resolve_version(const std::string &name,
 
   // Sort versions (highest first)
   std::vector<package_version> sorted_versions = pkg->versions;
-  std::sort(sorted_versions.begin(), sorted_versions.end(),
+  std::sort(sorted_versions.begin(),
+            sorted_versions.end(),
             [](const package_version &a, const package_version &b) {
               return compare_versions(a.version, b.version) > 0;
             });
@@ -650,8 +648,7 @@ std::string registry::resolve_version(const std::string &name,
   return "";
 }
 
-bool registry::version_matches(const std::string &version,
-                                const std::string &spec) {
+bool registry::version_matches(const std::string &version, const std::string &spec) {
   if (spec == "*" || spec.empty()) {
     return true;
   }
@@ -672,7 +669,7 @@ bool registry::version_matches(const std::string &version,
     }
 
     // Parse both versions
-    auto ver_parts = parse_version(version);
+    auto ver_parts  = parse_version(version);
     auto spec_parts = parse_version(prefix);
 
     // Check that version has at least as many parts as spec
@@ -735,93 +732,92 @@ std::vector<cforge_int_t> registry::parse_version(const std::string &version) {
   return parts;
 }
 
-std::optional<resolved_dependency>
-registry::resolve_dependency(const dependency_spec &spec) const {
+std::optional<resolved_dependency> registry::resolve_dependency(const dependency_spec &spec) const {
   resolved_dependency resolved;
-  resolved.name = spec.name;
-  resolved.source = spec.source;
-  resolved.features = spec.features;
+  resolved.name        = spec.name;
+  resolved.source      = spec.source;
+  resolved.features    = spec.features;
   resolved.header_only = spec.header_only;
-  resolved.link = spec.link;
+  resolved.link        = spec.link;
 
   switch (spec.source) {
-  case dependency_source::INDEX: {
-    auto pkg = get_package(spec.name);
-    if (!pkg) {
-      return std::nullopt;
-    }
-
-    // Resolve version
-    std::string version = resolve_version(spec.name, spec.version);
-    if (version.empty() && !pkg->versions.empty()) {
-      // Use latest
-      version = pkg->versions[0].version;
-    }
-
-    resolved.repository = pkg->repository;
-    resolved.version = version;
-    resolved.cmake_target = pkg->integration.cmake_target;
-    resolved.include_dir = pkg->integration.include_dir;
-
-    // Find tag for this version
-    for (const auto &ver : pkg->versions) {
-      if (ver.version == version) {
-        resolved.tag = ver.tag;
-        break;
+    case dependency_source::INDEX: {
+      auto pkg = get_package(spec.name);
+      if (!pkg) {
+        return std::nullopt;
       }
-    }
 
-    // Apply default features if not disabled
-    if (spec.default_features) {
-      for (const auto &feat : pkg->default_features) {
-        if (std::find(resolved.features.begin(), resolved.features.end(),
-                      feat) == resolved.features.end()) {
-          resolved.features.emplace_back(feat);
+      // Resolve version
+      std::string version = resolve_version(spec.name, spec.version);
+      if (version.empty() && !pkg->versions.empty()) {
+        // Use latest
+        version = pkg->versions[0].version;
+      }
+
+      resolved.repository   = pkg->repository;
+      resolved.version      = version;
+      resolved.cmake_target = pkg->integration.cmake_target;
+      resolved.include_dir  = pkg->integration.include_dir;
+
+      // Find tag for this version
+      for (const auto &ver : pkg->versions) {
+        if (ver.version == version) {
+          resolved.tag = ver.tag;
+          break;
         }
       }
-    }
 
-    // Resolve feature CMake options
-    for (const auto &feat_name : resolved.features) {
-      auto it = pkg->features.find(feat_name);
-      if (it != pkg->features.end()) {
-        if (!it->second.cmake_option.empty()) {
-          resolved.cmake_options[it->second.cmake_option] = "ON";
+      // Apply default features if not disabled
+      if (spec.default_features) {
+        for (const auto &feat : pkg->default_features) {
+          if (std::find(resolved.features.begin(), resolved.features.end(), feat)
+              == resolved.features.end()) {
+            resolved.features.emplace_back(feat);
+          }
         }
       }
+
+      // Resolve feature CMake options
+      for (const auto &feat_name : resolved.features) {
+        auto it = pkg->features.find(feat_name);
+        if (it != pkg->features.end()) {
+          if (!it->second.cmake_option.empty()) {
+            resolved.cmake_options[it->second.cmake_option] = "ON";
+          }
+        }
+      }
+
+      // Copy setup configuration
+      resolved.setup = pkg->setup;
+
+      // Merge setup options: start with defaults, then override with user options
+      resolved.setup_options = pkg->setup.defaults;
+      for (const auto &[key, value] : spec.setup_options) {
+        resolved.setup_options[key] = value;
+      }
+
+      break;
     }
 
-    // Copy setup configuration
-    resolved.setup = pkg->setup;
+    case dependency_source::GIT:
+      resolved.repository = spec.git_url;
+      resolved.tag        = spec.git_tag;
+      resolved.branch     = spec.git_branch;
+      resolved.commit     = spec.git_commit;
+      break;
 
-    // Merge setup options: start with defaults, then override with user options
-    resolved.setup_options = pkg->setup.defaults;
-    for (const auto &[key, value] : spec.setup_options) {
-      resolved.setup_options[key] = value;
-    }
+    case dependency_source::VCPKG:
+      resolved.vcpkg_name = spec.vcpkg_name.empty() ? spec.name : spec.vcpkg_name;
+      resolved.version    = spec.version;
+      break;
 
-    break;
-  }
+    case dependency_source::SYSTEM:
+      resolved.pkg_config_name = spec.name;
+      break;
 
-  case dependency_source::GIT:
-    resolved.repository = spec.git_url;
-    resolved.tag = spec.git_tag;
-    resolved.branch = spec.git_branch;
-    resolved.commit = spec.git_commit;
-    break;
-
-  case dependency_source::VCPKG:
-    resolved.vcpkg_name = spec.vcpkg_name.empty() ? spec.name : spec.vcpkg_name;
-    resolved.version = spec.version;
-    break;
-
-  case dependency_source::SYSTEM:
-    resolved.pkg_config_name = spec.name;
-    break;
-
-  case dependency_source::PROJECT:
-    resolved.path = spec.path;
-    break;
+    case dependency_source::PROJECT:
+      resolved.path = spec.path;
+      break;
   }
 
   return resolved;
@@ -835,14 +831,12 @@ std::vector<std::string> registry::list_packages() const {
     return packages;
   }
 
-  for (const auto &letter_dir :
-       std::filesystem::directory_iterator(packages_dir)) {
+  for (const auto &letter_dir : std::filesystem::directory_iterator(packages_dir)) {
     if (!letter_dir.is_directory()) {
       continue;
     }
 
-    for (const auto &pkg_file :
-         std::filesystem::directory_iterator(letter_dir.path())) {
+    for (const auto &pkg_file : std::filesystem::directory_iterator(letter_dir.path())) {
       if (pkg_file.path().extension() == ".toml") {
         packages.emplace_back(pkg_file.path().stem().string());
       }
@@ -871,22 +865,21 @@ dependency_source registry::parse_source(const std::string &source) {
 
 std::string registry::source_to_string(dependency_source source) {
   switch (source) {
-  case dependency_source::INDEX:
-    return "index";
-  case dependency_source::GIT:
-    return "git";
-  case dependency_source::VCPKG:
-    return "vcpkg";
-  case dependency_source::SYSTEM:
-    return "system";
-  case dependency_source::PROJECT:
-    return "project";
+    case dependency_source::INDEX:
+      return "index";
+    case dependency_source::GIT:
+      return "git";
+    case dependency_source::VCPKG:
+      return "vcpkg";
+    case dependency_source::SYSTEM:
+      return "system";
+    case dependency_source::PROJECT:
+      return "project";
   }
   return "index";
 }
 
-std::vector<dependency_spec>
-parse_dependencies(const std::filesystem::path &config_path) {
+std::vector<dependency_spec> parse_dependencies(const std::filesystem::path &config_path) {
   std::vector<dependency_spec> deps;
 
   toml_reader reader;
@@ -905,12 +898,11 @@ parse_dependencies(const std::filesystem::path &config_path) {
     spec.name = name;
 
     // Check if it's a simple string or a table
-    std::string simple_version =
-        reader.get_string("dependencies." + name, "");
+    std::string simple_version = reader.get_string("dependencies." + name, "");
     if (!simple_version.empty()) {
       // Simple format: name = "version"
       spec.version = simple_version;
-      spec.source = dependency_source::INDEX;
+      spec.source  = dependency_source::INDEX;
     } else {
       // Table format: name = { ... }
       std::string prefix = "dependencies." + name;
@@ -922,34 +914,33 @@ parse_dependencies(const std::filesystem::path &config_path) {
       } else {
         // Infer source from available fields
         if (reader.has_key(prefix + ".git")) {
-          spec.source = dependency_source::GIT;
+          spec.source  = dependency_source::GIT;
           spec.git_url = reader.get_string(prefix + ".git", "");
         } else if (reader.has_key(prefix + ".vcpkg")) {
-          spec.source = dependency_source::VCPKG;
+          spec.source     = dependency_source::VCPKG;
           spec.vcpkg_name = reader.get_string(prefix + ".vcpkg", "");
         } else if (reader.has_key(prefix + ".path")) {
           spec.source = dependency_source::PROJECT;
-          spec.path = reader.get_string(prefix + ".path", "");
-        } else if (reader.has_key(prefix + ".system") &&
-                   reader.get_bool(prefix + ".system", false)) {
+          spec.path   = reader.get_string(prefix + ".path", "");
+        } else if (reader.has_key(prefix + ".system")
+                   && reader.get_bool(prefix + ".system", false)) {
           spec.source = dependency_source::SYSTEM;
         } else {
           spec.source = dependency_source::INDEX;
         }
       }
 
-      spec.version = reader.get_string(prefix + ".version", "*");
-      spec.git_url = reader.get_string(prefix + ".git", spec.git_url);
-      spec.git_tag = reader.get_string(prefix + ".tag", "");
-      spec.git_branch = reader.get_string(prefix + ".branch", "");
-      spec.git_commit = reader.get_string(prefix + ".commit", "");
-      spec.vcpkg_name = reader.get_string(prefix + ".vcpkg", spec.vcpkg_name);
-      spec.path = reader.get_string(prefix + ".path", spec.path);
-      spec.header_only = reader.get_bool(prefix + ".header_only", false);
-      spec.link = reader.get_bool(prefix + ".link", true);
-      spec.default_features =
-          reader.get_bool(prefix + ".default_features", true);
-      spec.features = reader.get_string_array(prefix + ".features");
+      spec.version          = reader.get_string(prefix + ".version", "*");
+      spec.git_url          = reader.get_string(prefix + ".git", spec.git_url);
+      spec.git_tag          = reader.get_string(prefix + ".tag", "");
+      spec.git_branch       = reader.get_string(prefix + ".branch", "");
+      spec.git_commit       = reader.get_string(prefix + ".commit", "");
+      spec.vcpkg_name       = reader.get_string(prefix + ".vcpkg", spec.vcpkg_name);
+      spec.path             = reader.get_string(prefix + ".path", spec.path);
+      spec.header_only      = reader.get_bool(prefix + ".header_only", false);
+      spec.link             = reader.get_bool(prefix + ".link", true);
+      spec.default_features = reader.get_bool(prefix + ".default_features", true);
+      spec.features         = reader.get_string_array(prefix + ".features");
     }
 
     deps.emplace_back(spec);
@@ -958,4 +949,4 @@ parse_dependencies(const std::filesystem::path &config_path) {
   return deps;
 }
 
-} // namespace cforge
+}  // namespace cforge

@@ -7,6 +7,7 @@
 
 #include "core/test_framework.hpp"
 #include "core/toml_reader.hpp"
+
 #include <filesystem>
 #include <functional>
 #include <map>
@@ -20,11 +21,11 @@ namespace cforge {
 struct test_run_options {
   std::string build_config{"Debug"};
   std::string filter;
-  bool native_output = false;
-  bool no_build = false;
-  bool list_only = false;
-  bool verbose = false;
-  cforge_int_t jobs = 0;
+  bool native_output            = false;
+  bool no_build                 = false;
+  bool list_only                = false;
+  bool verbose                  = false;
+  cforge_int_t jobs             = 0;
   cforge_int_t timeout_override = 0;
 };
 
@@ -38,8 +39,7 @@ public:
    * @param project_dir Path to the project root
    * @param config Project configuration
    */
-  test_runner(const std::filesystem::path &project_dir,
-             const toml_reader &config);
+  test_runner(const std::filesystem::path &project_dir, const toml_reader &config);
 
   ~test_runner();
 
@@ -144,7 +144,8 @@ private:
    * @param verbose Stream cmake/build output live (otherwise show progress bar)
    * @return true if build succeeded
    */
-  bool build_target(const test_target &target, const std::string &build_config,
+  bool build_target(const test_target &target,
+                    const std::string &build_config,
                     bool verbose = false);
 
   /**
@@ -162,8 +163,7 @@ private:
    * @param options Execution options
    * @return Vector of test results
    */
-  std::vector<test_result> run_target(const test_target &target,
-                                     const test_run_options &options);
+  std::vector<test_result> run_target(const test_target &target, const test_run_options &options);
 
   /**
    * @brief Auto-discover tests from source files
@@ -193,9 +193,8 @@ private:
    * @param base_dir Base directory for patterns
    * @return Vector of matching file paths
    */
-  std::vector<std::filesystem::path>
-  expand_globs(const std::vector<std::string> &patterns,
-               const std::filesystem::path &base_dir);
+  std::vector<std::filesystem::path> expand_globs(const std::vector<std::string> &patterns,
+                                                  const std::filesystem::path &base_dir);
 
   /**
    * @brief Load framework-specific configuration from TOML
@@ -218,9 +217,8 @@ private:
    * @param gen_dir Generation directory for the target
    * @return Path to the generated source file (empty if none was needed)
    */
-  std::filesystem::path
-  generate_main_if_needed(const test_target &target,
-                          const std::filesystem::path &gen_dir);
+  std::filesystem::path generate_main_if_needed(const test_target &target,
+                                                const std::filesystem::path &gen_dir);
 };
 
 /**
@@ -228,4 +226,4 @@ private:
  */
 std::unique_ptr<i_test_framework_adapter> create_adapter(test_framework fw);
 
-} // namespace cforge
+}  // namespace cforge

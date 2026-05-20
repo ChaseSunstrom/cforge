@@ -6,6 +6,7 @@
 #pragma once
 
 #include "core/test_framework.hpp"
+
 #include <string>
 
 namespace cforge {
@@ -57,8 +58,7 @@ public:
    * @param framework Framework being used
    * @return Formatted string
    */
-  std::string format_build_start(const std::string &target_name,
-                                  test_framework framework);
+  std::string format_build_start(const std::string &target_name, test_framework framework);
 
   /**
    * @brief Format test execution start
@@ -105,8 +105,7 @@ public:
   /**
    * @brief Print test build start
    */
-  void print_build_start(const std::string &target_name,
-                         test_framework framework);
+  void print_build_start(const std::string &target_name, test_framework framework);
 
   /**
    * @brief Print test execution start
@@ -179,8 +178,8 @@ private:
    * @param tests Flat list of test names
    * @return Map of suite -> test names
    */
-  std::map<std::string, std::vector<std::string>>
-  group_tests_by_suite(const std::vector<std::string> &tests);
+  std::map<std::string, std::vector<std::string>> group_tests_by_suite(
+      const std::vector<std::string> &tests);
 };
 
-} // namespace cforge
+}  // namespace cforge

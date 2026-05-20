@@ -7,6 +7,7 @@
 
 #include "core/benchmark_framework.hpp"
 #include "core/toml_reader.hpp"
+
 #include <filesystem>
 #include <functional>
 #include <map>
@@ -20,15 +21,16 @@ namespace cforge {
 struct benchmark_run_options {
   std::string build_config{"Release"};
   std::string filter;
-  bool no_build = false;
+  bool no_build    = false;
   bool json_output = false;
-  bool csv_output = false;
-  bool verbose = false;
-  int repetitions = 1;
+  bool csv_output  = false;
+  bool verbose     = false;
+  int repetitions  = 1;
 };
 
 /**
- * @brief Benchmark runner - orchestrates benchmark discovery, building, and execution
+ * @brief Benchmark runner - orchestrates benchmark discovery, building, and
+ * execution
  */
 class benchmark_runner {
 public:
@@ -37,8 +39,7 @@ public:
    * @param project_dir Path to the project root
    * @param config Project configuration
    */
-  benchmark_runner(const std::filesystem::path &project_dir,
-                   const toml_reader &config);
+  benchmark_runner(const std::filesystem::path &project_dir, const toml_reader &config);
 
   ~benchmark_runner();
 
@@ -93,7 +94,7 @@ public:
 
 private:
   std::filesystem::path m_project_dir;
-  std::filesystem::path m_build_base_dir; // resolved from build.directory
+  std::filesystem::path m_build_base_dir;  // resolved from build.directory
   const toml_reader &m_project_config;
   benchmark_config m_bench_config;
   std::vector<benchmark_result> m_results;
@@ -102,9 +103,8 @@ private:
   std::filesystem::path get_bench_gen_dir(const std::string &target_name) const;
   std::filesystem::path get_bench_build_dir(const std::string &target_name) const;
   std::filesystem::path write_builtin_header(const std::filesystem::path &gen_dir);
-  std::filesystem::path
-  generate_main_if_needed(const benchmark_target &target,
-                          const std::filesystem::path &gen_dir);
+  std::filesystem::path generate_main_if_needed(const benchmark_target &target,
+                                                const std::filesystem::path &gen_dir);
 
   // Framework adapters (lazily created)
   std::map<benchmark_framework, std::unique_ptr<i_benchmark_framework_adapter>> m_adapters;
@@ -137,7 +137,8 @@ private:
    * @return true if build succeeded
    */
   bool build_target(const benchmark_target &target,
-                    const std::string &build_config, bool verbose = false);
+                    const std::string &build_config,
+                    bool verbose = false);
 
   /**
    * @brief Find benchmark executable for a target
@@ -146,7 +147,7 @@ private:
    * @return Path to executable, or empty if not found
    */
   std::filesystem::path find_benchmark_executable(const benchmark_target &target,
-                                                   const std::string &build_config);
+                                                  const std::string &build_config);
 
   /**
    * @brief Run a single benchmark target
@@ -185,4 +186,4 @@ private:
  */
 std::unique_ptr<i_benchmark_framework_adapter> create_benchmark_adapter(benchmark_framework fw);
 
-} // namespace cforge
+}  // namespace cforge

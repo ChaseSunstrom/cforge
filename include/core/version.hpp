@@ -14,6 +14,7 @@
 #pragma once
 
 #include "core/process_utils.hpp"
+
 #include <algorithm>
 #include <filesystem>
 #include <optional>
@@ -31,8 +32,8 @@ struct semver {
   cforge_int_t major = 0;
   cforge_int_t minor = 0;
   cforge_int_t patch = 0;
-  std::string prerelease; // e.g., "beta", "rc1"
-  std::string build;      // Build metadata
+  std::string prerelease;  // e.g., "beta", "rc1"
+  std::string build;       // Build metadata
 
   /**
    * @brief Parse a version string
@@ -57,14 +58,14 @@ struct semver {
     cforge_size_t build_pos = str.find('+');
     if (build_pos != std::string::npos) {
       v.build = str.substr(build_pos + 1);
-      str = str.substr(0, build_pos);
+      str     = str.substr(0, build_pos);
     }
 
     // Extract prerelease (-...)
     cforge_size_t pre_pos = str.find('-');
     if (pre_pos != std::string::npos) {
       v.prerelease = str.substr(pre_pos + 1);
-      str = str.substr(0, pre_pos);
+      str          = str.substr(0, pre_pos);
     }
 
     // Parse major.minor.patch
@@ -76,7 +77,7 @@ struct semver {
       try {
         // Handle wildcards
         if (part == "*" || part == "x" || part == "X") {
-          parts.emplace_back(-1); // -1 indicates wildcard
+          parts.emplace_back(-1);  // -1 indicates wildcard
         } else {
           parts.emplace_back(std::stoi(part));
         }
@@ -100,8 +101,8 @@ struct semver {
    * @brief Convert version to string
    */
   std::string to_string() const {
-    std::string result = std::to_string(major) + "." + std::to_string(minor) +
-                         "." + std::to_string(patch);
+    std::string result = std::to_string(major) + "." + std::to_string(minor) + "."
+                       + std::to_string(patch);
 
     if (!prerelease.empty()) {
       result += "-" + prerelease;
@@ -119,29 +120,40 @@ struct semver {
    * @return -1 if this < other, 0 if equal, 1 if this > other
    */
   cforge_int_t compare(const semver &other) const {
-    if (major != other.major)
+    if (major != other.major) {
       return major < other.major ? -1 : 1;
-    if (minor != other.minor)
+    }
+    if (minor != other.minor) {
       return minor < other.minor ? -1 : 1;
-    if (patch != other.patch)
+    }
+    if (patch != other.patch) {
       return patch < other.patch ? -1 : 1;
+    }
 
     // Prerelease versions have lower precedence
-    if (prerelease.empty() && !other.prerelease.empty())
+    if (prerelease.empty() && !other.prerelease.empty()) {
       return 1;
-    if (!prerelease.empty() && other.prerelease.empty())
+    }
+    if (!prerelease.empty() && other.prerelease.empty()) {
       return -1;
-    if (prerelease != other.prerelease)
+    }
+    if (prerelease != other.prerelease) {
       return prerelease < other.prerelease ? -1 : 1;
+    }
 
     return 0;
   }
 
   bool operator<(const semver &other) const { return compare(other) < 0; }
+
   bool operator<=(const semver &other) const { return compare(other) <= 0; }
+
   bool operator>(const semver &other) const { return compare(other) > 0; }
+
   bool operator>=(const semver &other) const { return compare(other) >= 0; }
+
   bool operator==(const semver &other) const { return compare(other) == 0; }
+
   bool operator!=(const semver &other) const { return compare(other) != 0; }
 };
 
@@ -150,14 +162,14 @@ struct semver {
  */
 struct version_constraint {
   enum class op_type {
-    EQ,    // =, exact match
-    NE,    // !=
-    LT,    // <
-    LE,    // <=
-    GT,    // >
-    GE,    // >=
-    CARET, // ^, compatible (same major)
-    TILDE  // ~, approximately (same major.minor)
+    EQ,     // =, exact match
+    NE,     // !=
+    LT,     // <
+    LE,     // <=
+    GT,     // >
+    GE,     // >=
+    CARET,  // ^, compatible (same major)
+    TILDE   // ~, approximately (same major.minor)
   };
 
   op_type op = op_type::EQ;
@@ -168,32 +180,34 @@ struct version_constraint {
    */
   bool satisfies(const semver &v) const {
     switch (op) {
-    case op_type::EQ:
-      return v == version;
-    case op_type::NE:
-      return v != version;
-    case op_type::LT:
-      return v < version;
-    case op_type::LE:
-      return v <= version;
-    case op_type::GT:
-      return v > version;
-    case op_type::GE:
-      return v >= version;
-    case op_type::CARET:
-      // ^1.2.3 means >=1.2.3 and <2.0.0
-      // ^0.2.3 means >=0.2.3 and <0.3.0 (special case for 0.x)
-      if (v < version)
-        return false;
-      if (version.major == 0) {
-        return v.major == 0 && v.minor == version.minor;
-      }
-      return v.major == version.major;
-    case op_type::TILDE:
-      // ~1.2.3 means >=1.2.3 and <1.3.0
-      if (v < version)
-        return false;
-      return v.major == version.major && v.minor == version.minor;
+      case op_type::EQ:
+        return v == version;
+      case op_type::NE:
+        return v != version;
+      case op_type::LT:
+        return v < version;
+      case op_type::LE:
+        return v <= version;
+      case op_type::GT:
+        return v > version;
+      case op_type::GE:
+        return v >= version;
+      case op_type::CARET:
+        // ^1.2.3 means >=1.2.3 and <2.0.0
+        // ^0.2.3 means >=0.2.3 and <0.3.0 (special case for 0.x)
+        if (v < version) {
+          return false;
+        }
+        if (version.major == 0) {
+          return v.major == 0 && v.minor == version.minor;
+        }
+        return v.major == version.major;
+      case op_type::TILDE:
+        // ~1.2.3 means >=1.2.3 and <1.3.0
+        if (v < version) {
+          return false;
+        }
+        return v.major == version.major && v.minor == version.minor;
     }
     return false;
   }
@@ -283,9 +297,7 @@ public:
   /**
    * @brief Get the constraints
    */
-  const std::vector<version_constraint> &constraints() const {
-    return constraints_;
-  }
+  const std::vector<version_constraint> &constraints() const { return constraints_; }
 
   /**
    * @brief Check if this accepts any version
@@ -296,8 +308,7 @@ private:
   std::vector<version_constraint> constraints_;
   bool any_version_ = false;
 
-  static std::optional<version_constraint>
-  parse_constraint(const std::string &str) {
+  static std::optional<version_constraint> parse_constraint(const std::string &str) {
     version_constraint c;
     std::string version_part;
 
@@ -307,32 +318,32 @@ private:
 
     // Check for operator prefix
     if (str[0] == '^') {
-      c.op = version_constraint::op_type::CARET;
+      c.op         = version_constraint::op_type::CARET;
       version_part = str.substr(1);
     } else if (str[0] == '~') {
-      c.op = version_constraint::op_type::TILDE;
+      c.op         = version_constraint::op_type::TILDE;
       version_part = str.substr(1);
     } else if (str.length() > 1 && str[0] == '>' && str[1] == '=') {
-      c.op = version_constraint::op_type::GE;
+      c.op         = version_constraint::op_type::GE;
       version_part = str.substr(2);
     } else if (str.length() > 1 && str[0] == '<' && str[1] == '=') {
-      c.op = version_constraint::op_type::LE;
+      c.op         = version_constraint::op_type::LE;
       version_part = str.substr(2);
     } else if (str.length() > 1 && str[0] == '!' && str[1] == '=') {
-      c.op = version_constraint::op_type::NE;
+      c.op         = version_constraint::op_type::NE;
       version_part = str.substr(2);
     } else if (str[0] == '>') {
-      c.op = version_constraint::op_type::GT;
+      c.op         = version_constraint::op_type::GT;
       version_part = str.substr(1);
     } else if (str[0] == '<') {
-      c.op = version_constraint::op_type::LT;
+      c.op         = version_constraint::op_type::LT;
       version_part = str.substr(1);
     } else if (str[0] == '=') {
-      c.op = version_constraint::op_type::EQ;
+      c.op         = version_constraint::op_type::EQ;
       version_part = str.substr(1);
     } else {
       // No operator means exact match
-      c.op = version_constraint::op_type::EQ;
+      c.op         = version_constraint::op_type::EQ;
       version_part = str;
     }
 
@@ -357,9 +368,8 @@ private:
  * @param requirement Version requirement
  * @return Best matching version or nullopt if none match
  */
-inline std::optional<std::string>
-find_best_version(const std::vector<std::string> &available,
-                  const version_requirement &requirement) {
+inline std::optional<std::string> find_best_version(const std::vector<std::string> &available,
+                                                    const version_requirement &requirement) {
   std::optional<semver> best;
   std::string best_str;
 
@@ -371,7 +381,7 @@ find_best_version(const std::vector<std::string> &available,
 
     if (requirement.satisfies(*v)) {
       if (!best || *v > *best) {
-        best = v;
+        best     = v;
         best_str = v_str;
       }
     }
@@ -390,12 +400,10 @@ find_best_version(const std::vector<std::string> &available,
  * @param repo_dir Repository directory
  * @return Vector of tag names
  */
-inline std::vector<std::string>
-get_git_tags(const std::filesystem::path &repo_dir) {
+inline std::vector<std::string> get_git_tags(const std::filesystem::path &repo_dir) {
   std::vector<std::string> tags;
 
-  process_result result =
-      execute_process("git", {"tag", "-l"}, repo_dir.string());
+  process_result result = execute_process("git", {"tag", "-l"}, repo_dir.string());
 
   if (result.success) {
     std::istringstream iss(result.stdout_output);
@@ -413,4 +421,4 @@ get_git_tags(const std::filesystem::path &repo_dir) {
   return tags;
 }
 
-} // namespace cforge
+}  // namespace cforge
