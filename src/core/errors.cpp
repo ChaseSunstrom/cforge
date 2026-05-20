@@ -8,11 +8,12 @@
 #include "cforge/log.hpp"
 
 #include <sstream>
+#include "core/types.h"
 
 namespace cforge {
 
 error_category get_error_category(error_code code) {
-  int value = static_cast<int>(code);
+  cforge_int_t value = static_cast<int>(code);
   if (value == 0) {
     return error_category::GENERAL;
   }

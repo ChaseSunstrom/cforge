@@ -12,6 +12,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include "core/types.h"
 
 namespace cforge {
 
@@ -25,7 +26,7 @@ struct benchmark_run_options {
   bool json_output = false;
   bool csv_output  = false;
   bool verbose     = false;
-  int repetitions  = 1;
+  cforge_int_t repetitions  = 1;
 };
 
 /**

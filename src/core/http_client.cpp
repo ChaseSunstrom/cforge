@@ -105,7 +105,7 @@ std::optional<http_response> http_client::perform_request(const std::string &met
 
   // Convert strings to wide strings for WinHTTP
   auto to_wstring = [](const std::string &s) {
-    int len = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, nullptr, 0);
+    cforge_int_t len = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, nullptr, 0);
     std::wstring ws(len, 0);
     MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, &ws[0], len);
     ws.resize(len - 1);  // Remove null terminator
@@ -124,7 +124,7 @@ std::optional<http_response> http_client::perform_request(const std::string &met
   }
 
   // Set timeouts
-  int timeout_ms = options.timeout_seconds * 1000;
+  cforge_int_t timeout_ms = options.timeout_seconds * 1000;
   WinHttpSetTimeouts(session, timeout_ms, timeout_ms, timeout_ms, timeout_ms);
 
   // Connect to server
@@ -176,7 +176,7 @@ std::optional<http_response> http_client::perform_request(const std::string &met
                                     WINHTTP_NO_ADDITIONAL_HEADERS,
                                     0,
                                     body.empty() ? WINHTTP_NO_REQUEST_DATA
-                                                 : const_cast<char *>(body.data()),
+                                                 : const_cast<cforge_string_t>(body.data()),
                                     static_cast<DWORD>(body.size()),
                                     static_cast<DWORD>(body.size()),
                                     0);
@@ -314,10 +314,10 @@ std::optional<http_response> http_client::perform_request(const std::string &met
   // Read output
   std::vector<char> output;
   char buffer[4096];
-  while (size_t n = fread(buffer, 1, sizeof(buffer), pipe)) {
+  while (cforge_size_t n = fread(buffer, 1, sizeof(buffer), pipe)) {
     output.insert(output.end(), buffer, buffer + n);
   }
-  int exit_code = pclose(pipe);
+  cforge_int_t exit_code = pclose(pipe);
 
   // Clean up temp file
   if (!temp_file.empty()) {

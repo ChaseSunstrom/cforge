@@ -11,6 +11,7 @@
 #include <regex>
 #include <string>
 #include <vector>
+#include "core/types.h"
 
 #ifdef ERROR
 #undef ERROR
@@ -399,6 +400,6 @@ std::string suggest_include_for_type(const std::string &type_name);
 std::vector<std::string> find_similar_identifiers(
     const std::string &unknown_identifier,
     const std::vector<std::string> &available_identifiers,
-    int max_distance = 2);
+    cforge_int_t max_distance = 2);
 
 }  // namespace cforge

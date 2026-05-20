@@ -33,18 +33,18 @@ static std::filesystem::path get_global_config_path() {
   if (SUCCEEDED(SHGetFolderPathA(nullptr, CSIDL_LOCAL_APPDATA, nullptr, 0, path))) {
     return std::filesystem::path(path) / "cforge" / "config.toml";
   }
-  const char *userprofile = std::getenv("USERPROFILE");
+  cforge_cstring_t userprofile = std::getenv("USERPROFILE");
   if (userprofile) {
     return std::filesystem::path(userprofile) / ".cforge" / "config.toml";
   }
   return ".cforge/config.toml";
 #else
   // Use XDG_CONFIG_HOME for config files (XDG spec)
-  const char *xdg_config = std::getenv("XDG_CONFIG_HOME");
+  cforge_cstring_t xdg_config = std::getenv("XDG_CONFIG_HOME");
   if (xdg_config) {
     return std::filesystem::path(xdg_config) / "cforge" / "config.toml";
   }
-  const char *home = std::getenv("HOME");
+  cforge_cstring_t home = std::getenv("HOME");
   if (!home) {
     struct passwd *pw = getpwuid(getuid());
     home              = pw ? pw->pw_dir : ".";

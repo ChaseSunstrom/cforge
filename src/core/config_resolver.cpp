@@ -17,7 +17,7 @@ namespace cforge {
 // Helper to convert string to lowercase
 static std::string to_lower(const std::string &str) {
   std::string result = str;
-  std::transform(result.begin(), result.end(), result.begin(), [](unsigned char c) {
+  std::transform(result.begin(), result.end(), result.begin(), [](cforge_byte_t c) {
     return std::tolower(c);
   });
   return result;

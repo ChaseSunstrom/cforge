@@ -29,6 +29,7 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include "core/types.h"
 #endif
 
 namespace cforge {
@@ -91,7 +92,7 @@ bool execute_tool(const std::string &command,
  * @param timeout_seconds Timeout in seconds (default: 5)
  * @return true if command is available, false otherwise
  */
-bool is_command_available(const std::string &command, int timeout_seconds = 5);
+bool is_command_available(const std::string &command, cforge_int_t timeout_seconds = 5);
 
 /**
  * @brief Ensure all generator names are uppercased

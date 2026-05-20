@@ -16,6 +16,7 @@
  *   }
  *   cforge_hot_unload(ctx);
  */
+#include "core/types.h"
 
 #ifndef CFORGE_HOT_H
 #define CFORGE_HOT_H
@@ -44,7 +45,7 @@ typedef struct cforge_hot_ctx cforge_hot_ctx;
  * @return Pointer to a newly allocated cforge_hot_ctx, or NULL on failure.
  *         Call cforge_hot_last_error() for a human-readable error string.
  */
-cforge_hot_ctx *cforge_hot_load(const char *library_path);
+cforge_hot_ctx *cforge_hot_load(cforge_cstring_t library_path);
 
 /**
  * @brief Check the signal file for a new build and reload if one is available.
@@ -58,7 +59,7 @@ cforge_hot_ctx *cforge_hot_load(const char *library_path);
  *          0 if nothing changed,
  *         -1 on error (the old library remains loaded).
  */
-int cforge_hot_reload(cforge_hot_ctx *ctx);
+cforge_int_t cforge_hot_reload(cforge_hot_ctx *ctx);
 
 /**
  * @brief Look up a symbol in the currently loaded library.
@@ -71,7 +72,7 @@ int cforge_hot_reload(cforge_hot_ctx *ctx);
  * module).
  * @return Pointer to the symbol, or NULL if not found.
  */
-void *cforge_hot_get_symbol(cforge_hot_ctx *ctx, const char *symbol_name);
+void *cforge_hot_get_symbol(cforge_hot_ctx *ctx, cforge_cstring_t symbol_name);
 
 /**
  * @brief Return the number of times the library has been loaded (starts at 1).
@@ -79,7 +80,7 @@ void *cforge_hot_get_symbol(cforge_hot_ctx *ctx, const char *symbol_name);
  * @param ctx  Context returned by cforge_hot_load().
  * @return     Reload counter (monotonically increasing).
  */
-int cforge_hot_get_version(cforge_hot_ctx *ctx);
+cforge_int_t cforge_hot_get_version(cforge_hot_ctx *ctx);
 
 /**
  * @brief Blocking helper: poll the signal file and reload automatically.
@@ -102,7 +103,7 @@ void cforge_hot_watch(cforge_hot_ctx *ctx, void (*on_reload)(cforge_hot_ctx *));
  *
  * @return Null-terminated error string (never NULL, may be empty).
  */
-const char *cforge_hot_last_error(void);
+cforge_cstring_t cforge_hot_last_error(void);
 
 /**
  * @brief Unload the library, delete versioned copies, and free the context.

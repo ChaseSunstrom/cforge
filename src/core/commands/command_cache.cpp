@@ -30,9 +30,9 @@ namespace {
  * @brief Format bytes as human-readable size
  */
 std::string format_size(cforge_size_t bytes) {
-  const char *units[] = {"B", "KB", "MB", "GB", "TB"};
-  int unit            = 0;
-  double size         = static_cast<double>(bytes);
+  cforge_cstring_t units[] = {"B", "KB", "MB", "GB", "TB"};
+  cforge_int_t unit            = 0;
+  cforge_double_t size         = static_cast<double>(bytes);
 
   while (size >= 1024 && unit < 4) {
     size /= 1024;
@@ -217,7 +217,7 @@ cforge_int_t cache_stats(const cforge_context_t * /*ctx*/) {
 
   auto total_requests = stats.cache_hits + stats.cache_misses;
   if (total_requests > 0) {
-    double hit_rate          = stats.hit_rate() * 100;
+    cforge_double_t hit_rate          = stats.hit_rate() * 100;
     std::string hit_rate_str = fmt::format("{:.1f}%", hit_rate);
     auto color               = hit_rate >= 50 ? fmt::color::green : fmt::color::yellow;
     cforge::logger::print_kv_colored("Hit rate", hit_rate_str, color);

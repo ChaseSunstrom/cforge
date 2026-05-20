@@ -99,7 +99,7 @@ static fs::path find_executable_in_dir(const fs::path &build_dir,
 // Embedded copy of tests/test_framework.h. Single source of truth lives in the
 // runtime header file; this string is its mirror, used to drop the header into
 // the build dir at generate-time so users don't need to copy it themselves.
-static const char *get_builtin_test_framework_header() {
+static cforge_cstring_t get_builtin_test_framework_header() {
   // NOTE: Keep in sync with tests/test_framework.h
   return R"CFTF(/**
  * @file test_framework.h

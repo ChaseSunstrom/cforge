@@ -24,11 +24,12 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include "core/types.h"
 
 namespace cforge {
 
 // Lock file name
-constexpr const char *LOCK_FILE = "cforge.lock";
+constexpr cforge_cstring_t LOCK_FILE = "cforge.lock";
 
 /**
  * @brief Locked dependency information

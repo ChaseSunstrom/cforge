@@ -72,7 +72,7 @@ cforge_int_t cforge_cmd_update(const cforge_context_t *ctx) {
     // Determine install location
     if (install_path.empty()) {
       // Check env variable CFORGE_INSTALL_PATH
-      const char *env_path = std::getenv("CFORGE_INSTALL_PATH");
+      cforge_cstring_t env_path = std::getenv("CFORGE_INSTALL_PATH");
       if (env_path && *env_path) {
         install_path = env_path;
       } else {

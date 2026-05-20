@@ -36,7 +36,7 @@ struct cache_key {
   std::string compiler_ver;  // Compiler version (e.g., "19.40", "13.2")
   std::string config;        // Build config: Debug, Release, RelWithDebInfo
   std::string arch;          // Architecture: x64, x86, arm64
-  int cpp_standard;          // C++ standard: 11, 14, 17, 20, 23
+  cforge_int_t cpp_standard;          // C++ standard: 11, 14, 17, 20, 23
   std::string options_hash;  // FNV-1a hash of CMake options/defines
 
   /**
@@ -86,7 +86,7 @@ struct cache_stats {
   cforge_size_t remote_hits;
   cforge_size_t remote_misses;
 
-  double hit_rate() const {
+  cforge_double_t hit_rate() const {
     auto total = cache_hits + cache_misses;
     return total > 0 ? static_cast<double>(cache_hits) / total : 0.0;
   }
@@ -110,7 +110,7 @@ struct cache_manifest {
   std::string compiler_version;
   std::string config;
   std::string arch;
-  int cpp_standard;
+  cforge_int_t cpp_standard;
 
   // Files with checksums
   struct file_entry {
@@ -145,7 +145,7 @@ struct build_environment {
   cforge::compiler target_compiler;
   std::string compiler_version;
   std::string arch;
-  int cpp_standard;
+  cforge_int_t cpp_standard;
 
   /**
    * @brief Detect the current build environment

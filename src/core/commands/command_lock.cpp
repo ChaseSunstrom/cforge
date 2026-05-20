@@ -213,7 +213,7 @@ cforge_int_t cforge_cmd_lock(const cforge_context_t *ctx) {
         // If no explicit tag, use tag pattern
         if (git_tag.empty() && !pkg_info->tags.pattern.empty()) {
           git_tag    = pkg_info->tags.pattern;
-          size_t pos = git_tag.find("{version}");
+          cforge_size_t pos = git_tag.find("{version}");
           if (pos != std::string::npos) {
             git_tag.replace(pos, 9, resolved_version);
           }

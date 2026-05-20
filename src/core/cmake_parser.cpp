@@ -17,6 +17,7 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include "core/types.h"
 
 namespace cforge {
 
@@ -40,13 +41,13 @@ static std::string strip_comment(const std::string &line) {
 
 /// Trim trailing whitespace from a string.
 static std::string rtrim(const std::string &s) {
-  size_t end = s.find_last_not_of(" \t\r\n");
+  cforge_size_t end = s.find_last_not_of(" \t\r\n");
   return (end == std::string::npos) ? "" : s.substr(0, end + 1);
 }
 
 /// Trim leading whitespace from a string.
 static std::string ltrim(const std::string &s) {
-  size_t start = s.find_first_not_of(" \t\r\n");
+  cforge_size_t start = s.find_first_not_of(" \t\r\n");
   return (start == std::string::npos) ? "" : s.substr(start);
 }
 
@@ -315,7 +316,7 @@ static void extract_source_dirs(const std::string &content,
 
         // Find the directory portion of the glob pattern
         // e.g., "src/*.cpp" -> "src", "src/**/*.cpp" -> "src"
-        size_t last_sep = tok.find_last_of("/\\");
+        cforge_size_t last_sep = tok.find_last_of("/\\");
         std::string dir_part;
         if (last_sep != std::string::npos) {
           dir_part = tok.substr(0, last_sep);
@@ -332,7 +333,7 @@ static void extract_source_dirs(const std::string &content,
         // Remove trailing wildcard segments
         // e.g., "src/**" -> "src"
         while (!dir_part.empty() && (dir_part.back() == '*' || dir_part.back() == '*')) {
-          size_t sep = dir_part.find_last_of("/\\");
+          cforge_size_t sep = dir_part.find_last_of("/\\");
           if (sep != std::string::npos) {
             dir_part = dir_part.substr(0, sep);
           } else {
@@ -363,7 +364,7 @@ static void extract_source_dirs(const std::string &content,
             continue;
           }
 
-          size_t last_sep = tok.find_last_of("/\\");
+          cforge_size_t last_sep = tok.find_last_of("/\\");
           std::string dir_part;
           if (last_sep != std::string::npos) {
             dir_part = tok.substr(0, last_sep);

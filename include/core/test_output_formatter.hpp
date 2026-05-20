@@ -8,6 +8,7 @@
 #include "core/test_framework.hpp"
 
 #include <string>
+#include "core/types.h"
 
 namespace cforge {
 
@@ -120,7 +121,7 @@ public:
    *                        the "... ok / FAILED" column lines up across rows.
    *                        Compute it once from all results before iterating.
    */
-  void print_test_result(const test_result &result, size_t name_pad_width = 0);
+  void print_test_result(const test_result &result, cforge_size_t name_pad_width = 0);
 
   /**
    * @brief Print detailed failure information

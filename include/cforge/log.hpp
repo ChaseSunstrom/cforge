@@ -148,7 +148,7 @@ public:
    * @param command The command being run
    * @param elapsed_secs Elapsed time in seconds
    */
-  static void running_timer(const std::string &command, double elapsed_secs);
+  static void running_timer(const std::string &command, cforge_double_t elapsed_secs);
 
   /**
    * @brief Print "Finished {config} target(s) in {time}"
@@ -252,10 +252,10 @@ public:
    * @param action Right-aligned status word shown beside the bar
    *               (default "Building"; pass "Formatting", "Linting", etc.)
    */
-  static void progress_bar(int current,
-                           int total,
+  static void progress_bar(cforge_int_t current,
+                           cforge_int_t total,
                            bool in_place             = true,
-                           double elapsed_secs       = -1.0,
+                           cforge_double_t elapsed_secs       = -1.0,
                            const std::string &action = "Building");
 
   /**
@@ -322,8 +322,8 @@ public:
    */
   static void print_kv(const std::string &key,
                        const std::string &value,
-                       int key_width = 14,
-                       int indent    = 2);
+                       cforge_int_t key_width = 14,
+                       cforge_int_t indent    = 2);
 
   /**
    * @brief Print a key-value pair with colored value
@@ -337,8 +337,8 @@ public:
   static void print_kv_colored(const std::string &key,
                                const std::string &value,
                                fmt::color value_color,
-                               int key_width = 14,
-                               int indent    = 2);
+                               cforge_int_t key_width = 14,
+                               cforge_int_t indent    = 2);
 
   /**
    * @brief Print a list item with bullet or dash
@@ -351,14 +351,14 @@ public:
    */
   static void print_list_item(const std::string &text,
                               const std::string &bullet = "-",
-                              int indent                = 2);
+                              cforge_int_t indent                = 2);
 
   /**
    * @brief Print a dimmed/secondary text line
    *
    * Used for hints, help text, secondary info
    */
-  static void print_dim(const std::string &message, int indent = 0);
+  static void print_dim(const std::string &message, cforge_int_t indent = 0);
 
   /**
    * @brief Print a horizontal rule/separator
@@ -366,7 +366,7 @@ public:
    * @param width Width of the rule (default 60)
    * @param ch Character to use (default '-')
    */
-  static void print_rule(int width = 60, char ch = '-');
+  static void print_rule(cforge_int_t width = 60, char ch = '-');
 
   /**
    * @brief Print emphasized/highlighted text
@@ -389,7 +389,7 @@ public:
    * @param help_lines Vector of help strings
    * @param indent Indentation for each line
    */
-  static void print_help_lines(const std::vector<std::string> &help_lines, int indent = 2);
+  static void print_help_lines(const std::vector<std::string> &help_lines, cforge_int_t indent = 2);
 
   /**
    * @brief Print a table row with aligned columns
@@ -400,14 +400,14 @@ public:
    */
   static void print_table_row(const std::vector<std::string> &columns,
                               const std::vector<int> &widths,
-                              int indent = 0);
+                              cforge_int_t indent = 0);
 
   /**
    * @brief Print a table header with separator
    */
   static void print_table_header(const std::vector<std::string> &columns,
                                  const std::vector<int> &widths,
-                                 int indent = 0);
+                                 cforge_int_t indent = 0);
 
   /**
    * @brief Print blank line
@@ -446,7 +446,7 @@ public:
    */
   static void print_option(const std::string &flags,
                            const std::string &description,
-                           int flag_width = 24);
+                           cforge_int_t flag_width = 24);
 
   /**
    * @brief Print a positional argument
@@ -457,7 +457,7 @@ public:
    */
   static void print_arg(const std::string &name,
                         const std::string &description,
-                        int name_width = 18);
+                        cforge_int_t name_width = 18);
 
   /**
    * @brief Print an example command
@@ -475,7 +475,7 @@ public:
    */
   static void print_subcommand(const std::string &name,
                                const std::string &description,
-                               int name_width = 14);
+                               cforge_int_t name_width = 14);
 
   /**
    * @brief Print a help section header
@@ -531,7 +531,7 @@ public:
    * @param line Line number (0 to skip)
    * @param column Column number (0 to skip)
    */
-  static void print_location(const std::string &file_path, int line = 0, int column = 0);
+  static void print_location(const std::string &file_path, cforge_int_t line = 0, int column = 0);
 
   /**
    * @brief Print a code snippet line with gutter
@@ -540,7 +540,7 @@ public:
    * @param content Line content
    * @param gutter_width Width of the gutter
    */
-  static void print_code_line(int line_number, const std::string &content, int gutter_width = 4);
+  static void print_code_line(cforge_int_t line_number, const std::string &content, int gutter_width = 4);
 
   /**
    * @brief Print an error pointer line with carets
@@ -549,7 +549,7 @@ public:
    * @param length Length of the pointer (default 1)
    * @param gutter_width Width of the gutter
    */
-  static void print_error_pointer(int column_start, int length = 1, int gutter_width = 4);
+  static void print_error_pointer(cforge_int_t column_start, int length = 1, int gutter_width = 4);
 
   /**
    * @brief Print a diagnostic note line
@@ -582,7 +582,7 @@ public:
    * @param type Type description (e.g., "compiler error")
    * @param is_error True for error color, false for warning color
    */
-  static void print_error_count(int count, const std::string &type, bool is_error = true);
+  static void print_error_count(cforge_int_t count, const std::string &type, bool is_error = true);
 
   /**
    * @brief Print a gutter separator line
@@ -593,7 +593,7 @@ private:
   static log_verbosity s_verbosity;
 
   // Status width for right-alignment (CARGO uses 12)
-  static constexpr int STATUS_WIDTH = 12;
+  static constexpr cforge_int_t STATUS_WIDTH = 12;
 
   /**
    * @brief Internal helper to print formatted status line

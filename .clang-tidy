@@ -1,0 +1,156 @@
+# clang-tidy config for cforge itself.
+# Project-only — does not propagate to user projects.
+#
+# Apply with:
+#   cforge lint                        # report only
+#   cforge lint --fix                  # rewrite source in place
+#   cforge lint --checks='readability-identifier-naming' --fix   # naming only
+#
+# Naming convention summary:
+#   namespaces, classes, structs, enums, functions, methods,
+#   variables, parameters, member variables  →  snake_case
+#   non-static member variables                →  m_ prefix
+#   static member variables                    →  s_ prefix
+#   constexpr variables (file/global scope)    →  k prefix
+#   enum constants                             →  UPPER_CASE
+#   macros                                     →  UPPER_CASE
+#   template parameters                        →  CamelCase  (convention even
+#                                                             in snake_case
+#                                                             codebases — TIdx,
+#                                                             T, U, etc.)
+#
+# Exceptions:
+#   - C ABI types in core/types.h (cforge_int_t, cforge_size_t, etc.) are
+#     "lower_case" by accident — they match snake_case rules naturally so
+#     they're not renamed.
+#   - extern "C" `cforge_cmd_*` / `cforge_print_*` / `cforge_main*` entry
+#     points are likewise snake_case and require no exception.
+#   - Macros from third-party headers (fmt, toml++) are filtered via
+#     HeaderFilterRegex below.
+
+---
+# Restrict checks to *our* source. Without this, every <vector>/<string>/fmt
+# header pulled in gets the same name-style audit and the output is unusable.
+HeaderFilterRegex: '^(src|include)/'
+
+# Treat all enabled checks as warnings (not errors) by default. Build pipelines
+# that want to fail on lint can pass --warnings-as-errors=* themselves.
+WarningsAsErrors: ''
+
+# ── Checks ────────────────────────────────────────────────────────────────
+# Phase 1 baseline: naming + the cheapest "almost always wrong" patterns.
+# Modernize/perf checks are deliberately OFF here; Phase 3 will enable them
+# one at a time so the diff stays reviewable.
+Checks: >
+  -*,
+  readability-identifier-naming,
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-narrowing-conversions
+
+# ── readability-identifier-naming options ─────────────────────────────────
+CheckOptions:
+  # ── Types ──
+  - { key: readability-identifier-naming.NamespaceCase,         value: lower_case }
+  - { key: readability-identifier-naming.ClassCase,             value: lower_case }
+  - { key: readability-identifier-naming.StructCase,            value: lower_case }
+  - { key: readability-identifier-naming.UnionCase,             value: lower_case }
+  - { key: readability-identifier-naming.EnumCase,              value: lower_case }
+  - { key: readability-identifier-naming.TypedefCase,           value: lower_case }
+  - { key: readability-identifier-naming.TypeAliasCase,         value: lower_case }
+  - { key: readability-identifier-naming.TemplateParameterCase, value: CamelCase }
+  - { key: readability-identifier-naming.TypeTemplateParameterCase,    value: CamelCase }
+  - { key: readability-identifier-naming.ValueTemplateParameterCase,   value: CamelCase }
+  - { key: readability-identifier-naming.TemplateTemplateParameterCase, value: CamelCase }
+
+  # ── Functions / methods ──
+  - { key: readability-identifier-naming.FunctionCase, value: lower_case }
+  - { key: readability-identifier-naming.MethodCase,   value: lower_case }
+  - { key: readability-identifier-naming.VirtualMethodCase,        value: lower_case }
+  - { key: readability-identifier-naming.ClassMethodCase,          value: lower_case }
+  - { key: readability-identifier-naming.GlobalFunctionCase,       value: lower_case }
+  - { key: readability-identifier-naming.PrivateMethodCase,        value: lower_case }
+  - { key: readability-identifier-naming.ProtectedMethodCase,      value: lower_case }
+  - { key: readability-identifier-naming.PublicMethodCase,         value: lower_case }
+
+  # ── Variables / parameters ──
+  - { key: readability-identifier-naming.VariableCase,  value: lower_case }
+  - { key: readability-identifier-naming.ParameterCase, value: lower_case }
+  - { key: readability-identifier-naming.LocalVariableCase,        value: lower_case }
+  - { key: readability-identifier-naming.LocalConstantCase,        value: lower_case }
+  - { key: readability-identifier-naming.LocalConstantPointerCase, value: lower_case }
+  - { key: readability-identifier-naming.LocalPointerCase,         value: lower_case }
+
+  # ── Class members ──
+  - { key: readability-identifier-naming.ClassMemberCase,            value: lower_case }
+  - { key: readability-identifier-naming.ClassConstantCase,          value: UPPER_CASE }
+  - { key: readability-identifier-naming.MemberCase,                 value: lower_case }
+  - { key: readability-identifier-naming.PrivateMemberCase,          value: lower_case }
+  - { key: readability-identifier-naming.PrivateMemberPrefix,        value: m_ }
+  - { key: readability-identifier-naming.ProtectedMemberCase,        value: lower_case }
+  - { key: readability-identifier-naming.ProtectedMemberPrefix,      value: m_ }
+  - { key: readability-identifier-naming.PublicMemberCase,           value: lower_case }
+  # NB: PublicMemberPrefix intentionally NOT set — POD-style structs (token,
+  #     diagnostic, locked_dependency, etc.) have public bare members in
+  #     cforge, and prefixing them with m_ would just be noise.
+
+  # ── Static class members ──
+  - { key: readability-identifier-naming.StaticVariableCase,         value: lower_case }
+  - { key: readability-identifier-naming.StaticVariablePrefix,       value: s_ }
+  - { key: readability-identifier-naming.ClassMethodCase,            value: lower_case }
+
+  # ── Globals / constants ──
+  # clang-tidy lumps file-scope `static T name;` and namespace-scope globals
+  # under the same "GlobalVariable" rule, but cforge distinguishes them in
+  # practice: `g_` for true globals visible across TUs (signal handlers like
+  # g_should_exit, OS handles like g_host_proc_handle), `s_` for file-scope
+  # statics (s_progress_initialized, regex caches). We can't enforce that
+  # distinction without two separate clang-tidy passes, so the rule below
+  # accepts either prefix (and demands lower_case for the rest).
+  - { key: readability-identifier-naming.GlobalVariableCase,         value: lower_case }
+  - { key: readability-identifier-naming.GlobalVariableIgnoredRegexp,
+      value: '^(WINAPI|APIENTRY|CALLBACK|[gs]_[a-z][a-z0-9_]*)$' }
+  - { key: readability-identifier-naming.GlobalConstantCase,         value: UPPER_CASE }
+  - { key: readability-identifier-naming.GlobalConstantPointerCase,  value: UPPER_CASE }
+  - { key: readability-identifier-naming.GlobalPointerCase,          value: lower_case }
+  # Same dual-prefix tolerance for global pointers.
+  - { key: readability-identifier-naming.GlobalPointerIgnoredRegexp,
+      value: '^([gs]_[a-z][a-z0-9_]*)$' }
+
+  # ── Constexpr ──
+  # File/class-scope constexpr: UPPER_CASE (matches cforge's existing
+  # STATUS_WIDTH, FNV_PRIME, FNV_OFFSET_BASIS, etc. — they read as
+  # compile-time constants alongside macros).
+  # Function-local constexpr stays lower_case (it's just a `const` with
+  # extra steps).
+  - { key: readability-identifier-naming.ConstexprVariableCase, value: UPPER_CASE }
+  - { key: readability-identifier-naming.ConstexprMethodCase,   value: lower_case }
+  - { key: readability-identifier-naming.ConstexprFunctionCase, value: lower_case }
+  - { key: readability-identifier-naming.LocalConstantCase,     value: lower_case }
+
+  # ── Enum constants ──
+  - { key: readability-identifier-naming.EnumConstantCase, value: UPPER_CASE }
+  # Allow scoped-enum members to skip the UPPER_CASE rule if they're
+  # already typed (e.g. `style::CARGO` vs `style::cargo`). cforge already
+  # uses UPPER_CASE for scoped enums so this is fine; if you ever want
+  # lower_case scoped enums, change ScopedEnumConstantCase below.
+  - { key: readability-identifier-naming.ScopedEnumConstantCase, value: UPPER_CASE }
+
+  # ── Macros ──
+  - { key: readability-identifier-naming.MacroDefinitionCase,   value: UPPER_CASE }
+
+  # ── Length / numeric thresholds ──
+  # Catch one-letter parameter names except a handful of allowed math ones.
+  - { key: readability-identifier-naming.ParameterIgnoredRegexp,
+      value: '^(i|j|k|n|x|y|z|p|t|r|c|s|e|a|b|f|m)$' }
+
+  # ── Win32 false positives ──
+  # WINAPI/APIENTRY/CALLBACK are already excluded via GlobalVariableIgnoredRegexp
+  # above. These keys catch Hungarian-notation parameter names from the
+  # Windows SDK (dwMode, lpReserved, hInstance, etc.) — we don't rename
+  # them because they're dictated by Microsoft headers.
+  - { key: readability-identifier-naming.LocalVariableIgnoredRegexp,
+      value: '^(dw|lp|cb|sz|wc|h|n)[A-Z].*$' }
+
+  # ── Allow our C ABI prefix as-is ──
+  # cforge_X identifiers naturally match snake_case; no exception needed.

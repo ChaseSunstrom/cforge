@@ -20,9 +20,9 @@
 
 // Default vcpkg directory location relative to user home
 #ifdef _WIN32
-const char *DEFAULT_VCPKG_DIR = "%USERPROFILE%\\vcpkg";
+cforge_cstring_t DEFAULT_VCPKG_DIR = "%USERPROFILE%\\vcpkg";
 #else
-const char *DEFAULT_VCPKG_DIR = "~/vcpkg";
+cforge_cstring_t DEFAULT_VCPKG_DIR = "~/vcpkg";
 #endif
 
 /**
@@ -44,7 +44,7 @@ static std::filesystem::path get_vcpkg_path(const cforge::toml_reader *project_c
   }
 
   // Then check environment variable
-  const char *env_path = std::getenv("VCPKG_ROOT");
+  cforge_cstring_t env_path = std::getenv("VCPKG_ROOT");
   if (env_path && *env_path) {
     vcpkg_path = env_path;
     return vcpkg_path;
@@ -52,12 +52,12 @@ static std::filesystem::path get_vcpkg_path(const cforge::toml_reader *project_c
 
   // Finally try default locations
 #ifdef _WIN32
-  const char *userprofile = std::getenv("USERPROFILE");
+  cforge_cstring_t userprofile = std::getenv("USERPROFILE");
   if (userprofile) {
     vcpkg_path = std::filesystem::path(userprofile) / "vcpkg";
   }
 #else
-  const char *home = std::getenv("HOME");
+  cforge_cstring_t home = std::getenv("HOME");
   if (home) {
     vcpkg_path = std::filesystem::path(home) / "vcpkg";
   }

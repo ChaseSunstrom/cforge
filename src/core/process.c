@@ -20,6 +20,7 @@
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
+#include "core/types.h"
 #endif
 
 #ifdef __cplusplus
@@ -235,7 +236,7 @@ cforge_process_status_t cforge_process_start(cforge_process_t *process,
   cforge_size_t remaining = total_length + 1;
 
   // Write command with quotes
-  int written = snprintf(command_line + pos, remaining, "\"%s\"", process->command);
+  cforge_int_t written = snprintf(command_line + pos, remaining, "\"%s\"", process->command);
   if (written > 0 && (cforge_size_t)written < remaining) {
     pos       += written;
     remaining -= written;

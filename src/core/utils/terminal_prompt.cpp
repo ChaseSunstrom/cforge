@@ -39,6 +39,7 @@
 
 #include <termios.h>
 #include <unistd.h>  // STDIN_FILENO, read
+#include "core/types.h"
 #endif
 
 namespace cforge {
@@ -47,7 +48,7 @@ namespace cforge {
 // Constants
 // ============================================================================
 
-static constexpr int STATUS_WIDTH = 12;
+static constexpr cforge_int_t STATUS_WIDTH = 12;
 
 // ============================================================================
 // Key codes returned by read_key()
@@ -243,13 +244,13 @@ void terminal_raw_mode::reenter_raw() {
 static KeyEvent read_key() {
 #ifdef _WIN32
   // _getch() does not echo and does not wait for Enter.
-  int first = _getch();
+  cforge_int_t first = _getch();
   if (first == EOF || first == 26 /* Ctrl+Z */) {
     return {Key::Eof, 0};
   }
   // Extended key: prefix byte 0 or 0xE0 followed by a scan code.
   if (first == 0 || first == 0xE0) {
-    int second = _getch();
+    cforge_int_t second = _getch();
     if (second == 72) {
       return {Key::Up, 0};  // Up arrow
     }
@@ -264,8 +265,8 @@ static KeyEvent read_key() {
   }
   return {Key::Char, static_cast<char>(first)};
 #else
-  unsigned char ch = 0;
-  ssize_t n        = read(STDIN_FILENO, &ch, 1);
+  cforge_byte_t ch = 0;
+  cforge_long_t n        = read(STDIN_FILENO, &ch, 1);
   if (n <= 0) {
     return {Key::Eof, 0};
   }
@@ -276,12 +277,12 @@ static KeyEvent read_key() {
 
   // Escape sequence — try to read "[A" or "[B".
   if (ch == '\033') {
-    unsigned char seq1 = 0, seq2 = 0;
-    ssize_t r1 = read(STDIN_FILENO, &seq1, 1);
+    cforge_byte_t seq1 = 0, seq2 = 0;
+    cforge_long_t r1 = read(STDIN_FILENO, &seq1, 1);
     if (r1 <= 0) {
       return {Key::Char, '\033'};
     }
-    ssize_t r2 = read(STDIN_FILENO, &seq2, 1);
+    cforge_long_t r2 = read(STDIN_FILENO, &seq2, 1);
     if (r2 <= 0) {
       return {Key::Char, '\033'};
     }
@@ -324,9 +325,9 @@ static void print_option_line(const std::string &option, bool selected, bool cle
 // prompt_select
 // ============================================================================
 
-int prompt_select(const std::string &label,
+cforge_int_t prompt_select(const std::string &label,
                   const std::vector<std::string> &options,
-                  int default_index) {
+                  cforge_int_t default_index) {
   if (!is_interactive_terminal()) {
     return default_index;
   }
@@ -334,7 +335,7 @@ int prompt_select(const std::string &label,
     return default_index;
   }
 
-  int selected =
+  cforge_int_t selected =
       (default_index >= 0 && default_index < static_cast<int>(options.size())) ? default_index : 0;
 
   // Print label right-aligned to STATUS_WIDTH chars, bold green.
@@ -361,7 +362,7 @@ int prompt_select(const std::string &label,
       break;
     }
 
-    int prev = selected;
+    cforge_int_t prev = selected;
     if (ev.key == Key::Up) {
       selected = (selected > 0) ? selected - 1 : static_cast<int>(options.size()) - 1;
     } else if (ev.key == Key::Down) {
@@ -376,7 +377,7 @@ int prompt_select(const std::string &label,
     }
 
     // Move cursor up N lines to the first option row.
-    int n = static_cast<int>(options.size());
+    cforge_int_t n = static_cast<int>(options.size());
     fmt::print("\033[{}A", n);
 
     // Redraw all option lines in-place.

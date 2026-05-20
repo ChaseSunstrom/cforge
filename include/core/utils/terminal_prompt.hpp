@@ -13,6 +13,7 @@
 #pragma once
 #include <string>
 #include <vector>
+#include "core/types.h"
 
 namespace cforge {
 
@@ -43,9 +44,9 @@ bool is_interactive_terminal();
  * @param default_index Index of the initially selected option (default 0).
  * @return Index of the selected option.
  */
-int prompt_select(const std::string &label,
+cforge_int_t prompt_select(const std::string &label,
                   const std::vector<std::string> &options,
-                  int default_index = 0);
+                  cforge_int_t default_index = 0);
 
 /**
  * @brief Text input prompt with inline default shown in dim gray.

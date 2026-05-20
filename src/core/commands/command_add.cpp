@@ -108,12 +108,12 @@ static bool install_package_with_vcpkg(const std::filesystem::path &project_dir,
   } else {
     // Try default global vcpkg location
 #ifdef _WIN32
-    const char *userprofile          = std::getenv("USERPROFILE");
+    cforge_cstring_t userprofile          = std::getenv("USERPROFILE");
     std::filesystem::path global_dir = userprofile ? std::filesystem::path(userprofile) / "vcpkg"
                                                    : std::filesystem::path();
     std::filesystem::path global_exe = global_dir / "vcpkg.exe";
 #else
-    const char *home                 = std::getenv("HOME");
+    cforge_cstring_t home                 = std::getenv("HOME");
     std::filesystem::path global_dir = home ? std::filesystem::path(home) / "vcpkg"
                                             : std::filesystem::path();
     std::filesystem::path global_exe = global_dir / "vcpkg";
@@ -330,7 +330,7 @@ static bool add_dependency_to_section(const std::filesystem::path &config_file,
   std::string line;
   bool in_section    = false;
   bool section_found = false;
-  int section_end    = -1;
+  cforge_int_t section_end    = -1;
 
   // Read all lines and find the section
   std::string section_header = "[" + section + "]";
@@ -339,7 +339,7 @@ static bool add_dependency_to_section(const std::filesystem::path &config_file,
 
     // Trim whitespace for comparison
     std::string trimmed = line;
-    size_t start        = trimmed.find_first_not_of(" \t");
+    cforge_size_t start        = trimmed.find_first_not_of(" \t");
     if (start != std::string::npos) {
       trimmed = trimmed.substr(start);
     }
@@ -527,8 +527,8 @@ cforge_int_t cforge_cmd_add(const cforge_context_t *ctx) {
         std::string feat;
         while (std::getline(ss, feat, ',')) {
           // Trim whitespace
-          size_t start = feat.find_first_not_of(" \t");
-          size_t end   = feat.find_last_not_of(" \t");
+          cforge_size_t start = feat.find_first_not_of(" \t");
+          cforge_size_t end   = feat.find_last_not_of(" \t");
           if (start != std::string::npos) {
             features.push_back(feat.substr(start, end - start + 1));
           }

@@ -82,7 +82,7 @@ public:
    * @param default_value The default value to return if the key is not found
    * @return The value associated with the key, or default_value if not found
    */
-  int64_t get_int(const std::string &key, int64_t default_value = 0) const;
+  cforge_long_t get_int(const std::string &key, int64_t default_value = 0) const;
 
   /**
    * @brief Get a boolean value from the TOML file

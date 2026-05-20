@@ -892,7 +892,7 @@ static bool run_cmake_configure(const std::vector<std::string> &cmake_args,
         std::vector<std::string> non_empty_lines;
         while (std::getline(ess, line)) {
           // Trim whitespace
-          size_t start = line.find_first_not_of(" \t\r\n");
+          cforge_size_t start = line.find_first_not_of(" \t\r\n");
           if (start != std::string::npos) {
             non_empty_lines.push_back(line);
           }
@@ -911,7 +911,7 @@ static bool run_cmake_configure(const std::vector<std::string> &cmake_args,
         std::vector<std::string> non_empty_lines;
         while (std::getline(oss, line)) {
           // Trim whitespace
-          size_t start = line.find_first_not_of(" \t\r\n");
+          cforge_size_t start = line.find_first_not_of(" \t\r\n");
           if (start != std::string::npos) {
             non_empty_lines.push_back(line);
           }
@@ -1338,7 +1338,7 @@ static bool build_project(const std::filesystem::path &project_dir,
           cforge_size_t end = expanded_toolchain.find("}", pos);
           if (end != std::string::npos) {
             std::string var_name  = expanded_toolchain.substr(pos + 2, end - pos - 2);
-            const char *var_value = std::getenv(var_name.c_str());
+            cforge_cstring_t var_value = std::getenv(var_name.c_str());
             if (var_value) {
               expanded_toolchain.replace(pos, end - pos + 1, var_value);
             } else {
@@ -1435,7 +1435,7 @@ static bool build_project(const std::filesystem::path &project_dir,
     std::string vcpkg_root;
     if (project_config.has_key("dependencies.vcpkg.path")) {
       vcpkg_root = project_config.get_string("dependencies.vcpkg.path", "");
-    } else if (const char *env = std::getenv("VCPKG_ROOT")) {
+    } else if (cforge_cstring_t env = std::getenv("VCPKG_ROOT")) {
       vcpkg_root = env;
     } else {
       vcpkg_root = (source_dir / "vcpkg").string();

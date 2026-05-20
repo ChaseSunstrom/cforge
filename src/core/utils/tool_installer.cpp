@@ -19,6 +19,7 @@
 #include <filesystem>
 #include <string>
 #include <vector>
+#include "core/types.h"
 
 namespace cforge {
 
@@ -40,16 +41,16 @@ namespace {
 // probe afterwards (a ';'-separated string, may use ${VAR} for env expansion).
 // Adding a tool means adding rows here — no other source file needs to know.
 struct package_spec {
-  const char *tool;          // Tool name as on PATH (e.g. "clang-tidy").
-  const char *manager;       // Manager binary (e.g. "winget", "brew", "apt-get").
-  const char *install_args;  // Args following the manager (one shell string).
+  cforge_cstring_t tool;          // Tool name as on PATH (e.g. "clang-tidy").
+  cforge_cstring_t manager;       // Manager binary (e.g. "winget", "brew", "apt-get").
+  cforge_cstring_t install_args;  // Args following the manager (one shell string).
   bool needs_sudo;           // Prepend "sudo " on POSIX systems.
   // Candidate absolute paths to probe after a successful install. ';'-separated.
   // ${VAR} sequences are expanded against the current environment at lookup
   // time. Empty / nullptr means "rely on PATH after install" (good enough on
   // POSIX; on Windows the parent process's PATH won't pick up new entries
   // until a fresh shell, so list them explicitly).
-  const char *post_install_paths;
+  cforge_cstring_t post_install_paths;
 };
 
 // clang-format off
@@ -177,7 +178,7 @@ std::string expand_env(const std::string &in) {
       cforge_size_t end = in.find('}', i + 2);
       if (end != std::string::npos) {
         std::string var = in.substr(i + 2, end - (i + 2));
-        const char *val = std::getenv(var.c_str());
+        cforge_cstring_t val = std::getenv(var.c_str());
         if (val) {
           out += val;
         }

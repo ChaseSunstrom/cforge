@@ -38,7 +38,7 @@ namespace {
 static std::string with_commas(cforge_int_t n) {
   std::string s = std::to_string(n);
   std::string out;
-  int count = 0;
+  cforge_int_t count = 0;
   for (auto it = s.rbegin(); it != s.rend(); ++it) {
     if (count != 0 && count % 3 == 0) {
       out.push_back(',');
@@ -69,8 +69,8 @@ void print_benchmark_summary(const cforge::benchmark_summary &summary) {
   }
 
   // Two passes: compute alignment widths so the time column reads vertically.
-  size_t name_width = 0;
-  size_t time_width = 0;
+  cforge_size_t name_width = 0;
+  cforge_size_t time_width = 0;
   for (const auto &r : summary.results) {
     if (r.name.size() > name_width) {
       name_width = r.name.size();

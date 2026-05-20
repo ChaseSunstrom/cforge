@@ -231,7 +231,7 @@ static bool build_project(const cforge_context_t *ctx) {
         && i + 1 < ctx->args.arg_count && ctx->args.args[i + 1]) {
       // Override the configuration with the one from args
       if (build_ctx.args.config) {
-        free((void *)build_ctx.args.config);
+        free((cforge_pointer_t)build_ctx.args.config);
       }
       build_ctx.args.config = strdup(ctx->args.args[i + 1]);
       cforge::logger::print_verbose("Using configuration from args: "
@@ -264,13 +264,13 @@ static bool build_project(const cforge_context_t *ctx) {
 
   // Clean up allocated memory
   if (build_ctx.args.command) {
-    free((void *)build_ctx.args.command);
+    free((cforge_pointer_t)build_ctx.args.command);
   }
   if (build_ctx.args.config) {
-    free((void *)build_ctx.args.config);
+    free((cforge_pointer_t)build_ctx.args.config);
   }
   if (build_ctx.args.verbosity) {
-    free((void *)build_ctx.args.verbosity);
+    free((cforge_pointer_t)build_ctx.args.verbosity);
   }
 
   // Clean up args array
@@ -2031,13 +2031,13 @@ static cforge_int_t move_files_to_directory(
 
     // Clean up allocated memory
     if (build_ctx.args.command) {
-      free((void *)build_ctx.args.command);
+      free((cforge_pointer_t)build_ctx.args.command);
     }
     if (build_ctx.args.config) {
-      free((void *)build_ctx.args.config);
+      free((cforge_pointer_t)build_ctx.args.config);
     }
     if (build_ctx.args.verbosity) {
-      free((void *)build_ctx.args.verbosity);
+      free((cforge_pointer_t)build_ctx.args.verbosity);
     }
 
     // Clean up args array
@@ -2223,13 +2223,13 @@ static cforge_int_t move_files_to_directory(
 
     // Clean up allocated memory
     if (build_ctx.args.command) {
-      free((void *)build_ctx.args.command);
+      free((cforge_pointer_t)build_ctx.args.command);
     }
     if (build_ctx.args.config) {
-      free((void *)build_ctx.args.config);
+      free((cforge_pointer_t)build_ctx.args.config);
     }
     if (build_ctx.args.verbosity) {
-      free((void *)build_ctx.args.verbosity);
+      free((cforge_pointer_t)build_ctx.args.verbosity);
     }
 
     // Clean up args array

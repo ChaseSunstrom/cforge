@@ -1687,11 +1687,11 @@ cforge_int_t cforge_cmd_init(const cforge_context_t *ctx) {
         project_name = cforge::prompt_text("Project name", project_name);
       }
       if (!has_template_flag) {
-        int idx       = cforge::prompt_select("Template", template_options, 0);
+        cforge_int_t idx       = cforge::prompt_select("Template", template_options, 0);
         template_name = template_options[idx];
       }
       if (!has_cpp_flag) {
-        int idx      = cforge::prompt_select("C++ standard", standard_options, 0);
+        cforge_int_t idx      = cforge::prompt_select("C++ standard", standard_options, 0);
         cpp_standard = standard_options[idx];
       }
       if (!has_tests_flag) {
@@ -1701,7 +1701,7 @@ cforge_int_t cforge_cmd_init(const cforge_context_t *ctx) {
         with_git = cforge::prompt_confirm("Initialize git", true);
       }
       if (!has_license_flag) {
-        int idx      = cforge::prompt_select("License", license_options, 0);
+        cforge_int_t idx      = cforge::prompt_select("License", license_options, 0);
         license_type = license_options[idx];
       }
 

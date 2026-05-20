@@ -314,7 +314,7 @@ cforge_int_t cforge_cmd_test(const cforge_context_t *ctx) {
       // Print header with actual test count
       formatter.print_run_start(static_cast<cforge_int_t>(all_results.size()));
 
-      size_t name_w = 0;
+      cforge_size_t name_w = 0;
       for (const auto &result : all_results) {
         if (result.name.size() > name_w) {
           name_w = result.name.size();
@@ -419,7 +419,7 @@ cforge_int_t cforge_cmd_test(const cforge_context_t *ctx) {
     // Print header with actual test count
     formatter.print_run_start(static_cast<cforge_int_t>(results.size()));
 
-    size_t name_w = 0;
+    cforge_size_t name_w = 0;
     for (const auto &result : results) {
       if (result.name.size() > name_w) {
         name_w = result.name.size();

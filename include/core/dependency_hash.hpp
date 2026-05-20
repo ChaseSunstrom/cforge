@@ -9,6 +9,7 @@
 #include <unordered_map>
 
 #include "types.h"
+#include "core/types.h"
 
 namespace cforge {
 
@@ -104,18 +105,18 @@ private:
   // cforge.hash used to be its own file. It's now folded into cforge.lock
   // under [buildcache] and [buildcache.dependency.<name>] sections — see the
   // implementation for the read/write merge with the lockfile.
-  static constexpr const char *HASH_FILE = "cforge.lock";
+  static constexpr cforge_cstring_t HASH_FILE = "cforge.lock";
 
   // FNV-1a hash constants
-  static constexpr uint64_t FNV_PRIME        = 1099511628211ULL;
-  static constexpr uint64_t FNV_OFFSET_BASIS = 14695981039346656037ULL;
+  static constexpr cforge_ulong_t FNV_PRIME        = 1099511628211ULL;
+  static constexpr cforge_ulong_t FNV_OFFSET_BASIS = 14695981039346656037ULL;
 
   /**
    * @brief Calculate FNV-1a hash for a string
    * @param str Input string
    * @return 64-bit hash value
    */
-  static uint64_t fnv1a_hash(const std::string &str);
+  static cforge_ulong_t fnv1a_hash(const std::string &str);
 
   /**
    * @brief Calculate FNV-1a hash for binary data
@@ -130,7 +131,7 @@ private:
    * @param hash 64-bit hash value
    * @return Hex string representation
    */
-  static std::string hash_to_string(uint64_t hash);
+  static std::string hash_to_string(cforge_ulong_t hash);
 
   /**
    * @brief Get current timestamp in ISO 8601 format

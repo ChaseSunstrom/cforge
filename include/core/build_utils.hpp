@@ -88,9 +88,9 @@ std::filesystem::path get_build_dir_for_config(const std::string &base_dir,
  * @param project_config TOML reader for project config
  * @return Build configuration string
  */
-std::string get_build_config(const char *explicit_config,
+std::string get_build_config(cforge_cstring_t explicit_config,
                              cforge_int_t arg_count,
-                             char *const *args,
+                             cforge_string_t const *args,
                              const toml_reader *project_config);
 
 /**

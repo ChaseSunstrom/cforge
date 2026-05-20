@@ -28,11 +28,11 @@
 namespace cforge {
 
 // FNV-1a hash constants (same as dependency_hash)
-static constexpr uint64_t FNV_PRIME        = 1099511628211ULL;
-static constexpr uint64_t FNV_OFFSET_BASIS = 14695981039346656037ULL;
+static constexpr cforge_ulong_t FNV_PRIME        = 1099511628211ULL;
+static constexpr cforge_ulong_t FNV_OFFSET_BASIS = 14695981039346656037ULL;
 
-static uint64_t fnv1a_hash(const std::string &str) {
-  uint64_t hash = FNV_OFFSET_BASIS;
+static cforge_ulong_t fnv1a_hash(const std::string &str) {
+  cforge_ulong_t hash = FNV_OFFSET_BASIS;
   for (char c : str) {
     hash ^= static_cast<uint8_t>(c);
     hash *= FNV_PRIME;
@@ -40,13 +40,13 @@ static uint64_t fnv1a_hash(const std::string &str) {
   return hash;
 }
 
-static uint64_t fnv1a_hash_file(const std::filesystem::path &path) {
+static cforge_ulong_t fnv1a_hash_file(const std::filesystem::path &path) {
   std::ifstream file(path, std::ios::binary);
   if (!file) {
     return 0;
   }
 
-  uint64_t hash = FNV_OFFSET_BASIS;
+  cforge_ulong_t hash = FNV_OFFSET_BASIS;
   char buffer[4096];
   while (file.read(buffer, sizeof(buffer))) {
     for (std::streamsize i = 0; i < file.gcount(); ++i) {
@@ -61,7 +61,7 @@ static uint64_t fnv1a_hash_file(const std::filesystem::path &path) {
   return hash;
 }
 
-static std::string hash_to_hex(uint64_t hash, int digits = 8) {
+static std::string hash_to_hex(uint64_t hash, cforge_int_t digits = 8) {
   std::stringstream ss;
   ss << std::hex << std::setw(digits) << std::setfill('0') << (hash & ((1ULL << (digits * 4)) - 1));
   return ss.str();
@@ -86,7 +86,7 @@ static std::string trim(const std::string &str) {
 
 static std::string to_lower(const std::string &str) {
   std::string result = str;
-  std::transform(result.begin(), result.end(), result.begin(), [](unsigned char c) {
+  std::transform(result.begin(), result.end(), result.begin(), [](cforge_byte_t c) {
     return std::tolower(c);
   });
   return result;
@@ -158,8 +158,8 @@ build_environment build_environment::detect() {
 std::string build_environment::get_compiler_version() {
 #if defined(_MSC_VER)
   // MSVC version: _MSC_VER / 100 . _MSC_VER % 100
-  int major = _MSC_VER / 100;
-  int minor = _MSC_VER % 100;
+  cforge_int_t major = _MSC_VER / 100;
+  cforge_int_t minor = _MSC_VER % 100;
   return std::to_string(major) + "." + std::to_string(minor);
 #elif defined(__clang__)
   return std::to_string(__clang_major__) + "." + std::to_string(__clang_minor__);
@@ -350,18 +350,18 @@ std::filesystem::path package_cache::get_default_cache_dir() {
     return std::filesystem::path(path) / "cforge" / "cache";
   }
   // Fallback to USERPROFILE
-  const char *userprofile = std::getenv("USERPROFILE");
+  cforge_cstring_t userprofile = std::getenv("USERPROFILE");
   if (userprofile) {
     return std::filesystem::path(userprofile) / ".cforge" / "cache";
   }
   return std::filesystem::path(".cforge") / "cache";
 #else
   // Use XDG_DATA_HOME if set, otherwise ~/.local/share/cforge
-  const char *xdg_data = std::getenv("XDG_DATA_HOME");
+  cforge_cstring_t xdg_data = std::getenv("XDG_DATA_HOME");
   if (xdg_data) {
     return std::filesystem::path(xdg_data) / "cforge" / "cache";
   }
-  const char *home = std::getenv("HOME");
+  cforge_cstring_t home = std::getenv("HOME");
   if (!home) {
     struct passwd *pw = getpwuid(getuid());
     home              = pw ? pw->pw_dir : ".";

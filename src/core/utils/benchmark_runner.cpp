@@ -90,7 +90,7 @@ static fs::path find_exec_in_dir(const fs::path &build_dir,
 }
 
 // Embedded mirror of tests/bench_framework.h.
-static const char *get_builtin_bench_framework_header() {
+static cforge_cstring_t get_builtin_bench_framework_header() {
   // NOTE: Keep in sync with tests/bench_framework.h
   return R"CFBF(/**
  * @file bench_framework.h
@@ -263,6 +263,7 @@ struct Registrar {
   static CFB_MAYBE_UNUSED void cf_clobber_(void) { __asm__ __volatile__("" ::: "memory"); }
 #elif defined(_MSC_VER)
   #include <intrin.h>
+#include "core/types.h"
   #pragma intrinsic(_ReadWriteBarrier)
   static CFB_MAYBE_UNUSED void cf_clobber_(void) { _ReadWriteBarrier(); }
 #else

@@ -742,7 +742,7 @@ std::string installer::get_install_location() const {
   }
 #else
   // Check XDG_DATA_HOME first (preferred)
-  const char *xdg_data = getenv("XDG_DATA_HOME");
+  cforge_cstring_t xdg_data = getenv("XDG_DATA_HOME");
   if (xdg_data) {
     std::filesystem::path path = std::filesystem::path(xdg_data) / "cforge";
     if (std::filesystem::exists(path / "installed" / "cforge" / "bin" / "cforge")) {
@@ -751,7 +751,7 @@ std::string installer::get_install_location() const {
   }
 
   // Check ~/.local/share/cforge
-  const char *home_dir = getenv("HOME");
+  cforge_cstring_t home_dir = getenv("HOME");
   if (home_dir) {
     std::filesystem::path path = std::filesystem::path(home_dir) / ".local" / "share" / "cforge";
     if (std::filesystem::exists(path / "installed" / "cforge" / "bin" / "cforge")) {
@@ -908,7 +908,7 @@ std::string installer::get_platform_specific_path() const {
     return std::string(local_appdata) + "\\cforge";
   }
   // Fallback to USERPROFILE
-  const char *userprofile = getenv("USERPROFILE");
+  cforge_cstring_t userprofile = getenv("USERPROFILE");
   if (userprofile) {
     return std::string(userprofile) + "\\.cforge";
   }
@@ -916,11 +916,11 @@ std::string installer::get_platform_specific_path() const {
 #else
   // On Unix-like systems, use ~/.local/share/cforge (XDG compliant)
   // This keeps all cforge data in a standard location
-  const char *xdg_data = getenv("XDG_DATA_HOME");
+  cforge_cstring_t xdg_data = getenv("XDG_DATA_HOME");
   if (xdg_data) {
     return std::string(xdg_data) + "/cforge";
   }
-  const char *home_dir = getenv("HOME");
+  cforge_cstring_t home_dir = getenv("HOME");
   if (!home_dir) {
     struct passwd *pw = getpwuid(getuid());
     if (pw) {
@@ -1134,14 +1134,14 @@ bool installer::create_executable_links(const std::filesystem::path &bin_path) c
       HRESULT hr = CoInitialize(NULL);
       if (SUCCEEDED(hr)) {
         hr = CoCreateInstance(
-            CLSID_ShellLink, NULL, CLSCTX_INPROC_SERVER, IID_IShellLinkA, (void **)&p_shell_link);
+            CLSID_ShellLink, NULL, CLSCTX_INPROC_SERVER, IID_IShellLinkA, (cforge_pointer_t*)&p_shell_link);
 
         if (SUCCEEDED(hr)) {
           p_shell_link->SetPath(exe_path.string().c_str());
           p_shell_link->SetDescription("cforge C/C++ Build System");
           p_shell_link->SetWorkingDirectory(bin_path.parent_path().string().c_str());
 
-          hr = p_shell_link->QueryInterface(IID_IPersistFile, (void **)&p_persist_file);
+          hr = p_shell_link->QueryInterface(IID_IPersistFile, (cforge_pointer_t*)&p_persist_file);
 
           if (SUCCEEDED(hr)) {
             std::filesystem::path shortcut_path = shortcut_dir / "cforge.lnk";
@@ -1207,7 +1207,7 @@ bool installer::create_executable_links(const std::filesystem::path &bin_path) c
   if (exe_path.filename().string() == "cforge") {
     try {
       // Get home directory
-      const char *home_dir = getenv("HOME");
+      cforge_cstring_t home_dir = getenv("HOME");
       if (!home_dir) {
         struct passwd *pw = getpwuid(getuid());
         if (pw) {
@@ -1368,7 +1368,7 @@ bool installer::update_path_env(const std::filesystem::path &bin_path) const {
   // On Unix-like systems, update .bashrc or similar
 
   // Get home directory
-  const char *home_dir = getenv("HOME");
+  cforge_cstring_t home_dir = getenv("HOME");
   if (!home_dir) {
     struct passwd *pw = getpwuid(getuid());
     if (pw) {

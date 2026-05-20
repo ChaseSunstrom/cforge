@@ -327,10 +327,10 @@ process_result execute_process(const std::string &command,
     close(stderr_pipe[1]);
 
     // Prepare arguments for execvp
-    std::vector<char *> c_args;
-    c_args.push_back(const_cast<char *>(command.c_str()));
+    std::vector<cforge_string_t> c_args;
+    c_args.push_back(const_cast<cforge_string_t>(command.c_str()));
     for (const auto &arg : args) {
-      c_args.push_back(const_cast<char *>(arg.c_str()));
+      c_args.push_back(const_cast<cforge_string_t>(arg.c_str()));
     }
     c_args.push_back(nullptr);
 
@@ -405,7 +405,7 @@ process_result execute_process(const std::string &command,
       }
 
       // Read stdout
-      ssize_t bytes_read;
+      cforge_long_t bytes_read;
       while ((bytes_read = read(stdout_pipe[0], buffer.data(), BUFFER_SIZE - 1)) > 0) {
         buffer[bytes_read] = '\0';
         std::string output_chunk(buffer.data(), bytes_read);
@@ -432,7 +432,7 @@ process_result execute_process(const std::string &command,
     }
 
     // Read any remaining data from pipes
-    ssize_t bytes_read;
+    cforge_long_t bytes_read;
     while ((bytes_read = read(stdout_pipe[0], buffer.data(), BUFFER_SIZE - 1)) > 0) {
       buffer[bytes_read] = '\0';
       std::string output_chunk(buffer.data(), bytes_read);
@@ -474,7 +474,7 @@ process_result execute_process(const std::string &command,
 
 std::string string_to_lower(const std::string &str) {
   std::string result = str;
-  std::transform(result.begin(), result.end(), result.begin(), [](unsigned char c) {
+  std::transform(result.begin(), result.end(), result.begin(), [](cforge_byte_t c) {
     return std::tolower(c);
   });
   return result;
@@ -744,7 +744,7 @@ bool execute_tool(const std::string &command,
         std::string line;
         while (std::getline(stream, line)) {
           // Skip empty lines, whitespace-only lines, or common noise
-          size_t first_char = line.find_first_not_of(" \t\r\n");
+          cforge_size_t first_char = line.find_first_not_of(" \t\r\n");
           if (first_char == std::string::npos) {
             continue;
           }
@@ -786,7 +786,7 @@ bool execute_tool(const std::string &command,
           std::istringstream stream(result.stderr_output);
           std::string line;
           while (std::getline(stream, line)) {
-            size_t first_char = line.find_first_not_of(" \t\r\n");
+            cforge_size_t first_char = line.find_first_not_of(" \t\r\n");
             if (first_char != std::string::npos) {
               has_stderr = true;
               break;
@@ -799,7 +799,7 @@ bool execute_tool(const std::string &command,
           std::istringstream stream(result.stdout_output);
           std::string line;
           while (std::getline(stream, line)) {
-            size_t first_char = line.find_first_not_of(" \t\r\n");
+            cforge_size_t first_char = line.find_first_not_of(" \t\r\n");
             if (first_char != std::string::npos) {
               has_stdout = true;
               break;
@@ -817,7 +817,7 @@ bool execute_tool(const std::string &command,
           std::string line;
           cforge_int_t line_count = 0;
           while (std::getline(stream, line) && line_count < 20) {
-            size_t first_char = line.find_first_not_of(" \t\r\n");
+            cforge_size_t first_char = line.find_first_not_of(" \t\r\n");
             if (first_char != std::string::npos) {
               logger::print_plain("    " + line);
               line_count++;

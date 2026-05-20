@@ -26,7 +26,7 @@ namespace fs = std::filesystem;
 
 cforge_int_t replay_diagnostics(const cforge_context_t *ctx,
                                 cforge::diagnostic_level want,
-                                const char *empty_msg) {
+                                cforge_cstring_t empty_msg) {
   // Honor -h/--help.
   for (cforge_int_t i = 0; i < ctx->args.arg_count; ++i) {
     std::string a = ctx->args.args[i];

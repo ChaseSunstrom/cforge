@@ -356,7 +356,7 @@ void print_project_graph(const std::vector<std::string> &project_names,
     adj[e.from].push_back(e.to);
   }
 
-  size_t max_len = 0;
+  cforge_size_t max_len = 0;
   for (const auto &n : project_names) {
     max_len = std::max(max_len, n.size());
   }

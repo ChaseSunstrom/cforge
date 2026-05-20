@@ -342,14 +342,14 @@ private:
    * @param v2 Second version
    * @return -1 if v1 < v2, 0 if equal, 1 if v1 > v2
    */
-  static int compare_versions(const std::string &v1, const std::string &v2);
+  static cforge_int_t compare_versions(const std::string &v1, const std::string &v2);
 
   /**
    * @brief Parse a semantic version string
    * @param version Version string
    * @return Vector of version components [major, minor, patch]
    */
-  static std::vector<int> parse_version(const std::string &version);
+  static std::vector<cforge_int_t> parse_version(const std::string &version);
 };
 
 /**

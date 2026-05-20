@@ -100,7 +100,7 @@ std::string toml_reader::get_string(const std::string &key,
   }
 }
 
-int64_t toml_reader::get_int(const std::string &key, int64_t default_value) const {
+cforge_long_t toml_reader::get_int(const std::string &key, int64_t default_value) const {
   if (!toml_data) {
     return default_value;
   }

@@ -169,7 +169,7 @@ cforge_int_t cforge_cmd_doctor(const cforge_context_t *ctx) {
   // Check vcpkg
   bool vcpkg_ok = false;
   std::string vcpkg_path;
-  const char *vcpkg_root = std::getenv("VCPKG_ROOT");
+  cforge_cstring_t vcpkg_root = std::getenv("VCPKG_ROOT");
   if (vcpkg_root) {
     std::filesystem::path vcpkg_exe = std::filesystem::path(vcpkg_root) / "vcpkg";
 #ifdef _WIN32

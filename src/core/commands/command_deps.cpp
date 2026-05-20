@@ -39,10 +39,10 @@ namespace {
  * @brief Create a modified context for subcommand dispatch
  */
 cforge_context_t create_subcommand_context(const cforge_context_t *ctx,
-                                           const char *subcommand,
+                                           cforge_cstring_t subcommand,
                                            cforge_int_t arg_offset) {
   cforge_context_t sub_ctx = *ctx;
-  sub_ctx.args.command     = const_cast<char *>(subcommand);
+  sub_ctx.args.command     = const_cast<cforge_string_t>(subcommand);
 
   // Shift arguments to skip the subcommand
   if (ctx->args.arg_count > arg_offset) {
@@ -446,8 +446,8 @@ cforge_int_t cforge_cmd_deps(const cforge_context_t *ctx) {
 
     // Allocate fixed array: "update" + "--packages" + extra args
     cforge_int_t total_count = 2 + extra_count;
-    char **new_args =
-        static_cast<char **>(malloc(static_cast<size_t>(total_count) * sizeof(char *)));
+    cforge_string_t*new_args =
+        static_cast<cforge_string_t*>(malloc(static_cast<size_t>(total_count) * sizeof(char *)));
     new_args[0] = strdup("update");
     new_args[1] = strdup("--packages");
     for (cforge_int_t i = 1; i < ctx->args.arg_count; i++) {

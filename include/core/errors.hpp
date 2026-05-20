@@ -156,7 +156,7 @@ struct cforge_error {
   /**
    * @brief Implicit conversion to int for exit codes
    */
-  operator int() const { return static_cast<int>(code) > 0 ? 1 : 0; }
+  operator cforge_int_t() const { return static_cast<int>(code) > 0 ? 1 : 0; }
 };
 
 /**

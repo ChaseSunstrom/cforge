@@ -1607,7 +1607,7 @@ bool generate_cmakelists_from_toml(const std::filesystem::path &project_dir,
   bool asm_enabled = false;
   for (const auto &lang : languages) {
     std::string lang_upper = lang;
-    std::transform(lang_upper.begin(), lang_upper.end(), lang_upper.begin(), [](unsigned char c) {
+    std::transform(lang_upper.begin(), lang_upper.end(), lang_upper.begin(), [](cforge_byte_t c) {
       return std::toupper(c);
     });
     if (lang_upper == "ASM" || lang_upper == "ASM-ATT" || lang_upper == "ASM_NASM") {

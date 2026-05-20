@@ -143,7 +143,7 @@ void logger::running(const std::string &command) {
   print_status_line("Running", command, fmt::color::green);
 }
 
-void logger::running_timer(const std::string &command, double elapsed_secs) {
+void logger::running_timer(const std::string &command, cforge_double_t elapsed_secs) {
   if (s_verbosity == log_verbosity::VERBOSITY_QUIET) {
     return;
   }
@@ -159,8 +159,8 @@ void logger::running_timer(const std::string &command, double elapsed_secs) {
   if (elapsed_secs < 60.0) {
     time_str = fmt::format("{:.1f}s", elapsed_secs);
   } else {
-    int mins    = static_cast<int>(elapsed_secs) / 60;
-    double secs = elapsed_secs - (mins * 60);
+    cforge_int_t mins    = static_cast<int>(elapsed_secs) / 60;
+    cforge_double_t secs = elapsed_secs - (mins * 60);
     time_str    = fmt::format("{}m {:.0f}s", mins, secs);
   }
 
@@ -348,8 +348,8 @@ void logger::progress_bar(cforge_int_t current,
     if (elapsed_secs < 60.0) {
       time_str = fmt::format("{:.1f}s", elapsed_secs);
     } else {
-      int mins    = static_cast<int>(elapsed_secs) / 60;
-      double secs = elapsed_secs - (mins * 60);
+      cforge_int_t mins    = static_cast<int>(elapsed_secs) / 60;
+      cforge_double_t secs = elapsed_secs - (mins * 60);
       time_str    = fmt::format("{}m{:.0f}s", mins, secs);
     }
   }
@@ -524,7 +524,7 @@ void logger::print_section(const std::string &title) {
   fmt::print(fg(fmt::color::cyan) | fmt::emphasis::bold, "{}\n", title);
 }
 
-void logger::print_kv(const std::string &key, const std::string &value, int key_width, int indent) {
+void logger::print_kv(const std::string &key, const std::string &value, cforge_int_t key_width, int indent) {
   if (s_verbosity == log_verbosity::VERBOSITY_QUIET) {
     return;
   }
@@ -535,8 +535,8 @@ void logger::print_kv(const std::string &key, const std::string &value, int key_
 void logger::print_kv_colored(const std::string &key,
                               const std::string &value,
                               fmt::color value_color,
-                              int key_width,
-                              int indent) {
+                              cforge_int_t key_width,
+                              cforge_int_t indent) {
   if (s_verbosity == log_verbosity::VERBOSITY_QUIET) {
     return;
   }
@@ -545,21 +545,21 @@ void logger::print_kv_colored(const std::string &key,
   fmt::print(fg(value_color), "{}\n", value);
 }
 
-void logger::print_list_item(const std::string &text, const std::string &bullet, int indent) {
+void logger::print_list_item(const std::string &text, const std::string &bullet, cforge_int_t indent) {
   if (s_verbosity == log_verbosity::VERBOSITY_QUIET) {
     return;
   }
   fmt::print("{:{}}{} {}\n", "", indent, bullet, text);
 }
 
-void logger::print_dim(const std::string &message, int indent) {
+void logger::print_dim(const std::string &message, cforge_int_t indent) {
   if (s_verbosity == log_verbosity::VERBOSITY_QUIET) {
     return;
   }
   fmt::print(fg(fmt::color::gray), "{:{}}{}\n", "", indent, message);
 }
 
-void logger::print_rule(int width, char ch) {
+void logger::print_rule(cforge_int_t width, char ch) {
   if (s_verbosity == log_verbosity::VERBOSITY_QUIET) {
     return;
   }
@@ -590,7 +590,7 @@ void logger::print_hint(const std::string &message) {
   fmt::print(" {}\n", message);
 }
 
-void logger::print_help_lines(const std::vector<std::string> &help_lines, int indent) {
+void logger::print_help_lines(const std::vector<std::string> &help_lines, cforge_int_t indent) {
   if (s_verbosity == log_verbosity::VERBOSITY_QUIET) {
     return;
   }
@@ -601,13 +601,13 @@ void logger::print_help_lines(const std::vector<std::string> &help_lines, int in
 
 void logger::print_table_row(const std::vector<std::string> &columns,
                              const std::vector<int> &widths,
-                             int indent) {
+                             cforge_int_t indent) {
   if (s_verbosity == log_verbosity::VERBOSITY_QUIET) {
     return;
   }
   fmt::print("{:{}}", "", indent);
   for (size_t i = 0; i < columns.size(); ++i) {
-    int width = (i < widths.size()) ? widths[i] : 12;
+    cforge_int_t width = (i < widths.size()) ? widths[i] : 12;
     fmt::print("{:<{}} ", columns[i], width);
   }
   fmt::print("\n");
@@ -615,15 +615,15 @@ void logger::print_table_row(const std::vector<std::string> &columns,
 
 void logger::print_table_header(const std::vector<std::string> &columns,
                                 const std::vector<int> &widths,
-                                int indent) {
+                                cforge_int_t indent) {
   if (s_verbosity == log_verbosity::VERBOSITY_QUIET) {
     return;
   }
   // Print header row in bold
   fmt::print("{:{}}", "", indent);
-  int total_width = 0;
+  cforge_int_t total_width = 0;
   for (size_t i = 0; i < columns.size(); ++i) {
-    int width = (i < widths.size()) ? widths[i] : 12;
+    cforge_int_t width = (i < widths.size()) ? widths[i] : 12;
     fmt::print(fmt::emphasis::bold, "{:<{}} ", columns[i], width);
     total_width += width + 1;
   }
@@ -660,7 +660,7 @@ void logger::print_usage(const std::string &usage) {
 
 void logger::print_option(const std::string &flags,
                           const std::string &description,
-                          int flag_width) {
+                          cforge_int_t flag_width) {
   if (s_verbosity == log_verbosity::VERBOSITY_QUIET) {
     return;
   }
@@ -669,7 +669,7 @@ void logger::print_option(const std::string &flags,
   fmt::print(fg(fmt::color::light_gray), "{}\n", description);
 }
 
-void logger::print_arg(const std::string &name, const std::string &description, int name_width) {
+void logger::print_arg(const std::string &name, const std::string &description, cforge_int_t name_width) {
   if (s_verbosity == log_verbosity::VERBOSITY_QUIET) {
     return;
   }
@@ -693,7 +693,7 @@ void logger::print_example(const std::string &example, const std::string &descri
 
 void logger::print_subcommand(const std::string &name,
                               const std::string &description,
-                              int name_width) {
+                              cforge_int_t name_width) {
   if (s_verbosity == log_verbosity::VERBOSITY_QUIET) {
     return;
   }
@@ -746,7 +746,7 @@ void logger::print_warning_header(const std::string &code, const std::string &me
   fmt::print(stderr, fg(fmt::color::white) | fmt::emphasis::bold, ": {}\n", message);
 }
 
-void logger::print_location(const std::string &file_path, int line, int column) {
+void logger::print_location(const std::string &file_path, cforge_int_t line, int column) {
   // Shorten long paths for display
   std::string display_path = file_path;
   if (display_path.length() > 60) {
@@ -765,7 +765,7 @@ void logger::print_location(const std::string &file_path, int line, int column) 
   fmt::print(stderr, "\n");
 }
 
-void logger::print_code_line(int line_number, const std::string &content, int gutter_width) {
+void logger::print_code_line(cforge_int_t line_number, const std::string &content, int gutter_width) {
   if (line_number > 0) {
     fmt::print(stderr, fg(fmt::color::steel_blue), "{:>{}} | ", line_number, gutter_width);
   } else {
@@ -774,7 +774,7 @@ void logger::print_code_line(int line_number, const std::string &content, int gu
   fmt::print(stderr, "{}\n", content);
 }
 
-void logger::print_error_pointer(int column_start, int length, int gutter_width) {
+void logger::print_error_pointer(cforge_int_t column_start, int length, int gutter_width) {
   fmt::print(stderr, fg(fmt::color::steel_blue), "{:>{}} | ", "", gutter_width);
   if (column_start > 0) {
     fmt::print(stderr, "{:>{}}", "", column_start - 1);
@@ -812,7 +812,7 @@ void logger::print_diag_fix(const std::string &description, const std::string &r
   fmt::print(stderr, "\n");
 }
 
-void logger::print_error_count(int count, const std::string &type, bool is_error) {
+void logger::print_error_count(cforge_int_t count, const std::string &type, bool is_error) {
   fmt::print(stderr, fg(fmt::color::steel_blue), "   |  ");
   fmt::color color = is_error ? fmt::color::red : fmt::color::yellow;
   fmt::print(stderr, fg(color), "{} {}{}\n", count, type, count == 1 ? "" : "s");

@@ -138,12 +138,12 @@ cforge_int_t cforge_cmd_install(const cforge_context_t *ctx) {
         build_ctx.args.verbosity = strdup("verbose");
       }
       cforge_int_t build_res = cforge_cmd_build(&build_ctx);
-      free((void *)build_ctx.args.command);
+      free((cforge_pointer_t)build_ctx.args.command);
       if (build_ctx.args.config) {
-        free((void *)build_ctx.args.config);
+        free((cforge_pointer_t)build_ctx.args.config);
       }
       if (build_ctx.args.verbosity) {
-        free((void *)build_ctx.args.verbosity);
+        free((cforge_pointer_t)build_ctx.args.verbosity);
       }
       if (build_res != 0) {
         cforge::logger::print_error("Workspace build failed");

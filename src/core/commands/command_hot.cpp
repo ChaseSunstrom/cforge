@@ -137,7 +137,7 @@ bool launch_host(const std::string &exe_path, const std::string &working_dir) {
         _exit(1);
       }
     }
-    execl(exe_path.c_str(), exe_path.c_str(), (char *)NULL);
+    execl(exe_path.c_str(), exe_path.c_str(), (cforge_string_t)NULL);
     _exit(127);  // exec failed
   }
   g_host_pid = pid;
@@ -160,7 +160,7 @@ bool host_is_alive() {
   if (g_host_pid <= 0) {
     return false;
   }
-  int status = 0;
+  cforge_int_t status = 0;
   pid_t r    = waitpid(g_host_pid, &status, WNOHANG);
   if (r == g_host_pid) {
     g_host_pid = 0;
@@ -182,7 +182,7 @@ void terminate_host() {
 #else
   if (g_host_pid > 0) {
     kill(g_host_pid, SIGTERM);
-    int status;
+    cforge_int_t status;
     waitpid(g_host_pid, &status, 0);
     g_host_pid = 0;
   }
@@ -197,7 +197,7 @@ void terminate_host() {
  * Atomically write an incremented counter to .cforge/hot_reload_signal.
  * Uses write-to-tmp-then-rename for atomicity.
  */
-bool write_signal_file(const fs::path &signal_path, long long counter) {
+bool write_signal_file(const fs::path &signal_path, cforge_long_t counter) {
   fs::path tmp_path  = signal_path;
   tmp_path          += ".tmp";
 
@@ -577,7 +577,7 @@ cforge_int_t cforge_cmd_hot(const cforge_context_t *ctx) {
     watchers.emplace_back(project_dir, watch_extensions);
   }
 
-  long long signal_counter = 0;
+  cforge_long_t signal_counter = 0;
 
   // -----------------------------------------------------------------------
   // Watch loop

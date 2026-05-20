@@ -24,7 +24,7 @@ namespace cforge {
  * @brief HTTP response structure
  */
 struct http_response {
-  int status_code;
+  cforge_int_t status_code;
   std::string status_message;
   std::map<std::string, std::string> headers;
   std::vector<char> body;
@@ -39,7 +39,7 @@ struct http_response {
  */
 struct http_request_options {
   std::map<std::string, std::string> headers;
-  int timeout_seconds   = 30;
+  cforge_int_t timeout_seconds   = 30;
   bool follow_redirects = true;
   std::string api_key;  // Added to Authorization header if set
 
@@ -140,7 +140,7 @@ private:
 struct parsed_url {
   std::string scheme;  // "https"
   std::string host;    // "cache.example.com"
-  int port;            // 443
+  cforge_int_t port;            // 443
   std::string path;    // "/cache/pkg-1.0.0"
   std::string query;   // "foo=bar"
 

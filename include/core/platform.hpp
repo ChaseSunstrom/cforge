@@ -11,6 +11,7 @@
 #include <filesystem>
 #include <string>
 #include <vector>
+#include "core/types.h"
 
 namespace cforge {
 namespace platform {
@@ -115,7 +116,7 @@ inline std::string get_compiler_name() {
  * @brief Get the path separator for the current platform
  * @return "\\" on Windows, "/" on Unix-like systems
  */
-inline constexpr const char *path_separator() {
+inline constexpr cforge_cstring_t path_separator() {
   if constexpr (is_windows) {
     return "\\";
   } else {
@@ -127,7 +128,7 @@ inline constexpr const char *path_separator() {
  * @brief Get the executable extension for the current platform
  * @return ".exe" on Windows, "" on Unix-like systems
  */
-inline constexpr const char *executable_extension() {
+inline constexpr cforge_cstring_t executable_extension() {
   if constexpr (is_windows) {
     return ".exe";
   } else {
@@ -139,7 +140,7 @@ inline constexpr const char *executable_extension() {
  * @brief Get the shared library extension for the current platform
  * @return ".dll" on Windows, ".dylib" on macOS, ".so" on Linux
  */
-inline constexpr const char *shared_library_extension() {
+inline constexpr cforge_cstring_t shared_library_extension() {
   if constexpr (is_windows) {
     return ".dll";
   } else if constexpr (is_macos) {
@@ -153,7 +154,7 @@ inline constexpr const char *shared_library_extension() {
  * @brief Get the static library extension for the current platform
  * @return ".lib" on Windows (MSVC), ".a" on Unix-like systems
  */
-inline constexpr const char *static_library_extension() {
+inline constexpr cforge_cstring_t static_library_extension() {
   if constexpr (is_windows && is_msvc) {
     return ".lib";
   } else {

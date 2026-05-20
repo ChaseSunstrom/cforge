@@ -24,8 +24,8 @@ namespace cforge {
 // are left untouched.
 namespace {
 
-constexpr const char *kBuildcacheSection   = "buildcache";
-constexpr const char *kBuildcacheDepPrefix = "buildcache.dependency.";
+constexpr cforge_cstring_t kBuildcacheSection   = "buildcache";
+constexpr cforge_cstring_t kBuildcacheDepPrefix = "buildcache.dependency.";
 
 // True if a section name belongs to this class (and therefore should be
 // rewritten on save; sections we don't own are preserved verbatim).
@@ -272,13 +272,13 @@ void dependency_hash::set_version(const std::string &name, const std::string &ve
   versions[name] = version;
 }
 
-uint64_t dependency_hash::fnv1a_hash(const std::string &str) {
+cforge_ulong_t dependency_hash::fnv1a_hash(const std::string &str) {
   return fnv1a_hash(str.data(), str.size());
 }
 
 uint64_t dependency_hash::fnv1a_hash(const void *data, cforge_size_t size) {
-  uint64_t hash        = FNV_OFFSET_BASIS;
-  const uint8_t *bytes = static_cast<const uint8_t *>(data);
+  cforge_ulong_t hash        = FNV_OFFSET_BASIS;
+  const cforge_byte_t *bytes = static_cast<const uint8_t *>(data);
 
   for (cforge_size_t i = 0; i < size; ++i) {
     hash ^= bytes[i];
@@ -288,7 +288,7 @@ uint64_t dependency_hash::fnv1a_hash(const void *data, cforge_size_t size) {
   return hash;
 }
 
-std::string dependency_hash::hash_to_string(uint64_t hash) {
+std::string dependency_hash::hash_to_string(cforge_ulong_t hash) {
   std::stringstream ss;
   ss << std::hex << std::setw(16) << std::setfill('0') << hash;
   return ss.str();
@@ -307,7 +307,7 @@ std::string dependency_hash::calculate_directory_hash(const std::filesystem::pat
   std::sort(entries.begin(), entries.end());
 
   // Calculate hash for each file
-  uint64_t combined_hash = FNV_OFFSET_BASIS;
+  cforge_ulong_t combined_hash = FNV_OFFSET_BASIS;
   for (const auto &entry : entries) {
     if (std::filesystem::is_regular_file(entry)) {
       // Add file path relative to dir_path

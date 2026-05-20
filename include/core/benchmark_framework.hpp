@@ -39,20 +39,20 @@ struct benchmark_result {
   std::string suite;  // Benchmark suite/group
 
   // Timing metrics
-  double time_ns     = 0;  // Real time per iteration (nanoseconds)
-  double cpu_time_ns = 0;  // CPU time per iteration (nanoseconds)
-  int64_t iterations = 0;  // Number of iterations run
+  cforge_double_t time_ns     = 0;  // Real time per iteration (nanoseconds)
+  cforge_double_t cpu_time_ns = 0;  // CPU time per iteration (nanoseconds)
+  cforge_long_t iterations = 0;  // Number of iterations run
 
   // Additional metrics
-  double bytes_per_second = 0;
-  double items_per_second = 0;
+  cforge_double_t bytes_per_second = 0;
+  cforge_double_t items_per_second = 0;
 
   // Statistics
-  double min_time_ns    = 0;
-  double max_time_ns    = 0;
-  double mean_time_ns   = 0;
-  double median_time_ns = 0;
-  double stddev_ns      = 0;
+  cforge_double_t min_time_ns    = 0;
+  cforge_double_t max_time_ns    = 0;
+  cforge_double_t mean_time_ns   = 0;
+  cforge_double_t median_time_ns = 0;
+  cforge_double_t stddev_ns      = 0;
 
   // Status
   bool success = true;

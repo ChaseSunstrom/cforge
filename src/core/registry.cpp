@@ -31,21 +31,21 @@ std::string registry::get_index_url() {
 
 std::filesystem::path registry::get_default_cache_dir() {
 #ifdef _WIN32
-  const char *appdata = std::getenv("LOCALAPPDATA");
+  cforge_cstring_t appdata = std::getenv("LOCALAPPDATA");
   if (appdata) {
     return std::filesystem::path(appdata) / "cforge" / "registry";
   }
-  const char *userprofile = std::getenv("USERPROFILE");
+  cforge_cstring_t userprofile = std::getenv("USERPROFILE");
   if (userprofile) {
     return std::filesystem::path(userprofile) / ".cforge" / "registry";
   }
 #else
   // Use XDG_DATA_HOME if set, otherwise ~/.local/share/cforge
-  const char *xdg_data = std::getenv("XDG_DATA_HOME");
+  cforge_cstring_t xdg_data = std::getenv("XDG_DATA_HOME");
   if (xdg_data) {
     return std::filesystem::path(xdg_data) / "cforge" / "registry";
   }
-  const char *home = std::getenv("HOME");
+  cforge_cstring_t home = std::getenv("HOME");
   if (home) {
     return std::filesystem::path(home) / ".local" / "share" / "cforge" / "registry";
   }
@@ -75,7 +75,7 @@ bool registry::needs_update() const {
     return true;
   }
 
-  long long timestamp;
+  cforge_long_t timestamp;
   ts_in >> timestamp;
   ts_in.close();
 

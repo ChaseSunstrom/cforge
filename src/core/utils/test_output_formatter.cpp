@@ -246,7 +246,7 @@ void test_output_formatter::print_execution_start(const std::string &executable_
   logger::print_action("Running", shorten_path(executable_path));
 }
 
-void test_output_formatter::print_test_result(const test_result &result, size_t name_pad_width) {
+void test_output_formatter::print_test_result(const test_result &result, cforge_size_t name_pad_width) {
   // Cargo format: "test <name> ... <status>". When name_pad_width is set,
   // we left-pad the name so the "..." column lines up across all results.
   if (name_pad_width > result.name.size()) {
@@ -416,7 +416,7 @@ void test_output_formatter::print_summary(const test_summary &summary) {
 
 void test_output_formatter::print_test_list(const std::vector<std::string> &tests) {
   auto grouped               = group_tests_by_suite(tests);
-  constexpr int STATUS_WIDTH = 12;
+  constexpr cforge_int_t STATUS_WIDTH = 12;
 
   logger::print_action("Listing", std::to_string(tests.size()) + " tests");
   fmt::print("\n");

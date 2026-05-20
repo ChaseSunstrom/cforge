@@ -28,7 +28,7 @@ struct remote_cache_config {
   bool enabled      = false;  // Whether remote cache is enabled
   bool push_enabled = false;  // Whether to upload built packages
   std::string api_key;        // Optional authentication key
-  int timeout_seconds = 60;   // Request timeout
+  cforge_int_t timeout_seconds = 60;   // Request timeout
 
   /**
    * @brief Load remote cache config from global config file

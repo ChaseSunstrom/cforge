@@ -144,12 +144,12 @@ static bool remove_package_with_vcpkg(const std::filesystem::path &project_dir,
   } else {
     // Try default global vcpkg location
 #ifdef _WIN32
-    const char *userprofile          = std::getenv("USERPROFILE");
+    cforge_cstring_t userprofile          = std::getenv("USERPROFILE");
     std::filesystem::path global_dir = userprofile ? std::filesystem::path(userprofile) / "vcpkg"
                                                    : std::filesystem::path();
     std::filesystem::path global_exe = global_dir / "vcpkg.exe";
 #else
-    const char *home                 = std::getenv("HOME");
+    cforge_cstring_t home                 = std::getenv("HOME");
     std::filesystem::path global_dir = home ? std::filesystem::path(home) / "vcpkg"
                                             : std::filesystem::path();
     std::filesystem::path global_exe = global_dir / "vcpkg";
